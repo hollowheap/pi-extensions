@@ -49,6 +49,21 @@ Minimal two-section example:
 
 Configuring `sections` replaces the defaults entirely. Unknown component types and malformed entries are skipped with a warning.
 
+## Separators
+
+`componentSeparator` (between components) and `sectionSeparator` (between sections) accept a plain string or a styled object:
+
+```json
+{
+  "options": {
+    "componentSeparator": { "text": "|", "fg": "dim" },
+    "sectionSeparator": { "text": " ", "bg": "selectedBg", "bold": true }
+  }
+}
+```
+
+`fg` takes a foreground theme token (`dim`, `accent`, `muted`, …) or a `#rrggbb` color; `bg` takes a background token (`selectedBg`, `toolSuccessBg`, …) or a `#rrggbb` color. `bold` takes a boolean. Invalid values are ignored with a warning, so a typo never breaks rendering. Plain strings skip styling entirely.
+
 ## Built-in components
 
 | type | shows | options |

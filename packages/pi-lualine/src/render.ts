@@ -1,12 +1,39 @@
+import type { Theme, ThemeStyle } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { BUILTINS, type ComponentContext } from "./components.js";
-import type { LualineConfig } from "./config.js";
+import type { LualineConfig, ResolvedSeparator } from "./config.js";
+
+export function applySeparator(
+	separator: ResolvedSeparator,
+	theme: Theme,
+): string {
+	if (
+		separator.fg === undefined &&
+		separator.bg === undefined &&
+		separator.bold === undefined
+	)
+		return separator.text;
+	const options: ThemeStyle = {};
+	if (separator.fg !== undefined) options.fg = separator.fg;
+	if (separator.bg !== undefined) options.bg = separator.bg;
+	if (separator.bold !== undefined) options.bold = separator.bold;
+	return theme.style(separator.text, options);
+}
 
 export function renderStatusline(
 	width: number,
 	config: LualineConfig,
 	ctx: ComponentContext,
+	theme: Theme,
 ): string {
+	const componentSeparator = applySeparator(
+		config.options.componentSeparator,
+		theme,
+	);
+	const sectionSeparator = applySeparator(
+		config.options.sectionSeparator,
+		theme,
+	);
 	const left: string[] = [];
 	const right: string[] = [];
 	for (const key of Object.keys(config.sections).sort()) {
@@ -18,12 +45,12 @@ export function renderStatusline(
 			if (text !== "") parts.push(text);
 		}
 		if (parts.length === 0) continue;
-		const section = parts.join(config.options.componentSeparator);
+		const section = parts.join(componentSeparator);
 		if (key < "n") left.push(section);
 		else right.push(section);
 	}
-	const leftText = left.join(config.options.sectionSeparator);
-	const rightText = right.join(config.options.sectionSeparator);
+	const leftText = left.join(sectionSeparator);
+	const rightText = right.join(sectionSeparator);
 	if (rightText === "") return truncateToWidth(leftText, width);
 	if (leftText === "") {
 		const pad = width - visibleWidth(rightText);

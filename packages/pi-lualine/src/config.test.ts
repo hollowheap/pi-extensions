@@ -37,8 +37,8 @@ describe("normalizeConfig", () => {
 		});
 		expect(diagnostics).toEqual([]);
 		expect(config.options).toEqual({
-			componentSeparator: "|",
-			sectionSeparator: " / ",
+			componentSeparator: { text: "|" },
+			sectionSeparator: { text: " / " },
 			gitIntervalMs: 1000,
 		});
 		expect(config.sections.b).toEqual([{ type: "cwd", depth: 2 }]);
@@ -69,6 +69,40 @@ describe("normalizeConfig", () => {
 		});
 		expect(config.options).toEqual(defaultConfig().options);
 		expect(diagnostics).toHaveLength(2);
+	});
+
+	it("accepts styled separators with theme colors and hex values", () => {
+		const { config, diagnostics } = normalizeConfig({
+			options: {
+				componentSeparator: { text: "|", fg: "dim", bold: true },
+				sectionSeparator: { text: "", bg: "#1a1b26" },
+			},
+		});
+		expect(diagnostics).toEqual([]);
+		expect(config.options.componentSeparator).toEqual({
+			text: "|",
+			fg: "dim",
+			bold: true,
+		});
+		expect(config.options.sectionSeparator.text).toBe("");
+		expect(config.options.sectionSeparator.bg).toEqual({
+			kind: "rgb",
+			r: 26,
+			g: 27,
+			b: 38,
+		});
+	});
+
+	it("drops invalid separator styling with diagnostics", () => {
+		const { config, diagnostics } = normalizeConfig({
+			options: {
+				componentSeparator: { text: "|", fg: "nope", bg: "dim", bold: "yes" },
+				sectionSeparator: 7,
+			},
+		});
+		expect(config.options.componentSeparator).toEqual({ text: "|" });
+		expect(config.options.sectionSeparator).toEqual({ text: "  " });
+		expect(diagnostics).toHaveLength(4);
 	});
 });
 

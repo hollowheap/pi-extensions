@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
 		disposeFooter();
 		owner = ctx.sessionManager;
 		if (ctx.mode !== "tui") return;
-		ctx.ui.setFooter((tui, _theme, footerData) => {
+		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
 			diffCache = createGitDiffCache(
 				defaultGitRunner,
@@ -79,17 +79,22 @@ export default function (pi: ExtensionAPI) {
 				dispose: cleanup,
 				invalidate() {},
 				render(width: number): string[] {
-					const line = renderStatusline(width, config, {
-						cwd: ctx.cwd,
-						homeDir: homedir(),
-						modelId: ctx.model?.id,
-						branch: footerData.getGitBranch(),
-						tokens: sumTokens(ctx),
-						contextPercent: ctx.getContextUsage()?.percent ?? null,
-						busy,
-						now: new Date(),
-						gitDiff: diffCache.get(ctx.cwd),
-					});
+					const line = renderStatusline(
+						width,
+						config,
+						{
+							cwd: ctx.cwd,
+							homeDir: homedir(),
+							modelId: ctx.model?.id,
+							branch: footerData.getGitBranch(),
+							tokens: sumTokens(ctx),
+							contextPercent: ctx.getContextUsage()?.percent ?? null,
+							busy,
+							now: new Date(),
+							gitDiff: diffCache.get(ctx.cwd),
+						},
+						theme,
+					);
 					return line === "" ? [] : [line];
 				},
 			};
