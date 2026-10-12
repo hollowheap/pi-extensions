@@ -53,7 +53,12 @@ export function createDashboard(
   }
 
   return {
-    lines: () => fitLines(lines, config.width),
+    lines: () =>
+      fitLines(
+        lines,
+        config.width,
+        config.source.kind === "ascii" ? "center" : "left",
+      ),
     refresh,
     start(renderRequest: () => void) {
       requestRender = renderRequest;

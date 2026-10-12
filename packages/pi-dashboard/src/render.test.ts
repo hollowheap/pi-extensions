@@ -8,6 +8,13 @@ describe("fitLines", () => {
     expect(fitLines(["hi"], 5).map((line) => visibleWidth(line))).toEqual([5]);
   });
 
+  it("centers lines when asked", () => {
+    expect(fitLines(["hi"], 5, "center")).toEqual([" hi  "]);
+    expect(fitLines(["hi"], 6, "center")).toEqual(["  hi  "]);
+    expect(
+      fitLines(["hi"], 6, "center").map((line) => visibleWidth(line)),
+    ).toEqual([6]);
+  });
   it("truncates wide lines without exceeding the width", () => {
     const [line] = fitLines(["0123456789"], 4);
     expect(visibleWidth(line)).toBeLessThanOrEqual(4);

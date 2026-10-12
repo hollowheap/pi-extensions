@@ -1,6 +1,6 @@
 # pi-dashboard
 
-Replaces the startup header with a dashboard: built-in ASCII art by default, custom art, or the output of a command re-run on an interval. Every line is padded or truncated to one fixed character width.
+Replaces the startup header with a dashboard: built-in ASCII art by default, custom art, or the output of a command re-run on an interval. Every line is padded or truncated to one fixed character width; art lines are centered, command output stays left-aligned.
 
 ## Try it
 

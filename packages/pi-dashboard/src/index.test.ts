@@ -90,7 +90,7 @@ describe("createDashboard", () => {
       { width: 5, intervalMs: 50, source: { kind: "ascii", lines: ["hi"] } },
       deps,
     );
-    expect(controller.lines()).toEqual(["hi   "]);
+    expect(controller.lines()).toEqual([" hi  "]);
     await controller.refresh();
     expect(deps.run).not.toHaveBeenCalled();
     const renderRequest = vi.fn();
