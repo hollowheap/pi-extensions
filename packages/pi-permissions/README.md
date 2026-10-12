@@ -41,4 +41,13 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 
 Pi names its search tools `find` and `grep`; the `fd`/`rg` names are accepted too. `bash` is deliberately unchecked: it can still write outside allowed paths until bash rules exist. Other tools pass through untouched.
 
+## Built-in tools
+
+The package also registers permission-enforcing `fd` and `rg` tools for projects whose rules allow reading:
+
+- `fd` — `pattern` (glob, required), `path` (optional, defaults to working directory), `max_results` (1–500, default 100). Runs the `fd` binary with `--glob`, drops denied paths, returns root-relative paths newest first.
+- `rg` — `pattern` (regex, required), `path` (optional), `glob` (optional file filter), `max_results` (1–500, default 100). Runs the `rg` binary, drops matches from denied files, returns `path:line:text` lines cut to 300 characters.
+
+Both run their binary with an argument array and no shell, and fail with a clear error when the binary is not installed. The `tool_call` hook still gates their search root first; per-result filtering applies on top, so usable searches need `allow read` rules.
+
 Without a rules file (or with an unreadable one) the extension warns once and allows everything, so fresh projects keep working until rules are written.

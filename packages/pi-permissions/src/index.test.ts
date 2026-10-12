@@ -9,6 +9,7 @@ function createMockPi() {
 		on: vi.fn(
 			(_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
 		),
+		registerTool: vi.fn(),
 	};
 }
 
@@ -55,11 +56,14 @@ const EXAMPLE_RULES = JSON.stringify({
 });
 
 describe("pi-permissions extension", () => {
-	it("registers only a tool_call hook and no tools", () => {
+	it("registers the tool_call hook and the fd/rg tools", () => {
 		const pi = createMockPi();
 		extension(pi as never);
 		expect(pi.on).toHaveBeenCalledTimes(1);
 		expect(pi.on.mock.calls[0][0]).toBe("tool_call");
+		expect(pi.registerTool).toHaveBeenCalledTimes(2);
+		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
+		expect(names).toEqual(["fd", "rg"]);
 	});
 
 	it("blocks src writes but allows spec and plan writes", () => {
