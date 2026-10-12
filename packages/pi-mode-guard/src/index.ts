@@ -41,7 +41,8 @@ const TOOL_TAGS: Record<string, Tag> = {
   fd: "search",
   rg: "search",
   ls: "search",
-  powershell: "bash",
+  bash: "shell",
+  powershell: "shell",
 };
 
 function readPathArg(input: unknown): string | undefined {
@@ -121,7 +122,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "bash" || event.toolName === "powershell") {
+    const tag: Tag | undefined = TOOL_TAGS[event.toolName];
+    if (tag === "shell") {
       const verdict = checkBash(readCommandArg(event.input), loadRules(ctx));
       if (!verdict.allowed) {
         return {
@@ -131,7 +133,6 @@ export default function (pi: ExtensionAPI) {
       }
       return undefined;
     }
-    const tag: Tag | undefined = TOOL_TAGS[event.toolName];
     const cwd = effectiveCwd(ctx);
     if (cwd !== ctx.cwd) {
       const record = event.input as Record<string, unknown>;
@@ -143,10 +144,7 @@ export default function (pi: ExtensionAPI) {
         record.path = resolve(cwd, record.path);
       }
     }
-    const raw =
-      tag === "shell"
-        ? readCommandArg(event.input)
-        : (readPathArg(event.input) ?? ".");
+    const raw = readPathArg(event.input) ?? ".";
     if (tag === undefined) return requestApproval(event.toolName, raw, ctx);
     const mode = getMode(ctx.sessionManager);
     const base = loadRules(ctx);

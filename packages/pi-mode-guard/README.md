@@ -39,7 +39,7 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 | `write`, `edit` | `edit` | file path |
 | `read` | `read` | file path |
 | `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
-| `bash`, `powershell` | allowlist (`bash` tag) | command name + argument prefix |
+| `bash`, `powershell` | allowlist (`shell` tag) | command name + argument prefix |
 
 Pi ships `find`, `grep`, and `ls` in core but they are opt-in — default sessions only have `read`, `bash`, `edit`, `write` active, which is why this package also provides its own always-available `fd`/`rg` below.
 
@@ -52,14 +52,14 @@ Bash is denied by default; only commands named in the rules file run:
 ```json
 {
   "rules": [
-    "allow bash git status",
-    "allow bash rg",
-    "allow bash ls"
+    "allow shell git status",
+    "allow shell rg",
+    "allow shell ls"
   ]
 }
 ```
 
-Each rule names a command plus an optional argument prefix (`allow bash git status` permits `git status --short` but not `git log`). Commands chained with `&&`, `||`, `;`, or `|` are split and every part needs its own allow rule. A part is denied when it has no matching rule, and always denied when it uses `sh`, `bash`, `zsh`, `eval`, `xargs`, `env`, `sudo`, `tee`, or `dd` (even if allowed), contains a redirect (`>`, `>>`), or contains `$(` or backticks. Allowed commands run without asking; per-call approvals arrive with prompt 7. Bash output over 4000 characters is cut to the first 3000 and last 1000 with a cut count line. File paths are never checked for shell commands — the allowlist is the only gate, and it covers `bash` and `powershell` alike.
+Each rule names a command plus an optional argument prefix (`allow shell git status` permits `git status --short` but not `git log`). Commands chained with `&&`, `||`, `;`, or `|` are split and every part needs its own allow rule. A part is denied when it has no matching rule, and always denied when it uses `sh`, `bash`, `zsh`, `eval`, `xargs`, `env`, `sudo`, `tee`, or `dd` (even if allowed), contains a redirect (`>`, `>>`), or contains `$(` or backticks. Allowed commands run without asking; per-call approvals arrive with prompt 7. Bash output over 4000 characters is cut to the first 3000 and last 1000 with a cut count line. File paths are never checked for shell commands — the allowlist is the only gate, and it covers `bash` and `powershell` alike.
 
 ## /cd
 

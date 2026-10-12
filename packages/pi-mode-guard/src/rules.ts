@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-export type Tag = "edit" | "read" | "search" | "shell" | "bash";
+export type Tag = "edit" | "read" | "search" | "shell";
 export type Effect = "allow" | "deny";
 export type Verdict = "allow" | "deny" | "ask";
 

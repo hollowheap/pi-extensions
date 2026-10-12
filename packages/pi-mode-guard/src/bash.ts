@@ -41,7 +41,7 @@ function ruleMatches(rule: Rule, name: string, rest: string): boolean {
 export function checkBash(command: string, rules: Rule[]): BashVerdict {
   const parts = splitParts(command);
   if (parts.length === 0) return { allowed: false, reason: "empty command" };
-  const relevant = rules.filter((rule) => rule.tag === "bash");
+  const relevant = rules.filter((rule) => rule.tag === "shell");
   for (const part of parts) {
     const words = part.split(/\s+/);
     const name = basename(words[0]);

@@ -163,7 +163,7 @@ describe("pi-mode-guard extension", () => {
 
   it("runs allowlisted bash without asking", async () => {
     const { ctx, call } = setupProject(
-      JSON.stringify({ rules: ["allow bash echo"] }),
+      JSON.stringify({ rules: ["allow shell echo"] }),
     );
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
@@ -171,7 +171,7 @@ describe("pi-mode-guard extension", () => {
 
   it("gates powershell with the same allowlist", async () => {
     const { ctx, call } = setupProject(
-      JSON.stringify({ rules: ["allow bash Get-ChildItem"] }),
+      JSON.stringify({ rules: ["allow shell Get-ChildItem"] }),
     );
     await expect(
       call("powershell", { command: "Get-ChildItem ." }),
@@ -585,7 +585,7 @@ describe("/mode command", () => {
 
   it("runs writes and allowlisted bash silently in allow-edits", async () => {
     const { ctx, mode, hook } = setupMode(
-      JSON.stringify({ rules: ["allow edit *", "allow bash cargo"] }),
+      JSON.stringify({ rules: ["allow edit *", "allow shell cargo"] }),
     );
     await mode("allow-edits");
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();

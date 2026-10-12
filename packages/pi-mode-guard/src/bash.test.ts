@@ -15,7 +15,7 @@ function rules(patterns: string[]): Rule[] {
 
 describe("checkBash", () => {
   it("allows listed commands with and without argument prefixes", () => {
-    const allow = rules(["allow bash git status", "allow bash rg"]);
+    const allow = rules(["allow shell git status", "allow shell rg"]);
     expect(checkBash("git status", allow)).toEqual({ allowed: true });
     expect(checkBash("git status --short", allow)).toEqual({ allowed: true });
     expect(checkBash("rg foo", allow)).toEqual({ allowed: true });
@@ -23,14 +23,18 @@ describe("checkBash", () => {
   });
 
   it("denies unlisted commands", () => {
-    expect(checkBash("sl", rules(["allow bash ls"])).allowed).toBe(false);
-    expect(checkBash("sl", rules(["allow bash ls"])).reason).toContain(
+    expect(checkBash("sl", rules(["allow shell ls"])).allowed).toBe(false);
+    expect(checkBash("sl", rules(["allow shell ls"])).reason).toContain(
       "no allow rule",
     );
   });
 
   it("denies dangerous names even when allowed", () => {
-    const allow = rules(["allow bash sh", "allow bash ls", "allow bash sudo"]);
+    const allow = rules([
+      "allow shell sh",
+      "allow shell ls",
+      "allow shell sudo",
+    ]);
     expect(checkBash("sh -c 'echo hi'", allow).allowed).toBe(false);
     expect(checkBash("/bin/sh -c 'echo hi'", allow).allowed).toBe(false);
     expect(checkBash("sudo ls", allow).allowed).toBe(false);
@@ -39,7 +43,7 @@ describe("checkBash", () => {
   });
 
   it("denies redirects and command substitution", () => {
-    const allow = rules(["allow bash echo"]);
+    const allow = rules(["allow shell echo"]);
     expect(checkBash("echo hi > out", allow).reason).toContain("redirect");
     expect(checkBash("echo hi >> out", allow).reason).toContain("redirect");
     expect(checkBash("echo $(date)", allow).reason).toContain("substitution");
@@ -48,7 +52,7 @@ describe("checkBash", () => {
   });
 
   it("denies chains with one bad part", () => {
-    const allow = rules(["allow bash git status", "allow bash ls"]);
+    const allow = rules(["allow shell git status", "allow shell ls"]);
     expect(checkBash("git status && sl", allow).allowed).toBe(false);
     expect(checkBash("git status; git log", allow).allowed).toBe(false);
     expect(checkBash("git status || sl", allow).allowed).toBe(false);
@@ -57,13 +61,13 @@ describe("checkBash", () => {
   });
 
   it("honors explicit deny rules", () => {
-    const withDeny = rules(["allow bash ls", "deny bash ls /tmp"]);
+    const withDeny = rules(["allow shell ls", "deny shell ls /tmp"]);
     expect(checkBash("ls /home/u", withDeny)).toEqual({ allowed: true });
     expect(checkBash("ls /tmp/x", withDeny).reason).toContain("denied by rule");
   });
 
   it("denies empty commands and matches names exactly", () => {
-    const allow = rules(["allow bash git"]);
+    const allow = rules(["allow shell git"]);
     expect(checkBash("", allow).allowed).toBe(false);
     expect(checkBash("   ", allow).allowed).toBe(false);
     expect(checkBash("Git status", allow).allowed).toBe(false);
