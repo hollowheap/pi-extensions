@@ -262,7 +262,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.registerCommand("mode", {
     description:
-      "Show or switch the plan/approval mode (plan, ask, allow-edits, autopilot)",
+      "Show or switch the plan/approval mode (plan, ask, edit, autopilot)",
     handler: async (args, ctx) => {
       const raw = args.trim().toLowerCase();
       if (raw === "") {
@@ -271,7 +271,7 @@ export default function (pi: ExtensionAPI) {
       }
       if (!isMode(raw)) {
         ctx.ui.notify(
-          `pi-mode-guard: unknown mode: ${args.trim()} (plan, ask, allow-edits, autopilot)`,
+          `pi-mode-guard: unknown mode: ${args.trim()} (plan, ask, edit, autopilot)`,
           "error",
         );
         return;

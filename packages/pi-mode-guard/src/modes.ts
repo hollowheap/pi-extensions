@@ -1,13 +1,13 @@
 import { relative, resolve, sep } from "node:path";
 import type { Tag, Verdict } from "./rules.js";
 
-// TODO(provisional names): plan, ask, allow-edits, autopilot.
-export type Mode = "plan" | "ask" | "allow-edits" | "autopilot";
+// TODO(provisional names): plan, ask, edit, autopilot.
+export type Mode = "plan" | "ask" | "edit" | "autopilot";
 
 const MODES: ReadonlySet<string> = new Set([
   "plan",
   "ask",
-  "allow-edits",
+  "edit",
   "autopilot",
 ]);
 
@@ -44,7 +44,7 @@ export function applyMode(
   switch (mode) {
     case "ask":
       return verdict;
-    case "allow-edits":
+    case "edit":
       if (tag === "edit") return verdict;
       if (tag === "shell") return "ask";
       return verdict;

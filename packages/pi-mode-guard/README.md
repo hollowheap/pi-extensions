@@ -69,13 +69,13 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 
 ## Modes
 
-`/mode [plan|ask|allow-edits|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected.
+`/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected.
 
 | mode | writes (`edit`) |
 |---|---|
 | `plan` | only `artifacts/plan.md` + `artifacts/specs.md`, always asks; everything else denied |
 | `ask` (default) | normal allow/deny/ask flow |
-| `allow-edits` | allowed writes run silently |
+| `edit` | allowed writes run silently |
 | `autopilot` | allowed writes run silently |
 
 Shell commands ignore modes: the allowlist decides, and per-call approvals arrive with prompt 7.

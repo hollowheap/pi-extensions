@@ -583,11 +583,11 @@ describe("/mode command", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
 
-  it("runs writes and allowlisted bash silently in allow-edits", async () => {
+  it("runs writes and allowlisted bash silently in edit", async () => {
     const { ctx, mode, hook } = setupMode(
       JSON.stringify({ rules: ["allow edit *", "allow shell cargo"] }),
     );
-    await mode("allow-edits");
+    await mode("edit");
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
     await expect(
       hook("bash", { command: "cargo test" }),
@@ -595,11 +595,11 @@ describe("/mode command", () => {
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("always asks for plan writes, even in allow-edits", async () => {
+  it("always asks for plan writes, even in edit", async () => {
     const { ctx, mode, hook } = setupMode(
       JSON.stringify({ rules: ["allow edit *"] }),
     );
-    await mode("allow-edits");
+    await mode("edit");
     await expect(
       hook("write", { path: "artifacts/plan.md" }),
     ).resolves.toBeUndefined();

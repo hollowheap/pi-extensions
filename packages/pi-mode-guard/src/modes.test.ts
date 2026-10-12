@@ -12,7 +12,7 @@ import {
   setTokenCap,
 } from "./modes.js";
 
-const MODES: Mode[] = ["plan", "ask", "allow-edits", "autopilot"];
+const MODES: Mode[] = ["plan", "ask", "edit", "autopilot"];
 
 describe("applyMode", () => {
   it("lets deny beat every mode", () => {
@@ -35,11 +35,11 @@ describe("applyMode", () => {
     expect(applyMode("ask", "shell", "allow", false)).toBe("allow");
   });
 
-  it("runs edits silently but still asks shell in allow-edits", () => {
-    expect(applyMode("allow-edits", "edit", "allow", false)).toBe("allow");
-    expect(applyMode("allow-edits", "edit", "ask", false)).toBe("ask");
-    expect(applyMode("allow-edits", "shell", "allow", false)).toBe("ask");
-    expect(applyMode("allow-edits", "shell", "ask", false)).toBe("ask");
+  it("runs edits silently but still asks shell in edit", () => {
+    expect(applyMode("edit", "edit", "allow", false)).toBe("allow");
+    expect(applyMode("edit", "edit", "ask", false)).toBe("ask");
+    expect(applyMode("edit", "shell", "allow", false)).toBe("ask");
+    expect(applyMode("edit", "shell", "ask", false)).toBe("ask");
   });
 
   it("runs edits and shell silently in autopilot", () => {
