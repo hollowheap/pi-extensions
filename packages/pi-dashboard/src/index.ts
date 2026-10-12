@@ -22,24 +22,50 @@ export interface DashboardController {
   stop: () => void;
 }
 
-export function createDashboard(
-  config: DashboardConfig,
+interface SectionController {
+  lines: () => string[];
+  refresh: () => Promise<void>;
+  start: (requestRender: () => void) => void;
+  stop: () => void;
+}
+
+function headerSection(
+  ascii: string[],
+  width: number,
+  gap: number,
+): SectionController {
+  const fitted = () => {
+    const lines = fitLines(ascii, width, "center");
+    for (let i = 0; i < gap; i++) lines.push("");
+    return lines;
+  };
+  return {
+    lines: fitted,
+    refresh: () => Promise.resolve(),
+    start: (_requestRender: () => void) => undefined,
+    stop: () => undefined,
+  };
+}
+
+function terminalSection(
+  command: string,
+  args: string[],
+  intervalMs: number,
+  width: number,
+  gap: number,
   deps: DashboardDeps,
-): DashboardController {
-  let lines: string[] =
-    config.source.kind === "ascii" ? [...config.source.lines] : [];
+): SectionController {
+  let lines: string[] = [];
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
   let warned = false;
   let requestRender: (() => void) | undefined;
 
   async function refresh(): Promise<void> {
-    if (config.source.kind !== "command" || running) return;
+    if (running) return;
     running = true;
     try {
-      lines = splitOutput(
-        await deps.run(config.source.command, config.source.args, undefined),
-      );
+      lines = splitOutput(await deps.run(command, args, undefined));
     } catch (error) {
       lines = [error instanceof Error ? error.message : String(error)];
       if (!warned) {
@@ -53,21 +79,50 @@ export function createDashboard(
   }
 
   return {
-    lines: () =>
-      fitLines(
-        lines,
-        config.width,
-        config.source.kind === "ascii" ? "center" : "left",
-      ),
+    lines: () => {
+      const fitted = fitLines(lines, width, "left");
+      for (let i = 0; i < gap; i++) fitted.push("");
+      return fitted;
+    },
     refresh,
     start(renderRequest: () => void) {
       requestRender = renderRequest;
-      if (config.source.kind !== "command" || timer !== undefined) return;
-      timer = setInterval(() => void refresh(), config.intervalMs);
+      if (timer !== undefined) return;
+      timer = setInterval(() => void refresh(), intervalMs);
     },
     stop() {
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
+    },
+  };
+}
+
+export function createDashboard(
+  config: DashboardConfig,
+  deps: DashboardDeps,
+): DashboardController {
+  const sections = config.sections.map((section) =>
+    section.type === "header"
+      ? headerSection(section.ascii, config.width, section.gap)
+      : terminalSection(
+          section.command,
+          section.args,
+          section.intervalMs,
+          config.width,
+          section.gap,
+          deps,
+        ),
+  );
+  return {
+    lines: () => sections.flatMap((section) => section.lines()),
+    refresh: async () => {
+      await Promise.all(sections.map((section) => section.refresh()));
+    },
+    start: (requestRender) => {
+      for (const section of sections) section.start(requestRender);
+    },
+    stop: () => {
+      for (const section of sections) section.stop();
     },
   };
 }

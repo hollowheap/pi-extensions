@@ -32,10 +32,9 @@ describe("default banner", () => {
         1,
       );
     }
-    expect(defaultConfig().source).toEqual({
-      kind: "ascii",
-      lines: [...DEFAULT_ART],
-    });
+    expect(defaultConfig().sections).toEqual([
+      { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
+    ]);
   });
 });
 
@@ -46,66 +45,93 @@ describe("normalizeConfig", () => {
     expect(diagnostics).toHaveLength(1);
   });
 
-  it("validates width and intervalMs", () => {
-    const { config, diagnostics } = normalizeConfig({
-      width: 80,
-      intervalMs: 5000,
-    });
+  it("validates width", () => {
+    const { config, diagnostics } = normalizeConfig({ width: 80 });
     expect(diagnostics).toEqual([]);
     expect(config.width).toBe(80);
-    expect(config.intervalMs).toBe(5000);
     for (const bad of [
       { width: 5 },
       { width: 600 },
       { width: 80.5 },
       { width: "x" },
-      { intervalMs: 0 },
-      { intervalMs: -1 },
-      { intervalMs: "x" },
     ]) {
       expect(normalizeConfig(bad).diagnostics).toHaveLength(1);
     }
   });
 
-  it("accepts ascii and command sources", () => {
-    const ascii = normalizeConfig({ source: { ascii: ["hi"] } });
-    expect(ascii.diagnostics).toEqual([]);
-    expect(ascii.config.source).toEqual({ kind: "ascii", lines: ["hi"] });
-    const command = normalizeConfig({
-      source: { command: "/bin/echo", args: ["hi"] },
-    });
-    expect(command.diagnostics).toEqual([]);
-    expect(command.config.source).toEqual({
-      kind: "command",
-      command: "/bin/echo",
-      args: ["hi"],
-    });
-  });
-
-  it("prefers command when both sources are given", () => {
+  it("accepts header and terminal sections", () => {
     const { config, diagnostics } = normalizeConfig({
-      source: { ascii: ["hi"], command: "/bin/echo" },
+      width: 40,
+      sections: [
+        { type: "header", ascii: ["hi"], gap: 1 },
+        {
+          type: "terminal",
+          command: "/bin/echo",
+          args: ["hi"],
+          intervalMs: 5000,
+        },
+      ],
     });
-    expect(config.source).toEqual({
-      kind: "command",
-      command: "/bin/echo",
-      args: [],
-    });
-    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics).toEqual([]);
+    expect(config.sections).toEqual([
+      { type: "header", ascii: ["hi"], gap: 1 },
+      {
+        type: "terminal",
+        command: "/bin/echo",
+        args: ["hi"],
+        intervalMs: 5000,
+        gap: 0,
+      },
+    ]);
   });
 
-  it("falls back to the banner on invalid sources", () => {
-    for (const source of [
-      "nope",
-      { command: "" },
-      { args: ["hi"] },
-      { ascii: "hi" },
-      { ascii: [7] },
-      {},
-    ]) {
-      const { config } = normalizeConfig({ source });
-      expect(config.source.kind).toBe("ascii");
-    }
+  it("treats typeless sections as headers", () => {
+    const { config, diagnostics } = normalizeConfig({ sections: [{}] });
+    expect(diagnostics).toEqual([]);
+    expect(config.sections).toEqual([
+      { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
+    ]);
+  });
+
+  it("defaults header art and terminal timing", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: [{ type: "header" }, { type: "terminal", command: "x" }],
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.sections).toEqual([
+      { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
+      { type: "terminal", command: "x", args: [], intervalMs: 30000, gap: 0 },
+    ]);
+  });
+
+  it("skips invalid sections with diagnostics", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: ["nope", { type: "mystery" }, { type: "terminal" }],
+    });
+    expect(config.sections).toEqual([]);
+    expect(diagnostics).toHaveLength(3);
+  });
+
+  it("falls back per field inside sections", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: [
+        { type: "header", ascii: "hi", gap: -1 },
+        { type: "terminal", command: "x", args: "hi", intervalMs: 0 },
+      ],
+    });
+    expect(config.sections).toEqual([
+      { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
+      { type: "terminal", command: "x", args: [], intervalMs: 30000, gap: 0 },
+    ]);
+    expect(diagnostics).toHaveLength(4);
+  });
+
+  it("flags stale top-level source keys", () => {
+    const { diagnostics } = normalizeConfig({
+      source: { ascii: ["hi"] },
+      intervalMs: 50,
+    });
+    expect(diagnostics).toHaveLength(2);
   });
 });
 

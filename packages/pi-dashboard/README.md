@@ -21,14 +21,22 @@ Create `<agentDir>/dashboard.json` (`~/.pi/agent/dashboard.json`). Missing file 
 ```json
 {
   "width": 60,
-  "intervalMs": 30000,
-  "source": { "command": "/home/u/bin/status", "args": ["--short"] }
+  "sections": [
+    { "type": "header" },
+    {
+      "type": "terminal",
+      "command": "/home/u/bin/status",
+      "args": ["--short"],
+      "intervalMs": 30000,
+      "gap": 1
+    }
+  ]
 }
 ```
 
 - `width`: fixed line width, an integer from 10 to 500 (default `60`).
-- `intervalMs`: re-run period for command sources, a positive number (default `30000`). Art sources never re-run.
-- `source.ascii`: custom art lines, shown verbatim.
-- `source.command` + `source.args`: executable path plus argument array — no shell. A command wins when both sources are given. Failures render as one error line and warn once.
+- `header`: static art lines, centered. Omitting `ascii` shows the built-in banner.
+- `terminal`: runs `command` with `args` (executable path plus argument array — no shell) and shows its output left-aligned, re-run every `intervalMs` (positive number, default `30000`). Failures render as one error line and warn once.
+- `gap`: blank lines after the section (default `0`). Unknown section types are skipped with a warning.
 
 Commands run with your full user permissions. Review any dashboard command before installing it from a third party.

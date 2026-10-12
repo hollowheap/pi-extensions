@@ -87,10 +87,13 @@ describe("createDashboard", () => {
   it("serves ascii lines without running anything", async () => {
     const deps = fakeDeps("");
     const controller = createDashboard(
-      { width: 5, intervalMs: 50, source: { kind: "ascii", lines: ["hi"] } },
+      {
+        width: 5,
+        sections: [{ type: "header", ascii: ["hi"], gap: 1 }],
+      },
       deps,
     );
-    expect(controller.lines()).toEqual([" hi  "]);
+    expect(controller.lines()).toEqual([" hi  ", ""]);
     await controller.refresh();
     expect(deps.run).not.toHaveBeenCalled();
     const renderRequest = vi.fn();
@@ -104,8 +107,9 @@ describe("createDashboard", () => {
     const controller = createDashboard(
       {
         width: 5,
-        intervalMs: 50,
-        source: { kind: "command", command: "x", args: [] },
+        sections: [
+          { type: "terminal", command: "x", args: [], intervalMs: 50, gap: 0 },
+        ],
       },
       deps,
     );
@@ -118,13 +122,31 @@ describe("createDashboard", () => {
     controller.stop();
   });
 
+  it("stacks sections with gaps", async () => {
+    const deps = fakeDeps("b\n");
+    const controller = createDashboard(
+      {
+        width: 4,
+        sections: [
+          { type: "header", ascii: ["a"], gap: 1 },
+          { type: "terminal", command: "x", args: [], intervalMs: 50, gap: 0 },
+        ],
+      },
+      deps,
+    );
+    await controller.refresh();
+    expect(controller.lines()).toEqual([" a  ", "", "b   "]);
+    controller.stop();
+  });
+
   it("shows failures once and keeps the message", async () => {
     const notify = vi.fn();
     const controller = createDashboard(
       {
         width: 40,
-        intervalMs: 50,
-        source: { kind: "command", command: "x", args: [] },
+        sections: [
+          { type: "terminal", command: "x", args: [], intervalMs: 50, gap: 0 },
+        ],
       },
       {
         run: async () => {
@@ -151,8 +173,15 @@ describe("createDashboard", () => {
       const controller = createDashboard(
         {
           width: 5,
-          intervalMs: 10,
-          source: { kind: "command", command: "x", args: [] },
+          sections: [
+            {
+              type: "terminal",
+              command: "x",
+              args: [],
+              intervalMs: 10,
+              gap: 0,
+            },
+          ],
         },
         fakeDeps(""),
       );
@@ -172,12 +201,15 @@ describe("createDashboard", () => {
     const controller = createDashboard(
       {
         width: 10,
-        intervalMs: 50,
-        source: {
-          kind: "command",
-          command: process.execPath,
-          args: ["-e", "console.log('hi')"],
-        },
+        sections: [
+          {
+            type: "terminal",
+            command: process.execPath,
+            args: ["-e", "console.log('hi')"],
+            intervalMs: 50,
+            gap: 0,
+          },
+        ],
       },
       {
         run: (command, args, signal) =>
