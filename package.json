@@ -1,42 +1,42 @@
 {
-	"name": "my-pi-extensions",
-	"version": "0.0.0",
-	"private": true,
-	"type": "module",
-	"description": "Monorepo of Pi coding agent extensions",
-	"license": "MIT",
-	"engines": {
-		"node": ">=22.19.0"
-	},
-	"keywords": ["pi-package"],
-	"workspaces": ["packages/*"],
-	"pi": {
-		"extensions": [
-			"./packages/pi-statusline/src/index.ts",
-			"./packages/pi-permissions/src/index.ts",
-			"./packages/pi-question/src/index.ts"
-		]
-	},
-	"scripts": {
-		"build": "tsc -b",
-		"typecheck": "tsc --noEmit",
-		"test": "vitest run",
-		"lint": "biome check .",
-		"lint:fix": "biome check --write .",
-		"clean": "tsc -b --clean && rm -rf node_modules packages/*/node_modules",
-		"new": "node scripts/new-extension.mjs"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^1.9.4",
-		"@types/node": "^22.10.0",
-		"typescript": "^5.7.0",
-		"vitest": "^3.0.0"
-	},
-	"peerDependencies": {
-		"@earendil-works/pi-agent-core": "*",
-		"@earendil-works/pi-ai": "*",
-		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*",
-		"typebox": "*"
-	}
+  "name": "my-pi-extensions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo of Pi coding agent extensions",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "workspaces": ["packages/*"],
+  "pi": {
+    "extensions": [
+      "./packages/pi-statusline/src/index.ts",
+      "./packages/pi-permissions/src/index.ts",
+      "./packages/pi-question/src/index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "clean": "tsc -b --clean && rm -rf node_modules packages/*/node_modules",
+    "new": "node scripts/new-extension.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
 }
