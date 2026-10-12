@@ -14,3 +14,9 @@
 ## Open work
 
 - Publish: claim scope, then `npm publish --workspace <pkg> --access public` per package.
+
+## Backlog (bottom)
+
+- Package split (deferred per YAGNI): slim guard core exposing a mode API, with `pi-modes`, `pi-budgets`, and `pi-autopilot` extending it. Budget and cap stay internal but packaged as a shared library so custom limits can build on them. Verdict extension via mutable-envelope events; no cross-package imports.
+- `pi-tools` candidate home for `fd`, `rg`, and maybe `/cd` (placement undecided, see TODO in `pi-mode-guard`).
+- Custom budget limits on top of the shared budget/cap API, e.g. a daily limit counted in dollars instead of tokens (`usage.cost` is already reported per response).

@@ -196,6 +196,7 @@ export default function (pi: ExtensionAPI) {
     );
     ctx.abort();
   });
+  // TODO: /cd may move to a utility package (e.g. pi-tools alongside fd/rg); placement undecided.
   pi.registerCommand("cd", {
     description:
       "Change the working directory for file tools (stays inside the project root)",
