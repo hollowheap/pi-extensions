@@ -1,7 +1,7 @@
 import type { Theme, ThemeStyle } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { BUILTINS, type ComponentContext } from "./components.js";
-import type { LualineConfig, ResolvedSeparator } from "./config.js";
+import type { ResolvedSeparator, StatuslineConfig } from "./config.js";
 
 export function applySeparator(
 	separator: ResolvedSeparator,
@@ -22,7 +22,7 @@ export function applySeparator(
 
 export function renderStatusline(
 	width: number,
-	config: LualineConfig,
+	config: StatuslineConfig,
 	ctx: ComponentContext,
 	theme: Theme,
 ): string {

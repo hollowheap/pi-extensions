@@ -16,20 +16,20 @@ export interface ResolvedSeparator {
 	bold?: boolean;
 }
 
-export interface LualineOptions {
+export interface StatuslineOptions {
 	componentSeparator: ResolvedSeparator;
 	sectionSeparator: ResolvedSeparator;
 	gitIntervalMs: number;
 }
 
-export interface LualineConfig {
-	options: LualineOptions;
+export interface StatuslineConfig {
+	options: StatuslineOptions;
 	sections: Record<string, ComponentSpec[]>;
 }
 
-export const CONFIG_FILE_NAME = "lualine.json";
+export const CONFIG_FILE_NAME = "pi-statusline.json";
 
-export function defaultOptions(): LualineOptions {
+export function defaultOptions(): StatuslineOptions {
 	return {
 		componentSeparator: { text: " " },
 		sectionSeparator: { text: "  " },
@@ -37,7 +37,7 @@ export function defaultOptions(): LualineOptions {
 	};
 }
 
-export function defaultConfig(): LualineConfig {
+export function defaultConfig(): StatuslineConfig {
 	return {
 		options: defaultOptions(),
 		sections: {
@@ -168,7 +168,7 @@ export function normalizeSeparator(
 function readSeparatorOption(
 	source: Record<string, unknown>,
 	key: "componentSeparator" | "sectionSeparator",
-	config: LualineOptions,
+	config: StatuslineOptions,
 	diagnostics: string[],
 ): void {
 	const value = source[key];
@@ -182,7 +182,7 @@ function readSeparatorOption(
 }
 
 export function normalizeConfig(input: unknown): {
-	config: LualineConfig;
+	config: StatuslineConfig;
 	diagnostics: string[];
 } {
 	const diagnostics: string[] = [];
@@ -268,7 +268,7 @@ export function normalizeConfig(input: unknown): {
 }
 
 export function loadConfig(agentDir: string): {
-	config: LualineConfig;
+	config: StatuslineConfig;
 	diagnostics: string[];
 	path: string;
 } {

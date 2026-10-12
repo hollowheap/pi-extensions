@@ -1,24 +1,24 @@
-# pi-lualine
+# pi-statusline
 
 Lualine-style configurable statusline footer for the Pi coding agent. Define `sections.a` through `sections.z`, each a list of `{ "type", ...options }` components. Sections `a`–`m` pin to the left, `n`–`z` pin to the right.
 
 ## Try it
 
 ```bash
-pi -e ./packages/pi-lualine
+pi -e ./packages/pi-statusline
 ```
 
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-lualine
+pi install npm:@my-scope/pi-statusline
 ```
 
-Do not enable another footer extension (e.g. `pi-statusline`) at the same time; the last one to load wins.
+Do not enable another footer extension at the same time; the last one to load wins.
 
 ## Configure
 
-Create `<agentDir>/lualine.json` (`~/.pi/agent/lualine.json`). Missing file falls back to the default below; problems are reported once per session and fall back per-field.
+Create `<agentDir>/pi-statusline.json` (`~/.pi/agent/pi-statusline.json`). Missing file falls back to the default below; problems are reported once per session and fall back per-field.
 
 ```json
 {

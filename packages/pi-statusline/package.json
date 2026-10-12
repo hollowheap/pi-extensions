@@ -1,5 +1,5 @@
 {
-	"name": "@my-scope/pi-lualine",
+	"name": "@my-scope/pi-statusline",
 	"version": "0.1.0",
 	"type": "module",
 	"description": "Lualine-style configurable statusline footer for the Pi coding agent",

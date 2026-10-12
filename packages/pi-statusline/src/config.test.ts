@@ -109,16 +109,16 @@ describe("normalizeConfig", () => {
 describe("loadConfig", () => {
 	it("returns defaults when no config file exists", () => {
 		const { config, diagnostics } = loadConfig(
-			join(tmpdir(), "pi-lualine-missing"),
+			join(tmpdir(), "pi-statusline-missing"),
 		);
 		expect(config).toEqual(defaultConfig());
 		expect(diagnostics).toEqual([]);
 	});
 
 	it("loads and normalizes a config file", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-lualine-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		writeFileSync(
-			join(dir, "lualine.json"),
+			join(dir, "pi-statusline.json"),
 			JSON.stringify({ sections: { a: [{ type: "mode" }] } }),
 		);
 		const { config, diagnostics } = loadConfig(dir);
@@ -127,8 +127,8 @@ describe("loadConfig", () => {
 	});
 
 	it("reports invalid JSON and falls back to defaults", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-lualine-"));
-		writeFileSync(join(dir, "lualine.json"), "{oops");
+		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+		writeFileSync(join(dir, "pi-statusline.json"), "{oops");
 		const { config, diagnostics } = loadConfig(dir);
 		expect(config).toEqual(defaultConfig());
 		expect(diagnostics).toHaveLength(1);

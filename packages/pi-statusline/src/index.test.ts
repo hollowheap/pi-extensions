@@ -46,7 +46,7 @@ function installFooter(
 	return factory(tui, {}, footerData);
 }
 
-describe("pi-lualine extension", () => {
+describe("pi-statusline extension", () => {
 	it("installs a footer on session_start in tui mode", () => {
 		const pi = createMockPi();
 		extension(pi as never);

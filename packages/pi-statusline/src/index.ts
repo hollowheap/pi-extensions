@@ -12,7 +12,7 @@ import {
 	createGitDiffCache,
 	defaultGitRunner,
 } from "./components.js";
-import { type LualineConfig, defaultConfig, loadConfig } from "./config.js";
+import { type StatuslineConfig, defaultConfig, loadConfig } from "./config.js";
 import { renderStatusline } from "./render.js";
 
 function sumTokens(ctx: ExtensionContext): TokenTotals {
@@ -29,7 +29,7 @@ function sumTokens(ctx: ExtensionContext): TokenTotals {
 }
 
 export default function (pi: ExtensionAPI) {
-	let config: LualineConfig = defaultConfig();
+	let config: StatuslineConfig = defaultConfig();
 	let busy = false;
 	let diffCache: GitDiffCache = createGitDiffCache(
 		defaultGitRunner,
@@ -107,7 +107,7 @@ export default function (pi: ExtensionAPI) {
 		busy = false;
 		if (loaded.diagnostics.length > 0) {
 			ctx.ui.notify(
-				`pi-lualine: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
+				`pi-statusline: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
 				"warning",
 			);
 		}
