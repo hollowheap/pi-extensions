@@ -200,7 +200,10 @@ export default function (pi: ExtensionAPI) {
       }
       const rules = loadRules(ctx);
       if (check(rules, abs, "read", ctx.cwd) === "deny") {
-        ctx.ui.notify(`pi-mode-guard: directory denied by rules: ${raw}`, "error");
+        ctx.ui.notify(
+          `pi-mode-guard: directory denied by rules: ${raw}`,
+          "error",
+        );
         return;
       }
       setCwdOverride(ctx.sessionManager, abs);
@@ -260,7 +263,7 @@ export default function (pi: ExtensionAPI) {
       }
       if (!/^\d+$/.test(raw)) {
         ctx.ui.notify(
-          `pi-mode-guard: budget cap must be a whole number of tokens`,
+          "pi-mode-guard: budget cap must be a whole number of tokens",
           "error",
         );
         return;
@@ -268,7 +271,7 @@ export default function (pi: ExtensionAPI) {
       const next = Number(raw);
       if (!Number.isSafeInteger(next) || next <= 0) {
         ctx.ui.notify(
-          `pi-mode-guard: budget cap must be greater than 0`,
+          "pi-mode-guard: budget cap must be greater than 0",
           "error",
         );
         return;

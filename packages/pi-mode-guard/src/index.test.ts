@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { getBudgetUsed } from "./budget.js";
 import extension from "./index.js";
 import { getMode, getTokenCap, setTokenCap } from "./modes.js";
-import { getBudgetUsed } from "./budget.js";
 
 function createMockPi() {
   return {
