@@ -10,6 +10,12 @@ export interface ComponentSpec {
   [option: string]: unknown;
 }
 
+export interface StyledComponentSpec extends ComponentSpec {
+  fg?: ThemeColor | Color;
+  bg?: ThemeBg | Color;
+  bold?: boolean;
+}
+
 export interface ResolvedSeparator {
   text: string;
   fg?: ThemeColor | Color;
@@ -25,7 +31,7 @@ export interface StatuslineOptions {
 
 export interface StatuslineConfig {
   options: StatuslineOptions;
-  sections: Record<string, ComponentSpec[]>;
+  sections: Record<string, StyledComponentSpec[]>;
 }
 
 export const CONFIG_FILE_NAME = "statusline.json";
@@ -168,6 +174,32 @@ export function normalizeSeparator(
   return { text, fg, bg, bold };
 }
 
+const STYLE_KEYS: ReadonlySet<string> = new Set(["type", "fg", "bg", "bold"]);
+
+export function normalizeComponentStyle(
+  spec: StyledComponentSpec,
+  label: string,
+  diagnostics: string[],
+): StyledComponentSpec {
+  const styled: StyledComponentSpec = { type: spec.type };
+  for (const [option, value] of Object.entries(spec)) {
+    if (!STYLE_KEYS.has(option)) styled[option] = value;
+  }
+  if (spec.fg !== undefined) {
+    const fg = resolveColor(spec.fg, FG_TOKENS, `${label}.fg`, diagnostics);
+    if (fg !== undefined) styled.fg = fg;
+  }
+  if (spec.bg !== undefined) {
+    const bg = resolveColor(spec.bg, BG_TOKENS, `${label}.bg`, diagnostics);
+    if (bg !== undefined) styled.bg = bg;
+  }
+  if (typeof spec.bold === "boolean") styled.bold = spec.bold;
+  else if (spec.bold !== undefined) {
+    diagnostics.push(`${label}.bold must be a boolean; ignoring`);
+  }
+  return styled;
+}
+
 function readSeparatorOption(
   source: Record<string, unknown>,
   key: "componentSeparator" | "sectionSeparator",
@@ -234,7 +266,7 @@ export function normalizeConfig(input: unknown): {
     diagnostics.push("sections must be an object; using defaults");
     return { config, diagnostics };
   }
-  const normalized: Record<string, ComponentSpec[]> = {};
+  const normalized: Record<string, StyledComponentSpec[]> = {};
   for (const [key, value] of Object.entries(sections)) {
     if (!/^[a-z]$/.test(key)) {
       diagnostics.push(
@@ -248,8 +280,8 @@ export function normalizeConfig(input: unknown): {
       );
       continue;
     }
-    const specs: ComponentSpec[] = [];
-    for (const item of value) {
+    const specs: StyledComponentSpec[] = [];
+    for (const [index, item] of value.entries()) {
       if (!isRecord(item) || typeof item.type !== "string") {
         diagnostics.push(
           `ignoring entry in sections.${key}: each component needs a string "type"`,
@@ -262,7 +294,13 @@ export function normalizeConfig(input: unknown): {
         );
         continue;
       }
-      specs.push({ ...item, type: item.type });
+      specs.push(
+        normalizeComponentStyle(
+          { ...item, type: item.type },
+          `sections.${key}[${index}]`,
+          diagnostics,
+        ),
+      );
     }
     normalized[key] = specs;
   }

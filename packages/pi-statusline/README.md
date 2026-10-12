@@ -66,6 +66,17 @@ Configuring `sections` replaces the defaults entirely. Unknown component types a
 
 ## Built-in components
 
+Every component also accepts `fg`, `bg`, and `bold` with the same values as separators, so components are never rendered plain unless configured that way:
+
+```json
+{
+  "sections": {
+    "a": [{ "type": "mode", "fg": "bright-white", "bg": "blue", "bold": true }],
+    "z": [{ "type": "clock", "fg": "dim" }]
+  }
+}
+```
+
 | type | shows | options |
 |---|---|---|
 | `mode` | `WORKING` while the agent runs, else `IDLE` | `idleText`, `workingText` |

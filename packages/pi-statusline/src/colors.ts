@@ -1,3 +1,9 @@
+import type {
+  Theme,
+  ThemeBg,
+  ThemeColor,
+  ThemeStyle,
+} from "@earendil-works/pi-coding-agent";
 import { type Color, indexedColor, parseColor } from "@earendil-works/pi-tui";
 
 const NAMED_COLORS: Record<string, number> = {
@@ -37,5 +43,34 @@ export function parseColorSpec(value: string | number): Color | undefined {
     return parseColor(value);
   } catch {
     return undefined;
+  }
+}
+
+export interface TextStyle {
+  fg?: ThemeColor | Color;
+  bg?: ThemeBg | Color;
+  bold?: boolean;
+}
+
+export function styleText(
+  text: string,
+  style: TextStyle,
+  theme: Theme,
+): string {
+  if (
+    style.fg === undefined &&
+    style.bg === undefined &&
+    style.bold === undefined
+  ) {
+    return text;
+  }
+  const options: ThemeStyle = {};
+  if (style.fg !== undefined) options.fg = style.fg;
+  if (style.bg !== undefined) options.bg = style.bg;
+  if (style.bold !== undefined) options.bold = style.bold;
+  try {
+    return theme.style(text, options);
+  } catch {
+    return text;
   }
 }

@@ -123,4 +123,16 @@ describe("renderStatusline", () => {
     renderStatusline(40, config, ctx(), theme(style));
     expect(style).not.toHaveBeenCalled();
   });
+
+  it("styles components carrying fg, bg, or bold", () => {
+    const config = defaultConfig();
+    config.sections = {
+      a: [{ type: "text", text: "L", fg: "dim" }],
+      z: [{ type: "text", text: "R" }],
+    };
+    const style = vi.fn((text: string) => `[${text}]`);
+    const line = renderStatusline(10, config, ctx(), theme(style));
+    expect(style).toHaveBeenCalledWith("L", { fg: "dim" });
+    expect(line).toContain("[L]");
+  });
 });

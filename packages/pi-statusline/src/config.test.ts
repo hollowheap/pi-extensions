@@ -123,6 +123,20 @@ describe("normalizeConfig", () => {
     });
   });
 
+  it("resolves component colors and drops invalid styling", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: {
+        a: [{ type: "mode", fg: "green", bold: true }],
+        b: [{ type: "cwd", fg: "nope", bg: "selectedBg", bold: "yes" }],
+      },
+    });
+    expect(config.sections.a).toEqual([
+      { type: "mode", fg: { kind: "indexed", index: 2 }, bold: true },
+    ]);
+    expect(config.sections.b).toEqual([{ type: "cwd", bg: "selectedBg" }]);
+    expect(diagnostics).toHaveLength(2);
+  });
+
   it("drops invalid separator styling with diagnostics", () => {
     const { config, diagnostics } = normalizeConfig({
       options: {

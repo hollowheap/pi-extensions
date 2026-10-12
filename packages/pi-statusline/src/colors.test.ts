@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { parseColorSpec } from "./colors.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
+import { type TextStyle, parseColorSpec, styleText } from "./colors.js";
 
 describe("parseColorSpec", () => {
   it("resolves starship named colors", () => {
@@ -41,5 +42,44 @@ describe("parseColorSpec", () => {
   it("rejects unknown values", () => {
     expect(parseColorSpec("nope")).toBeUndefined();
     expect(parseColorSpec("")).toBeUndefined();
+  });
+});
+
+describe("styleText", () => {
+  function theme(style?: (text: string, options: unknown) => string): Theme {
+    return { style: style ?? ((text: string) => text) } as unknown as Theme;
+  }
+
+  it("returns plain text without styling", () => {
+    const style = vi.fn((text: string) => `[${text}]`);
+    expect(styleText("hi", {}, theme(style))).toBe("hi");
+    expect(style).not.toHaveBeenCalled();
+  });
+
+  it("applies fg, bg, and bold through the theme", () => {
+    const style = vi.fn((text: string) => `[${text}]`);
+    expect(
+      styleText(
+        "hi",
+        { fg: "dim", bg: "selectedBg", bold: true },
+        theme(style),
+      ),
+    ).toBe("[hi]");
+    expect(style).toHaveBeenCalledWith("hi", {
+      fg: "dim",
+      bg: "selectedBg",
+      bold: true,
+    });
+  });
+
+  it("falls back to plain text when styling throws", () => {
+    const throwing = {
+      style: () => {
+        throw new Error("Unknown theme color: nope");
+      },
+    } as unknown as Theme;
+    expect(
+      styleText("hi", { fg: "nope" } as unknown as TextStyle, throwing),
+    ).toBe("hi");
   });
 });

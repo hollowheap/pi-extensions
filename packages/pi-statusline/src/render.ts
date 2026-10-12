@@ -1,5 +1,6 @@
-import type { Theme, ThemeStyle } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { styleText } from "./colors.js";
 import { BUILTINS, type ComponentContext } from "./components.js";
 import type { ResolvedSeparator, StatuslineConfig } from "./config.js";
 
@@ -7,17 +8,7 @@ export function applySeparator(
   separator: ResolvedSeparator,
   theme: Theme,
 ): string {
-  if (
-    separator.fg === undefined &&
-    separator.bg === undefined &&
-    separator.bold === undefined
-  )
-    return separator.text;
-  const options: ThemeStyle = {};
-  if (separator.fg !== undefined) options.fg = separator.fg;
-  if (separator.bg !== undefined) options.bg = separator.bg;
-  if (separator.bold !== undefined) options.bold = separator.bold;
-  return theme.style(separator.text, options);
+  return styleText(separator.text, separator, theme);
 }
 
 export function renderStatusline(
@@ -42,7 +33,7 @@ export function renderStatusline(
       const render = BUILTINS[spec.type];
       if (!render) continue;
       const text = render(spec, ctx);
-      if (text !== "") parts.push(text);
+      if (text !== "") parts.push(styleText(text, spec, theme));
     }
     if (parts.length === 0) continue;
     const section = parts.join(componentSeparator);
