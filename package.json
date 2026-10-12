@@ -14,7 +14,8 @@
     "extensions": [
       "./packages/pi-statusline/src/index.ts",
       "./packages/pi-mode-guard/src/index.ts",
-      "./packages/pi-question/src/index.ts"
+      "./packages/pi-question/src/index.ts",
+      "./packages/pi-dashboard/src/index.ts"
     ]
   },
   "scripts": {
