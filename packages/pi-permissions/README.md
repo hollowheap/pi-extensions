@@ -41,6 +41,12 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 
 Pi names its search tools `find` and `grep`; the `fd`/`rg` names are accepted too. `bash` is deliberately unchecked: it can still write outside allowed paths until bash rules exist. Other tools pass through untouched.
 
+## /cd
+
+`/cd <path>` changes the working directory for file tools. The path must be an existing directory inside the project root and pass `check(rules, path, "read")`; otherwise an error is shown and the directory is unchanged. The project root never changes. Bare `/cd` resets to the project root.
+
+Pi exposes no API to move the session directory, so this rewrites relative `path` arguments of `read`, `write`, `edit`, `find`, `grep`, `ls`, `fd`, and `rg` tool calls to the new directory before the rules verdict. Absolute paths and `bash` are unaffected. The new directory is shown via `setStatus("cwd", …)` for status lines that render extension statuses, plus a one-line notification.
+
 ## Built-in tools
 
 The package also registers permission-enforcing `fd` and `rg` tools for projects whose rules allow reading:

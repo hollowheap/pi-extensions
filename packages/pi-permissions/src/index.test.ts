@@ -10,6 +10,7 @@ function createMockPi() {
 			(_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
 		),
 		registerTool: vi.fn(),
+		registerCommand: vi.fn(),
 	};
 }
 
@@ -56,14 +57,15 @@ const EXAMPLE_RULES = JSON.stringify({
 });
 
 describe("pi-permissions extension", () => {
-	it("registers the tool_call hook and the fd/rg tools", () => {
+	it("registers tools, lifecycle hooks, and the cd command", () => {
 		const pi = createMockPi();
 		extension(pi as never);
-		expect(pi.on).toHaveBeenCalledTimes(1);
-		expect(pi.on.mock.calls[0][0]).toBe("tool_call");
-		expect(pi.registerTool).toHaveBeenCalledTimes(2);
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
 		expect(names).toEqual(["fd", "rg"]);
+		const events = pi.on.mock.calls.map(([event]) => event).sort();
+		expect(events).toEqual(["session_shutdown", "session_start", "tool_call"]);
+		const commands = pi.registerCommand.mock.calls.map(([name]) => name);
+		expect(commands).toEqual(["cd"]);
 	});
 
 	it("blocks src writes but allows spec and plan writes", () => {
@@ -180,5 +182,127 @@ describe("pi-permissions extension", () => {
 			expect.stringContaining("not valid JSON"),
 			"warning",
 		);
+	});
+});
+
+const CD_RULES = JSON.stringify({
+	rules: [
+		"allow read *",
+		"allow write *",
+		"deny read secret/*",
+		"deny read secret",
+		"deny write secret/*",
+	],
+});
+
+function setupCd() {
+	const dir = mkdtempSync(join(tmpdir(), "pi-cd-"));
+	mkdirSync(join(dir, ".pi"), { recursive: true });
+	mkdirSync(join(dir, "sub"), { recursive: true });
+	mkdirSync(join(dir, "secret"), { recursive: true });
+	writeFileSync(join(dir, ".pi", "permissions.json"), CD_RULES);
+	const pi = createMockPi();
+	extension(pi as never);
+	const sessionManager = {};
+	const ctx = {
+		cwd: dir,
+		sessionManager,
+		ui: { notify: vi.fn(), setStatus: vi.fn() },
+	};
+	const handlers = Object.fromEntries(
+		pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+	);
+	const cd = Object.fromEntries(
+		pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+	);
+	return {
+		dir,
+		ctx,
+		cd: (args: string) => cd.cd.handler(args, ctx as never),
+		hook: (toolName: string, input: Record<string, unknown>) =>
+			handlers.tool_call(
+				{ type: "tool_call", toolCallId: "1", toolName, input } as never,
+				ctx as never,
+			),
+		restart: () => handlers.session_start(undefined as never, ctx as never),
+	};
+}
+
+describe("/cd command", () => {
+	it("changes to a valid directory inside the root", async () => {
+		const { dir, ctx, cd, hook } = setupCd();
+		await cd("sub");
+		expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", "sub");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining(join(dir, "sub")),
+		);
+		const input = { path: "x.ts" };
+		expect(hook("write", input)).toBeUndefined();
+		expect(input.path).toBe(join(dir, "sub", "x.ts"));
+	});
+
+	it("rejects paths outside the root and keeps the old directory", async () => {
+		const { dir, ctx, cd, hook } = setupCd();
+		await cd("sub");
+		await cd("../..");
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("outside project root"),
+			"error",
+		);
+		const input = { path: "x.ts" };
+		hook("write", input);
+		expect(input.path).toBe(join(dir, "sub", "x.ts"));
+	});
+
+	it("rejects missing directories", async () => {
+		const { ctx, cd, hook } = setupCd();
+		await cd("nope");
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("not a directory"),
+			"error",
+		);
+		expect(ctx.ui.setStatus).not.toHaveBeenCalled();
+		const input = { path: "x.ts" };
+		hook("write", input);
+		expect(input.path).toBe("x.ts");
+	});
+
+	it("rejects directories denied by the rules", async () => {
+		const { ctx, cd, hook } = setupCd();
+		await cd("secret");
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("denied by rules"),
+			"error",
+		);
+		const input = { path: "x.ts" };
+		hook("write", input);
+		expect(input.path).toBe("x.ts");
+	});
+
+	it("resets to the project root on empty input", async () => {
+		const { ctx, cd, hook } = setupCd();
+		await cd("sub");
+		await cd("   ");
+		expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("cwd", undefined);
+		const input = { path: "x.ts" };
+		hook("write", input);
+		expect(input.path).toBe("x.ts");
+	});
+
+	it("rewrites read paths without a verdict", async () => {
+		const { dir, cd, hook } = setupCd();
+		await cd("sub");
+		const input = { path: "x.ts" };
+		expect(hook("read", input)).toBeUndefined();
+		expect(input.path).toBe(join(dir, "sub", "x.ts"));
+	});
+
+	it("clears the override on session start", async () => {
+		const { cd, hook, restart } = setupCd();
+		await cd("sub");
+		restart();
+		const input = { path: "x.ts" };
+		hook("write", input);
+		expect(input.path).toBe("x.ts");
 	});
 });

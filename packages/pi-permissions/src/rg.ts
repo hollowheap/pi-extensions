@@ -2,7 +2,7 @@ import { relative, resolve, sep } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
-import { loadRules } from "./loader.js";
+import { effectiveCwd, loadRules } from "./loader.js";
 import { check } from "./rules.js";
 
 const RG_LINE = /^(.*):(\d+):(.*)$/;
@@ -47,7 +47,7 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const root = ctx.cwd;
-			const searchDir = resolve(root, params.path ?? ".");
+			const searchDir = resolve(effectiveCwd(ctx), params.path ?? ".");
 			const args = [
 				"--color=never",
 				"--no-heading",

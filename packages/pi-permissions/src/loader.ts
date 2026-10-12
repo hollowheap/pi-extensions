@@ -110,3 +110,28 @@ export function loadRules(ctx: ExtensionContext): Rule[] | undefined {
 	}
 	return cachedRules;
 }
+
+let overrideOwner: unknown;
+let overrideDir: string | undefined;
+
+export function setCwdOverride(owner: unknown, dir: string | undefined): void {
+	overrideOwner = owner;
+	overrideDir = dir;
+}
+
+export function clearCwdOverride(owner: unknown): void {
+	if (overrideOwner === owner) {
+		overrideOwner = undefined;
+		overrideDir = undefined;
+	}
+}
+
+export function effectiveCwd(ctx: {
+	cwd: string;
+	sessionManager: unknown;
+}): string {
+	if (overrideOwner === ctx.sessionManager && overrideDir !== undefined) {
+		return overrideDir;
+	}
+	return ctx.cwd;
+}
