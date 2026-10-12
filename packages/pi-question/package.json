@@ -1,0 +1,22 @@
+{
+	"name": "@my-scope/pi-question",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Ask the user one question and wait for the answer",
+	"license": "MIT",
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"keywords": ["pi-package"],
+	"files": ["src", "README.md"],
+	"pi": {
+		"extensions": ["./src/index.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": "*",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	}
+}
