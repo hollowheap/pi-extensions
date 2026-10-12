@@ -61,7 +61,7 @@ async function requestApproval(
   if (!ctx.hasUI) {
     return {
       block: true,
-      reason: `pi-guard: ${toolName} ${displayTarget(target)} needs approval (no UI)`,
+      reason: `pi-mode-guard: ${toolName} ${displayTarget(target)} needs approval (no UI)`,
     };
   }
   const approved = await ctx.ui.confirm(
@@ -71,7 +71,7 @@ async function requestApproval(
   if (!approved) {
     return {
       block: true,
-      reason: `pi-guard: ${toolName} ${displayTarget(target)} was not approved`,
+      reason: `pi-mode-guard: ${toolName} ${displayTarget(target)} was not approved`,
     };
   }
   return undefined;
@@ -111,7 +111,7 @@ export default function (pi: ExtensionAPI) {
     if (final === "deny") {
       return {
         block: true,
-        reason: `pi-guard: ${tag} access to ${displayTarget(raw)} is denied`,
+        reason: `pi-mode-guard: ${tag} access to ${displayTarget(raw)} is denied`,
       };
     }
     if (final === "ask") return requestApproval(event.toolName, raw, ctx);
@@ -133,7 +133,7 @@ export default function (pi: ExtensionAPI) {
       if (raw === "") {
         setCwdOverride(ctx.sessionManager, undefined);
         ctx.ui.setStatus("cwd", undefined);
-        ctx.ui.notify(`pi-guard: working directory ${ctx.cwd}`);
+        ctx.ui.notify(`pi-mode-guard: working directory ${ctx.cwd}`);
         return;
       }
       const abs = resolve(effectiveCwd(ctx), raw);
@@ -144,22 +144,22 @@ export default function (pi: ExtensionAPI) {
         isDir = false;
       }
       if (!isDir) {
-        ctx.ui.notify(`pi-guard: not a directory: ${raw}`, "error");
+        ctx.ui.notify(`pi-mode-guard: not a directory: ${raw}`, "error");
         return;
       }
       const rel = relative(ctx.cwd, abs);
       if (rel === ".." || rel.startsWith(`..${sep}`)) {
-        ctx.ui.notify(`pi-guard: outside project root: ${raw}`, "error");
+        ctx.ui.notify(`pi-mode-guard: outside project root: ${raw}`, "error");
         return;
       }
       const rules = loadRules(ctx);
       if (check(rules, abs, "read", ctx.cwd) === "deny") {
-        ctx.ui.notify(`pi-guard: directory denied by rules: ${raw}`, "error");
+        ctx.ui.notify(`pi-mode-guard: directory denied by rules: ${raw}`, "error");
         return;
       }
       setCwdOverride(ctx.sessionManager, abs);
       ctx.ui.setStatus("cwd", rel === "" ? "." : rel.split(sep).join("/"));
-      ctx.ui.notify(`pi-guard: working directory ${abs}`);
+      ctx.ui.notify(`pi-mode-guard: working directory ${abs}`);
     },
   });
   pi.registerCommand("mode", {
@@ -168,12 +168,12 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const raw = args.trim().toLowerCase();
       if (raw === "") {
-        ctx.ui.notify(`pi-guard: mode ${getMode(ctx.sessionManager)}`);
+        ctx.ui.notify(`pi-mode-guard: mode ${getMode(ctx.sessionManager)}`);
         return;
       }
       if (!isMode(raw)) {
         ctx.ui.notify(
-          `pi-guard: unknown mode: ${args.trim()} (plan, ask, allow-edits, autopilot)`,
+          `pi-mode-guard: unknown mode: ${args.trim()} (plan, ask, allow-edits, autopilot)`,
           "error",
         );
         return;
@@ -183,7 +183,7 @@ export default function (pi: ExtensionAPI) {
         getTokenCap(ctx.sessionManager) === undefined
       ) {
         ctx.ui.notify(
-          "pi-guard: autopilot refused: set a token cap first",
+          "pi-mode-guard: autopilot refused: set a token cap first",
           "error",
         );
         return;
@@ -191,11 +191,11 @@ export default function (pi: ExtensionAPI) {
       setMode(ctx.sessionManager, raw);
       if (raw === "autopilot") {
         ctx.ui.notify(
-          "pi-guard: autopilot on: write and bash run without asking",
+          "pi-mode-guard: autopilot on: write and bash run without asking",
           "warning",
         );
       } else {
-        ctx.ui.notify(`pi-guard: mode ${raw}`);
+        ctx.ui.notify(`pi-mode-guard: mode ${raw}`);
       }
     },
   });

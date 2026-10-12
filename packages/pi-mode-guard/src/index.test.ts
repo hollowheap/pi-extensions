@@ -37,7 +37,7 @@ function setupProject(
   };
   call: (toolName: string, input: unknown) => Promise<unknown>;
 } {
-  const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+  const dir = mkdtempSync(join(tmpdir(), "pi-mode-guard-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const pi = createMockPi();
@@ -71,7 +71,7 @@ const EXAMPLE_RULES = JSON.stringify({
   ],
 });
 
-describe("pi-guard extension", () => {
+describe("pi-mode-guard extension", () => {
   it("registers tools, lifecycle hooks, and the cd and mode commands", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -155,7 +155,7 @@ describe("pi-guard extension", () => {
   });
 
   it("blocks approval prompts without UI", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    const dir = mkdtempSync(join(tmpdir(), "pi-mode-guard-"));
     mkdirSync(join(dir, ".pi"), { recursive: true });
     writeFileSync(join(dir, ".pi", "permissions.json"), EXAMPLE_RULES);
     const pi = createMockPi();
@@ -205,7 +205,7 @@ describe("pi-guard extension", () => {
   });
 
   it("warns and asks when the rules file is missing", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    const dir = mkdtempSync(join(tmpdir(), "pi-mode-guard-"));
     const pi = createMockPi();
     extension(pi as never);
     const handler = toolCallHandler(pi);
@@ -232,7 +232,7 @@ describe("pi-guard extension", () => {
   });
 
   it("warns and asks when the rules file is invalid JSON", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    const dir = mkdtempSync(join(tmpdir(), "pi-mode-guard-"));
     mkdirSync(join(dir, ".pi"), { recursive: true });
     writeFileSync(join(dir, ".pi", "permissions.json"), "{oops");
     const pi = createMockPi();

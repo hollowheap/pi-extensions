@@ -1,5 +1,5 @@
 {
-  "name": "@my-scope/pi-guard",
+  "name": "@my-scope/pi-mode-guard",
   "version": "0.1.0",
   "type": "module",
   "description": "Allow/deny file tool paths against project rules for the Pi coding agent",

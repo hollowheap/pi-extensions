@@ -1,17 +1,17 @@
-# pi-guard
+# pi-mode-guard
 
 Checks tool calls against tagged allow/deny/ask rules. Anything unmatched asks the user for approval; `fd`/`rg` search tools and a `/cd` command are included.
 
 ## Try it
 
 ```bash
-pi -e ./packages/pi-guard
+pi -e ./packages/pi-mode-guard
 ```
 
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-guard
+pi install npm:@my-scope/pi-mode-guard
 ```
 
 ## Rules
