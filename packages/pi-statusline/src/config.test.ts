@@ -45,7 +45,7 @@ describe("normalizeConfig", () => {
   });
 
   it("reports bad section keys, non-array sections, malformed entries, and unknown types", () => {
-    const { diagnostics } = normalizeConfig({
+    const { config, diagnostics } = normalizeConfig({
       sections: {
         A: [{ type: "cwd" }],
         ab: [{ type: "cwd" }],
@@ -54,6 +54,18 @@ describe("normalizeConfig", () => {
       },
     });
     expect(diagnostics).toHaveLength(5);
+    expect(config.sections.c).toEqual([{ type: "cwd" }]);
+  });
+
+  it("falls back to defaults when no usable sections remain", () => {
+    const foreign = normalizeConfig({
+      sections: { lualine_a: [{ provider: "mode" }] },
+    });
+    expect(foreign.config).toEqual(defaultConfig());
+    expect(foreign.diagnostics).toHaveLength(2);
+    const empty = normalizeConfig({ sections: {} });
+    expect(empty.config).toEqual(defaultConfig());
+    expect(empty.diagnostics).toHaveLength(1);
   });
 
   it("replaces default sections when sections are configured", () => {

@@ -263,7 +263,11 @@ export function normalizeConfig(input: unknown): {
     }
     normalized[key] = specs;
   }
-  config.sections = normalized;
+  if (Object.values(normalized).every((specs) => specs.length === 0)) {
+    diagnostics.push("sections has no usable components; using defaults");
+  } else {
+    config.sections = normalized;
+  }
   return { config, diagnostics };
 }
 
