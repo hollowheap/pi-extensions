@@ -1,6 +1,11 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { type TextStyle, parseColorSpec, styleComponent, styleText } from "./colors.js";
+import {
+  type TextStyle,
+  parseColorSpec,
+  styleComponent,
+  styleText,
+} from "./colors.js";
 
 describe("parseColorSpec", () => {
   it("resolves starship named colors", () => {
@@ -113,7 +118,7 @@ describe("styleComponent", () => {
       calls.push({ text, options });
       return `(${text})`;
     });
-    const cyan = parseColorSpec("bright-cyan")!;
+    const cyan = parseColorSpec("bright-cyan");
     const result = styleComponent("main", { accent: cyan, icon: "" }, t);
     expect(result).toBe("()( )( main )()");
     expect(calls[0]).toEqual({ text: "", options: { fg: cyan } });
@@ -140,7 +145,7 @@ describe("styleComponent", () => {
       calls.push({ text, options });
       return `(${text})`;
     });
-    const magenta = parseColorSpec("bright-magenta")!;
+    const magenta = parseColorSpec("bright-magenta");
     const result = styleComponent("42%", { accent: magenta }, t);
     expect(result).toBe("()( 42% )()");
     expect(calls[0]).toEqual({ text: "", options: { fg: magenta } });

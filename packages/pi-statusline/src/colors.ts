@@ -130,7 +130,11 @@ export function styleComponent(
     style.icon !== undefined && style.icon !== ""
       ? styleText(
           `${style.icon} `,
-          { fg: toFg(iconFg, theme), bg: toBg(iconBg, theme), bold: style.bold },
+          {
+            fg: toFg(iconFg, theme),
+            bg: toBg(iconBg, theme),
+            bold: style.bold,
+          },
           theme,
         )
       : "";

@@ -144,12 +144,22 @@ describe("renderStatusline", () => {
       },
     });
     const style = vi.fn((text: string) => `[${text}]`);
-    const withBranch = renderStatusline(40, config, ctx({ branch: "feat" }), theme(style));
+    const withBranch = renderStatusline(
+      40,
+      config,
+      ctx({ branch: "feat" }),
+      theme(style),
+    );
     expect(withBranch).toContain("[][󰘧 ][ IDLE ][]");
     expect(withBranch).toContain("[][ ][ feat ][]");
 
     // When outside git repo, git_branch is null, so no dangling pill caps
-    const noBranch = renderStatusline(40, config, ctx({ branch: null }), theme(style));
+    const noBranch = renderStatusline(
+      40,
+      config,
+      ctx({ branch: null }),
+      theme(style),
+    );
     expect(noBranch).toContain("[][󰘧 ][ IDLE ][]");
     expect(noBranch).not.toContain("");
   });
