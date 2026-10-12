@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
+import { getMode, setTokenCap } from "./modes.js";
 
 function createMockPi() {
   return {
@@ -71,7 +72,7 @@ const EXAMPLE_RULES = JSON.stringify({
 });
 
 describe("pi-permissions extension", () => {
-  it("registers tools, lifecycle hooks, and the cd command", () => {
+  it("registers tools, lifecycle hooks, and the cd and mode commands", () => {
     const pi = createMockPi();
     extension(pi as never);
     const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
@@ -79,7 +80,7 @@ describe("pi-permissions extension", () => {
     const events = pi.on.mock.calls.map(([event]) => event).sort();
     expect(events).toEqual(["session_shutdown", "session_start", "tool_call"]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commands).toEqual(["cd"]);
+    expect(commands).toEqual(["cd", "mode"]);
   });
 
   it("blocks src writes but allows spec and plan writes", async () => {
@@ -392,5 +393,153 @@ describe("/cd command", () => {
     const input = { path: "x.ts" };
     await hook("write", input);
     expect(input.path).toBe("x.ts");
+  });
+});
+
+function setupMode(rulesFile: string) {
+  const dir = mkdtempSync(join(tmpdir(), "pi-mode-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  const pi = createMockPi();
+  extension(pi as never);
+  const sessionManager = {};
+  const ctx = {
+    cwd: dir,
+    sessionManager,
+    hasUI: true,
+    ui: {
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
+    },
+  };
+  const commands = Object.fromEntries(
+    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  );
+  const handlers = Object.fromEntries(
+    pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
+  return {
+    dir,
+    ctx,
+    mode: (args: string) => commands.mode.handler(args, ctx as never),
+    hook: (toolName: string, input: Record<string, unknown>) =>
+      handlers.tool_call(
+        { type: "tool_call", toolCallId: "1", toolName, input } as never,
+        ctx as never,
+      ) as Promise<unknown>,
+  };
+}
+
+describe("/mode command", () => {
+  it("rejects unknown modes", async () => {
+    const { ctx, mode } = setupMode('{"rules":[]}');
+    await mode("turbo");
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("unknown mode"),
+      "error",
+    );
+    expect(getMode(ctx.sessionManager)).toBe("ask");
+  });
+
+  it("allows plan writes and denies other writes in plan mode", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("plan");
+    expect(getMode(ctx.sessionManager)).toBe("plan");
+    await expect(
+      hook("write", { path: "artifacts/plan.md" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow write?",
+      "artifacts/plan.md",
+    );
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("denies plan writes again after leaving plan mode", async () => {
+    const { ctx, hook, mode } = setupMode(
+      JSON.stringify({ rules: ["deny edit *"] }),
+    );
+    await mode("plan");
+    await expect(
+      hook("write", { path: "artifacts/plan.md" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow write?",
+      "artifacts/plan.md",
+    );
+    await mode("ask");
+    await expect(hook("write", { path: "artifacts/plan.md" })).resolves.toEqual(
+      {
+        block: true,
+        reason: expect.stringContaining("denied"),
+      },
+    );
+  });
+
+  it("waits for approval before writes in ask", async () => {
+    const { ctx, hook } = setupMode('{"rules":[]}');
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+  });
+
+  it("runs writes silently but still asks bash in allow-edits", async () => {
+    const { ctx, mode, hook } = setupMode(
+      JSON.stringify({ rules: ["allow edit *", "allow shell *"] }),
+    );
+    await mode("allow-edits");
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      hook("bash", { command: "cargo test" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "cargo test");
+  });
+
+  it("always asks for plan writes, even in allow-edits", async () => {
+    const { ctx, mode, hook } = setupMode(
+      JSON.stringify({ rules: ["allow edit *"] }),
+    );
+    await mode("allow-edits");
+    await expect(
+      hook("write", { path: "artifacts/plan.md" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow write?",
+      "artifacts/plan.md",
+    );
+  });
+
+  it("refuses autopilot with no token cap set", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("autopilot");
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("set a token cap first"),
+      "error",
+    );
+    expect(getMode(ctx.sessionManager)).toBe("ask");
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+  });
+
+  it("blocks denied bash in autopilot", async () => {
+    const { ctx, mode, hook } = setupMode(
+      JSON.stringify({ rules: ["deny shell *"] }),
+    );
+    setTokenCap(ctx.sessionManager, 1000);
+    await mode("autopilot");
+    expect(getMode(ctx.sessionManager)).toBe("autopilot");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("autopilot on"),
+      "warning",
+    );
+    await expect(hook("bash", { command: "rm -rf /" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 });

@@ -51,6 +51,19 @@ Denied calls return `{ block: true, reason }`. Unmatched calls ask via a confirm
 
 Pi exposes no API to move the session directory, so this rewrites relative `path` arguments to the new directory before the rules verdict. Absolute paths are unaffected. The new directory is shown via `setStatus("cwd", …)` for status lines that render extension statuses, plus a one-line notification.
 
+## Modes
+
+`/mode [plan|ask|allow-edits|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected.
+
+| mode | writes (`edit`) | shell (`bash`) |
+|---|---|---|
+| `plan` | only `artifacts/plan.md` + `artifacts/specs.md`, always asks; everything else denied | allowlisted commands ask, everything else denied |
+| `ask` (default) | normal allow/deny/ask flow | normal flow |
+| `allow-edits` | allowed writes run silently | allowed commands still ask |
+| `autopilot` | allowed writes run silently | allowed commands run silently |
+
+Deny beats every mode: a denied call never runs and never asks. Entering `plan` appends `allow edit` rules for the two plan files in memory only (removed on exit), so planning works under deny-heavy configs. Writes to the plan files always ask, in every mode — accepting a plan is the approval dialog itself, and a rejection is never written anywhere. Switching to `autopilot` without a token cap is refused, and turning it on shows a chat warning.
+
 ## Built-in tools
 
 The package also registers permission-enforcing `fd` and `rg` tools for projects whose rules allow reading:
