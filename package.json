@@ -11,7 +11,10 @@
 	"keywords": ["pi-package"],
 	"workspaces": ["packages/*"],
 	"pi": {
-		"extensions": ["./packages/pi-hello/src/index.ts"]
+		"extensions": [
+			"./packages/pi-hello/src/index.ts",
+			"./packages/pi-lualine/src/index.ts"
+		]
 	},
 	"scripts": {
 		"build": "tsc -b",
