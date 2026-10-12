@@ -105,6 +105,24 @@ describe("normalizeConfig", () => {
     });
   });
 
+  it("accepts starship named and indexed colors in separators", () => {
+    const { config, diagnostics } = normalizeConfig({
+      options: {
+        componentSeparator: { text: "|", fg: "bright-red" },
+        sectionSeparator: { text: " ", bg: 27 },
+      },
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.options.componentSeparator.fg).toEqual({
+      kind: "indexed",
+      index: 9,
+    });
+    expect(config.options.sectionSeparator.bg).toEqual({
+      kind: "indexed",
+      index: 27,
+    });
+  });
+
   it("drops invalid separator styling with diagnostics", () => {
     const { config, diagnostics } = normalizeConfig({
       options: {

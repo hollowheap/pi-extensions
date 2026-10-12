@@ -62,7 +62,7 @@ Configuring `sections` replaces the defaults entirely. Unknown component types a
 }
 ```
 
-`fg` takes a foreground theme token (`dim`, `accent`, `muted`, …) or a `#rrggbb` color; `bg` takes a background token (`selectedBg`, `toolSuccessBg`, …) or a `#rrggbb` color. `bold` takes a boolean. Invalid values are ignored with a warning, so a typo never breaks rendering. Plain strings skip styling entirely.
+`fg` takes a foreground theme token (`dim`, `accent`, `muted`, …), a starship color (`red`, `bright-blue`, …), a 0–255 palette index, or a `#rrggbb` color; `bg` takes a background token (`selectedBg`, `toolSuccessBg`, …) or any of the same color forms. `bold` takes a boolean. Invalid values are ignored with a warning, so a typo never breaks rendering. Plain strings skip styling entirely.
 
 ## Built-in components
 

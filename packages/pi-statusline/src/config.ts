@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThemeBg, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { type Color, parseColor } from "@earendil-works/pi-tui";
+import type { Color } from "@earendil-works/pi-tui";
+import { parseColorSpec } from "./colors.js";
 import { BUILTINS } from "./components.js";
 
 export interface ComponentSpec {
@@ -128,14 +129,16 @@ function resolveColor<T extends string>(
   )
     return value as T;
   if (typeof value === "string" || typeof value === "number") {
-    try {
-      return parseColor(value);
-    } catch {
-      diagnostics.push(`${label} must be a theme color or hex value; ignoring`);
-      return undefined;
-    }
+    const color = parseColorSpec(value);
+    if (color !== undefined) return color;
+    diagnostics.push(
+      `${label} must be a theme color, starship color, or hex value; ignoring`,
+    );
+    return undefined;
   }
-  diagnostics.push(`${label} must be a theme color or hex value; ignoring`);
+  diagnostics.push(
+    `${label} must be a theme color, starship color, or hex value; ignoring`,
+  );
   return undefined;
 }
 
