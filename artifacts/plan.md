@@ -8,6 +8,8 @@
 - `pi-mode-guard` rules use tags (`edit`, `read`, `search`, `shell`); unmatched calls ask the user, unknown tools included. No default allow rules.
 - `pi-mode-guard` shell rules match the raw command text; unmatched shell calls ask. Approval prompts are the bash gate — no separate mechanism planned.
 - Plan mode constrains writes to `artifacts/plan.md` + `artifacts/specs.md` (artifacts skill; no `plans/` or `tasks/` dirs).
+- `/budget` sets the session token cap (autopilot gate); totals accumulate from `message_end` usage, over-cap aborts the next run.
+- Statusline extension layer runs over `pi.events` (`statusline:values` / `statusline:request`); providers `mode-guard` and `budgets`, no cross-package imports.
 
 ## Open work
 

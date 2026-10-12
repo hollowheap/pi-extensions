@@ -78,3 +78,7 @@ The package also registers permission-enforcing `fd` and `rg` tools for projects
 Both run their binary with an argument array and no shell, and fail with a clear error when the binary is not installed. The `tool_call` hook still gates their search root first; per-result filtering applies on top, so usable searches need `allow search` rules.
 
 Without a rules file (or with an unreadable one) the extension warns once and asks for approval on every gated call, so fresh projects keep working with oversight until rules are written.
+
+## Statusline values
+
+This package publishes `mode-guard` (current mode) and `budgets` (used/remaining tokens) values for statusline extensions over pi's shared event bus, following the protocol in `pi-statusline`'s README. No imports cross between the packages in either direction.

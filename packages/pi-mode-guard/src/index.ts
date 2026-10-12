@@ -90,9 +90,34 @@ function refreshBudget(ctx: ExtensionContext): void {
     getTokenCap(ctx.sessionManager),
   );
   ctx.ui.setStatus("budget", text === "" ? undefined : text);
+  publishValues(ctx.sessionManager);
+}
+
+interface EventSink {
+  emit(channel: string, data: unknown): void;
+}
+
+let eventSink: EventSink | undefined;
+let lastOwner: unknown;
+
+function publishValues(owner: unknown): void {
+  lastOwner = owner;
+  if (eventSink === undefined) return;
+  eventSink.emit("statusline:values", {
+    name: "mode-guard",
+    text: getMode(owner).toUpperCase(),
+  });
+  eventSink.emit("statusline:values", {
+    name: "budgets",
+    text: formatBudget(getBudgetUsed(owner), getTokenCap(owner)),
+  });
 }
 
 export default function (pi: ExtensionAPI) {
+  eventSink = pi.events;
+  pi.events.on("statusline:request", () => {
+    if (lastOwner !== undefined) publishValues(lastOwner);
+  });
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
   pi.on("tool_call", async (event, ctx) => {
@@ -246,6 +271,7 @@ export default function (pi: ExtensionAPI) {
       } else {
         ctx.ui.notify(`pi-mode-guard: mode ${raw}`);
       }
+      publishValues(ctx.sessionManager);
     },
   });
   pi.registerCommand("budget", {

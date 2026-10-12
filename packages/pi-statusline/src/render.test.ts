@@ -136,6 +136,29 @@ describe("renderStatusline", () => {
     expect(line).toContain("[L]");
   });
 
+  it("renders enabled extension values with styling", () => {
+    const config = defaultConfig();
+    config.sections = {
+      a: [{ type: "mode-guard", fg: "dim" }],
+      z: [{ type: "text", text: "R" }],
+    };
+    const style = vi.fn((text: string) => `[${text}]`);
+    const values = new Map([["mode-guard", "PLAN"]]);
+    const line = renderStatusline(20, config, ctx(), theme(style), values);
+    expect(style).toHaveBeenCalledWith("PLAN", { fg: "dim" });
+    expect(line).toContain("[PLAN]");
+  });
+
+  it("skips missing or disabled extension values", () => {
+    const config = defaultConfig();
+    config.sections = {
+      a: [{ type: "mode-guard" }, { type: "other" }],
+      z: [{ type: "text", text: "R" }],
+    };
+    const line = renderStatusline(10, config, ctx(), theme(), new Map());
+    expect(line).toBe("         R");
+  });
+
   it("renders pills with caps and skips empty components cleanly", () => {
     const { config } = normalizeConfig({
       sections: {

@@ -6,6 +6,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import {
+  BUILTINS,
   type GitDiffCache,
   type TokenTotals,
   clockIntervalMs,
@@ -28,6 +29,10 @@ function sumTokens(ctx: ExtensionContext): TokenTotals {
   return totals;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export default function (pi: ExtensionAPI) {
   let config: StatuslineConfig = defaultConfig();
   let busy = false;
@@ -39,6 +44,27 @@ export default function (pi: ExtensionAPI) {
   let requestRender: (() => void) | undefined;
   let cleanupFooter: (() => void) | undefined;
   let owner: ExtensionContext["sessionManager"] | undefined;
+  const values = new Map<string, string>();
+  pi.events.on("statusline:values", (data) => {
+    if (!isRecord(data)) return;
+    const { name, text } = data;
+    if (typeof name !== "string" || typeof text !== "string") return;
+    if (values.get(name) === text) return;
+    values.set(name, text);
+    requestRender?.();
+  });
+
+  function neededNames(): string[] {
+    const names = new Set<string>();
+    for (const specs of Object.values(config.sections)) {
+      for (const spec of specs) {
+        if (!(spec.type in BUILTINS) && config.extensions.includes(spec.type)) {
+          names.add(spec.type);
+        }
+      }
+    }
+    return [...names];
+  }
 
   function disposeFooter(): void {
     cleanupFooter?.();
@@ -67,6 +93,7 @@ export default function (pi: ExtensionAPI) {
           ? undefined
           : setInterval(() => tui.requestRender(), clockMs);
       diffCache.refresh(ctx.cwd);
+      pi.events.emit("statusline:request", { names: neededNames() });
       let disposed = false;
       const cleanup = () => {
         if (disposed) return;
@@ -94,6 +121,7 @@ export default function (pi: ExtensionAPI) {
               gitDiff: diffCache.get(ctx.cwd),
             },
             theme,
+            values,
           );
           return line === "" ? [] : [line];
         },

@@ -4,6 +4,8 @@ import { styleComponent, styleText } from "./colors.js";
 import { BUILTINS, type ComponentContext } from "./components.js";
 import type { ResolvedSeparator, StatuslineConfig } from "./config.js";
 
+const EMPTY_VALUES: ReadonlyMap<string, string> = new Map();
+
 export function applySeparator(
   separator: ResolvedSeparator,
   theme: Theme,
@@ -16,6 +18,7 @@ export function renderStatusline(
   config: StatuslineConfig,
   ctx: ComponentContext,
   theme: Theme,
+  extensions: ReadonlyMap<string, string> = EMPTY_VALUES,
 ): string {
   const componentSeparator = applySeparator(
     config.options.componentSeparator,
@@ -30,10 +33,14 @@ export function renderStatusline(
   for (const key of Object.keys(config.sections).sort()) {
     const parts: string[] = [];
     for (const spec of config.sections[key]) {
-      const render = BUILTINS[spec.type];
-      if (!render) continue;
-      const text = render(spec, ctx);
-      if (text !== "") parts.push(styleComponent(text, spec, theme));
+      const builtin = BUILTINS[spec.type];
+      if (builtin) {
+        const text = builtin(spec, ctx);
+        if (text !== "") parts.push(styleComponent(text, spec, theme));
+      } else if (config.extensions.includes(spec.type)) {
+        const text = extensions.get(spec.type) ?? "";
+        if (text !== "") parts.push(styleText(text, spec, theme));
+      }
     }
     if (parts.length === 0) continue;
     const section = parts.join(componentSeparator);

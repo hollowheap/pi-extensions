@@ -13,6 +13,10 @@ function createMockPi() {
     ),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    events: {
+      on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
+      emit: vi.fn((_channel: string, _data: unknown) => {}),
+    },
   };
 }
 
@@ -664,5 +668,94 @@ describe("/budget command", () => {
     await budget("5000");
     agentStart();
     expect(ctx.abort).toHaveBeenCalledTimes(1);
+  });
+});
+
+function setupProvider() {
+  const pi = createMockPi();
+  extension(pi as never);
+  const sessionManager = {};
+  const ctx = {
+    cwd: "/tmp/pi-prov",
+    sessionManager,
+    hasUI: true,
+    ui: {
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
+    },
+    abort: vi.fn(),
+  };
+  const handlers = Object.fromEntries(
+    pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
+  const commands = Object.fromEntries(
+    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  );
+  const requestEntry = pi.events.on.mock.calls.find(
+    ([channel]) => channel === "statusline:request",
+  );
+  expect(requestEntry).toBeDefined();
+  if (requestEntry === undefined) {
+    throw new Error("missing statusline:request subscription");
+  }
+  return {
+    pi,
+    ctx,
+    handlers,
+    commands,
+    request: requestEntry[1] as () => void,
+  };
+}
+
+describe("statusline values", () => {
+  it("publishes mode and budget values on session start", () => {
+    const { pi, ctx, handlers } = setupProvider();
+    handlers.session_start(undefined as never, ctx as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "ASK",
+    });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "budgets",
+      text: "",
+    });
+  });
+
+  it("republishes current values on statusline request", () => {
+    const { pi, ctx, handlers, request } = setupProvider();
+    handlers.session_start(undefined as never, ctx as never);
+    const calls = pi.events.emit.mock.calls.length;
+    request();
+    expect(pi.events.emit.mock.calls.length).toBeGreaterThan(calls);
+    expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "budgets",
+      text: "",
+    });
+  });
+
+  it("publishes the new mode after a switch", async () => {
+    const { pi, ctx, commands } = setupProvider();
+    await commands.mode.handler("plan", ctx as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "PLAN",
+    });
+  });
+
+  it("publishes budget totals", () => {
+    const { pi, ctx, handlers } = setupProvider();
+    setTokenCap(ctx.sessionManager, 1000);
+    handlers.message_end(
+      {
+        type: "message_end",
+        message: { role: "assistant", usage: { input: 60, output: 40 } },
+      } as never,
+      ctx as never,
+    );
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "budgets",
+      text: "100 used, 900 remaining",
+    });
   });
 });

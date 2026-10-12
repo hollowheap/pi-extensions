@@ -38,7 +38,10 @@ export interface StatuslineOptions {
 export interface StatuslineConfig {
   options: StatuslineOptions;
   sections: Record<string, StyledComponentSpec[]>;
+  extensions: string[];
 }
+
+export const DEFAULT_EXTENSIONS: readonly string[] = ["mode-guard", "budgets"];
 
 export const CONFIG_FILE_NAME = "statusline.json";
 
@@ -54,11 +57,12 @@ export function defaultConfig(): StatuslineConfig {
   return {
     options: defaultOptions(),
     sections: {
-      a: [{ type: "mode" }],
+      a: [{ type: "mode-guard" }],
       b: [{ type: "git_branch" }, { type: "cwd" }],
-      y: [{ type: "tokens" }, { type: "context" }],
+      y: [{ type: "tokens" }, { type: "context" }, { type: "budgets" }],
       z: [{ type: "model" }, { type: "clock" }],
     },
+    extensions: [...DEFAULT_EXTENSIONS],
   };
 }
 
@@ -308,6 +312,26 @@ export function normalizeConfig(input: unknown): {
     }
   }
   const sections = input.sections;
+  if (sections === undefined && input.extensions === undefined) {
+    return { config, diagnostics };
+  }
+  if (input.extensions !== undefined) {
+    if (!Array.isArray(input.extensions)) {
+      diagnostics.push("extensions must be an array of names; using defaults");
+    } else {
+      const names: string[] = [];
+      for (const entry of input.extensions) {
+        if (typeof entry !== "string" || entry === "") {
+          diagnostics.push(
+            "ignoring extension entry: must be a non-empty string",
+          );
+        } else {
+          names.push(entry);
+        }
+      }
+      config.extensions = names;
+    }
+  }
   if (sections === undefined) return { config, diagnostics };
   if (!isRecord(sections)) {
     diagnostics.push("sections must be an object; using defaults");
@@ -335,7 +359,7 @@ export function normalizeConfig(input: unknown): {
         );
         continue;
       }
-      if (!(item.type in BUILTINS)) {
+      if (!(item.type in BUILTINS) && !config.extensions.includes(item.type)) {
         diagnostics.push(
           `ignoring unknown component type "${item.type}" in sections.${key}`,
         );

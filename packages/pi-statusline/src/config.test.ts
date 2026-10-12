@@ -123,6 +123,32 @@ describe("normalizeConfig", () => {
     });
   });
 
+  it("enables allowlisted extension components", () => {
+    const { config, diagnostics } = normalizeConfig({
+      extensions: ["mode-guard"],
+      sections: { a: [{ type: "mode-guard", fg: "green" }] },
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.extensions).toEqual(["mode-guard"]);
+    expect(config.sections.a).toEqual([
+      { type: "mode-guard", fg: { kind: "indexed", index: 2 } },
+    ]);
+  });
+
+  it("drops extension types missing from the allowlist", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: { a: [{ type: "mystery" }] },
+    });
+    expect(config).toEqual(defaultConfig());
+    expect(diagnostics).toHaveLength(2);
+  });
+
+  it("rejects a non-array extensions field", () => {
+    const { config, diagnostics } = normalizeConfig({ extensions: "nope" });
+    expect(config.extensions).toEqual(["mode-guard", "budgets"]);
+    expect(diagnostics).toHaveLength(1);
+  });
+
   it("resolves component colors and drops invalid styling", () => {
     const { config, diagnostics } = normalizeConfig({
       sections: {

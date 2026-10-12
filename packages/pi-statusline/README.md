@@ -27,10 +27,11 @@ Create `<agentDir>/statusline.json` (`~/.pi/agent/statusline.json`). Missing fil
     "sectionSeparator": "  ",
     "gitIntervalMs": 5000
   },
+  "extensions": ["mode-guard", "budgets"],
   "sections": {
-    "a": [{ "type": "mode" }],
+    "a": [{ "type": "mode-guard" }],
     "b": [{ "type": "git_branch" }, { "type": "cwd" }],
-    "y": [{ "type": "tokens" }, { "type": "context" }],
+    "y": [{ "type": "tokens" }, { "type": "context" }, { "type": "budgets" }],
     "z": [{ "type": "model" }, { "type": "clock" }]
   }
 }
@@ -107,3 +108,24 @@ Components accept `accent` (and optional `icon`, `iconFg`, `iconBg`, `leftCap`, 
 When `accent` is set, components without output (e.g. `git_branch` outside a repo) are omitted entirely without leaving dangling caps.
 
 Empty output (e.g. `git_branch` outside a repo) is removed before joining, so separators never dangle.
+
+## Extension layer
+
+Other extensions can contribute named components without this package importing them. A section references one by `type`, and the top-level `extensions` array enables it — names missing from the array render nothing:
+
+```json
+{
+  "extensions": ["mode-guard"],
+  "sections": {
+    "a": [{ "type": "mode-guard", "fg": "green", "bold": true }]
+  }
+}
+```
+
+The protocol runs over pi's shared event bus, so neither side imports the other:
+
+- Providers emit `pi.events.emit("statusline:values", { name, text })` whenever a value changes (and once with the current snapshot on `session_start`).
+- This package emits `pi.events.emit("statusline:request", { names })` whenever it (re)installs the footer; providers answer by re-emitting their current values.
+- Payloads are `{ name: string, text: string }`; unknown shapes are ignored. Updates re-render the footer.
+
+`pi-mode-guard` provides `mode-guard` (current policy mode, uppercased) and `budgets` (`12,500 used, 87,500 remaining`, empty without a cap).
