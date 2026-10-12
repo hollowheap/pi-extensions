@@ -6,7 +6,7 @@ Monorepo of [Pi coding agent](https://pi.dev) extensions. Each package in `packa
 
 ```text
 packages/pi-statusline/   lualine-style configurable footer
-packages/pi-permissions/  path allow/deny rules + fd/rg search tools + /cd
+packages/pi-guard/       policy tags (edit/read/search/shell), ask-by-default approvals, modes, /cd, fd/rg
 packages/pi-question/     one-question user prompt tool
   package.json         name, version, `keywords: ["pi-package"]`, `pi.extensions`
   src/index.ts         default export: (pi: ExtensionAPI) => { register Tools/Commands }

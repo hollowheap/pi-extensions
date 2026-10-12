@@ -1,17 +1,17 @@
-# pi-permissions
+# pi-guard
 
 Checks tool calls against tagged allow/deny/ask rules. Anything unmatched asks the user for approval; `fd`/`rg` search tools and a `/cd` command are included.
 
 ## Try it
 
 ```bash
-pi -e ./packages/pi-permissions
+pi -e ./packages/pi-guard
 ```
 
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-permissions
+pi install npm:@my-scope/pi-guard
 ```
 
 ## Rules

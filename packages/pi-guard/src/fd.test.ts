@@ -200,7 +200,7 @@ describe("fd tool", () => {
 describe("runBinary", () => {
   it("reports a clear error when the binary is missing", async () => {
     await expect(
-      runBinary("pi-permissions-missing-binary", [], tmpdir(), undefined),
+      runBinary("pi-guard-missing-binary", [], tmpdir(), undefined),
     ).rejects.toThrow("is not installed");
   });
 });

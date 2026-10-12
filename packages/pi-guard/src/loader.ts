@@ -99,7 +99,7 @@ export function loadRules(ctx: ExtensionContext): Rule[] {
     if (warnedCwd !== ctx.cwd) {
       warnedCwd = ctx.cwd;
       ctx.ui.notify(
-        "pi-permissions: no .pi/permissions.json; asking for approval on every gated call",
+        "pi-guard: no .pi/permissions.json; asking for approval on every gated call",
         "warning",
       );
     }
@@ -114,7 +114,7 @@ export function loadRules(ctx: ExtensionContext): Rule[] {
   }
   if (diagnostics.length > 0) {
     ctx.ui.notify(
-      `pi-permissions: ${diagnostics.slice(0, 3).join("; ")}; asking for approval on unmatched calls`,
+      `pi-guard: ${diagnostics.slice(0, 3).join("; ")}; asking for approval on unmatched calls`,
       "warning",
     );
   }

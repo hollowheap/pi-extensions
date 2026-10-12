@@ -13,7 +13,7 @@
   "pi": {
     "extensions": [
       "./packages/pi-statusline/src/index.ts",
-      "./packages/pi-permissions/src/index.ts",
+      "./packages/pi-guard/src/index.ts",
       "./packages/pi-question/src/index.ts"
     ]
   },
