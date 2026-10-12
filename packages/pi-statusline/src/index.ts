@@ -117,6 +117,7 @@ export default function (pi: ExtensionAPI) {
               tokens: sumTokens(ctx),
               contextPercent: ctx.getContextUsage()?.percent ?? null,
               busy,
+              thinkingLevel: ctx.thinkingLevel,
               now: new Date(),
               gitDiff: diffCache.get(ctx.cwd),
             },

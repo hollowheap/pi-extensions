@@ -15,6 +15,12 @@ export function isMode(value: string): value is Mode {
   return MODES.has(value);
 }
 
+export const MODE_ORDER: readonly Mode[] = ["plan", "ask", "edit", "autopilot"];
+
+export function nextMode(mode: Mode): Mode {
+  return MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length];
+}
+
 export const PLAN_PATHS: readonly string[] = [
   "artifacts/plan.md",
   "artifacts/specs.md",

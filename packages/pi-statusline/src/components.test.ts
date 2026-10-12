@@ -155,6 +155,13 @@ describe("clock and text", () => {
     expect(BUILTINS.text({ type: "text", text: "hi" }, ctx())).toBe("hi");
     expect(BUILTINS.text({ type: "text" }, ctx())).toBe("");
   });
+
+  it("thinking shows the level or nothing", () => {
+    expect(BUILTINS.thinking({ type: "thinking" }, ctx())).toBe("");
+    expect(
+      BUILTINS.thinking({ type: "thinking" }, ctx({ thinkingLevel: "high" })),
+    ).toBe("high");
+  });
 });
 
 describe("clockIntervalMs", () => {

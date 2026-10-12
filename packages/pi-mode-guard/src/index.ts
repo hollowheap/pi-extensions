@@ -1,5 +1,13 @@
-import { statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { type Dirent, readdirSync, statSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -19,12 +27,14 @@ import {
   setCwdOverride,
 } from "./loader.js";
 import {
+  MODE_ORDER,
   applyMode,
   clearMode,
   getMode,
   getTokenCap,
   isMode,
   isPlanPath,
+  nextMode,
   planRules,
   setMode,
   setTokenCap,
@@ -112,6 +122,52 @@ function publishValues(owner: unknown): void {
     name: "budgets",
     text: formatBudget(getBudgetUsed(owner), getTokenCap(owner)),
   });
+}
+
+function completeCd(prefix: string) {
+  const trimmed = prefix.trim();
+  const dir =
+    trimmed === "" || trimmed.endsWith("/") ? trimmed || "." : dirname(trimmed);
+  const start =
+    trimmed === "" || trimmed.endsWith("/") ? "" : basename(trimmed);
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  return entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(start))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => ({ value: `${join(dir, name)}/`, label: `${name}/` }));
+}
+
+async function switchMode(ctx: ExtensionContext, raw: string): Promise<void> {
+  if (!isMode(raw)) {
+    ctx.ui.notify(
+      `pi-mode-guard: unknown mode: ${raw} (plan, ask, edit, autopilot)`,
+      "error",
+    );
+    return;
+  }
+  if (raw === "autopilot" && getTokenCap(ctx.sessionManager) === undefined) {
+    ctx.ui.notify(
+      "pi-mode-guard: autopilot refused: set a token cap first",
+      "error",
+    );
+    return;
+  }
+  setMode(ctx.sessionManager, raw);
+  if (raw === "autopilot") {
+    ctx.ui.notify(
+      "pi-mode-guard: autopilot on: write and bash run without asking",
+      "warning",
+    );
+  } else {
+    ctx.ui.notify(`pi-mode-guard: mode ${raw}`);
+  }
+  publishValues(ctx.sessionManager);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -223,6 +279,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("cd", {
     description:
       "Change the working directory for file tools (stays inside the project root)",
+    getArgumentCompletions: (prefix: string) => completeCd(prefix),
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (raw === "") {
@@ -263,40 +320,24 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("mode", {
     description:
       "Show or switch the plan/approval mode (plan, ask, edit, autopilot)",
+    getArgumentCompletions: (prefix: string) => {
+      const lower = prefix.trim().toLowerCase();
+      return MODE_ORDER.filter((mode) => mode.startsWith(lower)).map(
+        (mode) => ({ value: mode, label: mode }),
+      );
+    },
     handler: async (args, ctx) => {
       const raw = args.trim().toLowerCase();
       if (raw === "") {
         ctx.ui.notify(`pi-mode-guard: mode ${getMode(ctx.sessionManager)}`);
         return;
       }
-      if (!isMode(raw)) {
-        ctx.ui.notify(
-          `pi-mode-guard: unknown mode: ${args.trim()} (plan, ask, edit, autopilot)`,
-          "error",
-        );
-        return;
-      }
-      if (
-        raw === "autopilot" &&
-        getTokenCap(ctx.sessionManager) === undefined
-      ) {
-        ctx.ui.notify(
-          "pi-mode-guard: autopilot refused: set a token cap first",
-          "error",
-        );
-        return;
-      }
-      setMode(ctx.sessionManager, raw);
-      if (raw === "autopilot") {
-        ctx.ui.notify(
-          "pi-mode-guard: autopilot on: write and bash run without asking",
-          "warning",
-        );
-      } else {
-        ctx.ui.notify(`pi-mode-guard: mode ${raw}`);
-      }
-      publishValues(ctx.sessionManager);
+      await switchMode(ctx, raw);
     },
+  });
+  pi.registerShortcut("shift+tab", {
+    description: "Cycle plan/approval mode",
+    handler: (ctx) => switchMode(ctx, nextMode(getMode(ctx.sessionManager))),
   });
   pi.registerCommand("budget", {
     description: "Show or set the session token budget in whole tokens",

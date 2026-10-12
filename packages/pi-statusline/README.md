@@ -89,6 +89,7 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 | `cost` | session spend | `decimals` (default `3`), `prefix` (default `"$"`) |
 | `context` | context window usage percent | — |
 | `clock` | current time | `format` (`YYYY MM DD HH mm ss`, default `"HH:mm"`), `intervalMs` |
+| `thinking` | current thinking level, blank when unknown | — |
 | `text` | static string | `text` |
 
 ## Pill styling

@@ -63,13 +63,13 @@ Each rule names a command plus an optional argument prefix (`allow shell git sta
 
 ## /cd
 
-`/cd <path>` changes the working directory for file tools. The path must be an existing directory inside the project root and pass `check(rules, path, "read")`; otherwise an error is shown and the directory is unchanged. The project root never changes. Bare `/cd` resets to the project root.
+`/cd <path>` changes the working directory for file tools. The path must be an existing directory inside the project root and pass `check(rules, path, "read")`; otherwise an error is shown and the directory is unchanged. The project root never changes. Bare `/cd` resets to the project root. Directory names autocomplete best-effort against the launch directory.
 
 Pi exposes no API to move the session directory, so this rewrites relative `path` arguments to the new directory before the rules verdict. Absolute paths are unaffected. The new directory is shown via `setStatus("cwd", …)` for status lines that render extension statuses, plus a one-line notification.
 
 ## Modes
 
-`/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected.
+`/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected. Mode names autocomplete, and `shift+tab` cycles plan, ask, edit, autopilot in order (note: pi binds the same key to thinking-cycle by default — unbind `app.thinking.cycle` if both fire).
 
 | mode | writes (`edit`) |
 |---|---|

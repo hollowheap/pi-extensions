@@ -13,6 +13,7 @@ function createMockPi() {
     ),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    registerShortcut: vi.fn(),
     events: {
       on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
       emit: vi.fn((_channel: string, _data: unknown) => {}),
@@ -93,6 +94,10 @@ describe("pi-mode-guard extension", () => {
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd", "mode", "budget"]);
+    expect(pi.registerShortcut).toHaveBeenCalledWith(
+      "shift+tab",
+      expect.objectContaining({ description: "Cycle plan/approval mode" }),
+    );
   });
 
   it("blocks src writes but allows spec and plan writes", async () => {
@@ -392,6 +397,7 @@ function setupCd(rulesFile: string = CD_RULES) {
   return {
     dir,
     ctx,
+    commands: cd,
     cd: (args: string) => cd.cd.handler(args, ctx as never),
     hook: (toolName: string, input: Record<string, unknown>) =>
       handlers.tool_call(
@@ -774,6 +780,7 @@ function setupProvider() {
   const handlers = Object.fromEntries(
     pi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
+  void handlers;
   const commands = Object.fromEntries(
     pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
@@ -842,5 +849,90 @@ describe("statusline values", () => {
       name: "budgets",
       text: "100 used, 900 remaining",
     });
+  });
+});
+
+function setupKeys(rulesFile: string) {
+  const dir = mkdtempSync(join(tmpdir(), "pi-keys-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  const pi = createMockPi();
+  extension(pi as never);
+  const sessionManager = {};
+  const ctx = {
+    cwd: dir,
+    sessionManager,
+    hasUI: true,
+    ui: {
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
+    },
+  };
+  const commands = Object.fromEntries(
+    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  );
+  const shortcut = pi.registerShortcut.mock.calls[0][1].handler;
+  return {
+    ctx,
+    commands,
+    shortcut: (context: unknown) => shortcut(context as never),
+  };
+}
+
+describe("mode shortcut and completions", () => {
+  it("cycles ask, edit, autopilot, plan in order", async () => {
+    const { ctx, shortcut } = setupKeys('{"rules":[]}');
+    setTokenCap(ctx.sessionManager, 100);
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("edit");
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("autopilot");
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("plan");
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("ask");
+  });
+
+  it("refuses the autopilot leg without a cap", async () => {
+    const { ctx, shortcut } = setupKeys('{"rules":[]}');
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("edit");
+    await shortcut(ctx);
+    expect(getMode(ctx.sessionManager)).toBe("edit");
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("set a token cap first"),
+      "error",
+    );
+  });
+
+  it("completes mode names", () => {
+    const { commands } = setupKeys('{"rules":[]}');
+    const complete = commands.mode.getArgumentCompletions;
+    expect(complete?.("").map((item: { value: string }) => item.value)).toEqual(
+      ["plan", "ask", "edit", "autopilot"],
+    );
+    expect(
+      complete?.("e").map((item: { value: string }) => item.value),
+    ).toEqual(["edit"]);
+    expect(complete?.("x")).toEqual([]);
+  });
+
+  it("completes directories for cd", () => {
+    const { dir, commands } = setupCd();
+    const complete = commands.cd.getArgumentCompletions;
+    const previous = process.cwd();
+    process.chdir(dir);
+    try {
+      expect(
+        complete?.("s").map((item: { value: string }) => item.value),
+      ).toEqual(["secret/", "sub/"]);
+      expect(
+        complete?.("").map((item: { value: string }) => item.value),
+      ).toEqual([".pi/", "secret/", "sub/"]);
+      expect(complete?.("/nonexistent-xyz/")).toBeNull();
+    } finally {
+      process.chdir(previous);
+    }
   });
 });

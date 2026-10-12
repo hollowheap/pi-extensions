@@ -7,6 +7,7 @@ import {
   getTokenCap,
   isMode,
   isPlanPath,
+  nextMode,
   planRules,
   setMode,
   setTokenCap,
@@ -83,6 +84,13 @@ describe("mode state", () => {
     expect(isMode("plan")).toBe(true);
     expect(isMode("autopilot")).toBe(true);
     expect(isMode("turbo")).toBe(false);
+  });
+
+  it("cycles plan, ask, edit, autopilot in order", () => {
+    expect(nextMode("plan")).toBe("ask");
+    expect(nextMode("ask")).toBe("edit");
+    expect(nextMode("edit")).toBe("autopilot");
+    expect(nextMode("autopilot")).toBe("plan");
   });
 
   it("builds plan rules for the plan files", () => {

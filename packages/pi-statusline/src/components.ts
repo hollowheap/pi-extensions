@@ -24,6 +24,7 @@ export interface ComponentContext {
   busy: boolean;
   now: Date;
   gitDiff: GitDiffSummary | undefined;
+  thinkingLevel?: string | undefined;
 }
 
 export type ComponentFn = (
@@ -147,6 +148,8 @@ const context: ComponentFn = (_spec, ctx) =>
 const clock: ComponentFn = (spec, ctx) =>
   formatClock(ctx.now, optString(spec, "format", "HH:mm"));
 
+const thinking: ComponentFn = (_spec, ctx) => ctx.thinkingLevel ?? "";
+
 const text: ComponentFn = (spec) => optString(spec, "text", "");
 
 export const BUILTINS: Record<string, ComponentFn> = {
@@ -159,6 +162,7 @@ export const BUILTINS: Record<string, ComponentFn> = {
   cost,
   context,
   clock,
+  thinking,
   text,
 };
 
