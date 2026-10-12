@@ -88,7 +88,6 @@ export function check(
   if (winner === undefined) return "ask";
   if (winner.effect === "deny") return "deny";
   const winnerSpecificity = specificity(winner.pattern);
-  // TODO(provisional): a deny tied on specificity with the winning allow still denies.
   for (const rule of rules) {
     if (rule === winner) continue;
     if (rule.tag !== tag) continue;
