@@ -5,7 +5,9 @@ Monorepo of [Pi coding agent](https://pi.dev) extensions. Each package in `packa
 ## Layout
 
 ```text
-packages/pi-hello/     example extension (copy to start a new one)
+packages/pi-statusline/   lualine-style configurable footer
+packages/pi-permissions/  path allow/deny rules + fd/rg search tools + /cd
+packages/pi-question/     one-question user prompt tool
   package.json         name, version, `keywords: ["pi-package"]`, `pi.extensions`
   src/index.ts         default export: (pi: ExtensionAPI) => { register Tools/Commands }
   src/index.test.ts    vitest coverage with a mocked ExtensionAPI
@@ -25,7 +27,7 @@ npm run typecheck   # tsc --noEmit
 npm run lint        # biome check
 
 # Load one extension for a single session (no install, no build — Pi runs TS via jiti):
-pi -e ./packages/pi-hello
+pi -e ./packages/pi-statusline
 ```
 
 ## Add an extension
@@ -56,8 +58,8 @@ Keep `src/index.ts` the single entrypoint declared in that package's `pi.extensi
 ## Publish (per package)
 
 ```bash
-npm version --workspace @my-scope/pi-hello <patch|minor|major>
-npm publish --workspace @my-scope/pi-hello --access public
+npm version --workspace @my-scope/pi-statusline <patch|minor|major>
+npm publish --workspace @my-scope/pi-statusline --access public
 ```
 
 Rename `@my-scope` to your npm scope first (package names + README install lines).
@@ -65,7 +67,7 @@ Rename `@my-scope` to your npm scope first (package names + README install lines
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-hello     # one extension
+pi install npm:@my-scope/pi-statusline     # one extension
 pi install git:github.com/<you>/my-pi-agent   # everything (root pi manifest)
 pi list / pi update --extensions / pi remove <source>
 ```

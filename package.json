@@ -12,7 +12,6 @@
 	"workspaces": ["packages/*"],
 	"pi": {
 		"extensions": [
-			"./packages/pi-hello/src/index.ts",
 			"./packages/pi-statusline/src/index.ts",
 			"./packages/pi-permissions/src/index.ts",
 			"./packages/pi-question/src/index.ts"
