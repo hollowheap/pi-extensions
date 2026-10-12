@@ -9,6 +9,7 @@ import { type Effect, type Rule, type Verb, check } from "./rules.js";
 // Bash is not checked here: bash can still write outside allowed paths until bash rules exist.
 const TOOL_VERBS: Record<string, Verb> = {
 	write: "write",
+	edit: "write",
 	find: "read",
 	grep: "read",
 	fd: "read",

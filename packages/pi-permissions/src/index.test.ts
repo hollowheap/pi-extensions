@@ -72,6 +72,15 @@ describe("pi-permissions extension", () => {
 		expect(call("write", { path: "artifacts/plan/a.md" })).toBeUndefined();
 	});
 
+	it("gates edit as a write", () => {
+		const { call } = setupProject(EXAMPLE_RULES);
+		expect(call("edit", { path: "src/x.ts" })).toEqual({
+			block: true,
+			reason: expect.stringContaining("denied"),
+		});
+		expect(call("edit", { path: "artifacts/specs/a.md" })).toBeUndefined();
+	});
+
 	it("blocks escapes outside the project root", () => {
 		const { call } = setupProject(EXAMPLE_RULES);
 		expect(call("write", { path: "../evil.ts" })).toEqual({

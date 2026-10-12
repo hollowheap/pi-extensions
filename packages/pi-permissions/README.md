@@ -36,7 +36,7 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 
 | tool | checked as |
 |---|---|
-| `write` | `write` |
+| `write`, `edit` | `write` |
 | `find`, `grep` (`fd`, `rg` aliases) | `read` |
 
 Pi names its search tools `find` and `grep`; the `fd`/`rg` names are accepted too. `bash` is deliberately unchecked: it can still write outside allowed paths until bash rules exist. Other tools pass through untouched.
