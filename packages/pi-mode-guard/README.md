@@ -39,8 +39,7 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 | `write`, `edit` | `edit` | file path |
 | `read` | `read` | file path |
 | `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
-| `bash` | allowlist (`bash` tag) | command name + argument prefix |
-| `powershell` | `shell` | full command text |
+| `bash`, `powershell` | allowlist (`bash` tag) | command name + argument prefix |
 
 Pi ships `find`, `grep`, and `ls` in core but they are opt-in — default sessions only have `read`, `bash`, `edit`, `write` active, which is why this package also provides its own always-available `fd`/`rg` below.
 
@@ -60,7 +59,7 @@ Bash is denied by default; only commands named in the rules file run:
 }
 ```
 
-Each rule names a command plus an optional argument prefix (`allow bash git status` permits `git status --short` but not `git log`). Commands chained with `&&`, `||`, `;`, or `|` are split and every part needs its own allow rule. A part is denied when it has no matching rule, and always denied when it uses `sh`, `bash`, `zsh`, `eval`, `xargs`, `env`, `sudo`, `tee`, or `dd` (even if allowed), contains a redirect (`>`, `>>`), or contains `$(` or backticks. Allowed commands run without asking; per-call approvals arrive with prompt 7. Bash output over 4000 characters is cut to the first 3000 and last 1000 with a cut count line. File paths are never checked for bash — approval prompts are the only gate, and `powershell` keeps the old `shell`-tag glob behavior.
+Each rule names a command plus an optional argument prefix (`allow bash git status` permits `git status --short` but not `git log`). Commands chained with `&&`, `||`, `;`, or `|` are split and every part needs its own allow rule. A part is denied when it has no matching rule, and always denied when it uses `sh`, `bash`, `zsh`, `eval`, `xargs`, `env`, `sudo`, `tee`, or `dd` (even if allowed), contains a redirect (`>`, `>>`), or contains `$(` or backticks. Allowed commands run without asking; per-call approvals arrive with prompt 7. Bash output over 4000 characters is cut to the first 3000 and last 1000 with a cut count line. File paths are never checked for shell commands — the allowlist is the only gate, and it covers `bash` and `powershell` alike.
 
 ## /cd
 
@@ -79,7 +78,7 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 | `allow-edits` | allowed writes run silently |
 | `autopilot` | allowed writes run silently |
 
-Bash ignores modes: the allowlist decides, and per-call approvals arrive with prompt 7.
+Shell commands ignore modes: the allowlist decides, and per-call approvals arrive with prompt 7.
 
 Deny beats every mode: a denied call never runs and never asks. Entering `plan` appends `allow edit` rules for the two plan files in memory only (removed on exit), so planning works under deny-heavy configs. Writes to the plan files always ask, in every mode — accepting a plan is the approval dialog itself, and a rejection is never written anywhere. Switching to `autopilot` without a token cap is refused, and turning it on shows a chat warning.
 

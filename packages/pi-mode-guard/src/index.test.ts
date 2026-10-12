@@ -169,6 +169,22 @@ describe("pi-mode-guard extension", () => {
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
+  it("gates powershell with the same allowlist", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["allow bash Get-ChildItem"] }),
+    );
+    await expect(
+      call("powershell", { command: "Get-ChildItem ." }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("powershell", { command: "Remove-Item ./x" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("no allow rule"),
+    });
+  });
+
   it("cuts bash output over 4000 characters", () => {
     const pi = createMockPi();
     extension(pi as never);

@@ -41,7 +41,7 @@ const TOOL_TAGS: Record<string, Tag> = {
   fd: "search",
   rg: "search",
   ls: "search",
-  powershell: "shell",
+  powershell: "bash",
 };
 
 function readPathArg(input: unknown): string | undefined {
@@ -121,12 +121,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "bash") {
+    if (event.toolName === "bash" || event.toolName === "powershell") {
       const verdict = checkBash(readCommandArg(event.input), loadRules(ctx));
       if (!verdict.allowed) {
         return {
           block: true,
-          reason: `pi-mode-guard: bash denied: ${verdict.reason ?? "no allow rule"}`,
+          reason: `pi-mode-guard: ${event.toolName} denied: ${verdict.reason ?? "no allow rule"}`,
         };
       }
       return undefined;

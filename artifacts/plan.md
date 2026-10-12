@@ -6,7 +6,7 @@
 - `pi-statusline` reads `~/.pi/agent/statusline.json`, managed by home-manager.
 - Formatter: 2-space indent (biome). `npm run new` scaffolds lint-clean packages.
 - `pi-mode-guard` rules use tags (`edit`, `read`, `search`, `shell`); unmatched calls ask the user, unknown tools included. No default allow rules.
-- `pi-mode-guard` bash gate: allowlist rules (`allow bash <name> [prefix]`, chains split, hard-deny names/redirects/substitution); per-call approvals deferred to prompt 7.
+- `pi-mode-guard` shell gate (bash and powershell): allowlist rules (`allow bash <name> [prefix]`, chains split, hard-deny names/redirects/substitution); per-call approvals deferred to prompt 7.
 - Plan mode constrains writes to `artifacts/plan.md` + `artifacts/specs.md` (artifacts skill; no `plans/` or `tasks/` dirs).
 - `/budget` sets the session token cap (autopilot gate); totals accumulate from `message_end` usage, over-cap aborts the next run.
 - Statusline extension layer runs over `pi.events` (`statusline:values` / `statusline:request`); providers `mode-guard` and `budgets`, no cross-package imports.
