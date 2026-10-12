@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -118,6 +118,26 @@ describe("rg tool", () => {
       ctx as never,
     );
     expect(textOf(result)).toBe("a.ts:1:hit");
+  });
+
+  it("drops matches from symlinks that point outside the root", async () => {
+    const { dir, ctx } = project(["allow read *"]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-rg-outside-"));
+    writeFileSync(join(outside, "evil.ts"), "hit\n");
+    symlinkSync(outside, join(dir, "link"));
+    const deps: ExecDeps = {
+      run: async () => "link/evil.ts:1:hit\n",
+      statMtimeMs: () => 1,
+    };
+    const tool = createRgTool(deps);
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "hit" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("No matches found.");
   });
 
   it("cuts each line to 300 characters", async () => {

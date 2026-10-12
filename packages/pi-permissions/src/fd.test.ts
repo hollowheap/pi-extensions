@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -84,6 +84,24 @@ describe("fd tool", () => {
       ctx as never,
     );
     expect(textOf(result)).toBe("ok.ts");
+  });
+
+  it("drops symlinks that point outside the root", async () => {
+    const { dir, ctx } = project(["allow read *"]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-fd-outside-"));
+    writeFileSync(join(outside, "evil.ts"), "x");
+    symlinkSync(outside, join(dir, "link"));
+    const tool = createFdTool(
+      fakeDeps("link/evil.ts\n", { [join(dir, "link/evil.ts")]: 1 }),
+    );
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "*.ts" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("No files found.");
   });
 
   it("reports all denied as no files found", async () => {

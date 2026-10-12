@@ -1,4 +1,5 @@
-import { relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 export type Verb = "read" | "write";
 export type Effect = "allow" | "deny";
@@ -39,14 +40,42 @@ function specificity(pattern: string): number {
   return pattern.replace(/[*?]/g, "").length;
 }
 
+function tryRealpath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function realpathLoose(abs: string): string {
+  const direct = tryRealpath(abs);
+  if (direct !== undefined) return direct;
+  const missing: string[] = [];
+  let cur = abs;
+  while (cur !== dirname(cur)) {
+    missing.unshift(basename(cur));
+    cur = dirname(cur);
+    const base = tryRealpath(cur);
+    if (base !== undefined) return join(base, ...missing);
+  }
+  return abs;
+}
+
 export function check(
   rules: Rule[],
   path: string,
   verb: Verb,
   root: string,
 ): Effect {
-  const resolved = resolve(root, path);
-  const rel = relative(root, resolved);
+  let realRoot = root;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    realRoot = root;
+  }
+  const actual = realpathLoose(resolve(root, path));
+  const rel = relative(realRoot, actual);
   if (rel === ".." || rel.startsWith(`..${sep}`)) return "deny";
   const posix = rel.split(sep).join("/");
   let winner: Rule | undefined;

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Rule, check } from "./rules.js";
 
@@ -60,6 +63,20 @@ describe("check", () => {
     expect(check(rules, "../evil.ts", "write", ROOT)).toBe("deny");
     expect(check(rules, "sub/../../evil.ts", "write", ROOT)).toBe("deny");
     expect(check(rules, "/etc/passwd", "write", ROOT)).toBe("deny");
+  });
+
+  it("denies symlinks that point outside the root", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-symlink-"));
+    const outside = mkdtempSync(join(tmpdir(), "pi-outside-"));
+    writeFileSync(join(outside, "secret.txt"), "x");
+    symlinkSync(outside, join(dir, "link"));
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(join(dir, "sub", "a.txt"), "x");
+    symlinkSync(join(dir, "sub"), join(dir, "ok"));
+    const rules: Rule[] = [{ verb: "read", pattern: "*", effect: "allow" }];
+    expect(check(rules, "link/secret.txt", "read", dir)).toBe("deny");
+    expect(check(rules, "link", "read", dir)).toBe("deny");
+    expect(check(rules, "ok/a.txt", "read", dir)).toBe("allow");
   });
 
   it("resolves relative and absolute paths from the project root", () => {

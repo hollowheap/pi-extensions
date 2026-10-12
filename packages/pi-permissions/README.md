@@ -30,7 +30,7 @@ Create `<project>/.pi/permissions.json`:
 
 Each rule is `"effect verb pattern"` or `{ "effect", "verb", "pattern" }`. `effect` is `allow` or `deny`; `verb` is `read` or `write`. Rules apply in order and the last matching rule wins; nothing matching means deny. When a winning `allow` ties on specificity (pattern length without wildcards) with a matching `deny`, the deny wins.
 
-Patterns match the whole path relative to the project root. `*` spans directories and `?` matches one character, so `*` alone matches everything and `artifacts/specs/*.md` matches `artifacts/specs/a.md`. Every path resolves against the project root first; paths escaping the root (`../`, absolute paths elsewhere) are always denied.
+Patterns match the whole path relative to the project root. `*` spans directories and `?` matches one character, so `*` alone matches everything and `artifacts/specs/*.md` matches `artifacts/specs/a.md`. Every path resolves against the project root first, following symlinks; paths escaping the root (`../`, absolute paths elsewhere, symlinks pointing outside) are always denied.
 
 ## Hooked tools
 
