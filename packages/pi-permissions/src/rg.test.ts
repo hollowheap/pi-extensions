@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { type ExecDeps, clampMaxResults } from "./exec.js";
 import { clearCwdOverride, setCwdOverride } from "./loader.js";
-import { createRgTool, parseRgLine } from "./rg.js";
+import { createRgTool, isFileTarget, parseRgLine } from "./rg.js";
 
 function project(rules: string[]): {
   dir: string;
@@ -44,6 +44,17 @@ describe("parseRgLine", () => {
   it("rejects malformed lines", () => {
     expect(parseRgLine("garbage")).toBeUndefined();
     expect(parseRgLine("a.ts:notnum:x")).toBeUndefined();
+  });
+});
+
+describe("isFileTarget", () => {
+  it("distinguishes files, directories, and missing paths", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-istarget-"));
+    const file = join(dir, "a.ts");
+    writeFileSync(file, "x");
+    expect(isFileTarget(file)).toBe(true);
+    expect(isFileTarget(dir)).toBe(false);
+    expect(isFileTarget(join(dir, "missing"))).toBe(false);
   });
 });
 
@@ -141,6 +152,22 @@ describe("rg tool", () => {
     expect(textOf(result)).toBe("No matches found.");
   });
 
+  it("skips symlinked directories passed as the search path", async () => {
+    const { dir, ctx } = project(["allow search *"]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-rg-outside-"));
+    writeFileSync(join(outside, "evil.ts"), "hit\n");
+    symlinkSync(outside, join(dir, "link"));
+    const tool = createRgTool();
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "hit", path: "link" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("No matches found.");
+  });
+
   it("returns matches relative to the cd override", async () => {
     const { dir, ctx } = project(["allow search *"]);
     mkdirSync(join(dir, "sub"), { recursive: true });
@@ -162,6 +189,20 @@ describe("rg tool", () => {
     } finally {
       clearCwdOverride(undefined);
     }
+  });
+
+  it("searches a file passed as the search path", async () => {
+    const { dir, ctx } = project(["allow search *"]);
+    writeFileSync(join(dir, "a.ts"), "hello world\n");
+    const tool = createRgTool();
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "hello", path: "a.ts" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("a.ts:1:hello world");
   });
 
   it("cuts each line to 300 characters", async () => {

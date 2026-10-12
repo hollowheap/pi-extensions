@@ -1,4 +1,5 @@
-import { relative, resolve, sep } from "node:path";
+import { statSync } from "node:fs";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
@@ -11,6 +12,14 @@ export interface RgMatch {
   path: string;
   line: number;
   text: string;
+}
+
+export function isFileTarget(path: string): boolean {
+  try {
+    return !statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export function parseRgLine(line: string): RgMatch | undefined {
@@ -48,7 +57,10 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
       const effective = effectiveCwd(ctx);
-      const searchDir = resolve(effective, params.path ?? ".");
+      const target = resolve(effective, params.path ?? ".");
+      const targetIsFile = isFileTarget(target);
+      const searchDir = targetIsFile ? dirname(target) : target;
+      const operand = targetIsFile ? basename(target) : ".";
       const args = [
         "--color=never",
         "--no-heading",
@@ -58,7 +70,7 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
         params.pattern,
       ];
       if (params.glob !== undefined) args.push("--glob", params.glob);
-      args.push(".");
+      args.push(operand);
       const stdout = await deps.run("rg", args, searchDir, signal, {
         okExitCodes: [1],
       });
