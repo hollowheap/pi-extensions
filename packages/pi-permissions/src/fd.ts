@@ -50,7 +50,7 @@ export function createFdTool(deps: ExecDeps = defaultExecDeps) {
         const mtime = deps.statMtimeMs(abs);
         if (mtime === undefined) continue;
         const rel = toRootRel(root, abs);
-        if (rules !== undefined && check(rules, rel, "read", root) === "deny") {
+        if (check(rules, rel, "search", root) !== "allow") {
           continue;
         }
         found.push({ rel, mtime });

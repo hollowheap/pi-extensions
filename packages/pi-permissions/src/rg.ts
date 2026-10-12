@@ -70,7 +70,7 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
         if (parsed === undefined) continue;
         const abs = resolve(searchDir, parsed.path);
         const rel = relative(root, abs).split(sep).join("/");
-        if (rules !== undefined && check(rules, rel, "read", root) === "deny") {
+        if (check(rules, rel, "search", root) !== "allow") {
           continue;
         }
         matches.push({ path: rel, line: parsed.line, text: parsed.text });

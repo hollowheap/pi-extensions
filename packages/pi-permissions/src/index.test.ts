@@ -22,9 +22,19 @@ function toolCallHandler(pi: ReturnType<typeof createMockPi>): Handler {
   return calls[0][1] as Handler;
 }
 
-function setupProject(rulesFile: string): {
-  ctx: { cwd: string; ui: { notify: ReturnType<typeof vi.fn> } };
-  call: (toolName: string, input: unknown) => unknown;
+function setupProject(
+  rulesFile: string,
+  approved = true,
+): {
+  ctx: {
+    cwd: string;
+    hasUI: boolean;
+    ui: {
+      notify: ReturnType<typeof vi.fn>;
+      confirm: ReturnType<typeof vi.fn>;
+    };
+  };
+  call: (toolName: string, input: unknown) => Promise<unknown>;
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-permissions-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -32,7 +42,11 @@ function setupProject(rulesFile: string): {
   const pi = createMockPi();
   extension(pi as never);
   const handler = toolCallHandler(pi);
-  const ctx = { cwd: dir, ui: { notify: vi.fn() } };
+  const ctx = {
+    cwd: dir,
+    hasUI: true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => approved) },
+  };
   return {
     ctx,
     call: (toolName: string, input: unknown) =>
@@ -44,15 +58,15 @@ function setupProject(rulesFile: string): {
           input,
         } as never,
         ctx as never,
-      ),
+      ) as Promise<unknown>,
   };
 }
 
 const EXAMPLE_RULES = JSON.stringify({
   rules: [
-    "deny write *",
-    "allow write artifacts/specs/*.md",
-    "allow write artifacts/plan/*.md",
+    "deny edit *",
+    "allow edit artifacts/specs/*.md",
+    "allow edit artifacts/plan/*.md",
   ],
 });
 
@@ -68,80 +82,135 @@ describe("pi-permissions extension", () => {
     expect(commands).toEqual(["cd"]);
   });
 
-  it("blocks src writes but allows spec and plan writes", () => {
+  it("blocks src writes but allows spec and plan writes", async () => {
     const { call } = setupProject(EXAMPLE_RULES);
-    expect(call("write", { path: "src/x.ts" })).toEqual({
+    await expect(call("write", { path: "src/x.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
-    expect(call("write", { path: "artifacts/specs/a.md" })).toBeUndefined();
-    expect(call("write", { path: "artifacts/plan/a.md" })).toBeUndefined();
+    await expect(
+      call("write", { path: "artifacts/specs/a.md" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("write", { path: "artifacts/plan/a.md" }),
+    ).resolves.toBeUndefined();
   });
 
-  it("gates edit as a write", () => {
+  it("gates edit as an edit", async () => {
     const { call } = setupProject(EXAMPLE_RULES);
-    expect(call("edit", { path: "src/x.ts" })).toEqual({
+    await expect(call("edit", { path: "src/x.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
-    expect(call("edit", { path: "artifacts/specs/a.md" })).toBeUndefined();
+    await expect(
+      call("edit", { path: "artifacts/specs/a.md" }),
+    ).resolves.toBeUndefined();
   });
 
-  it("blocks escapes outside the project root", () => {
+  it("blocks escapes outside the project root", async () => {
     const { call } = setupProject(EXAMPLE_RULES);
-    expect(call("write", { path: "../evil.ts" })).toEqual({
+    await expect(call("write", { path: "../evil.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
   });
 
-  it("applies rules to find, grep, fd, and rg as reads", () => {
-    const { call } = setupProject(EXAMPLE_RULES);
-    for (const tool of ["find", "grep", "fd", "rg"]) {
-      expect(call(tool, { path: "src/x.ts" })).toEqual({
-        block: true,
-        reason: expect.stringContaining("denied"),
-      });
-    }
+  it("checks fd, rg, and ls as search", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        rules: ["deny search *", "allow search src/*"],
+      }),
+    );
+    await expect(call("fd", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("rg", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(call("ls", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("rg", { path: "other" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
   });
 
-  it("allows reads covered by read rules", () => {
+  it("asks for tools without matching rules and proceeds on approval", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("find", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", "src/x.ts");
+  });
+
+  it("asks for bash commands", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi");
+  });
+
+  it("blocks when approval is declined", async () => {
+    const { call } = setupProject(EXAMPLE_RULES, false);
+    await expect(call("find", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("not approved"),
+    });
+  });
+
+  it("blocks approval prompts without UI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-permissions-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(join(dir, ".pi", "permissions.json"), EXAMPLE_RULES);
+    const pi = createMockPi();
+    extension(pi as never);
+    const handler = toolCallHandler(pi);
+    const ctx = {
+      cwd: dir,
+      hasUI: false,
+      ui: { notify: vi.fn(), confirm: vi.fn() },
+    };
+    const result = await handler(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "find",
+        input: { path: "src/x.ts" },
+      } as never,
+      ctx as never,
+    );
+    expect(result).toEqual({
+      block: true,
+      reason: expect.stringContaining("needs approval"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("allows reads covered by read rules", async () => {
     const { call } = setupProject(
       JSON.stringify({
         rules: [
-          { effect: "deny", verb: "read", pattern: "*" },
-          { effect: "allow", verb: "read", pattern: "src/*" },
+          { effect: "deny", tag: "read", pattern: "*" },
+          { effect: "allow", tag: "read", pattern: "src/*" },
         ],
       }),
     );
-    expect(call("grep", { path: "src/x.ts" })).toBeUndefined();
-    expect(call("find", { path: "other/x.ts" })).toEqual({
+    await expect(call("read", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(call("read", { path: "other/x.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
   });
 
-  it("checks the project root when find or grep omit the path", () => {
-    const { call } = setupProject(EXAMPLE_RULES);
-    expect(call("find", {})).toEqual({
-      block: true,
-      reason: expect.stringContaining("denied"),
-    });
+  it("asks when find omits the path", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("find", {})).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", ".");
   });
 
-  it("never blocks bash or unlisted tools", () => {
-    const { call } = setupProject(EXAMPLE_RULES);
-    expect(call("bash", { command: "echo hi > /tmp/x" })).toBeUndefined();
-    expect(call("read", { path: "src/x.ts" })).toBeUndefined();
-  });
-
-  it("warns and allows everything when the rules file is missing or broken", () => {
+  it("warns and asks when the rules file is missing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-permissions-"));
     const pi = createMockPi();
     extension(pi as never);
     const handler = toolCallHandler(pi);
-    const ctx = { cwd: dir, ui: { notify: vi.fn() } };
-    const result = handler(
+    const ctx = {
+      cwd: dir,
+      hasUI: true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    const result = await handler(
       {
         type: "tool_call",
         toolCallId: "1",
@@ -155,17 +224,22 @@ describe("pi-permissions extension", () => {
       expect.stringContaining("no .pi/permissions.json"),
       "warning",
     );
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
 
-  it("denies everything when the rules file is invalid JSON", () => {
+  it("warns and asks when the rules file is invalid JSON", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-permissions-"));
     mkdirSync(join(dir, ".pi"), { recursive: true });
     writeFileSync(join(dir, ".pi", "permissions.json"), "{oops");
     const pi = createMockPi();
     extension(pi as never);
     const handler = toolCallHandler(pi);
-    const ctx = { cwd: dir, ui: { notify: vi.fn() } };
-    const result = handler(
+    const ctx = {
+      cwd: dir,
+      hasUI: true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    const result = await handler(
       {
         type: "tool_call",
         toolCallId: "1",
@@ -174,24 +248,22 @@ describe("pi-permissions extension", () => {
       } as never,
       ctx as never,
     );
-    expect(result).toEqual({
-      block: true,
-      reason: expect.stringContaining("denied"),
-    });
+    expect(result).toBeUndefined();
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("not valid JSON"),
       "warning",
     );
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
 });
 
 const CD_RULES = JSON.stringify({
   rules: [
     "allow read *",
-    "allow write *",
+    "allow edit *",
     "deny read secret/*",
     "deny read secret",
-    "deny write secret/*",
+    "deny edit secret/*",
   ],
 });
 
@@ -207,7 +279,8 @@ function setupCd(rulesFile: string = CD_RULES) {
   const ctx = {
     cwd: dir,
     sessionManager,
-    ui: { notify: vi.fn(), setStatus: vi.fn() },
+    hasUI: true,
+    ui: { notify: vi.fn(), setStatus: vi.fn(), confirm: vi.fn() },
   };
   const handlers = Object.fromEntries(
     pi.on.mock.calls.map(([event, fn]) => [event, fn]),
@@ -223,7 +296,7 @@ function setupCd(rulesFile: string = CD_RULES) {
       handlers.tool_call(
         { type: "tool_call", toolCallId: "1", toolName, input } as never,
         ctx as never,
-      ),
+      ) as Promise<unknown>,
     restart: () => handlers.session_start(undefined as never, ctx as never),
   };
 }
@@ -237,19 +310,19 @@ describe("/cd command", () => {
       expect.stringContaining(join(dir, "sub")),
     );
     const input = { path: "x.ts" };
-    expect(hook("write", input)).toBeUndefined();
+    await expect(hook("write", input)).resolves.toBeUndefined();
     expect(input.path).toBe(join(dir, "sub", "x.ts"));
   });
 
   it("matches rules against the project root under override", async () => {
     const { dir, cd, hook } = setupCd(
       JSON.stringify({
-        rules: ["deny write *", "allow write sub/*", "allow read *"],
+        rules: ["deny edit *", "allow edit sub/*", "allow read *"],
       }),
     );
     await cd("sub");
     const input = { path: "x.ts" };
-    expect(hook("write", input)).toBeUndefined();
+    await expect(hook("write", input)).resolves.toBeUndefined();
     expect(input.path).toBe(join(dir, "sub", "x.ts"));
   });
 
@@ -262,7 +335,7 @@ describe("/cd command", () => {
       "error",
     );
     const input = { path: "x.ts" };
-    hook("write", input);
+    await hook("write", input);
     expect(input.path).toBe(join(dir, "sub", "x.ts"));
   });
 
@@ -275,7 +348,7 @@ describe("/cd command", () => {
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     const input = { path: "x.ts" };
-    hook("write", input);
+    await hook("write", input);
     expect(input.path).toBe("x.ts");
   });
 
@@ -287,7 +360,7 @@ describe("/cd command", () => {
       "error",
     );
     const input = { path: "x.ts" };
-    hook("write", input);
+    await hook("write", input);
     expect(input.path).toBe("x.ts");
   });
 
@@ -297,7 +370,7 @@ describe("/cd command", () => {
     await cd("   ");
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("cwd", undefined);
     const input = { path: "x.ts" };
-    hook("write", input);
+    await hook("write", input);
     expect(input.path).toBe("x.ts");
   });
 
@@ -305,7 +378,7 @@ describe("/cd command", () => {
     const { dir, cd, hook } = setupCd();
     await cd("sub");
     const input = { path: "x.ts" };
-    expect(hook("read", input)).toBeUndefined();
+    await expect(hook("read", input)).resolves.toBeUndefined();
     expect(input.path).toBe(join(dir, "sub", "x.ts"));
   });
 
@@ -314,7 +387,7 @@ describe("/cd command", () => {
     await cd("sub");
     restart();
     const input = { path: "x.ts" };
-    hook("write", input);
+    await hook("write", input);
     expect(input.path).toBe("x.ts");
   });
 });

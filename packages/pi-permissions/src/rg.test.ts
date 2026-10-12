@@ -48,7 +48,7 @@ describe("parseRgLine", () => {
 
 describe("rg tool", () => {
   it("finds matching lines as path:line:text", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const deps: ExecDeps = {
       run: async () => "a.ts:2:hello world\nb.ts:1:say hello\n",
       statMtimeMs: () => 1,
@@ -65,7 +65,7 @@ describe("rg tool", () => {
   });
 
   it("passes the glob filter to the binary", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     let seen: string[] = [];
     const deps: ExecDeps = {
       run: async (_command, args) => {
@@ -87,7 +87,7 @@ describe("rg tool", () => {
   });
 
   it("limits output to max_results", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const deps: ExecDeps = {
       run: async () => "a.ts:1:x\na.ts:2:x\na.ts:3:x\n",
       statMtimeMs: () => 1,
@@ -104,7 +104,7 @@ describe("rg tool", () => {
   });
 
   it("drops matches from denied files", async () => {
-    const { ctx } = project(["allow read *", "deny read b.ts"]);
+    const { ctx } = project(["allow search *", "deny search b.ts"]);
     const deps: ExecDeps = {
       run: async () => "a.ts:1:hit\nb.ts:2:hit\n",
       statMtimeMs: () => 1,
@@ -121,7 +121,7 @@ describe("rg tool", () => {
   });
 
   it("drops matches from symlinks that point outside the root", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     const outside = mkdtempSync(join(tmpdir(), "pi-rg-outside-"));
     writeFileSync(join(outside, "evil.ts"), "hit\n");
     symlinkSync(outside, join(dir, "link"));
@@ -141,7 +141,7 @@ describe("rg tool", () => {
   });
 
   it("cuts each line to 300 characters", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const deps: ExecDeps = {
       run: async () => `a.ts:1:${"x".repeat(500)}\n`,
       statMtimeMs: () => 1,
@@ -158,7 +158,7 @@ describe("rg tool", () => {
   });
 
   it("returns a clear error when rg is missing", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const deps: ExecDeps = {
       run: async () => {
         throw new Error("rg is not installed (binary not found in PATH)");
@@ -178,7 +178,7 @@ describe("rg tool", () => {
   });
 
   it("searches real files with the rg binary", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     mkdirSync(join(dir, "notes"), { recursive: true });
     writeFileSync(join(dir, "notes", "a.ts"), "hello world\nfoo\n");
     writeFileSync(join(dir, "notes", "b.md"), "hello markdown\n");
@@ -204,7 +204,7 @@ describe("rg tool", () => {
   });
 
   it("reports no matches instead of failing", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const tool = createRgTool();
     const result = await tool.execute(
       "call-1",

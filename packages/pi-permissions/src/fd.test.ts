@@ -32,7 +32,7 @@ function textOf(result: { content: unknown }): string {
 
 describe("fd tool", () => {
   it("returns matches newest first as root-relative paths", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     const tool = createFdTool(
       fakeDeps("a.ts\nb.ts\n", {
         [join(dir, "a.ts")]: 100,
@@ -50,7 +50,7 @@ describe("fd tool", () => {
   });
 
   it("limits output to max_results", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     const tool = createFdTool(
       fakeDeps("a.ts\nb.ts\nc.ts\n", {
         [join(dir, "a.ts")]: 1,
@@ -69,7 +69,7 @@ describe("fd tool", () => {
   });
 
   it("drops denied paths", async () => {
-    const { dir, ctx } = project(["allow read *", "deny read secret/*"]);
+    const { dir, ctx } = project(["allow search *", "deny search secret/*"]);
     const tool = createFdTool(
       fakeDeps("ok.ts\nsecret/x.ts\n", {
         [join(dir, "ok.ts")]: 1,
@@ -87,7 +87,7 @@ describe("fd tool", () => {
   });
 
   it("drops symlinks that point outside the root", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     const outside = mkdtempSync(join(tmpdir(), "pi-fd-outside-"));
     writeFileSync(join(outside, "evil.ts"), "x");
     symlinkSync(outside, join(dir, "link"));
@@ -105,7 +105,7 @@ describe("fd tool", () => {
   });
 
   it("reports all denied as no files found", async () => {
-    const { dir, ctx } = project(["deny read *"]);
+    const { dir, ctx } = project(["deny search *"]);
     const tool = createFdTool(fakeDeps("a.ts\n", { [join(dir, "a.ts")]: 1 }));
     const result = await tool.execute(
       "call-1",
@@ -118,7 +118,7 @@ describe("fd tool", () => {
   });
 
   it("returns a clear error when fd is missing", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const tool = createFdTool({
       run: async () => {
         throw new Error("fd is not installed (binary not found in PATH)");
@@ -137,7 +137,7 @@ describe("fd tool", () => {
   });
 
   it("finds real files with the fd binary", async () => {
-    const { dir, ctx } = project(["allow read *"]);
+    const { dir, ctx } = project(["allow search *"]);
     mkdirSync(join(dir, "sub"), { recursive: true });
     writeFileSync(join(dir, "sub", "a.ts"), "const a = 1;\n");
     writeFileSync(join(dir, "sub", "b.md"), "# docs\n");
@@ -161,7 +161,7 @@ describe("fd tool", () => {
   });
 
   it("fails clearly for a missing search path", async () => {
-    const { ctx } = project(["allow read *"]);
+    const { ctx } = project(["allow search *"]);
     const tool = createFdTool();
     await expect(
       tool.execute(

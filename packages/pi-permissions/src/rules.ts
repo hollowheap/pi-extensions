@@ -1,11 +1,12 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-export type Verb = "read" | "write";
+export type Tag = "edit" | "read" | "search" | "shell";
 export type Effect = "allow" | "deny";
+export type Verdict = "allow" | "deny" | "ask";
 
 export interface Rule {
-  verb: Verb;
+  tag: Tag;
   pattern: string;
   effect: Effect;
 }
@@ -65,9 +66,9 @@ function realpathLoose(abs: string): string {
 export function check(
   rules: Rule[],
   path: string,
-  verb: Verb,
+  tag: Tag,
   root: string,
-): Effect {
+): Verdict {
   let realRoot = root;
   try {
     realRoot = realpathSync(root);
@@ -80,17 +81,17 @@ export function check(
   const posix = rel.split(sep).join("/");
   let winner: Rule | undefined;
   for (const rule of rules) {
-    if (rule.verb !== verb) continue;
+    if (rule.tag !== tag) continue;
     if (!globToRegExp(rule.pattern).test(posix)) continue;
     winner = rule;
   }
-  if (winner === undefined) return "deny";
+  if (winner === undefined) return "ask";
   if (winner.effect === "deny") return "deny";
   const winnerSpecificity = specificity(winner.pattern);
   // TODO(provisional): a deny tied on specificity with the winning allow still denies.
   for (const rule of rules) {
     if (rule === winner) continue;
-    if (rule.verb !== verb) continue;
+    if (rule.tag !== tag) continue;
     if (rule.effect !== "deny") continue;
     if (!globToRegExp(rule.pattern).test(posix)) continue;
     if (specificity(rule.pattern) === winnerSpecificity) return "deny";

@@ -1,27 +1,37 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Rule } from "./rules.js";
+import type { Rule, Tag } from "./rules.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const KNOWN_TAGS: ReadonlySet<string> = new Set([
+  "edit",
+  "read",
+  "search",
+  "shell",
+]);
+
 function buildRule(
   effect: unknown,
-  verb: unknown,
+  tag: unknown,
   pattern: unknown,
   diagnostics: string[],
 ): Rule | undefined {
   if (
     (effect === "allow" || effect === "deny") &&
-    (verb === "read" || verb === "write") &&
+    typeof tag === "string" &&
+    KNOWN_TAGS.has(tag) &&
     typeof pattern === "string" &&
     pattern !== ""
   ) {
-    return { effect, verb, pattern };
+    return { effect, tag: tag as Tag, pattern };
   }
-  diagnostics.push('ignoring rule: need "allow|deny read|write <pattern>"');
+  diagnostics.push(
+    'ignoring rule: need "allow|deny <tag> <pattern>" (edit, read, search, shell)',
+  );
   return undefined;
 }
 
@@ -30,11 +40,11 @@ function parseRuleEntry(
   diagnostics: string[],
 ): Rule | undefined {
   if (typeof entry === "string") {
-    const [effect, verb, ...rest] = entry.trim().split(/\s+/);
-    return buildRule(effect, verb, rest.join(" "), diagnostics);
+    const [effect, tag, ...rest] = entry.trim().split(/\s+/);
+    return buildRule(effect, tag, rest.join(" "), diagnostics);
   }
   if (isRecord(entry)) {
-    return buildRule(entry.effect, entry.verb, entry.pattern, diagnostics);
+    return buildRule(entry.effect, entry.tag, entry.pattern, diagnostics);
   }
   diagnostics.push("ignoring rule: must be an object or a string");
   return undefined;
@@ -68,10 +78,10 @@ function parseRulesFile(content: string, diagnostics: string[]): Rule[] {
 
 let cachedCwd: string | undefined;
 let cachedMtimeMs = -1;
-let cachedRules: Rule[] | undefined;
+let cachedRules: Rule[] = [];
 let warnedCwd: string | undefined;
 
-export function loadRules(ctx: ExtensionContext): Rule[] | undefined {
+export function loadRules(ctx: ExtensionContext): Rule[] {
   const path = join(ctx.cwd, ".pi", "permissions.json");
   let mtimeMs = -1;
   try {
@@ -85,11 +95,11 @@ export function loadRules(ctx: ExtensionContext): Rule[] | undefined {
   cachedCwd = ctx.cwd;
   cachedMtimeMs = mtimeMs;
   if (mtimeMs < 0) {
-    cachedRules = undefined;
+    cachedRules = [];
     if (warnedCwd !== ctx.cwd) {
       warnedCwd = ctx.cwd;
       ctx.ui.notify(
-        "pi-permissions: no .pi/permissions.json; allowing all tool paths",
+        "pi-permissions: no .pi/permissions.json; asking for approval on every gated call",
         "warning",
       );
     }
@@ -99,12 +109,12 @@ export function loadRules(ctx: ExtensionContext): Rule[] | undefined {
   try {
     cachedRules = parseRulesFile(readFileSync(path, "utf8"), diagnostics);
   } catch {
-    diagnostics.push("cannot read permissions file; allowing all tool paths");
-    cachedRules = undefined;
+    diagnostics.push("cannot read permissions file");
+    cachedRules = [];
   }
   if (diagnostics.length > 0) {
     ctx.ui.notify(
-      `pi-permissions: ${diagnostics.slice(0, 3).join("; ")}; allowing unmatched paths`,
+      `pi-permissions: ${diagnostics.slice(0, 3).join("; ")}; asking for approval on unmatched calls`,
       "warning",
     );
   }
