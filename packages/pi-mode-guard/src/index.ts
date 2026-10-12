@@ -4,6 +4,12 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import {
+  addBudgetUsage,
+  clearBudget,
+  formatBudget,
+  getBudgetUsed,
+} from "./budget.js";
 import { fdTool } from "./fd.js";
 import {
   clearCwdOverride,
@@ -20,6 +26,7 @@ import {
   isPlanPath,
   planRules,
   setMode,
+  setTokenCap,
 } from "./modes.js";
 import { rgTool } from "./rg.js";
 import { type Tag, check } from "./rules.js";
@@ -77,6 +84,14 @@ async function requestApproval(
   return undefined;
 }
 
+function refreshBudget(ctx: ExtensionContext): void {
+  const text = formatBudget(
+    getBudgetUsed(ctx.sessionManager),
+    getTokenCap(ctx.sessionManager),
+  );
+  ctx.ui.setStatus("budget", text === "" ? undefined : text);
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
@@ -120,10 +135,41 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     clearCwdOverride(ctx.sessionManager);
     clearMode(ctx.sessionManager);
+    clearBudget(ctx.sessionManager);
+    refreshBudget(ctx);
   });
   pi.on("session_shutdown", (_event, ctx) => {
     clearCwdOverride(ctx.sessionManager);
     clearMode(ctx.sessionManager);
+    clearBudget(ctx.sessionManager);
+  });
+  pi.on("message_end", (event, ctx) => {
+    if (event.message.role !== "assistant") return;
+    const usage = event.message.usage;
+    if (
+      usage === undefined ||
+      typeof usage.input !== "number" ||
+      typeof usage.output !== "number"
+    ) {
+      ctx.ui.notify(
+        "pi-mode-guard: model response reported no usage; budget total unchanged",
+        "warning",
+      );
+      return;
+    }
+    addBudgetUsage(ctx.sessionManager, usage.input + usage.output);
+    refreshBudget(ctx);
+  });
+  pi.on("before_agent_start", (_event, ctx) => {
+    const cap = getTokenCap(ctx.sessionManager);
+    if (cap === undefined) return;
+    const used = getBudgetUsed(ctx.sessionManager);
+    if (used < cap) return;
+    ctx.ui.notify(
+      `pi-mode-guard: token budget reached (${formatBudget(used, cap)}); raise it with /budget to continue`,
+      "error",
+    );
+    ctx.abort();
   });
   pi.registerCommand("cd", {
     description:
@@ -197,6 +243,41 @@ export default function (pi: ExtensionAPI) {
       } else {
         ctx.ui.notify(`pi-mode-guard: mode ${raw}`);
       }
+    },
+  });
+  pi.registerCommand("budget", {
+    description: "Show or set the session token budget in whole tokens",
+    handler: async (args, ctx) => {
+      const raw = args.trim();
+      const used = getBudgetUsed(ctx.sessionManager);
+      const cap = getTokenCap(ctx.sessionManager);
+      if (raw === "") {
+        const text = formatBudget(used, cap) || "0 used";
+        ctx.ui.notify(
+          `pi-mode-guard: budget ${text}${cap === undefined ? " (no cap set)" : ""}`,
+        );
+        return;
+      }
+      if (!/^\d+$/.test(raw)) {
+        ctx.ui.notify(
+          `pi-mode-guard: budget cap must be a whole number of tokens`,
+          "error",
+        );
+        return;
+      }
+      const next = Number(raw);
+      if (!Number.isSafeInteger(next) || next <= 0) {
+        ctx.ui.notify(
+          `pi-mode-guard: budget cap must be greater than 0`,
+          "error",
+        );
+        return;
+      }
+      setTokenCap(ctx.sessionManager, next);
+      refreshBudget(ctx);
+      ctx.ui.notify(
+        `pi-mode-guard: budget cap ${next.toLocaleString("en-US")} tokens (${formatBudget(used, next)})`,
+      );
     },
   });
 }

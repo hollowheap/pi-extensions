@@ -64,6 +64,10 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 
 Deny beats every mode: a denied call never runs and never asks. Entering `plan` appends `allow edit` rules for the two plan files in memory only (removed on exit), so planning works under deny-heavy configs. Writes to the plan files always ask, in every mode — accepting a plan is the approval dialog itself, and a rejection is never written anywhere. Switching to `autopilot` without a token cap is refused, and turning it on shows a chat warning.
 
+## Budget
+
+`/budget [tokens]` shows or sets the session token budget in whole tokens. After each model response the input and output usage accumulate into a session total (responses without usage are reported and skipped, never estimated). Once the total reaches the cap, further model calls are aborted with a message until `/budget` raises the cap. A cap of 0 or less is rejected. Used and remaining tokens show in the `budget` status text and print on every `/budget` call. The same cap gates `autopilot` mode.
+
 ## Built-in tools
 
 The package also registers permission-enforcing `fd` and `rg` tools for projects whose rules allow reading:

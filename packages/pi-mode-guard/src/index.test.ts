@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
-import { getMode, setTokenCap } from "./modes.js";
+import { getMode, getTokenCap, setTokenCap } from "./modes.js";
+import { getBudgetUsed } from "./budget.js";
 
 function createMockPi() {
   return {
@@ -72,15 +73,21 @@ const EXAMPLE_RULES = JSON.stringify({
 });
 
 describe("pi-mode-guard extension", () => {
-  it("registers tools, lifecycle hooks, and the cd and mode commands", () => {
+  it("registers tools, lifecycle hooks, and the cd, mode, and budget commands", () => {
     const pi = createMockPi();
     extension(pi as never);
     const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
     expect(names).toEqual(["fd", "rg"]);
     const events = pi.on.mock.calls.map(([event]) => event).sort();
-    expect(events).toEqual(["session_shutdown", "session_start", "tool_call"]);
+    expect(events).toEqual([
+      "before_agent_start",
+      "message_end",
+      "session_shutdown",
+      "session_start",
+      "tool_call",
+    ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commands).toEqual(["cd", "mode"]);
+    expect(commands).toEqual(["cd", "mode", "budget"]);
   });
 
   it("blocks src writes but allows spec and plan writes", async () => {
@@ -541,5 +548,121 @@ describe("/mode command", () => {
       reason: expect.stringContaining("denied"),
     });
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+});
+
+function setupBudget(rulesFile: string) {
+  const dir = mkdtempSync(join(tmpdir(), "pi-budget-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  const pi = createMockPi();
+  extension(pi as never);
+  const sessionManager = {};
+  const ctx = {
+    cwd: dir,
+    sessionManager,
+    hasUI: true,
+    ui: {
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
+    },
+    abort: vi.fn(),
+  };
+  const commands = Object.fromEntries(
+    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  );
+  const handlers = Object.fromEntries(
+    pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
+  return {
+    dir,
+    ctx,
+    budget: (args: string) => commands.budget.handler(args, ctx as never),
+    message: (message: unknown) =>
+      handlers.message_end(
+        { type: "message_end", message } as never,
+        ctx as never,
+      ),
+    agentStart: () => handlers.before_agent_start({} as never, ctx as never),
+  };
+}
+
+describe("/budget command", () => {
+  it("adds input and output tokens across responses", () => {
+    const { ctx, message } = setupBudget('{"rules":[]}');
+    message({ role: "assistant", usage: { input: 100, output: 50 } });
+    expect(getBudgetUsed(ctx.sessionManager)).toBe(150);
+    message({ role: "assistant", usage: { input: 25, output: 25 } });
+    expect(getBudgetUsed(ctx.sessionManager)).toBe(200);
+    message({ role: "user", content: "hi" });
+    expect(getBudgetUsed(ctx.sessionManager)).toBe(200);
+  });
+
+  it("reports responses without usage and keeps the total", () => {
+    const { ctx, message } = setupBudget('{"rules":[]}');
+    message({ role: "assistant" });
+    expect(getBudgetUsed(ctx.sessionManager)).toBe(0);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("no usage"),
+      "warning",
+    );
+  });
+
+  it("updates the status line on every response", () => {
+    const { ctx, message } = setupBudget('{"rules":[]}');
+    message({ role: "assistant", usage: { input: 100, output: 0 } });
+    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith(
+      "budget",
+      expect.stringContaining("used"),
+    );
+  });
+
+  it("sets a cap and prints used and remaining", async () => {
+    const { ctx, budget } = setupBudget('{"rules":[]}');
+    await budget("100000");
+    expect(getTokenCap(ctx.sessionManager)).toBe(100000);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("100,000"),
+    );
+  });
+
+  it("rejects a cap of 0 or less", async () => {
+    const { ctx, budget } = setupBudget('{"rules":[]}');
+    for (const arg of ["0", "-5", "1.5", "abc"]) {
+      await budget(arg);
+    }
+    expect(getTokenCap(ctx.sessionManager)).toBeUndefined();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("greater than 0"),
+      "error",
+    );
+  });
+
+  it("prints used and remaining without changing the cap", async () => {
+    const { ctx, budget, message } = setupBudget('{"rules":[]}');
+    message({ role: "assistant", usage: { input: 1000, output: 0 } });
+    await budget("");
+    expect(getTokenCap(ctx.sessionManager)).toBeUndefined();
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("no cap set"),
+    );
+  });
+
+  it("stops the next call past the cap and resumes on raise", async () => {
+    const { ctx, budget, message, agentStart } = setupBudget('{"rules":[]}');
+    await budget("1000");
+    agentStart();
+    expect(ctx.abort).not.toHaveBeenCalled();
+    message({ role: "assistant", usage: { input: 600, output: 500 } });
+    agentStart();
+    expect(ctx.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("budget reached"),
+      "error",
+    );
+    await budget("5000");
+    agentStart();
+    expect(ctx.abort).toHaveBeenCalledTimes(1);
   });
 });
