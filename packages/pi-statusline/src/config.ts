@@ -27,7 +27,7 @@ export interface StatuslineConfig {
 	sections: Record<string, ComponentSpec[]>;
 }
 
-export const CONFIG_FILE_NAME = "pi-statusline.json";
+export const CONFIG_FILE_NAME = "statusline.json";
 
 export function defaultOptions(): StatuslineOptions {
 	return {

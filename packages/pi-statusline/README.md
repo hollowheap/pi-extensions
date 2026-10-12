@@ -18,7 +18,7 @@ Do not enable another footer extension at the same time; the last one to load wi
 
 ## Configure
 
-Create `<agentDir>/pi-statusline.json` (`~/.pi/agent/pi-statusline.json`). Missing file falls back to the default below; problems are reported once per session and fall back per-field.
+Create `<agentDir>/statusline.json` (`~/.pi/agent/statusline.json`). Missing file falls back to the default below; problems are reported once per session and fall back per-field.
 
 ```json
 {

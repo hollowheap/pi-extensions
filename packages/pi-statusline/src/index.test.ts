@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+	getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
+
 function createMockPi() {
 	return {
 		on: vi.fn(

@@ -118,7 +118,7 @@ describe("loadConfig", () => {
 	it("loads and normalizes a config file", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		writeFileSync(
-			join(dir, "pi-statusline.json"),
+			join(dir, "statusline.json"),
 			JSON.stringify({ sections: { a: [{ type: "mode" }] } }),
 		);
 		const { config, diagnostics } = loadConfig(dir);
@@ -128,7 +128,7 @@ describe("loadConfig", () => {
 
 	it("reports invalid JSON and falls back to defaults", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
-		writeFileSync(join(dir, "pi-statusline.json"), "{oops");
+		writeFileSync(join(dir, "statusline.json"), "{oops");
 		const { config, diagnostics } = loadConfig(dir);
 		expect(config).toEqual(defaultConfig());
 		expect(diagnostics).toHaveLength(1);
