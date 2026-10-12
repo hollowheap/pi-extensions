@@ -47,7 +47,8 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const searchDir = resolve(effectiveCwd(ctx), params.path ?? ".");
+      const effective = effectiveCwd(ctx);
+      const searchDir = resolve(effective, params.path ?? ".");
       const args = [
         "--color=never",
         "--no-heading",
@@ -69,11 +70,11 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
         const parsed = parseRgLine(raw);
         if (parsed === undefined) continue;
         const abs = resolve(searchDir, parsed.path);
-        const rel = relative(root, abs).split(sep).join("/");
-        if (check(rules, rel, "search", root) !== "allow") {
+        const display = relative(effective, abs).split(sep).join("/");
+        if (check(rules, abs, "search", root) !== "allow") {
           continue;
         }
-        matches.push({ path: rel, line: parsed.line, text: parsed.text });
+        matches.push({ path: display, line: parsed.line, text: parsed.text });
         if (matches.length >= limit) break;
       }
       const lines = matches.map((match) =>

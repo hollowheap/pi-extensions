@@ -115,12 +115,14 @@ describe("pi-permissions extension", () => {
     });
   });
 
-  it("checks fd, rg, and ls as search", async () => {
-    const { call } = setupProject(
+  it("checks find, grep, fd, rg, and ls as search", async () => {
+    const { ctx, call } = setupProject(
       JSON.stringify({
         rules: ["deny search *", "allow search src/*"],
       }),
     );
+    await expect(call("find", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("grep", { path: "src/x.ts" })).resolves.toBeUndefined();
     await expect(call("fd", { path: "src/sub" })).resolves.toBeUndefined();
     await expect(call("rg", { path: "src/x.ts" })).resolves.toBeUndefined();
     await expect(call("ls", { path: "src/sub" })).resolves.toBeUndefined();
@@ -128,6 +130,7 @@ describe("pi-permissions extension", () => {
       block: true,
       reason: expect.stringContaining("denied"),
     });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
   it("asks for tools without matching rules and proceeds on approval", async () => {

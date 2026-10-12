@@ -5,8 +5,8 @@ import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
 import { effectiveCwd, loadRules } from "./loader.js";
 import { check } from "./rules.js";
 
-function toRootRel(root: string, abs: string): string {
-  const rel = relative(root, abs).split(sep).join("/");
+function toDisplayRel(base: string, abs: string): string {
+  const rel = relative(base, abs).split(sep).join("/");
   return rel.endsWith("/") && rel.length > 1 ? rel.slice(0, -1) : rel;
 }
 
@@ -34,7 +34,8 @@ export function createFdTool(deps: ExecDeps = defaultExecDeps) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const searchDir = resolve(effectiveCwd(ctx), params.path ?? ".");
+      const effective = effectiveCwd(ctx);
+      const searchDir = resolve(effective, params.path ?? ".");
       const stdout = await deps.run(
         "fd",
         ["--glob", params.pattern],
@@ -49,8 +50,8 @@ export function createFdTool(deps: ExecDeps = defaultExecDeps) {
         const abs = resolve(searchDir, trimmed);
         const mtime = deps.statMtimeMs(abs);
         if (mtime === undefined) continue;
-        const rel = toRootRel(root, abs);
-        if (check(rules, rel, "search", root) !== "allow") {
+        const rel = toDisplayRel(effective, abs);
+        if (check(rules, abs, "search", root) !== "allow") {
           continue;
         }
         found.push({ rel, mtime });

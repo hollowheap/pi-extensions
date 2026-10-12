@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { type ExecDeps, runBinary } from "./exec.js";
 import { createFdTool } from "./fd.js";
+import { clearCwdOverride, setCwdOverride } from "./loader.js";
 
 function project(rules: string[]): {
   dir: string;
@@ -115,6 +116,27 @@ describe("fd tool", () => {
       ctx as never,
     );
     expect(textOf(result)).toBe("No files found.");
+  });
+
+  it("returns paths relative to the cd override", async () => {
+    const { dir, ctx } = project(["allow search *"]);
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    setCwdOverride(undefined, join(dir, "sub"));
+    try {
+      const tool = createFdTool(
+        fakeDeps("a.ts\n", { [join(dir, "sub", "a.ts")]: 1 }),
+      );
+      const result = await tool.execute(
+        "call-1",
+        { pattern: "*.ts" },
+        undefined,
+        () => {},
+        ctx as never,
+      );
+      expect(textOf(result)).toBe("a.ts");
+    } finally {
+      clearCwdOverride(undefined);
+    }
   });
 
   it("returns a clear error when fd is missing", async () => {

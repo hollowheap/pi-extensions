@@ -18,6 +18,8 @@ const TOOL_TAGS: Record<string, Tag> = {
   write: "edit",
   edit: "edit",
   read: "read",
+  find: "search",
+  grep: "search",
   fd: "search",
   rg: "search",
   ls: "search",

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { type ExecDeps, clampMaxResults } from "./exec.js";
+import { clearCwdOverride, setCwdOverride } from "./loader.js";
 import { createRgTool, parseRgLine } from "./rg.js";
 
 function project(rules: string[]): {
@@ -138,6 +139,29 @@ describe("rg tool", () => {
       ctx as never,
     );
     expect(textOf(result)).toBe("No matches found.");
+  });
+
+  it("returns matches relative to the cd override", async () => {
+    const { dir, ctx } = project(["allow search *"]);
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    setCwdOverride(undefined, join(dir, "sub"));
+    try {
+      const deps: ExecDeps = {
+        run: async () => "a.ts:1:hit\n",
+        statMtimeMs: () => 1,
+      };
+      const tool = createRgTool(deps);
+      const result = await tool.execute(
+        "call-1",
+        { pattern: "hit" },
+        undefined,
+        () => {},
+        ctx as never,
+      );
+      expect(textOf(result)).toBe("a.ts:1:hit");
+    } finally {
+      clearCwdOverride(undefined);
+    }
   });
 
   it("cuts each line to 300 characters", async () => {

@@ -38,8 +38,10 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 |---|---|---|
 | `write`, `edit` | `edit` | file path |
 | `read` | `read` | file path |
-| `fd`, `rg`, `ls` | `search` | search root path |
+| `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
 | `bash`, `powershell` | `shell` | full command text |
+
+Pi ships `find`, `grep`, and `ls` in core but they are opt-in — default sessions only have `read`, `bash`, `edit`, `write` active, which is why this package also provides its own always-available `fd`/`rg` below.
 
 Denied calls return `{ block: true, reason }`. Unmatched calls ask via a confirmation dialog, and anything else unknown (custom and MCP tools included) asks too. Without dialog-capable UI the ask becomes a block. Shell patterns match against the raw command text, so `deny shell *` blocks everything while `allow shell "git *"` permits git commands — note a matched prefix still runs the whole command line, so review approval prompts carefully.
 
@@ -53,8 +55,8 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 
 The package also registers permission-enforcing `fd` and `rg` tools for projects whose rules allow reading:
 
-- `fd` — `pattern` (glob, required), `path` (optional, defaults to working directory), `max_results` (1–500, default 100). Runs the `fd` binary with `--glob`, keeps only explicitly allowed paths, returns root-relative paths newest first.
-- `rg` — `pattern` (regex, required), `path` (optional), `glob` (optional file filter), `max_results` (1–500, default 100). Runs the `rg` binary, keeps only matches from explicitly allowed files, returns `path:line:text` lines cut to 300 characters.
+- `fd` — `pattern` (glob, required), `path` (optional, defaults to working directory), `max_results` (1–500, default 100). Runs the `fd` binary with `--glob`, keeps only explicitly allowed paths, returns paths relative to the working directory (the `/cd` directory when set) newest first.
+- `rg` — `pattern` (regex, required), `path` (optional), `glob` (optional file filter), `max_results` (1–500, default 100). Runs the `rg` binary, keeps only matches from explicitly allowed files, returns `path:line:text` lines cut to 300 characters, paths relative to the working directory (the `/cd` directory when set).
 
 Both run their binary with an argument array and no shell, and fail with a clear error when the binary is not installed. The `tool_call` hook still gates their search root first; per-result filtering applies on top, so usable searches need `allow search` rules.
 
