@@ -14,12 +14,12 @@ export interface DashboardConfig {
 }
 
 export const DEFAULT_ART: readonly string[] = [
-  "      #",
-  "####  #",
-  "#  #  #",
-  "####  #",
-  "#     #",
-  "#     #",
+  "╭──────────────────────────────────────╮",
+  "│                                      │",
+  "│   pi                                 │",
+  "│   ready.                             │",
+  "│                                      │",
+  "╰──────────────────────────────────────╯",
 ];
 
 function defaultArt(): string[] {
