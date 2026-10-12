@@ -89,6 +89,7 @@ describe("pi-mode-guard extension", () => {
       "session_shutdown",
       "session_start",
       "tool_call",
+      "tool_result",
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd", "mode", "budget"]);
@@ -151,10 +152,79 @@ describe("pi-mode-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", "src/x.ts");
   });
 
-  it("asks for bash commands", async () => {
+  it("denies bash without allow rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("bash", { command: "echo hi" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("no allow rule"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("runs allowlisted bash without asking", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["allow bash echo"] }),
+    );
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi");
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("cuts bash output over 4000 characters", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const entry = pi.on.mock.calls.find(([event]) => event === "tool_result");
+    if (entry === undefined) throw new Error("missing tool_result hook");
+    const handler = entry[1];
+    const text = `${"x".repeat(2500)}${"y".repeat(2500)}`;
+    const result = handler(
+      {
+        type: "tool_result",
+        toolCallId: "1",
+        toolName: "bash",
+        input: {},
+        content: [{ type: "text", text }],
+        isError: false,
+      } as never,
+      {} as never,
+    ) as { content: [{ text: string }] };
+    expect(result.content[0].text).toContain("cut 1000 characters");
+    expect(result.content[0].text.startsWith("x".repeat(100))).toBe(true);
+    expect(result.content[0].text.endsWith("y".repeat(100))).toBe(true);
+    expect(result.content[0].text.length).toBeLessThan(5000);
+  });
+
+  it("leaves short bash output and other tools alone", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const entry = pi.on.mock.calls.find(([event]) => event === "tool_result");
+    if (entry === undefined) throw new Error("missing tool_result hook");
+    const handler = entry[1];
+    expect(
+      handler(
+        {
+          type: "tool_result",
+          toolCallId: "1",
+          toolName: "bash",
+          input: {},
+          content: [{ type: "text", text: "ok" }],
+          isError: false,
+        } as never,
+        {} as never,
+      ),
+    ).toBeUndefined();
+    expect(
+      handler(
+        {
+          type: "tool_result",
+          toolCallId: "1",
+          toolName: "write",
+          input: {},
+          content: [{ type: "text", text: "x".repeat(5000) }],
+          isError: false,
+        } as never,
+        {} as never,
+      ),
+    ).toBeUndefined();
   });
 
   it("blocks when approval is declined", async () => {
@@ -497,17 +567,16 @@ describe("/mode command", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
 
-  it("runs writes silently but still asks bash in allow-edits", async () => {
+  it("runs writes and allowlisted bash silently in allow-edits", async () => {
     const { ctx, mode, hook } = setupMode(
-      JSON.stringify({ rules: ["allow edit *", "allow shell *"] }),
+      JSON.stringify({ rules: ["allow edit *", "allow bash cargo"] }),
     );
     await mode("allow-edits");
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).not.toHaveBeenCalled();
     await expect(
       hook("bash", { command: "cargo test" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "cargo test");
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
   it("always asks for plan writes, even in allow-edits", async () => {

@@ -4,6 +4,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { checkBash } from "./bash.js";
 import {
   addBudgetUsage,
   clearBudget,
@@ -40,7 +41,6 @@ const TOOL_TAGS: Record<string, Tag> = {
   fd: "search",
   rg: "search",
   ls: "search",
-  bash: "shell",
   powershell: "shell",
 };
 
@@ -121,6 +121,16 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
   pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName === "bash") {
+      const verdict = checkBash(readCommandArg(event.input), loadRules(ctx));
+      if (!verdict.allowed) {
+        return {
+          block: true,
+          reason: `pi-mode-guard: bash denied: ${verdict.reason ?? "no allow rule"}`,
+        };
+      }
+      return undefined;
+    }
     const tag: Tag | undefined = TOOL_TAGS[event.toolName];
     const cwd = effectiveCwd(ctx);
     if (cwd !== ctx.cwd) {
@@ -156,6 +166,21 @@ export default function (pi: ExtensionAPI) {
     }
     if (final === "ask") return requestApproval(event.toolName, raw, ctx);
     return undefined;
+  });
+  pi.on("tool_result", (event, _ctx) => {
+    if (event.toolName !== "bash") return undefined;
+    let changed = false;
+    const content = event.content.map((block) => {
+      if (block.type !== "text" || block.text.length <= 4000) return block;
+      changed = true;
+      const cut = block.text.length - 4000;
+      return {
+        ...block,
+        text: `${block.text.slice(0, 3000)}\n[pi-mode-guard: cut ${cut} characters]\n${block.text.slice(-1000)}`,
+      };
+    });
+    if (!changed) return undefined;
+    return { content };
   });
   pi.on("session_start", (_event, ctx) => {
     clearCwdOverride(ctx.sessionManager);

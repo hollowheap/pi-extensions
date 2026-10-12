@@ -12,6 +12,7 @@ const KNOWN_TAGS: ReadonlySet<string> = new Set([
   "read",
   "search",
   "shell",
+  "bash",
 ]);
 
 function buildRule(
@@ -30,7 +31,7 @@ function buildRule(
     return { effect, tag: tag as Tag, pattern };
   }
   diagnostics.push(
-    'ignoring rule: need "allow|deny <tag> <pattern>" (edit, read, search, shell)',
+    'ignoring rule: need "allow|deny <tag> <pattern>" (edit, read, search, shell, bash)',
   );
   return undefined;
 }
