@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { ComponentContext } from "./components.js";
-import { defaultConfig } from "./config.js";
+import { defaultConfig, normalizeConfig } from "./config.js";
 import { renderStatusline } from "./render.js";
 
 function ctx(overrides: Partial<ComponentContext> = {}): ComponentContext {
@@ -134,5 +134,23 @@ describe("renderStatusline", () => {
     const line = renderStatusline(10, config, ctx(), theme(style));
     expect(style).toHaveBeenCalledWith("L", { fg: "dim" });
     expect(line).toContain("[L]");
+  });
+
+  it("renders pills with caps and skips empty components cleanly", () => {
+    const { config } = normalizeConfig({
+      sections: {
+        a: [{ type: "mode", accent: "bright-yellow", icon: "󰘧" }],
+        b: [{ type: "git_branch", accent: "bright-cyan", icon: "" }],
+      },
+    });
+    const style = vi.fn((text: string) => `[${text}]`);
+    const withBranch = renderStatusline(40, config, ctx({ branch: "feat" }), theme(style));
+    expect(withBranch).toContain("[][󰘧 ][ IDLE ][]");
+    expect(withBranch).toContain("[][ ][ feat ][]");
+
+    // When outside git repo, git_branch is null, so no dangling pill caps
+    const noBranch = renderStatusline(40, config, ctx({ branch: null }), theme(style));
+    expect(noBranch).toContain("[][󰘧 ][ IDLE ][]");
+    expect(noBranch).not.toContain("");
   });
 });

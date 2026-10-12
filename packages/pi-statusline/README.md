@@ -90,4 +90,20 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 | `clock` | current time | `format` (`YYYY MM DD HH mm ss`, default `"HH:mm"`), `intervalMs` |
 | `text` | static string | `text` |
 
+## Pill styling
+
+Components accept `accent` (and optional `icon`, `iconFg`, `iconBg`, `leftCap`, `rightCap`) to render as rounded two-tone powerline pills (`` … ``):
+
+```json
+{
+  "sections": {
+    "a": [{ "type": "mode", "accent": "bright-yellow", "icon": "󰘧" }],
+    "b": [{ "type": "git_branch", "accent": "bright-cyan", "icon": "" }],
+    "z": [{ "type": "clock", "accent": "bright-magenta", "icon": "󱑂" }]
+  }
+}
+```
+
+When `accent` is set, components without output (e.g. `git_branch` outside a repo) are omitted entirely without leaving dangling caps.
+
 Empty output (e.g. `git_branch` outside a repo) is removed before joining, so separators never dangle.

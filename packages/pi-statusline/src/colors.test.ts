@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { type TextStyle, parseColorSpec, styleText } from "./colors.js";
+import { type TextStyle, parseColorSpec, styleComponent, styleText } from "./colors.js";
 
 describe("parseColorSpec", () => {
   it("resolves starship named colors", () => {
@@ -81,5 +81,76 @@ describe("styleText", () => {
     expect(
       styleText("hi", { fg: "nope" } as unknown as TextStyle, throwing),
     ).toBe("hi");
+  });
+});
+
+describe("styleComponent", () => {
+  function theme(style?: (text: string, options: unknown) => string): Theme {
+    return { style: style ?? ((text: string) => text) } as unknown as Theme;
+  }
+
+  it("returns empty string when text is empty", () => {
+    const style = vi.fn((text: string) => `[${text}]`);
+    expect(
+      styleComponent(
+        "",
+        { accent: parseColorSpec("bright-yellow"), icon: "" },
+        theme(style),
+      ),
+    ).toBe("");
+    expect(style).not.toHaveBeenCalled();
+  });
+
+  it("delegates to styleText when accent is undefined", () => {
+    const style = vi.fn((text: string) => `[${text}]`);
+    expect(styleComponent("hi", { fg: "dim" }, theme(style))).toBe("[hi]");
+    expect(style).toHaveBeenCalledWith("hi", { fg: "dim" });
+  });
+
+  it("renders a two-tone pill when accent and icon are provided", () => {
+    const calls: Array<{ text: string; options: unknown }> = [];
+    const t = theme((text, options) => {
+      calls.push({ text, options });
+      return `(${text})`;
+    });
+    const cyan = parseColorSpec("bright-cyan")!;
+    const result = styleComponent("main", { accent: cyan, icon: "" }, t);
+    expect(result).toBe("()( )( main )()");
+    expect(calls[0]).toEqual({ text: "", options: { fg: cyan } });
+    expect(calls[1]).toEqual({
+      text: " ",
+      options: { fg: { kind: "indexed", index: 0 }, bg: cyan },
+    });
+    expect(calls[2]).toEqual({
+      text: " main ",
+      options: {
+        fg: { kind: "indexed", index: 0 },
+        bg: { kind: "indexed", index: 15 },
+      },
+    });
+    expect(calls[3]).toEqual({
+      text: "",
+      options: { fg: { kind: "indexed", index: 15 } },
+    });
+  });
+
+  it("renders a single-tone pill when icon is omitted", () => {
+    const calls: Array<{ text: string; options: unknown }> = [];
+    const t = theme((text, options) => {
+      calls.push({ text, options });
+      return `(${text})`;
+    });
+    const magenta = parseColorSpec("bright-magenta")!;
+    const result = styleComponent("42%", { accent: magenta }, t);
+    expect(result).toBe("()( 42% )()");
+    expect(calls[0]).toEqual({ text: "", options: { fg: magenta } });
+    expect(calls[1]).toEqual({
+      text: " 42% ",
+      options: { fg: { kind: "indexed", index: 0 }, bg: magenta },
+    });
+    expect(calls[2]).toEqual({
+      text: "",
+      options: { fg: magenta },
+    });
   });
 });

@@ -14,6 +14,12 @@ export interface StyledComponentSpec extends ComponentSpec {
   fg?: ThemeColor | Color;
   bg?: ThemeBg | Color;
   bold?: boolean;
+  accent?: ThemeColor | Color;
+  icon?: string;
+  iconFg?: ThemeColor | Color;
+  iconBg?: ThemeBg | Color;
+  leftCap?: string;
+  rightCap?: string;
 }
 
 export interface ResolvedSeparator {
@@ -174,7 +180,18 @@ export function normalizeSeparator(
   return { text, fg, bg, bold };
 }
 
-const STYLE_KEYS: ReadonlySet<string> = new Set(["type", "fg", "bg", "bold"]);
+const STYLE_KEYS: ReadonlySet<string> = new Set([
+  "type",
+  "fg",
+  "bg",
+  "bold",
+  "accent",
+  "icon",
+  "iconFg",
+  "iconBg",
+  "leftCap",
+  "rightCap",
+]);
 
 export function normalizeComponentStyle(
   spec: StyledComponentSpec,
@@ -185,6 +202,36 @@ export function normalizeComponentStyle(
   for (const [option, value] of Object.entries(spec)) {
     if (!STYLE_KEYS.has(option)) styled[option] = value;
   }
+  if (spec.accent !== undefined) {
+    const accent = resolveColor(
+      spec.accent,
+      FG_TOKENS,
+      `${label}.accent`,
+      diagnostics,
+    );
+    if (accent !== undefined) styled.accent = accent;
+  }
+  if (typeof spec.icon === "string") styled.icon = spec.icon;
+  if (spec.iconFg !== undefined) {
+    const iconFg = resolveColor(
+      spec.iconFg,
+      FG_TOKENS,
+      `${label}.iconFg`,
+      diagnostics,
+    );
+    if (iconFg !== undefined) styled.iconFg = iconFg;
+  }
+  if (spec.iconBg !== undefined) {
+    const iconBg = resolveColor(
+      spec.iconBg,
+      BG_TOKENS,
+      `${label}.iconBg`,
+      diagnostics,
+    );
+    if (iconBg !== undefined) styled.iconBg = iconBg;
+  }
+  if (typeof spec.leftCap === "string") styled.leftCap = spec.leftCap;
+  if (typeof spec.rightCap === "string") styled.rightCap = spec.rightCap;
   if (spec.fg !== undefined) {
     const fg = resolveColor(spec.fg, FG_TOKENS, `${label}.fg`, diagnostics);
     if (fg !== undefined) styled.fg = fg;

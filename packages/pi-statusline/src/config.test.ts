@@ -137,6 +137,34 @@ describe("normalizeConfig", () => {
     expect(diagnostics).toHaveLength(2);
   });
 
+  it("normalizes component pill styling options", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: {
+        a: [
+          {
+            type: "git_branch",
+            accent: "bright-cyan",
+            icon: "",
+            leftCap: "",
+            rightCap: "",
+            iconFg: "black",
+            iconBg: "bright-cyan",
+          },
+        ],
+      },
+    });
+    expect(diagnostics).toHaveLength(0);
+    expect(config.sections.a[0]).toEqual({
+      type: "git_branch",
+      accent: { kind: "indexed", index: 14 },
+      icon: "",
+      leftCap: "",
+      rightCap: "",
+      iconFg: { kind: "indexed", index: 0 },
+      iconBg: { kind: "indexed", index: 14 },
+    });
+  });
+
   it("drops invalid separator styling with diagnostics", () => {
     const { config, diagnostics } = normalizeConfig({
       options: {

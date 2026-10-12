@@ -52,6 +52,15 @@ export interface TextStyle {
   bold?: boolean;
 }
 
+export interface ComponentStyle extends TextStyle {
+  accent?: ThemeColor | Color;
+  icon?: string;
+  iconFg?: ThemeColor | Color;
+  iconBg?: ThemeBg | Color;
+  leftCap?: string;
+  rightCap?: string;
+}
+
 export function styleText(
   text: string,
   style: TextStyle,
@@ -73,4 +82,63 @@ export function styleText(
   } catch {
     return text;
   }
+}
+
+function toBg(
+  color: ThemeColor | ThemeBg | Color | undefined,
+  theme: Theme,
+): ThemeBg | Color | undefined {
+  if (color === undefined) return undefined;
+  if (typeof color === "object") return color;
+  const tokenColor = theme.colors?.[color as ThemeColor];
+  if (tokenColor !== undefined) return tokenColor;
+  return color as ThemeBg;
+}
+
+function toFg(
+  color: ThemeColor | ThemeBg | Color | undefined,
+  theme: Theme,
+): ThemeColor | Color | undefined {
+  if (color === undefined) return undefined;
+  if (typeof color === "object") return color;
+  const tokenColor = theme.colors?.[color as ThemeColor];
+  if (tokenColor !== undefined) return tokenColor;
+  return color as ThemeColor;
+}
+
+export function styleComponent(
+  text: string,
+  style: ComponentStyle,
+  theme: Theme,
+): string {
+  if (text === "") return "";
+  if (style.accent === undefined) {
+    return styleText(text, style, theme);
+  }
+  const accent = style.accent;
+  const leftCapChar = style.leftCap ?? "";
+  const rightCapChar = style.rightCap ?? "";
+  const defaultBodyBg =
+    style.icon !== undefined ? parseColorSpec("bright-white") : accent;
+  const bodyBg = style.bg ?? defaultBodyBg;
+  const bodyFg = style.fg ?? parseColorSpec("black");
+  const iconFg = style.iconFg ?? parseColorSpec("black");
+  const iconBg = style.iconBg ?? accent;
+
+  const leftCap = styleText(leftCapChar, { fg: toFg(accent, theme) }, theme);
+  const iconPart =
+    style.icon !== undefined && style.icon !== ""
+      ? styleText(
+          `${style.icon} `,
+          { fg: toFg(iconFg, theme), bg: toBg(iconBg, theme), bold: style.bold },
+          theme,
+        )
+      : "";
+  const bodyPart = styleText(
+    ` ${text} `,
+    { fg: toFg(bodyFg, theme), bg: toBg(bodyBg, theme), bold: style.bold },
+    theme,
+  );
+  const rightCap = styleText(rightCapChar, { fg: toFg(bodyBg, theme) }, theme);
+  return `${leftCap}${iconPart}${bodyPart}${rightCap}`;
 }

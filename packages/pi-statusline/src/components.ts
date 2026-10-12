@@ -95,7 +95,11 @@ const cwd: ComponentFn = (spec, ctx) =>
   );
 
 const gitBranch: ComponentFn = (spec, ctx) =>
-  ctx.branch === null ? "" : `${optString(spec, "icon", "")}${ctx.branch}`;
+  ctx.branch === null
+    ? ""
+    : spec.accent !== undefined
+      ? ctx.branch
+      : `${optString(spec, "icon", "")}${ctx.branch}`;
 
 const gitDiff: ComponentFn = (spec, ctx) => {
   if (!ctx.gitDiff) return "";

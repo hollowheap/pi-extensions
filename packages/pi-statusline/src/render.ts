@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { styleText } from "./colors.js";
+import { styleComponent, styleText } from "./colors.js";
 import { BUILTINS, type ComponentContext } from "./components.js";
 import type { ResolvedSeparator, StatuslineConfig } from "./config.js";
 
@@ -33,7 +33,7 @@ export function renderStatusline(
       const render = BUILTINS[spec.type];
       if (!render) continue;
       const text = render(spec, ctx);
-      if (text !== "") parts.push(styleText(text, spec, theme));
+      if (text !== "") parts.push(styleComponent(text, spec, theme));
     }
     if (parts.length === 0) continue;
     const section = parts.join(componentSeparator);
