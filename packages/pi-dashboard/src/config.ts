@@ -13,13 +13,16 @@ export interface DashboardConfig {
   source: DashboardSource;
 }
 
+// Artwork adapted from the pi coding agent's bundled mascot, centered here.
 export const DEFAULT_ART: readonly string[] = [
-  "╭──────────────────────────────────────╮",
-  "│                                      │",
-  "│   pi                                 │",
-  "│   ready.                             │",
-  "│                                      │",
-  "╰──────────────────────────────────────╯",
+  "",
+  "     █▌  █▌",
+  "  ██████████████",
+  "    ██    ██",
+  "    ██    ██",
+  "    ██    ██",
+  "    ██    ██",
+  "",
 ];
 
 function defaultArt(): string[] {

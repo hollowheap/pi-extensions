@@ -11,10 +11,26 @@ import {
 } from "./config.js";
 
 describe("default banner", () => {
-  it("ships uniform-width art", () => {
-    expect(DEFAULT_ART.length).toBeGreaterThan(0);
-    for (const line of DEFAULT_ART) {
-      expect(visibleWidth(line)).toBe(visibleWidth(DEFAULT_ART[0]));
+  it("ships pi's mascot centered to a common middle", () => {
+    expect([...DEFAULT_ART]).toEqual([
+      "",
+      "     █▌  █▌",
+      "  ██████████████",
+      "    ██    ██",
+      "    ██    ██",
+      "    ██    ██",
+      "    ██    ██",
+      "",
+    ]);
+    const widths = DEFAULT_ART.map((line) => visibleWidth(line));
+    const middle = Math.max(...widths) / 2;
+    for (const [i, line] of DEFAULT_ART.entries()) {
+      if (line === "") continue;
+      expect(line).toBe(line.trimEnd());
+      const leftPad = line.length - line.trimStart().length;
+      expect(Math.abs((leftPad + widths[i]) / 2 - middle)).toBeLessThanOrEqual(
+        1,
+      );
     }
     expect(defaultConfig().source).toEqual({
       kind: "ascii",
