@@ -195,12 +195,12 @@ const CD_RULES = JSON.stringify({
   ],
 });
 
-function setupCd() {
+function setupCd(rulesFile: string = CD_RULES) {
   const dir = mkdtempSync(join(tmpdir(), "pi-cd-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
   mkdirSync(join(dir, "sub"), { recursive: true });
   mkdirSync(join(dir, "secret"), { recursive: true });
-  writeFileSync(join(dir, ".pi", "permissions.json"), CD_RULES);
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const pi = createMockPi();
   extension(pi as never);
   const sessionManager = {};
@@ -236,6 +236,18 @@ describe("/cd command", () => {
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining(join(dir, "sub")),
     );
+    const input = { path: "x.ts" };
+    expect(hook("write", input)).toBeUndefined();
+    expect(input.path).toBe(join(dir, "sub", "x.ts"));
+  });
+
+  it("matches rules against the project root under override", async () => {
+    const { dir, cd, hook } = setupCd(
+      JSON.stringify({
+        rules: ["deny write *", "allow write sub/*", "allow read *"],
+      }),
+    );
+    await cd("sub");
     const input = { path: "x.ts" };
     expect(hook("write", input)).toBeUndefined();
     expect(input.path).toBe(join(dir, "sub", "x.ts"));

@@ -52,7 +52,7 @@ export default function (pi: ExtensionAPI) {
     const rules = loadRules(ctx);
     if (rules === undefined) return undefined;
     const raw = readPathArg(event.input) ?? ".";
-    const verdict: Effect = check(rules, raw, verb, cwd);
+    const verdict: Effect = check(rules, raw, verb, ctx.cwd);
     if (verdict === "deny") {
       return {
         block: true,
