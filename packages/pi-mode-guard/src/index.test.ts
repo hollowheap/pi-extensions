@@ -157,6 +157,14 @@ describe("pi-mode-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", "src/x.ts");
   });
 
+  it("asks for unknown tools", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(
+      call("mcp__docs", { path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow mcp__docs?", "src/x.ts");
+  });
+
   it("denies bash without allow rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("bash", { command: "echo hi" })).resolves.toEqual({

@@ -71,12 +71,22 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 
 `/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected. Mode names autocomplete, and `shift+tab` cycles plan, ask, edit, autopilot in order (note: pi binds the same key to thinking-cycle by default — unbind `app.thinking.cycle` if both fire).
 
-| mode | writes (`edit`) |
-|---|---|
-| `plan` | only `artifacts/plan.md` + `artifacts/specs.md`, always asks; everything else denied |
-| `ask` (default) | normal allow/deny/ask flow |
-| `edit` | allowed writes run silently |
-| `autopilot` | allowed writes run silently |
+Outcome matrix — rows are the rules verdict (or tool class), columns the mode. `run` executes silently, `prompt` asks once via dialog, `block` denies:
+
+| call | `ask` | `edit` | `autopilot` | `plan` |
+|---|---|---|---|---|
+| edit allow, normal path | run | run | run | block |
+| edit allow, plan file | prompt | prompt | prompt | prompt |
+| edit no rule, normal path | prompt | prompt | run | block |
+| edit no rule, plan file | prompt | prompt | prompt | prompt |
+| edit deny | block | block | block | block |
+| shell allowlisted | run | run | run | run |
+| shell otherwise | block | block | block | block |
+| read/search allow | run | run | run | run |
+| read/search no rule | prompt | prompt | prompt | prompt |
+| read/search deny | block | block | block | block |
+| unknown tool | prompt | prompt | prompt | prompt |
+| prompt without UI | block | block | block | block |
 
 Shell commands ignore modes: the allowlist decides, and per-call approvals arrive with prompt 7.
 
