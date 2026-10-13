@@ -10,6 +10,9 @@
 - Plan mode constrains writes to `artifacts/plan.md` + `artifacts/specs.md` (artifacts skill; no `plans/` or `tasks/` dirs).
 - `/budget` sets the session token cap (autopilot gate); totals accumulate from `message_end` usage, over-cap aborts the next run.
 - Statusline extension layer runs over `pi.events` (`statusline:values` / `statusline:request`); providers `mode-guard` and `budgets`, no cross-package imports.
+- `pi-dashboard` `setHeader` sections (`header` art centered via `fitLines`, `terminal` command output left); refresh interval per section; default pi mascot attributed.
+- Verdict truth lives in `packages/pi-mode-guard/README.md` outcome matrix (mode x tag/verdict); `shift+tab` cycles modes but collides with pi default `app.thinking.cycle` — unbind to avoid double-fire.
+- Default footer `z` shows `model`, `thinking`, `clock`.
 
 ## Open work
 
