@@ -60,7 +60,7 @@ export function defaultConfig(): StatuslineConfig {
       a: [{ type: "mode-guard" }],
       b: [{ type: "git_branch" }, { type: "cwd" }],
       y: [{ type: "tokens" }, { type: "context" }, { type: "budgets" }],
-      z: [{ type: "model" }, { type: "clock" }],
+      z: [{ type: "model" }, { type: "thinking" }, { type: "clock" }],
     },
     extensions: [...DEFAULT_EXTENSIONS],
   };
