@@ -12,6 +12,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { checkBash } from "./bash.js";
 import {
   addBudgetUsage,
@@ -335,7 +336,7 @@ export default function (pi: ExtensionAPI) {
       await switchMode(ctx, raw);
     },
   });
-  pi.registerShortcut("shift+tab", {
+  pi.registerShortcut(Key.alt("m"), {
     description: "Cycle plan/approval mode",
     handler: (ctx) => switchMode(ctx, nextMode(getMode(ctx.sessionManager))),
   });

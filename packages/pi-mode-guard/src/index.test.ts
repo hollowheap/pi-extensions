@@ -95,7 +95,7 @@ describe("pi-mode-guard extension", () => {
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd", "mode", "budget"]);
     expect(pi.registerShortcut).toHaveBeenCalledWith(
-      "shift+tab",
+      "alt+m",
       expect.objectContaining({ description: "Cycle plan/approval mode" }),
     );
   });

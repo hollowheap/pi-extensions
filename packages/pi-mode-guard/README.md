@@ -69,7 +69,7 @@ Pi exposes no API to move the session directory, so this rewrites relative `path
 
 ## Modes
 
-`/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected. Mode names autocomplete, and `shift+tab` cycles plan, ask, edit, autopilot in order (note: pi binds the same key to thinking-cycle by default — unbind `app.thinking.cycle` if both fire).
+`/mode [plan|ask|edit|autopilot]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected. Mode names autocomplete, and `alt+m` cycles plan, ask, edit, autopilot in order.
 
 Outcome matrix — rows are the rules verdict (or tool class), columns the mode. `run` executes silently, `prompt` asks once via dialog, `block` denies:
 
