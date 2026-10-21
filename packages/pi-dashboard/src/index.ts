@@ -16,14 +16,14 @@ export interface DashboardDeps {
 }
 
 export interface DashboardController {
-  lines: () => string[];
+  lines: (renderWidth?: number) => string[];
   refresh: () => Promise<void>;
   start: (requestRender: () => void) => void;
   stop: () => void;
 }
 
 interface SectionController {
-  lines: () => string[];
+  lines: (renderWidth?: number) => string[];
   refresh: () => Promise<void>;
   start: (requestRender: () => void) => void;
   stop: () => void;
@@ -34,8 +34,8 @@ function headerSection(
   width: number,
   gap: number,
 ): SectionController {
-  const fitted = () => {
-    const lines = fitLines(ascii, width, "center");
+  const fitted = (renderWidth?: number) => {
+    const lines = fitLines(ascii, renderWidth ?? width, "center");
     for (let i = 0; i < gap; i++) lines.push("");
     return lines;
   };
@@ -79,8 +79,8 @@ function terminalSection(
   }
 
   return {
-    lines: () => {
-      const fitted = fitLines(lines, width, "left");
+    lines: (renderWidth?: number) => {
+      const fitted = fitLines(lines, renderWidth ?? width, "left");
       for (let i = 0; i < gap; i++) fitted.push("");
       return fitted;
     },
@@ -114,7 +114,8 @@ export function createDashboard(
         ),
   );
   return {
-    lines: () => sections.flatMap((section) => section.lines()),
+    lines: (renderWidth?: number) =>
+      sections.flatMap((section) => section.lines(renderWidth)),
     refresh: async () => {
       await Promise.all(sections.map((section) => section.refresh()));
     },
@@ -148,7 +149,7 @@ export default function (pi: ExtensionAPI) {
       return {
         dispose: () => controller.stop(),
         invalidate() {},
-        render: (_width: number) => controller.lines(),
+        render: (width: number) => controller.lines(width),
       };
     });
   });

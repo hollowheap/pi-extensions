@@ -13,5 +13,5 @@ pi -e ./packages/pi-question
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-question
+pi install npm:@hollowheap/pi-question
 ```

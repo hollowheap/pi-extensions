@@ -11,7 +11,7 @@ pi -e ./packages/pi-statusline
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-statusline
+pi install npm:@hollowheap/pi-statusline
 ```
 
 Do not enable another footer extension at the same time; the last one to load wins.
@@ -129,4 +129,4 @@ The protocol runs over pi's shared event bus, so neither side imports the other:
 - This package emits `pi.events.emit("statusline:request", { names })` whenever it (re)installs the footer; providers answer by re-emitting their current values.
 - Payloads are `{ name: string, text: string }`; unknown shapes are ignored. Updates re-render the footer.
 
-`pi-mode-guard` provides `mode-guard` (current policy mode, uppercased) and `budgets` (`12,500 used, 87,500 remaining`, empty without a cap).
+`pi-guard` provides `mode-guard` (current policy mode, uppercased) and `budgets` (`12,500 used, 87,500 remaining`, empty without a cap).

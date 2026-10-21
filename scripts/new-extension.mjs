@@ -25,7 +25,7 @@ const scope = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
 ).name.startsWith("@")
   ? null
-  : "@my-scope";
+  : "@hollowheap";
 const command = rawName.replace(/^pi-/, "");
 const pkg = {
   name: `${scope}/${rawName}`,

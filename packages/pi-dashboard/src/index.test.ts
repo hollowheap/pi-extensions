@@ -45,10 +45,13 @@ describe("pi-dashboard extension", () => {
     const pi = createMockPi();
     extension(pi as never);
     const component = installHeader(pi, createMockCtx());
-    const lines = component.render(0);
+    const lines = component.render(60);
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
       expect(visibleWidth(line)).toBe(60);
+    }
+    for (const line of component.render(40)) {
+      expect(visibleWidth(line)).toBe(40);
     }
   });
 
@@ -100,6 +103,20 @@ describe("createDashboard", () => {
     controller.start(renderRequest);
     controller.stop();
     expect(deps.run).not.toHaveBeenCalled();
+  });
+
+  it("re-centers the header when the render width changes", () => {
+    const deps = fakeDeps("");
+    const controller = createDashboard(
+      {
+        width: 5,
+        sections: [{ type: "header", ascii: ["hi"], gap: 0 }],
+      },
+      deps,
+    );
+    expect(controller.lines()).toEqual([" hi  "]);
+    expect(controller.lines(9)).toEqual(["   hi    "]);
+    expect(controller.lines(5)).toEqual([" hi  "]);
   });
 
   it("refreshes command output and re-renders", async () => {

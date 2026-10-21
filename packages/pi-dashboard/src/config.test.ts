@@ -11,27 +11,21 @@ import {
 } from "./config.js";
 
 describe("default banner", () => {
-  it("ships pi's mascot centered to a common middle", () => {
+  it("ships the pi logo on a uniform block grid", () => {
     expect([...DEFAULT_ART]).toEqual([
       "",
-      "     █▌  █▌",
-      "  ██████████████",
-      "    ██    ██",
-      "    ██    ██",
-      "    ██    ██",
-      "    ██    ██",
+      "██████  ",
+      "██  ██  ",
+      "████  ██",
+      "██    ██",
       "",
     ]);
-    const widths = DEFAULT_ART.map((line) => visibleWidth(line));
-    const middle = Math.max(...widths) / 2;
-    for (const [i, line] of DEFAULT_ART.entries()) {
-      if (line === "") continue;
-      expect(line).toBe(line.trimEnd());
-      const leftPad = line.length - line.trimStart().length;
-      expect(Math.abs((leftPad + widths[i]) / 2 - middle)).toBeLessThanOrEqual(
-        1,
-      );
-    }
+    const widths = new Set(
+      DEFAULT_ART.filter((line) => line !== "").map((line) =>
+        visibleWidth(line),
+      ),
+    );
+    expect(widths).toEqual(new Set([8]));
     expect(defaultConfig().sections).toEqual([
       { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
     ]);

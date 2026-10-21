@@ -1,5 +1,5 @@
 {
-  "name": "@my-scope/pi-question",
+  "name": "@hollowheap/pi-question",
   "version": "0.1.0",
   "type": "module",
   "description": "Ask the user one question and wait for the answer",

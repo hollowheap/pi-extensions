@@ -1,0 +1,22 @@
+{
+  "name": "@hollowheap/pi-acp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ACP adapter letting ACP clients drive pi (stdio JSON-RPC server + bundled pi extension)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["src", "dist", "bin", "README.md"],
+  "bin": {
+    "hollowheap-pi-acp": "./bin/hollowheap-pi-acp"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

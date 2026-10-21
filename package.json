@@ -1,9 +1,9 @@
 {
-  "name": "my-pi-extensions",
+  "name": "pi-extensions",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Monorepo of Pi coding agent extensions",
+  "description": "Powerpack extensions for the Pi coding agent: guardrails, statusline, budgeting, autopilot, and power tools",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -13,9 +13,12 @@
   "pi": {
     "extensions": [
       "./packages/pi-statusline/src/index.ts",
-      "./packages/pi-mode-guard/src/index.ts",
+      "./packages/pi-guard/src/index.ts",
       "./packages/pi-question/src/index.ts",
-      "./packages/pi-dashboard/src/index.ts"
+      "./packages/pi-dashboard/src/index.ts",
+      "./packages/pi-tools/src/index.ts",
+      "./packages/pi-budgets/src/index.ts",
+      "./packages/pi-autopilot/src/index.ts"
     ]
   },
   "scripts": {

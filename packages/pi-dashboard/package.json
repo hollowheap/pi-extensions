@@ -1,5 +1,5 @@
 {
-  "name": "@my-scope/pi-dashboard",
+  "name": "@hollowheap/pi-dashboard",
   "version": "0.1.0",
   "type": "module",
   "description": "Startup dashboard header with ASCII art or script output",

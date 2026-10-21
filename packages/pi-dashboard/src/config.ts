@@ -18,15 +18,13 @@ export interface DashboardConfig {
   sections: DashboardSection[];
 }
 
-// Artwork adapted from the pi coding agent's bundled mascot, centered here.
+// Pi logo rendered on a 4x4 solid-block grid (two columns per cell).
 export const DEFAULT_ART: readonly string[] = [
   "",
-  "     █▌  █▌",
-  "  ██████████████",
-  "    ██    ██",
-  "    ██    ██",
-  "    ██    ██",
-  "    ██    ██",
+  "██████  ",
+  "██  ██  ",
+  "████  ██",
+  "██    ██",
   "",
 ];
 

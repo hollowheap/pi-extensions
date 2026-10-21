@@ -11,7 +11,7 @@ pi -e ./packages/pi-dashboard
 ## Install
 
 ```bash
-pi install npm:@my-scope/pi-dashboard
+pi install npm:@hollowheap/pi-dashboard
 ```
 
 ## Configure
