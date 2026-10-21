@@ -4,3 +4,5 @@ build/
 coverage/
 *.tsbuildinfo
 .pi/
+artifacts/logs/
+artifacts/errors/
