@@ -1,0 +1,22 @@
+{
+  "name": "@hollowheap/pi-code-intel",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "LSP-backed code intelligence for the Pi coding agent",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["src", "README.md"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "dependencies": {
+    "@hollowheap/core": "^0.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

@@ -1,9 +1,14 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { session, setCwd } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
-import { getMode, setCwdOverride } from "./modes.js";
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
 
 function createMockPi() {
   return {
@@ -28,18 +33,21 @@ function toolCallHandler(pi: ReturnType<typeof createMockPi>): Handler {
   return calls[0][1] as Handler;
 }
 
+function createContext(cwd: string, approved = true) {
+  return {
+    cwd,
+    sessionManager: {},
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => approved) },
+  };
+}
+
 function setupProject(
   rulesFile: string,
   approved = true,
 ): {
-  ctx: {
-    cwd: string;
-    hasUI: boolean;
-    ui: {
-      notify: ReturnType<typeof vi.fn>;
-      confirm: ReturnType<typeof vi.fn>;
-    };
-  };
+  ctx: ReturnType<typeof createContext>;
   call: (toolName: string, input: unknown) => Promise<unknown>;
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
@@ -48,11 +56,7 @@ function setupProject(
   const pi = createMockPi();
   extension(pi as never);
   const handler = toolCallHandler(pi);
-  const ctx = {
-    cwd: dir,
-    hasUI: true,
-    ui: { notify: vi.fn(), confirm: vi.fn(async () => approved) },
-  };
+  const ctx = createContext(dir, approved);
   return {
     ctx,
     call: (toolName: string, input: unknown) =>
@@ -70,7 +74,7 @@ function setupProject(
 
 const EXAMPLE_RULES = JSON.stringify({
   rules: [
-    "deny edit *",
+    "deny edit src/*",
     "allow edit artifacts/specs/*.md",
     "allow edit artifacts/plan/*.md",
   ],
@@ -132,7 +136,7 @@ describe("pi-guard extension", () => {
   it("checks find, grep, fd, rg, and ls as search", async () => {
     const { ctx, call } = setupProject(
       JSON.stringify({
-        rules: ["deny search *", "allow search src/*"],
+        rules: ["deny search secret/*", "allow search src/*"],
       }),
     );
     await expect(call("find", { path: "src/sub" })).resolves.toBeUndefined();
@@ -140,17 +144,17 @@ describe("pi-guard extension", () => {
     await expect(call("fd", { path: "src/sub" })).resolves.toBeUndefined();
     await expect(call("rg", { path: "src/x.ts" })).resolves.toBeUndefined();
     await expect(call("ls", { path: "src/sub" })).resolves.toBeUndefined();
-    await expect(call("rg", { path: "other" })).resolves.toEqual({
+    await expect(call("rg", { path: "secret/x" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("asks for tools without matching rules and proceeds on approval", async () => {
+  it("allows search without matching rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("find", { path: "src/x.ts" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", "src/x.ts");
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
   it("asks for unknown tools", async () => {
@@ -252,7 +256,7 @@ describe("pi-guard extension", () => {
 
   it("blocks when approval is declined", async () => {
     const { call } = setupProject(EXAMPLE_RULES, false);
-    await expect(call("find", { path: "src/x.ts" })).resolves.toEqual({
+    await expect(call("write", { path: "docs/a.md" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("not approved"),
     });
@@ -267,15 +271,17 @@ describe("pi-guard extension", () => {
     const handler = toolCallHandler(pi);
     const ctx = {
       cwd: dir,
+      sessionManager: {},
       hasUI: false,
+      isProjectTrusted: () => true,
       ui: { notify: vi.fn(), confirm: vi.fn() },
     };
     const result = await handler(
       {
         type: "tool_call",
         toolCallId: "1",
-        toolName: "find",
-        input: { path: "src/x.ts" },
+        toolName: "write",
+        input: { path: "docs/a.md" },
       } as never,
       ctx as never,
     );
@@ -290,34 +296,30 @@ describe("pi-guard extension", () => {
     const { call } = setupProject(
       JSON.stringify({
         rules: [
-          { effect: "deny", tag: "read", pattern: "*" },
+          { effect: "deny", tag: "read", pattern: "secret/*" },
           { effect: "allow", tag: "read", pattern: "src/*" },
         ],
       }),
     );
     await expect(call("read", { path: "src/x.ts" })).resolves.toBeUndefined();
-    await expect(call("read", { path: "other/x.ts" })).resolves.toEqual({
+    await expect(call("read", { path: "secret/x.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
   });
 
-  it("asks when find omits the path", async () => {
+  it("asks when a write omits the path", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
-    await expect(call("find", {})).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow find?", ".");
+    await expect(call("write", {})).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", ".");
   });
 
-  it("warns and asks when the rules file is missing", async () => {
+  it("asks when the rules file is missing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
     const pi = createMockPi();
     extension(pi as never);
     const handler = toolCallHandler(pi);
-    const ctx = {
-      cwd: dir,
-      hasUI: true,
-      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
-    };
+    const ctx = createContext(dir);
     const result = await handler(
       {
         type: "tool_call",
@@ -328,10 +330,6 @@ describe("pi-guard extension", () => {
       ctx as never,
     );
     expect(result).toBeUndefined();
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("no .pi/permissions.json"),
-      "warning",
-    );
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
 
@@ -342,11 +340,7 @@ describe("pi-guard extension", () => {
     const pi = createMockPi();
     extension(pi as never);
     const handler = toolCallHandler(pi);
-    const ctx = {
-      cwd: dir,
-      hasUI: true,
-      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
-    };
+    const ctx = createContext(dir);
     const result = await handler(
       {
         type: "tool_call",
@@ -370,7 +364,7 @@ describe("cwd override", () => {
     const { ctx, hook } = setupMode(
       JSON.stringify({ rules: ["allow edit *"] }),
     );
-    setCwdOverride(ctx.sessionManager, join(ctx.cwd, "sub"));
+    setCwd(ctx.sessionManager, join(ctx.cwd, "sub"));
     const input = { path: "x.ts" };
     await expect(hook("write", input)).resolves.toBeUndefined();
     expect(input.path).toBe(join(ctx.cwd, "sub", "x.ts"));
@@ -383,17 +377,7 @@ function setupMode(rulesFile: string) {
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const pi = createMockPi();
   extension(pi as never);
-  const sessionManager = {};
-  const ctx = {
-    cwd: dir,
-    sessionManager,
-    hasUI: true,
-    ui: {
-      notify: vi.fn(),
-      setStatus: vi.fn(),
-      confirm: vi.fn(async () => true),
-    },
-  };
+  const ctx = createContext(dir);
   const commands = Object.fromEntries(
     pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
@@ -420,13 +404,13 @@ describe("/mode command", () => {
       expect.stringContaining("unknown mode"),
       "error",
     );
-    expect(getMode(ctx.sessionManager)).toBe("ask");
+    expect(session(ctx.sessionManager).mode).toBe("ask");
   });
 
   it("allows plan writes and denies other writes in plan mode", async () => {
     const { ctx, mode, hook } = setupMode('{"rules":[]}');
     await mode("plan");
-    expect(getMode(ctx.sessionManager)).toBe("plan");
+    expect(session(ctx.sessionManager).mode).toBe("plan");
     await expect(
       hook("write", { path: "artifacts/plan.md" }),
     ).resolves.toBeUndefined();
@@ -440,17 +424,16 @@ describe("/mode command", () => {
     });
   });
 
-  it("denies plan writes again after leaving plan mode", async () => {
-    const { ctx, hook, mode } = setupMode(
+  it("keeps explicit deny rules ahead of plan-path overrides", async () => {
+    const { hook, mode } = setupMode(
       JSON.stringify({ rules: ["deny edit *"] }),
     );
     await mode("plan");
-    await expect(
-      hook("write", { path: "artifacts/plan.md" }),
-    ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith(
-      "Allow write?",
-      "artifacts/plan.md",
+    await expect(hook("write", { path: "artifacts/plan.md" })).resolves.toEqual(
+      {
+        block: true,
+        reason: expect.stringContaining("denied"),
+      },
     );
     await mode("ask");
     await expect(hook("write", { path: "artifacts/plan.md" })).resolves.toEqual(
@@ -479,7 +462,7 @@ describe("/mode command", () => {
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("always asks for plan writes, even in edit", async () => {
+  it("allows plan writes in edit mode", async () => {
     const { ctx, mode, hook } = setupMode(
       JSON.stringify({ rules: ["allow edit *"] }),
     );
@@ -487,10 +470,7 @@ describe("/mode command", () => {
     await expect(
       hook("write", { path: "artifacts/plan.md" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith(
-      "Allow write?",
-      "artifacts/plan.md",
-    );
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
   it("rejects autopilot when pi-autopilot is not installed", async () => {
@@ -500,7 +480,7 @@ describe("/mode command", () => {
       expect.stringContaining("unknown mode"),
       "error",
     );
-    expect(getMode(ctx.sessionManager)).toBe("ask");
+    expect(session(ctx.sessionManager).mode).toBe("ask");
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
   });
@@ -509,22 +489,10 @@ describe("/mode command", () => {
 function setupProvider() {
   const pi = createMockPi();
   extension(pi as never);
-  const sessionManager = {};
-  const ctx = {
-    cwd: "/tmp/pi-prov",
-    sessionManager,
-    hasUI: true,
-    ui: {
-      notify: vi.fn(),
-      setStatus: vi.fn(),
-      confirm: vi.fn(async () => true),
-    },
-    abort: vi.fn(),
-  };
+  const ctx = createContext("/tmp/pi-prov");
   const handlers = Object.fromEntries(
     pi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
-  void handlers;
   const commands = Object.fromEntries(
     pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
@@ -586,17 +554,7 @@ function setupKeys(rulesFile: string) {
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const pi = createMockPi();
   extension(pi as never);
-  const sessionManager = {};
-  const ctx = {
-    cwd: dir,
-    sessionManager,
-    hasUI: true,
-    ui: {
-      notify: vi.fn(),
-      setStatus: vi.fn(),
-      confirm: vi.fn(async () => true),
-    },
-  };
+  const ctx = createContext(dir);
   const commands = Object.fromEntries(
     pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
@@ -612,18 +570,18 @@ describe("mode shortcut and completions", () => {
   it("cycles ask, edit, plan in order", async () => {
     const { ctx, shortcut } = setupKeys('{"rules":[]}');
     await shortcut(ctx);
-    expect(getMode(ctx.sessionManager)).toBe("edit");
+    expect(session(ctx.sessionManager).mode).toBe("edit");
     await shortcut(ctx);
-    expect(getMode(ctx.sessionManager)).toBe("plan");
+    expect(session(ctx.sessionManager).mode).toBe("plan");
     await shortcut(ctx);
-    expect(getMode(ctx.sessionManager)).toBe("ask");
+    expect(session(ctx.sessionManager).mode).toBe("ask");
   });
 
   it("completes mode names", () => {
     const { commands } = setupKeys('{"rules":[]}');
     const complete = commands.mode.getArgumentCompletions;
     expect(complete?.("").map((item: { value: string }) => item.value)).toEqual(
-      ["plan", "ask", "edit"],
+      ["ask", "edit", "plan"],
     );
     expect(
       complete?.("e").map((item: { value: string }) => item.value),

@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { enterMode, registerMode, registerModeGate } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import { getBudgetUsed, getTokenCap, setTokenCap } from "./budget.js";
 import extension from "./index.js";
@@ -75,57 +76,98 @@ describe("pi-budgets extension", () => {
       "statusline:request",
       expect.any(Function),
     );
-    expect(pi.events.on).toHaveBeenCalledWith(
-      "guard:mode-enter",
-      expect.any(Function),
-    );
   });
 });
 
 describe("autopilot cap veto", () => {
+  function setupGate(): void {
+    extension(createMockPi() as never);
+    registerMode({
+      name: "autopilot",
+      defaults: {
+        read: "allow",
+        search: "allow",
+        edit: "allow",
+        shell: "allow",
+      },
+    });
+  }
+
   it("vetoes autopilot entry without a token cap", () => {
-    const pi = createMockPi();
-    extension(pi as never);
-    const listener = pi.events.on.mock.calls.find(
-      ([channel]) => channel === "guard:mode-enter",
-    )?.[1] as (data: unknown) => void;
-    const owner = {};
-    const query: { mode: string; owner: unknown; veto?: string } = {
-      mode: "autopilot",
-      owner,
-    };
-    listener(query);
-    expect(query.veto).toContain("set a token cap first");
+    setupGate();
+    const result = enterMode({}, "autopilot");
+    expect(result.veto).toContain("set a token cap first");
   });
 
   it("leaves autopilot entry alone with a token cap", () => {
-    const pi = createMockPi();
-    extension(pi as never);
-    const listener = pi.events.on.mock.calls.find(
-      ([channel]) => channel === "guard:mode-enter",
-    )?.[1] as (data: unknown) => void;
+    setupGate();
     const owner = {};
     setTokenCap(owner, 1000);
-    const query: { mode: string; owner: unknown; veto?: string } = {
-      mode: "autopilot",
-      owner,
-    };
-    listener(query);
-    expect(query.veto).toBeUndefined();
+    const result = enterMode(owner, "autopilot");
+    expect(result.veto).toBeUndefined();
+    expect(result.mode).toBe("autopilot");
   });
 
   it("ignores other modes", () => {
+    setupGate();
+    const result = enterMode({}, "plan");
+    expect(result.veto).toBeUndefined();
+  });
+
+  it("registers its gate under a key so a reload replaces it", () => {
+    registerMode({
+      name: "autopilot",
+      defaults: {
+        read: "allow",
+        search: "allow",
+        edit: "allow",
+        shell: "allow",
+      },
+    });
+    const calls: string[] = [];
+    const stop = registerModeGate(() => {
+      calls.push("probe");
+      return undefined;
+    }, "pi-budgets");
+    extension(createMockPi() as never);
+    enterMode({}, "autopilot");
+    expect(calls).toEqual([]);
+    stop();
+  });
+});
+
+describe("budget baseline", () => {
+  it("seeds the budget from the session branch and adds later deltas", () => {
     const pi = createMockPi();
     extension(pi as never);
-    const listener = pi.events.on.mock.calls.find(
-      ([channel]) => channel === "guard:mode-enter",
-    )?.[1] as (data: unknown) => void;
-    const query: { mode: string; owner: unknown; veto?: string } = {
-      mode: "plan",
-      owner: {},
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    const sessionManager = {
+      getBranch: () => [
+        {
+          type: "message",
+          message: { role: "assistant", usage: { input: 40, output: 10 } },
+        },
+      ],
     };
-    listener(query);
-    expect(query.veto).toBeUndefined();
+    const ctx = {
+      cwd: "/tmp",
+      sessionManager,
+      hasUI: true,
+      ui: { notify: vi.fn(), setStatus: vi.fn(), confirm: vi.fn() },
+      abort: vi.fn(),
+    };
+    handlers.session_start(undefined as never, ctx as never);
+    expect(getBudgetUsed(sessionManager)).toBe(50);
+    handlers.message_end(
+      {
+        type: "message_end",
+        message: { role: "assistant", usage: { input: 5, output: 5 } },
+      } as never,
+      ctx as never,
+    );
+    expect(getBudgetUsed(sessionManager)).toBe(60);
   });
 });
 

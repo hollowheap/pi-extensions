@@ -2,7 +2,7 @@
 
 Registers the `autopilot` approval mode for `pi-guard`: reads, edits, and shell run silently, except calls a `deny` rule or the bash safety list blocks. See the outcome matrix in `pi-guard`'s README for the full `autopilot` column.
 
-Mechanism: on `pi-guard`'s `guard:modes` query this package appends its descriptor (pure allow policy plus an entry warning). It imports nothing at runtime — not even `@hollowheap/core` values.
+Mechanism: this package registers an `autopilot` mode layer on `@hollowheap/core` (allow defaults plus an entry warning). It imports nothing else at runtime.
 
 ## Try it
 

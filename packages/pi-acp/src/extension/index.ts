@@ -1,20 +1,22 @@
 import { type Socket, createConnection } from "node:net";
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
-import { RequestTracker, attachWireHandler } from "../socket.js";
-import { checkBash } from "./bash.js";
-import { type ClientCaps, SOCKET_ENV, readCaps } from "./client.js";
-import { loadRules } from "./loader.js";
-import { MODES, type Mode, decide } from "./modes.js";
-import type { Tag } from "./rules.js";
 import {
-  type ToolDeps,
-  askPermission,
-  createAcpTools,
-  runPolicy,
-} from "./tools.js";
+  type ExtensionAPI,
+  type ExtensionContext,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
+import {
+  type Tag,
+  displayTarget,
+  enterMode,
+  evaluate,
+  loadModesConfig,
+  modeLayers,
+  replaceConfigModes,
+} from "@hollowheap/core";
+import { RequestTracker, attachWireHandler } from "../socket.js";
+import { type ClientCaps, SOCKET_ENV, readCaps } from "./client.js";
+import { loadPermissions } from "./permissions.js";
+import { type ToolDeps, askPermission, createAcpTools } from "./tools.js";
 
 const BUILTIN_TAGS: Record<string, Tag> = {
   write: "edit",
@@ -54,15 +56,11 @@ const BUILTIN_KINDS: Record<
 // Module state is shared across setup calls in one pi process (verified:
 // the factory runs once per session bind against the same module instance).
 // One adapter process serves one ACP session, so globals are correct.
-let mode: Mode = "ask";
+let sessionOwner: unknown;
 let caps: ClientCaps = {};
 let sock: Socket | undefined;
 let warned = false;
 const tracker = new RequestTracker();
-
-function getMode(): Mode {
-  return mode;
-}
 
 function getCaps(): ClientCaps {
   return caps;
@@ -95,7 +93,6 @@ async function callSocket(
 }
 
 const toolDeps: ToolDeps = {
-  getMode,
   getCaps,
   connected: () => sock !== undefined && !sock.destroyed,
   callSocket,
@@ -113,8 +110,23 @@ function readCommandArg(input: unknown): string {
   return typeof command === "string" ? command : "";
 }
 
+export interface ModeDescriptor {
+  name: string;
+  description?: string;
+}
+
+export function modeDescriptors(): ModeDescriptor[] {
+  return modeLayers().map((layer) => ({
+    name: layer.name,
+    ...(layer.description === undefined
+      ? {}
+      : { description: layer.description }),
+  }));
+}
+
 function connectAdapter(ctx: ExtensionContext): void {
   caps = readCaps();
+  sessionOwner = ctx.sessionManager;
   const socketPath = process.env[SOCKET_ENV];
   if (socketPath === undefined || socketPath === "") return;
   if (sock !== undefined) {
@@ -132,13 +144,30 @@ function connectAdapter(ctx: ExtensionContext): void {
   current.on("connect", () => {
     sock = current;
     attachWireHandler(current, tracker, (request, respond) => {
+      if (request.method === "get-modes") {
+        respond({ modes: modeDescriptors() });
+        return;
+      }
       if (
         request.method === "set-mode" &&
-        typeof (request.params as { mode?: unknown })?.mode === "string" &&
-        (MODES as string[]).includes((request.params as { mode: string }).mode)
+        typeof (request.params as { mode?: unknown })?.mode === "string"
       ) {
-        mode = (request.params as { mode: Mode }).mode;
-        respond({});
+        const result = enterMode(
+          sessionOwner,
+          (request.params as { mode: string }).mode,
+        );
+        if (result.diagnostic !== undefined) {
+          respond({ error: result.diagnostic });
+          return;
+        }
+        if (result.veto !== undefined) {
+          respond({ error: result.veto });
+          return;
+        }
+        respond({
+          modes: modeDescriptors(),
+          notices: result.notices.map((notice) => notice.text),
+        });
         return;
       }
       respond({ error: `unknown socket method: ${request.method}` });
@@ -150,6 +179,9 @@ export default function (pi: ExtensionAPI) {
   for (const tool of createAcpTools(toolDeps)) pi.registerTool(tool);
   pi.on("session_start", (_event, ctx) => {
     connectAdapter(ctx);
+    const notify = (message: string) =>
+      ctx.ui.notify(`pi-acp: ${message}`, "warning");
+    replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
   });
   pi.on("session_shutdown", () => {
     if (sock !== undefined) {
@@ -160,32 +192,6 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     if (ACP_TOOLS.has(event.toolName)) return undefined;
     const tag: Tag | undefined = BUILTIN_TAGS[event.toolName];
-    if (tag === "shell") {
-      const command = readCommandArg(event.input);
-      const gate = checkBash(command, loadRules(ctx));
-      const final = decide(getMode(), "shell", gate.decision, false);
-      const connected = sock !== undefined && !sock.destroyed;
-      if (final === "deny" || (final === "ask" && !connected)) {
-        const reason =
-          gate.decision === "deny"
-            ? (gate.reason ?? "denied")
-            : "mode denies shell";
-        return {
-          block: true,
-          reason: `pi-acp: ${event.toolName} denied: ${reason}`,
-        };
-      }
-      if (final === "allow") return undefined;
-      try {
-        await askPermission(toolDeps, event.toolName, command, "execute");
-      } catch (error) {
-        return {
-          block: true,
-          reason: error instanceof Error ? error.message : String(error),
-        };
-      }
-      return undefined;
-    }
     if (tag === undefined) {
       try {
         await askPermission(
@@ -193,6 +199,7 @@ export default function (pi: ExtensionAPI) {
           event.toolName,
           readPathArg(event.input) ?? event.toolName,
           "other",
+          event.toolCallId,
         );
       } catch (error) {
         return {
@@ -202,21 +209,45 @@ export default function (pi: ExtensionAPI) {
       }
       return undefined;
     }
-    const raw = readPathArg(event.input) ?? ".";
-    try {
-      await runPolicy(
-        toolDeps,
-        ctx,
-        event.toolName,
-        tag,
-        raw,
-        BUILTIN_KINDS[event.toolName] ?? "other",
-      );
-    } catch (error) {
+    const target =
+      tag === "shell"
+        ? readCommandArg(event.input)
+        : (readPathArg(event.input) ?? ".");
+    const verdict = evaluate({
+      owner: ctx.sessionManager,
+      cwd: ctx.cwd,
+      tag,
+      target,
+      rules: loadPermissions(ctx),
+    });
+    if (verdict === "deny") {
       return {
         block: true,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: `pi-acp: ${event.toolName} denied: ${tag} access to ${displayTarget(target)} is denied`,
       };
+    }
+    if (verdict === "ask") {
+      const connected = sock !== undefined && !sock.destroyed;
+      if (!connected) {
+        return {
+          block: true,
+          reason: `pi-acp: ${event.toolName} denied: no client connected to approve`,
+        };
+      }
+      try {
+        await askPermission(
+          toolDeps,
+          event.toolName,
+          target,
+          BUILTIN_KINDS[event.toolName] ?? "other",
+          event.toolCallId,
+        );
+      } catch (error) {
+        return {
+          block: true,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
     return undefined;
   });

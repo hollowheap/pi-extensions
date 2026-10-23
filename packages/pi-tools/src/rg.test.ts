@@ -1,14 +1,24 @@
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setCwd } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
-import { setEventSink } from "./cwd.js";
 import { type ExecDeps, clampMaxResults } from "./exec.js";
 import { createRgTool, isFileTarget, parseRgLine } from "./rg.js";
 
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
+
 function project(rules: string[]): {
   dir: string;
-  ctx: { cwd: string; ui: { notify: ReturnType<typeof vi.fn> } };
+  ctx: {
+    cwd: string;
+    sessionManager: object;
+    isProjectTrusted: () => boolean;
+    ui: { notify: ReturnType<typeof vi.fn> };
+  };
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-rg-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -16,7 +26,15 @@ function project(rules: string[]): {
     join(dir, ".pi", "permissions.json"),
     JSON.stringify({ rules }),
   );
-  return { dir, ctx: { cwd: dir, ui: { notify: vi.fn() } } };
+  return {
+    dir,
+    ctx: {
+      cwd: dir,
+      sessionManager: {},
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn() },
+    },
+  };
 }
 
 function textOf(result: { content: unknown }): string {
@@ -171,28 +189,20 @@ describe("rg tool", () => {
   it("returns matches relative to the cd override", async () => {
     const { dir, ctx } = project(["allow search *"]);
     mkdirSync(join(dir, "sub"), { recursive: true });
-    setEventSink({
-      emit: (_channel, data) => {
-        (data as { dir?: string }).dir = join(dir, "sub");
-      },
-    });
-    try {
-      const deps: ExecDeps = {
-        run: async () => "a.ts:1:hit\n",
-        statMtimeMs: () => 1,
-      };
-      const tool = createRgTool(deps);
-      const result = await tool.execute(
-        "call-1",
-        { pattern: "hit" },
-        undefined,
-        () => {},
-        ctx as never,
-      );
-      expect(textOf(result)).toBe("a.ts:1:hit");
-    } finally {
-      setEventSink(undefined);
-    }
+    setCwd(ctx.sessionManager, join(dir, "sub"));
+    const deps: ExecDeps = {
+      run: async () => "a.ts:1:hit\n",
+      statMtimeMs: () => 1,
+    };
+    const tool = createRgTool(deps);
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "hit" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("a.ts:1:hit");
   });
 
   it("searches a file passed as the search path", async () => {
@@ -224,6 +234,46 @@ describe("rg tool", () => {
       ctx as never,
     );
     expect(textOf(result).length).toBeLessThanOrEqual(300);
+  });
+
+  it("keeps matches that only ask", async () => {
+    const { ctx } = project(["ask search *"]);
+    const deps: ExecDeps = {
+      run: async () => "a.ts:1:hit\n",
+      statMtimeMs: () => 1,
+    };
+    const tool = createRgTool(deps);
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "hit" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("a.ts:1:hit");
+  });
+
+  it("passes the pattern via --regexp and terminates the options", async () => {
+    const { ctx } = project(["allow search *"]);
+    let seen: string[] = [];
+    const deps: ExecDeps = {
+      run: async (_command, args) => {
+        seen = args;
+        return "";
+      },
+      statMtimeMs: () => 1,
+    };
+    const tool = createRgTool(deps);
+    await tool.execute(
+      "call-1",
+      { pattern: "-dash" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(seen).toContain("--regexp");
+    expect(seen).toContain("-dash");
+    expect(seen[seen.length - 2]).toBe("--");
   });
 
   it("returns a clear error when rg is missing", async () => {

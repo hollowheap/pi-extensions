@@ -39,7 +39,7 @@ export function renderStatusline(
         if (text !== "") parts.push(styleComponent(text, spec, theme));
       } else if (config.extensions.includes(spec.type)) {
         const text = extensions.get(spec.type) ?? "";
-        if (text !== "") parts.push(styleText(text, spec, theme));
+        if (text !== "") parts.push(styleComponent(text, spec, theme));
       }
     }
     if (parts.length === 0) continue;
@@ -57,6 +57,12 @@ export function renderStatusline(
       : `${" ".repeat(pad)}${rightText}`;
   }
   const gap = width - visibleWidth(leftText) - visibleWidth(rightText);
-  if (gap < 1) return truncateToWidth(`${leftText} ${rightText}`, width);
+  if (gap < 1) {
+    const room = width - visibleWidth(rightText) - 1;
+    if (room <= 0) return truncateToWidth(rightText, width);
+    const trimmed = truncateToWidth(leftText, room);
+    const pad = width - visibleWidth(trimmed) - visibleWidth(rightText);
+    return `${trimmed}${" ".repeat(Math.max(pad, 1))}${rightText}`;
+  }
   return `${leftText}${" ".repeat(gap)}${rightText}`;
 }

@@ -1,14 +1,24 @@
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setCwd } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
-import { setEventSink } from "./cwd.js";
 import { type ExecDeps, runBinary } from "./exec.js";
 import { createFdTool } from "./fd.js";
 
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
+
 function project(rules: string[]): {
   dir: string;
-  ctx: { cwd: string; ui: { notify: ReturnType<typeof vi.fn> } };
+  ctx: {
+    cwd: string;
+    sessionManager: object;
+    isProjectTrusted: () => boolean;
+    ui: { notify: ReturnType<typeof vi.fn> };
+  };
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-fd-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -16,7 +26,15 @@ function project(rules: string[]): {
     join(dir, ".pi", "permissions.json"),
     JSON.stringify({ rules }),
   );
-  return { dir, ctx: { cwd: dir, ui: { notify: vi.fn() } } };
+  return {
+    dir,
+    ctx: {
+      cwd: dir,
+      sessionManager: {},
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn() },
+    },
+  };
 }
 
 function fakeDeps(stdout: string, mtimes: Record<string, number>): ExecDeps {
@@ -121,26 +139,51 @@ describe("fd tool", () => {
   it("returns paths relative to the cd override", async () => {
     const { dir, ctx } = project(["allow search *"]);
     mkdirSync(join(dir, "sub"), { recursive: true });
-    setEventSink({
-      emit: (_channel, data) => {
-        (data as { dir?: string }).dir = join(dir, "sub");
+    setCwd(ctx.sessionManager, join(dir, "sub"));
+    const tool = createFdTool(
+      fakeDeps("a.ts\n", { [join(dir, "sub", "a.ts")]: 1 }),
+    );
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "*.ts" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("a.ts");
+  });
+
+  it("keeps results that only ask", async () => {
+    const { dir, ctx } = project(["ask search *"]);
+    const tool = createFdTool(fakeDeps("a.ts\n", { [join(dir, "a.ts")]: 1 }));
+    const result = await tool.execute(
+      "call-1",
+      { pattern: "*.ts" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(textOf(result)).toBe("a.ts");
+  });
+
+  it("passes the glob and terminates the options", async () => {
+    const { ctx } = project(["allow search *"]);
+    let seen: string[] = [];
+    const tool = createFdTool({
+      run: async (_command, args) => {
+        seen = args;
+        return "";
       },
+      statMtimeMs: () => 1,
     });
-    try {
-      const tool = createFdTool(
-        fakeDeps("a.ts\n", { [join(dir, "sub", "a.ts")]: 1 }),
-      );
-      const result = await tool.execute(
-        "call-1",
-        { pattern: "*.ts" },
-        undefined,
-        () => {},
-        ctx as never,
-      );
-      expect(textOf(result)).toBe("a.ts");
-    } finally {
-      setEventSink(undefined);
-    }
+    await tool.execute(
+      "call-1",
+      { pattern: "--dash" },
+      undefined,
+      () => {},
+      ctx as never,
+    );
+    expect(seen).toEqual(["--glob", "--dash", "--", "."]);
   });
 
   it("returns a clear error when fd is missing", async () => {
@@ -197,7 +240,7 @@ describe("fd tool", () => {
         () => {},
         ctx as never,
       ),
-    ).rejects.toThrow("does not exist");
+    ).rejects.toThrow(/not a directory/);
   });
 });
 
@@ -205,6 +248,6 @@ describe("runBinary", () => {
   it("reports a clear error when the binary is missing", async () => {
     await expect(
       runBinary("pi-tools-missing-binary", [], tmpdir(), undefined),
-    ).rejects.toThrow("is not installed");
+    ).rejects.toThrow("command not found");
   });
 });

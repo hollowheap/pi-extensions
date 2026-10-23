@@ -1,22 +1,28 @@
 import { execFile } from "node:child_process";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
   type ExtensionContext,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
-import { checkBash } from "./bash.js";
+import {
+  type Tag,
+  checkPath,
+  clampMaxResults,
+  displayPath,
+  displayTarget,
+  evaluate,
+  runBinary,
+  truncateText,
+} from "@hollowheap/core";
 import type { ClientCaps } from "./client.js";
-import { clampMaxResults, runBinary } from "./exec.js";
-import { loadRules } from "./loader.js";
-import { type Mode, decide, isPlanPath } from "./modes.js";
-import { type Tag, check } from "./rules.js";
+import { loadPermissions } from "./permissions.js";
 
 export const REQUEST_TIMEOUT_MS = 10_000;
+export const TERMINAL_TIMEOUT_MS = 60_000;
 
 export interface ToolDeps {
-  getMode: () => Mode;
   getCaps: () => ClientCaps;
   connected: () => boolean;
   callSocket: (
@@ -24,16 +30,6 @@ export interface ToolDeps {
     params: unknown,
     timeoutMs?: number,
   ) => Promise<unknown>;
-}
-
-function displayTarget(target: string): string {
-  return target.length > 500 ? `${target.slice(0, 500)}…` : target;
-}
-
-function cutOutput(text: string): string {
-  if (text.length <= 4000) return text;
-  const cut = text.length - 4000;
-  return `${text.slice(0, 3000)}\n[acp: cut ${cut} characters]\n${text.slice(-1000)}`;
 }
 
 export function hasConflictMarkers(content: string): boolean {
@@ -99,11 +95,13 @@ export async function askPermission(
   tool: string,
   target: string,
   kind: "read" | "edit" | "execute" | "search" | "other",
+  toolCallId?: string,
 ): Promise<void> {
   const result = (await deps.callSocket("permission", {
     tool,
     target: displayTarget(target),
     kind,
+    ...(toolCallId === undefined ? {} : { toolCallId }),
   })) as { decision?: unknown };
   if (result.decision !== "allow_once") {
     throw new Error(
@@ -119,21 +117,27 @@ export async function runPolicy(
   tag: Tag,
   absPath: string,
   kind: "read" | "edit" | "execute" | "search" | "other",
+  toolCallId?: string,
 ): Promise<void> {
-  const verdict = check(loadRules(ctx), absPath, tag, ctx.cwd);
-  const decision = decide(
-    deps.getMode(),
+  const verdict = evaluate({
+    owner: ctx.sessionManager,
+    cwd: ctx.cwd,
     tag,
-    verdict,
-    tag === "edit" && isPlanPath(absPath, ctx.cwd),
-  );
-  if (decision === "deny") {
+    target: absPath,
+    rules: loadPermissions(ctx),
+  });
+  if (verdict === "deny") {
     throw new Error(
       `pi-acp: ${tag} access to ${displayTarget(absPath)} is denied`,
     );
   }
-  if (decision === "ask") {
-    await askPermission(deps, tool, absPath, kind);
+  if (verdict === "ask") {
+    if (!deps.connected()) {
+      throw new Error(
+        `pi-acp: ${tool} ${displayTarget(absPath)} was not approved (no client connected)`,
+      );
+    }
+    await askPermission(deps, tool, absPath, kind, toolCallId);
   }
 }
 
@@ -215,12 +219,19 @@ async function runTerminal(
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
     let output = "";
+    const deadline = Date.now() + TERMINAL_TIMEOUT_MS;
     for (;;) {
       if (aborted) {
         await deps
           .callSocket("terminal-kill", { terminalId }, REQUEST_TIMEOUT_MS)
           .catch(() => {});
         throw new Error("command aborted");
+      }
+      if (Date.now() > deadline) {
+        await deps
+          .callSocket("terminal-kill", { terminalId }, REQUEST_TIMEOUT_MS)
+          .catch(() => {});
+        throw new Error("command timed out");
       }
       const state = (await deps.callSocket(
         "terminal-output",
@@ -253,11 +264,6 @@ function textResult(text: string): {
   return { content: [{ type: "text", text }], details: {} };
 }
 
-function toDisplayRel(base: string, abs: string): string {
-  const rel = relative(base, abs).split(sep).join("/");
-  return rel.endsWith("/") && rel.length > 1 ? rel.slice(0, -1) : rel;
-}
-
 export function createAcpTools(deps: ToolDeps) {
   const readTool = defineTool({
     name: "acp_read",
@@ -268,15 +274,15 @@ export function createAcpTools(deps: ToolDeps) {
         description: "File path, absolute or relative to the session directory",
       }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_read", "read", abs, "read");
+      await runPolicy(deps, ctx, "acp_read", "read", abs, "read", toolCallId);
       const caps = deps.getCaps();
       const text =
         caps.fs?.readTextFile === true
           ? await readThroughClient(deps, abs)
           : readLocal(abs);
-      return textResult(cutOutput(text));
+      return textResult(truncateText(text, "acp"));
     },
   });
 
@@ -291,12 +297,12 @@ export function createAcpTools(deps: ToolDeps) {
       }),
       content: Type.String({ description: "Full file content" }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       if (hasConflictMarkers(params.content)) {
         throw new Error("pi-acp: content contains conflict markers");
       }
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_write", "edit", abs, "edit");
+      await runPolicy(deps, ctx, "acp_write", "edit", abs, "edit", toolCallId);
       const caps = deps.getCaps();
       let exists = existsLocal(abs);
       if (!exists && caps.fs?.readTextFile === true) {
@@ -310,8 +316,11 @@ export function createAcpTools(deps: ToolDeps) {
       if (exists) throw new Error(`pi-acp: path already exists: ${abs}`);
       const canWriteClient = deps.getCaps().fs?.writeTextFile === true;
       if (canWriteClient) await writeThroughClient(deps, abs, params.content);
-      else writeFileSync(abs, params.content);
-      return textResult(`Created ${toDisplayRel(ctx.cwd, abs)}`);
+      else {
+        mkdirSync(dirname(abs), { recursive: true });
+        writeFileSync(abs, params.content);
+      }
+      return textResult(`Created ${displayPath(ctx.cwd, abs)}`);
     },
   });
 
@@ -331,16 +340,21 @@ export function createAcpTools(deps: ToolDeps) {
         }),
       ),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       for (const edit of params.edits) {
         if (hasConflictMarkers(edit.newText)) {
           throw new Error("pi-acp: content contains conflict markers");
         }
       }
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_edit", "edit", abs, "edit");
+      await runPolicy(deps, ctx, "acp_edit", "edit", abs, "edit", toolCallId);
       const caps = deps.getCaps();
-      const local = readLocal(abs);
+      let local: string;
+      try {
+        local = readLocal(abs);
+      } catch {
+        throw new Error(`pi-acp: file not found: ${abs}`);
+      }
       if (caps.fs?.readTextFile === true) {
         let remote: string | undefined;
         try {
@@ -358,7 +372,7 @@ export function createAcpTools(deps: ToolDeps) {
       const canWriteClient = deps.getCaps().fs?.writeTextFile === true;
       if (canWriteClient) await writeThroughClient(deps, abs, updated);
       else writeFileSync(abs, updated);
-      return textResult(`Edited ${toDisplayRel(ctx.cwd, abs)}`);
+      return textResult(`Edited ${displayPath(ctx.cwd, abs)}`);
     },
   });
 
@@ -366,22 +380,34 @@ export function createAcpTools(deps: ToolDeps) {
     name: "acp_bash",
     label: "acp_bash",
     description:
-      "Run a shell command. Asks the client for approval; without a client, local rules decide.",
+      "Run a shell command. Asks the client for approval; without a client, the local policy applies.",
     parameters: Type.Object({
       command: Type.String({ description: "Shell command" }),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const gate = checkBash(params.command, loadRules(ctx));
-      const final = decide(deps.getMode(), "shell", gate.decision, false);
-      if (final === "deny" || (final === "ask" && !deps.connected())) {
-        const reason =
-          gate.decision === "deny"
-            ? (gate.reason ?? "denied")
-            : "mode denies shell";
-        throw new Error(`pi-acp: bash denied: ${reason}`);
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const verdict = evaluate({
+        owner: ctx.sessionManager,
+        cwd: ctx.cwd,
+        tag: "shell",
+        target: params.command,
+        rules: loadPermissions(ctx),
+      });
+      if (verdict === "deny") {
+        throw new Error("pi-acp: bash denied: policy denies shell");
       }
-      if (final === "ask") {
-        await askPermission(deps, "acp_bash", params.command, "execute");
+      if (verdict === "ask") {
+        if (!deps.connected()) {
+          throw new Error(
+            "pi-acp: bash denied: no client connected to approve",
+          );
+        }
+        await askPermission(
+          deps,
+          "acp_bash",
+          params.command,
+          "execute",
+          toolCallId,
+        );
       }
       const caps = deps.getCaps();
       const output =
@@ -393,7 +419,7 @@ export function createAcpTools(deps: ToolDeps) {
               signal ?? undefined,
             )
           : await localBash(params.command, ctx.cwd, signal ?? undefined);
-      return textResult(cutOutput(output));
+      return textResult(truncateText(output, "acp"));
     },
   });
 
@@ -408,17 +434,25 @@ export function createAcpTools(deps: ToolDeps) {
         Type.Integer({ minimum: 1, maximum: 500, default: 100 }),
       ),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
       const searchDir = resolve(root, params.path ?? ".");
-      await runPolicy(deps, ctx, "acp_fd", "search", searchDir, "search");
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_fd",
+        "search",
+        searchDir,
+        "search",
+        toolCallId,
+      );
       const stdout = await runBinary(
         "fd",
-        ["--glob", params.pattern],
+        ["--glob", params.pattern, "--", "."],
         searchDir,
         signal ?? undefined,
       );
-      const rules = loadRules(ctx);
+      const rules = loadPermissions(ctx);
       const found: { rel: string; mtime: number }[] = [];
       for (const line of stdout.split("\n")) {
         const trimmed = line.trim();
@@ -430,8 +464,8 @@ export function createAcpTools(deps: ToolDeps) {
         } catch {
           continue;
         }
-        if (check(rules, abs, "search", root) !== "allow") continue;
-        found.push({ rel: toDisplayRel(root, abs), mtime });
+        if (checkPath(rules, abs, "search", root) === "deny") continue;
+        found.push({ rel: displayPath(root, abs), mtime });
       }
       found.sort((a, b) => b.mtime - a.mtime);
       const paths = found
@@ -457,31 +491,40 @@ export function createAcpTools(deps: ToolDeps) {
         Type.Integer({ minimum: 1, maximum: 500, default: 100 }),
       ),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
       const target = resolve(root, params.path ?? ".");
-      await runPolicy(deps, ctx, "acp_rg", "search", target, "search");
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_rg",
+        "search",
+        target,
+        "search",
+        toolCallId,
+      );
       const args = [
         "--line-number",
         "--no-heading",
         "--color",
         "never",
+        "--regexp",
         params.pattern,
       ];
       if (params.glob !== undefined) args.push("--glob", params.glob);
-      args.push(params.path ?? ".");
+      args.push("--", params.path ?? ".");
       const stdout = await runBinary("rg", args, root, signal ?? undefined, {
         okExitCodes: [1],
       });
-      const rules = loadRules(ctx);
+      const rules = loadPermissions(ctx);
       const matches: string[] = [];
       for (const line of stdout.split("\n")) {
         if (line.trim() === "") continue;
         const match = /^(.*):(\d+):(.*)$/.exec(line);
         if (match === null) continue;
         const abs = resolve(root, match[1]);
-        if (check(rules, abs, "search", root) !== "allow") continue;
-        const text = `${toDisplayRel(root, abs)}:${match[2]}:${match[3]}`;
+        if (checkPath(rules, abs, "search", root) === "deny") continue;
+        const text = `${displayPath(root, abs)}:${match[2]}:${match[3]}`;
         matches.push(text.length > 300 ? text.slice(0, 300) : text);
         if (matches.length >= clampMaxResults(params.max_results)) break;
       }
@@ -498,12 +541,16 @@ export function createAcpTools(deps: ToolDeps) {
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const dir = resolve(ctx.cwd, params.path ?? ".");
-      await runPolicy(deps, ctx, "acp_eza", "search", dir, "other");
+      await runPolicy(deps, ctx, "acp_eza", "search", dir, "other", toolCallId);
+      let isDirectory = false;
       try {
-        statSync(dir);
+        isDirectory = statSync(dir).isDirectory();
       } catch {
+        isDirectory = false;
+      }
+      if (!isDirectory) {
         throw new Error(`pi-acp: not a directory: ${params.path ?? "."}`);
       }
       const stdout = await runBinary(
@@ -512,7 +559,7 @@ export function createAcpTools(deps: ToolDeps) {
         ctx.cwd,
         undefined,
       );
-      return textResult(cutOutput(stdout));
+      return textResult(truncateText(stdout, "acp"));
     },
   });
 

@@ -1,6 +1,6 @@
 # pi-guard
 
-Checks tool calls against tagged allow/deny/ask rules. Anything unmatched asks the user for approval. Owns the enforcement context (modes, approvals, cwd override) and coordinates with `pi-tools` (`fd`/`rg`, `/cd`), `pi-budgets` (`/budget`), and `pi-autopilot` (`autopilot` mode) through the event envelopes documented in `@hollowheap/core`'s README.
+Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns the TUI side of the policy: approval prompts, `/mode`, `alt+m`, and the `mode-guard` statusline value. Verdicts come from `@hollowheap/core`, so the ACP extension enforces exactly the same rules.
 
 ## Try it
 
@@ -16,21 +16,33 @@ pi install npm:@hollowheap/pi-guard
 
 ## Rules
 
-Create `<project>/.pi/permissions.json`:
+Rules live in `<agentDir>/permissions.json` (default `~/.pi/agent/permissions.json`):
 
 ```json
 {
   "rules": [
     "deny edit *",
     "allow edit artifacts/specs/*.md",
-    "allow edit artifacts/plan/*.md"
+    "ask shell git push"
   ]
 }
 ```
 
-Each rule is `"effect tag pattern"` or `{ "effect", "tag", "pattern" }`. `effect` is `allow` or `deny`; `tag` is `edit`, `read`, `search`, or `shell`. Rules apply in order and the last matching rule wins. When a winning `allow` ties on specificity (pattern length without wildcards) with a matching `deny`, the deny wins. When nothing matches, the call asks the user for approval instead — there are no default allow rules, so a sane setup asks first and specialized agents add `deny` rules.
+Each rule is `"effect tag pattern"` or `{ "effect", "tag", "pattern" }`. `effect` is `allow`, `ask`, or `deny`; `tag` is `edit`, `read`, `search`, or `shell`.
 
-Patterns match the whole path relative to the project root. `*` spans directories and `?` matches one character, so `*` alone matches everything and `artifacts/specs/*.md` matches `artifacts/specs/a.md`. Every path resolves against the project root first, following symlinks; paths escaping the root (`../`, absolute paths elsewhere, symlinks pointing outside) are always denied.
+A trusted project may add `<project>/.pi/permissions.json` as an overlay; untrusted projects are ignored (with a diagnostic) and the agent-dir rules still apply. The overlay is cached by mtime, so edits are picked up without a restart.
+
+Patterns match the whole path relative to the workspace root. `*` spans directories and `?` matches one character, so `*` alone matches everything and `artifacts/specs/*.md` matches `artifacts/specs/a.md`. Every path resolves against the workspace root first, following symlinks; paths escaping the root (`../`, absolute paths elsewhere, symlinks pointing outside) are always denied.
+
+Verdicts resolve in a fixed order, so the order of rules in the file never decides the outcome:
+
+1. hard safety (path outside the root, empty command, dangerous interpreters, redirects, command or process substitution) → `deny`;
+2. any matching `deny` rule → `deny`;
+3. the active mode's restrictive overrides;
+4. matching `allow`/`ask` rules by highest pattern specificity, ties toward the stricter effect;
+5. the active mode's default for the tag.
+
+With no rules at all the mode default decides: `ask` mode asks for edits and shell, `edit` mode allows edits, and reads and searches run.
 
 ## Hooked tools
 
@@ -39,15 +51,13 @@ Patterns match the whole path relative to the project root. `*` spans directorie
 | `write`, `edit` | `edit` | file path |
 | `read` | `read` | file path |
 | `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
-| `bash`, `powershell` | allowlist (`shell` tag) | command name + argument prefix |
+| `bash`, `powershell` | `shell` | command name + argument prefix |
 
-Pi ships `find`, `grep`, and `ls` in core but they are opt-in — default sessions only have `read`, `bash`, `edit`, `write` active. The companion `pi-tools` package provides always-available `fd`/`rg` search tools that enforce the same rules.
+Denied calls return `{ block: true, reason }`. Calls that resolve to `ask` open a confirmation dialog, and unknown tools (custom and MCP tools included) ask as well. Without dialog-capable UI the ask becomes a block.
 
-Denied calls return `{ block: true, reason }`. Unmatched calls ask via a confirmation dialog, and anything else unknown (custom and MCP tools included) asks too. Without dialog-capable UI the ask becomes a block.
+## Shell allowlist
 
-## Bash allowlist
-
-Bash runs only when every part of the command matches an allow rule; parts without one ask for per-call approval in `ask`, and are blocked outright in `edit` and `plan`:
+Shell rules match command prefixes on token boundaries: `allow shell git` permits `git status` but never `github-cli`, and `allow shell git status` permits `git status --short` but not `git statusx`.
 
 ```json
 {
@@ -59,35 +69,38 @@ Bash runs only when every part of the command matches an allow rule; parts witho
 }
 ```
 
-Each rule names a command plus an optional argument prefix (`allow shell git status` permits `git status --short` but not `git log`). Commands chained with `&&`, `||`, `;`, or `|` are split and every part needs its own allow rule. A part with no matching rule asks for per-call approval, and a part is always blocked when it uses `sh`, `bash`, `zsh`, `eval`, `xargs`, `env`, `sudo`, `tee`, or `dd` (even if allowed), contains a redirect (`>`, `>>`), or contains `$(` or backticks. Allowed commands run without asking. Bash output over 4000 characters is cut to the first 3000 and last 1000 with a cut count line. File paths are never checked for shell commands — the allowlist is the only gate, and it covers `bash` and `powershell` alike.
+Chains split on newlines, `&`, `&&`, `||`, `;`, and `|`; every part is analysed on its own and the strictest part decides. A part without a matching rule asks for per-call approval. These are always denied, even with an allow rule: `sh`, `bash`, `zsh`, `dash`, `fish`, `eval`, `xargs`, `env`, `sudo`, `tee`, `dd`, `awk`, `perl`, `python`, `node`, output or input redirects, command substitution (`$(...)` or backticks), and process substitution (`<(...)`, `>(...)`). Bash output over 4000 characters is cut to the first 3000 and the last 1000 with a cut-count line.
 
 ## Modes
 
-`/mode [name]` shows or switches the plan/approval level. Modes live in session state only, never on disk; every session starts in `ask`. Unknown values are rejected with the registered names. Mode names autocomplete, and `alt+m` cycles the registered modes in order. `pi-guard` registers `plan`, `ask`, and `edit`; installing `pi-autopilot` adds `autopilot`.
+`/mode [name]` shows or switches the mode; mode names autocomplete and `alt+m` cycles the registered modes. Core registers `ask`, `edit`, and `plan`; installing `pi-autopilot` adds `autopilot`; `<agentDir>/modes.json` can add custom layers:
 
-Outcome matrix — rows are the rules verdict (or tool class), columns the mode. `run` executes silently, `prompt` asks once via dialog, `block` denies:
+```json
+{
+  "modes": {
+    "readonly": {
+      "defaults": { "read": "allow", "search": "allow", "edit": "deny", "shell": "deny" },
+      "overrides": [{ "tag": "edit", "pattern": "docs/**", "effect": "ask" }]
+    }
+  }
+}
+```
 
-| call | `ask` | `edit` | `autopilot` | `plan` |
+`defaults` must cover all four tags, overrides accept only `ask`/`deny`, and names that collide with a built-in or package mode are rejected with a diagnostic.
+
+Defaults per mode:
+
+| mode | read | search | edit | shell |
 |---|---|---|---|---|
-| edit allow, normal path | run | run | run | block |
-| edit allow, plan file | prompt | prompt | prompt | prompt |
-| edit no rule, normal path | prompt | run | run | block |
-| edit no rule, plan file | prompt | prompt | prompt | prompt |
-| edit deny | block | block | block | block |
-| shell allowlisted | run | run | run | run |
-| shell otherwise | prompt | block | run | block |
-| read/search allow | run | run | run | run |
-| read/search no rule | prompt | run | run | prompt |
-| read/search deny | block | block | block | block |
-| unknown tool | prompt | prompt | prompt | prompt |
-| prompt without UI | block | block | block | block |
+| `ask` (default) | allow | allow | ask | ask |
+| `edit` | allow | allow | allow | ask |
+| `plan` | allow | allow | deny | ask |
+| `autopilot` | allow | allow | allow | allow |
 
-Modes govern shell too: `edit` runs only allowlisted commands without asking, and `plan` blocks anything else. Hard denies (dangerous names, redirects, command substitution, `deny` rules) block the whole command in every mode, including `autopilot`.
+`plan` additionally asks for edits to `artifacts/plan.md`, `artifacts/specs.md`, and anything under `artifacts/tasks/` (resolved against the effective working directory) and denies other edits. A `deny` rule still wins over the mode.
 
-Deny beats every mode: a denied call never runs and never asks. Entering `plan` appends `allow edit` rules for the plan files in memory only (removed on exit), so planning works under deny-heavy configs. Writes to the plan files (`artifacts/plan.md`, `artifacts/specs.md`, and anything under `artifacts/tasks/`) always ask, in every mode — accepting a plan is the approval dialog itself, and a rejection is never written anywhere. The `autopilot` column applies when `pi-autopilot` is installed: switching to it without a token cap is refused, and turning it on shows a chat warning.
-
-Without a rules file (or with an unreadable one) the extension warns once and asks for approval on every gated call, so fresh projects keep working with oversight until rules are written.
+The active mode is persisted in the session file as the custom entry `hollowheap.core.mode`, so `session resume` and `session fork` keep it. A restored mode that no longer exists falls back to `ask` with a diagnostic, and restoring re-runs the entry gates — entering `autopilot` without a token cap is refused and falls back to `ask`.
 
 ## Statusline values
 
-This package publishes `mode-guard` (current mode) for statusline extensions over pi's shared event bus, following the protocol in `pi-statusline`'s README. (`pi-budgets` publishes `budgets` the same way.) No imports cross between the packages in either direction.
+This package publishes `mode-guard` (the current mode) for statusline extensions over pi's shared event bus, following the protocol in `pi-statusline`'s README. (`pi-budgets` publishes `budgets` the same way.) No imports cross between the packages in either direction.

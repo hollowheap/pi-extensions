@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Shared rules, budget, and mode-registry primitives for Hollowheap Pi extensions",
   "license": "MIT",
@@ -11,12 +11,5 @@
   "files": ["src", "README.md"],
   "exports": {
     ".": "./src/index.ts"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
   }
 }

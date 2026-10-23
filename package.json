@@ -14,11 +14,14 @@
     "extensions": [
       "./packages/pi-statusline/src/index.ts",
       "./packages/pi-guard/src/index.ts",
+      "./packages/pi-hooks/src/index.ts",
       "./packages/pi-question/src/index.ts",
       "./packages/pi-dashboard/src/index.ts",
       "./packages/pi-tools/src/index.ts",
       "./packages/pi-budgets/src/index.ts",
-      "./packages/pi-autopilot/src/index.ts"
+      "./packages/pi-autopilot/src/index.ts",
+      "./packages/pi-todos/src/index.ts",
+      "./packages/pi-code-intel/src/index.ts"
     ]
   },
   "scripts": {

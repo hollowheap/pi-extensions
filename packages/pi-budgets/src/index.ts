@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { ModeEnterQuery } from "@hollowheap/core";
+import { registerModeGate } from "@hollowheap/core";
 import {
   addBudgetUsage,
   clearBudget,
@@ -10,10 +10,9 @@ import {
   formatBudget,
   getBudgetUsed,
   getTokenCap,
+  setBudgetBaseline,
   setTokenCap,
 } from "./budget.js";
-
-export const GUARD_MODE_ENTER_CHANNEL = "guard:mode-enter";
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
@@ -21,6 +20,37 @@ interface EventSink {
 
 let eventSink: EventSink | undefined;
 let lastOwner: unknown;
+
+function branchUsage(entries: readonly unknown[]): number {
+  let total = 0;
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const message = (entry as { message?: unknown }).message;
+    if (typeof message !== "object" || message === null) continue;
+    const typed = message as { role?: unknown; usage?: unknown };
+    if (typed.role !== "assistant") continue;
+    const usage = typed.usage as
+      | { input?: unknown; output?: unknown }
+      | undefined;
+    if (typeof usage?.input !== "number" || typeof usage.output !== "number") {
+      continue;
+    }
+    total += usage.input + usage.output;
+  }
+  return total;
+}
+
+function sessionBaseline(ctx: ExtensionContext): number {
+  const manager = ctx.sessionManager as {
+    getBranch?: () => readonly unknown[];
+  };
+  if (typeof manager.getBranch !== "function") return 0;
+  try {
+    return branchUsage(manager.getBranch());
+  } catch {
+    return 0;
+  }
+}
 
 function publishBudget(owner: unknown): void {
   lastOwner = owner;
@@ -45,14 +75,15 @@ export default function (pi: ExtensionAPI) {
   pi.events.on("statusline:request", () => {
     if (lastOwner !== undefined) publishBudget(lastOwner);
   });
-  pi.events.on(GUARD_MODE_ENTER_CHANNEL, (data) => {
-    const query = data as ModeEnterQuery;
-    if (query.mode === "autopilot" && getTokenCap(query.owner) === undefined) {
-      query.veto = "autopilot refused: set a token cap first";
-    }
-  });
+  registerModeGate(
+    (mode, owner) =>
+      mode === "autopilot" && getTokenCap(owner) === undefined
+        ? { veto: "autopilot refused: set a token cap first" }
+        : undefined,
+    "pi-budgets",
+  );
   pi.on("session_start", (_event, ctx) => {
-    clearBudget(ctx.sessionManager);
+    setBudgetBaseline(ctx.sessionManager, sessionBaseline(ctx));
     clearTokenCap(ctx.sessionManager);
     refreshBudget(ctx);
   });

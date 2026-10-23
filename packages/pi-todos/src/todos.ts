@@ -1,0 +1,159 @@
+import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
+
+export interface Todo {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
+export interface TodoState {
+  todos: Todo[];
+  nextId: number;
+}
+
+export type TodoCommand =
+  | { type: "create"; texts: string[] }
+  | { type: "complete"; ids: number[] };
+
+export interface TodoUpdate {
+  state: TodoState;
+  unknownIds: number[];
+  changed: boolean;
+}
+
+const CREATE_TAG = "create_todos";
+const COMPLETE_TAG = "complete_todos";
+const POSITIVE_ID = /^[1-9]\d*$/;
+
+export function emptyTodoState(): TodoState {
+  return { todos: [], nextId: 1 };
+}
+
+function orderedItems(body: string): ListItemNode[] | undefined {
+  const nodes = parseMarkdownBlocks(body);
+  if (nodes.length !== 1) return undefined;
+
+  const node = nodes[0];
+  if (node.type !== "list" || !node.ordered || node.items.length === 0) {
+    return undefined;
+  }
+
+  return node.items;
+}
+
+export function parseTodoBlock(
+  tag: string,
+  body: string,
+): TodoCommand | undefined {
+  if (tag !== CREATE_TAG && tag !== COMPLETE_TAG) return undefined;
+
+  const items = orderedItems(body);
+  if (!items || items.some((item) => item.checked !== undefined)) {
+    return undefined;
+  }
+
+  if (tag === CREATE_TAG) {
+    const texts = items.map((item) => item.text.trim());
+    if (texts.some((text) => text.length === 0)) return undefined;
+    return { type: "create", texts };
+  }
+
+  const ids: number[] = [];
+  for (const item of items) {
+    const text = item.text.trim();
+    if (!POSITIVE_ID.test(text)) return undefined;
+    const id = Number(text);
+    if (!Number.isSafeInteger(id)) return undefined;
+    ids.push(id);
+  }
+
+  return { type: "complete", ids };
+}
+
+export function applyTodoCommand(
+  state: TodoState,
+  command: TodoCommand,
+): TodoUpdate {
+  if (command.type === "create") {
+    const todos = [...state.todos];
+    let nextId = state.nextId;
+    for (const text of command.texts) {
+      todos.push({ id: nextId, text, done: false });
+      nextId += 1;
+    }
+    return {
+      state: { todos, nextId },
+      unknownIds: [],
+      changed: command.texts.length > 0,
+    };
+  }
+
+  const existing = new Set(state.todos.map((todo) => todo.id));
+  const requested = new Set(command.ids);
+  const seenUnknown = new Set<number>();
+  const unknownIds: number[] = [];
+  for (const id of command.ids) {
+    if (!existing.has(id) && !seenUnknown.has(id)) {
+      seenUnknown.add(id);
+      unknownIds.push(id);
+    }
+  }
+
+  let changed = false;
+  const todos = state.todos.map((todo) => {
+    if (!requested.has(todo.id) || todo.done) return todo;
+    changed = true;
+    return { ...todo, done: true };
+  });
+
+  return {
+    state: { todos, nextId: state.nextId },
+    unknownIds,
+    changed,
+  };
+}
+
+function byId(todos: readonly Todo[]): Todo[] {
+  return [...todos].sort((left, right) => left.id - right.id);
+}
+
+export function formatTodoList(todos: readonly Todo[]): string {
+  if (todos.length === 0) return "No todos";
+  return byId(todos)
+    .map((todo) => `#${todo.id} [${todo.done ? "x" : " "}] ${todo.text}`)
+    .join("\n");
+}
+
+const WIDGET_LIMIT = 5;
+
+export function formatTodoWidget(todos: readonly Todo[]): string[] | undefined {
+  const open = byId(todos).filter((todo) => !todo.done);
+  if (open.length === 0) return undefined;
+
+  const lines = [`Todos (${open.length} open)`];
+  for (const todo of open.slice(0, WIDGET_LIMIT)) {
+    lines.push(`#${todo.id} ${todo.text}`);
+  }
+  if (open.length > WIDGET_LIMIT) {
+    lines.push(`+${open.length - WIDGET_LIMIT} more (/todos)`);
+  }
+  return lines;
+}
+
+export function formatTodoConfirmation(
+  todos: readonly Todo[],
+  unknownIds: readonly number[],
+): string {
+  const lines = ["Todos:", formatTodoList(todos)];
+  const unknown = [...new Set(unknownIds)].sort((left, right) => left - right);
+  if (unknown.length > 0) {
+    lines.push(`Unknown IDs: ${unknown.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+export function statusText(todos: readonly Todo[]): string | undefined {
+  if (todos.length === 0) return undefined;
+  const open = todos.filter((todo) => !todo.done).length;
+  return `${open}/${todos.length}`;
+}

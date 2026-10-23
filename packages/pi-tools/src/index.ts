@@ -1,11 +1,10 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveEffectiveDir, setCwdOverride, setEventSink } from "./cwd.js";
+import { checkPath, effectiveCwd, setCwd } from "@hollowheap/core";
 import { fdTool } from "./fd.js";
-import { loadRules } from "./loader.js";
+import { loadContextPermissions } from "./permissions.js";
 import { rgTool } from "./rg.js";
-import { check } from "./rules.js";
 
 function completeCd(prefix: string) {
   const trimmed = prefix.trim();
@@ -27,9 +26,14 @@ function completeCd(prefix: string) {
 }
 
 export default function (pi: ExtensionAPI) {
-  setEventSink(pi.events);
   pi.registerTool(fdTool);
   pi.registerTool(rgTool);
+  pi.on("session_start", () => {
+    if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
+    const active = pi.getActiveTools();
+    if (active.includes("codemode")) return;
+    pi.setActiveTools([...active, "codemode"]);
+  });
   pi.registerCommand("cd", {
     description:
       "Change the working directory for file tools (stays inside the project root)",
@@ -37,15 +41,12 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (raw === "") {
-        setCwdOverride(ctx.sessionManager, undefined);
+        setCwd(ctx.sessionManager, undefined);
         ctx.ui.setStatus("cwd", undefined);
         ctx.ui.notify(`pi-tools: working directory ${ctx.cwd}`);
         return;
       }
-      const abs = resolve(
-        resolveEffectiveDir(ctx.cwd, ctx.sessionManager),
-        raw,
-      );
+      const abs = resolve(effectiveCwd(ctx.cwd, ctx.sessionManager), raw);
       let isDir = false;
       try {
         isDir = statSync(abs).isDirectory();
@@ -61,12 +62,12 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(`pi-tools: outside project root: ${raw}`, "error");
         return;
       }
-      const rules = loadRules(ctx);
-      if (check(rules, abs, "read", ctx.cwd) === "deny") {
+      const rules = loadContextPermissions(ctx);
+      if (checkPath(rules, abs, "read", ctx.cwd) === "deny") {
         ctx.ui.notify(`pi-tools: directory denied by rules: ${raw}`, "error");
         return;
       }
-      setCwdOverride(ctx.sessionManager, abs);
+      setCwd(ctx.sessionManager, abs);
       ctx.ui.setStatus("cwd", rel === "" ? "." : rel.split(sep).join("/"));
       ctx.ui.notify(`pi-tools: working directory ${abs}`);
     },

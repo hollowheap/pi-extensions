@@ -94,7 +94,7 @@ export async function readClientFile(
   path: string,
 ): Promise<string> {
   const result = (await withTimeout(
-    client("fs/read_text_file", { sessionId, path }),
+    client("fs/read_text_file", { sessionId, path }, FS_TIMEOUT_MS),
     "fs/read_text_file",
     FS_TIMEOUT_MS,
   )) as { content?: unknown };
@@ -111,7 +111,7 @@ export async function writeClientFile(
   content: string,
 ): Promise<void> {
   await withTimeout(
-    client("fs/write_text_file", { sessionId, path, content }),
+    client("fs/write_text_file", { sessionId, path, content }, FS_TIMEOUT_MS),
     "fs/write_text_file",
     FS_TIMEOUT_MS,
   );
@@ -125,7 +125,7 @@ export async function createClientTerminal(
   cwd: string,
 ): Promise<string> {
   const result = (await withTimeout(
-    client("terminal/create", { sessionId, command, args, cwd }),
+    client("terminal/create", { sessionId, command, args, cwd }, FS_TIMEOUT_MS),
     "terminal/create",
     FS_TIMEOUT_MS,
   )) as { terminalId?: unknown };
@@ -141,7 +141,7 @@ export async function readClientTerminal(
   terminalId: string,
 ): Promise<{ output: string; exitCode?: number | null }> {
   const result = (await withTimeout(
-    client("terminal/output", { sessionId, terminalId }),
+    client("terminal/output", { sessionId, terminalId }, FS_TIMEOUT_MS),
     "terminal/output",
     FS_TIMEOUT_MS,
   )) as {
@@ -164,7 +164,7 @@ export async function releaseClientTerminal(
   terminalId: string,
 ): Promise<void> {
   await withTimeout(
-    client("terminal/release", { sessionId, terminalId }),
+    client("terminal/release", { sessionId, terminalId }, FS_TIMEOUT_MS),
     "terminal/release",
     FS_TIMEOUT_MS,
   );
@@ -176,7 +176,7 @@ export async function killClientTerminal(
   terminalId: string,
 ): Promise<void> {
   await withTimeout(
-    client("terminal/kill", { sessionId, terminalId }),
+    client("terminal/kill", { sessionId, terminalId }, FS_TIMEOUT_MS),
     "terminal/kill",
     FS_TIMEOUT_MS,
   );

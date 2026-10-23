@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { type Socket, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { registerMode } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RequestTracker,
@@ -9,6 +10,11 @@ import {
   sendWireRequest,
 } from "../socket.js";
 import extension from "./index.js";
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
 
 function createMockPi() {
   return {
@@ -48,6 +54,7 @@ function project(rulesFile: string): {
       cwd: dir,
       sessionManager: {},
       hasUI: false,
+      isProjectTrusted: () => true,
       ui: { notify: vi.fn(), confirm: vi.fn(), setStatus: vi.fn() },
     },
   };
@@ -130,6 +137,24 @@ describe("bundled extension", () => {
     expect(result.reason).toContain("denied");
   });
 
+  it("denies an ask when no client is connected", async () => {
+    const { handlers } = setupExtension();
+    const { ctx } = project(JSON.stringify({ rules: [] }));
+    startSession(handlers, ctx);
+    const hook = handlers.tool_call;
+    const result = (await hook(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "write",
+        input: { path: "src/x.ts" },
+      } as never,
+      ctx as never,
+    )) as { block: boolean; reason: string };
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("no client connected");
+  });
+
   it("asks unknown tools through the client and honors reject", async () => {
     const { handlers } = setupExtension();
     const { ctx } = project(JSON.stringify({ rules: [] }));
@@ -154,6 +179,56 @@ describe("bundled extension", () => {
     expect(result.block).toBe(true);
     expect(result.reason).toContain("not approved");
     expect(seen).toEqual(["permission"]);
+  });
+
+  it("reports the registered modes over get-modes", async () => {
+    const { handlers } = setupExtension();
+    const { ctx } = project(JSON.stringify({ rules: [] }));
+    const { path, accepted } = await serve(() => ({ decision: "allow_once" }));
+    process.env.HOLLOWHEAP_ACP_SOCKET = path;
+    startSession(handlers, ctx);
+    await waitFor(() => accepted() !== undefined, "connect");
+    const serverTracker = new RequestTracker();
+    const serverSock = accepted();
+    if (serverSock === undefined) throw new Error("no socket");
+    attachWireHandler(serverSock, serverTracker, () => {});
+    const reply = (await sendWireRequest(
+      serverSock,
+      serverTracker,
+      "get-modes",
+      {},
+    )) as { modes: { name: string; description?: string }[] };
+    expect(reply.modes.map((mode) => mode.name)).toEqual(
+      expect.arrayContaining(["ask", "edit", "plan"]),
+    );
+  });
+
+  it("returns the mode notice over set-mode", async () => {
+    const { handlers } = setupExtension();
+    const { ctx } = project(JSON.stringify({ rules: [] }));
+    const { path, accepted } = await serve(() => ({ decision: "allow_once" }));
+    process.env.HOLLOWHEAP_ACP_SOCKET = path;
+    startSession(handlers, ctx);
+    await waitFor(() => accepted() !== undefined, "connect");
+    const serverTracker = new RequestTracker();
+    const serverSock = accepted();
+    if (serverSock === undefined) throw new Error("no socket");
+    attachWireHandler(serverSock, serverTracker, () => {});
+    registerMode({
+      name: "notice-mode",
+      defaults: { read: "allow", search: "allow", edit: "ask", shell: "ask" },
+      onEnter: () => ({ notice: { text: "notice-mode on", level: "warning" } }),
+    });
+    const reply = (await sendWireRequest(
+      serverSock,
+      serverTracker,
+      "set-mode",
+      {
+        mode: "notice-mode",
+      },
+    )) as { notices: string[]; modes: { name: string }[] };
+    expect(reply.notices).toEqual(["notice-mode on"]);
+    expect(reply.modes.map((mode) => mode.name)).toContain("notice-mode");
   });
 
   it("switches mode over set-mode and enforces plan limits", async () => {

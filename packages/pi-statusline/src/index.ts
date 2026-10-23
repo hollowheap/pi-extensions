@@ -5,6 +5,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { effectiveCwd } from "@hollowheap/core";
 import {
   BUILTINS,
   type GitDiffCache,
@@ -110,7 +111,7 @@ export default function (pi: ExtensionAPI) {
             width,
             config,
             {
-              cwd: ctx.cwd,
+              cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
               homeDir: homedir(),
               modelId: ctx.model?.id,
               branch: footerData.getGitBranch(),

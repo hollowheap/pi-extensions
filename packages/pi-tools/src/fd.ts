@@ -1,15 +1,9 @@
-import { relative, resolve, sep } from "node:path";
+import { relative, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { resolveEffectiveDir } from "./cwd.js";
+import { checkPath, displayPath, effectiveCwd } from "@hollowheap/core";
 import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
-import { loadRules } from "./loader.js";
-import { check } from "./rules.js";
-
-function toDisplayRel(base: string, abs: string): string {
-  const rel = relative(base, abs).split(sep).join("/");
-  return rel.endsWith("/") && rel.length > 1 ? rel.slice(0, -1) : rel;
-}
+import { loadContextPermissions } from "./permissions.js";
 
 export function createFdTool(deps: ExecDeps = defaultExecDeps) {
   return defineTool({
@@ -17,6 +11,7 @@ export function createFdTool(deps: ExecDeps = defaultExecDeps) {
     label: "fd",
     description:
       "Find files by glob pattern. Returns paths relative to the working directory, newest first.",
+    exposure: "codemode",
     parameters: Type.Object({
       pattern: Type.String({ description: 'Glob pattern, e.g. "*.ts"' }),
       path: Type.Optional(
@@ -35,26 +30,25 @@ export function createFdTool(deps: ExecDeps = defaultExecDeps) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const effective = resolveEffectiveDir(ctx.cwd, ctx.sessionManager);
+      const effective = effectiveCwd(ctx.cwd, ctx.sessionManager);
       const searchDir = resolve(effective, params.path ?? ".");
+      const dir = relative(effective, searchDir) || ".";
       const stdout = await deps.run(
         "fd",
-        ["--glob", params.pattern],
-        searchDir,
+        ["--glob", params.pattern, "--", dir],
+        effective,
         signal,
       );
-      const rules = loadRules(ctx);
+      const rules = loadContextPermissions(ctx);
       const found: { rel: string; mtime: number }[] = [];
       for (const line of stdout.split("\n")) {
         const trimmed = line.trim();
         if (trimmed === "") continue;
-        const abs = resolve(searchDir, trimmed);
+        const abs = resolve(effective, trimmed);
         const mtime = deps.statMtimeMs(abs);
         if (mtime === undefined) continue;
-        const rel = toDisplayRel(effective, abs);
-        if (check(rules, abs, "search", root) !== "allow") {
-          continue;
-        }
+        const rel = displayPath(effective, abs);
+        if (checkPath(rules, abs, "search", root) === "deny") continue;
         found.push({ rel, mtime });
       }
       found.sort((a, b) => b.mtime - a.mtime);

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { type Socket, createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,10 +12,23 @@ import {
   sendWireRequest,
 } from "./socket.js";
 
+const FAKE_MODES = [
+  { name: "plan" },
+  { name: "ask" },
+  { name: "edit" },
+  {
+    name: "autopilot",
+    description: "Writes and non-dangerous bash run without asking",
+  },
+];
+
+const peerSockets: Socket[] = [];
+
 function setup(
   client: (method: string, params: unknown) => Promise<unknown> = async () => {
     throw new Error("no client");
   },
+  stateOverride: Partial<{ sessionFile: string; sessionId: string }> = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "pi-acp-adapter-"));
   const storePath = join(dir, "sessions.json");
@@ -26,6 +39,7 @@ function setup(
   const state = {
     sessionFile: join(dir, "pi-session.jsonl"),
     sessionId: "pi-1",
+    ...stateOverride,
   };
   const spawnPi: SpawnPi = (opts) => {
     spawns.push(opts);
@@ -33,6 +47,20 @@ function setup(
     aborted.push(calls);
     const sessionPrompts: { message: string; images: unknown }[] = [];
     prompts.push(sessionPrompts);
+    // The bundled extension always connects back to the adapter, so the
+    // fake stands in for it here.
+    const peer = createConnection(opts.socketPath);
+    peerSockets.push(peer);
+    peer.on("error", () => {});
+    peer.on("connect", () => {
+      attachWireHandler(peer, new RequestTracker(), (request, respond) => {
+        if (request.method === "get-modes") {
+          respond({ modes: FAKE_MODES });
+          return;
+        }
+        respond({ modes: FAKE_MODES, notices: [] });
+      });
+    });
     const fake = {
       request: async (type: string) => {
         calls.push(type);
@@ -45,7 +73,9 @@ function setup(
         calls.push("abort");
         return {};
       },
-      kill: () => {},
+      kill: () => {
+        calls.push("kill");
+      },
       prompt: async (message: string, images?: unknown) => {
         calls.push("prompt");
         sessionPrompts.push({ message, images });
@@ -80,6 +110,7 @@ const live: { shutdown: () => void }[] = [];
 
 afterEach(() => {
   for (const entry of live.splice(0)) entry.shutdown();
+  for (const sock of peerSockets.splice(0)) sock.destroy();
 });
 
 describe("adapter sessions", () => {
@@ -204,14 +235,13 @@ describe("adapter sessions", () => {
         value: "turbo",
       }),
     ).rejects.toThrow("unknown mode");
-    await expect(
-      adapter.handle("session/set_config_option", {
-        sessionId: "pi-1",
-        configId: "mode",
-        value: "plan",
-      }),
-    ).rejects.toThrow("extension not connected");
-    const received: unknown[] = [];
+    const buffered = (await adapter.handle("session/set_config_option", {
+      sessionId: "pi-1",
+      configId: "mode",
+      value: "plan",
+    })) as { configOptions: { currentValue: string }[] };
+    expect(buffered.configOptions[0].currentValue).toBe("plan");
+    const received: { method: string; params?: unknown }[] = [];
     const sock = createConnection(spawns[0].socketPath);
     await new Promise<void>((resolve, reject) => {
       sock.on("connect", () => {
@@ -225,19 +255,145 @@ describe("adapter sessions", () => {
     });
     try {
       await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(
+        received.map(({ method, params }) => ({ method, params })),
+      ).toEqual([{ method: "set-mode", params: { mode: "plan" } }]);
+      received.length = 0;
       const result = (await adapter.handle("session/set_config_option", {
         sessionId: "pi-1",
         configId: "mode",
-        value: "plan",
+        value: "edit",
       })) as { configOptions: { currentValue: string }[] };
-      expect(result.configOptions[0].currentValue).toBe("plan");
-      expect(received).toEqual([
-        { id: 1, method: "set-mode", params: { mode: "plan" } },
-      ]);
+      expect(result.configOptions[0].currentValue).toBe("edit");
+      expect(
+        received.map(({ method, params }) => ({ method, params })),
+      ).toEqual([{ method: "set-mode", params: { mode: "edit" } }]);
     } finally {
       sock.destroy();
     }
     adapter.shutdown();
+  });
+
+  it("carries the mode notice into the returned config option", async () => {
+    const { adapter, spawns } = setup();
+    await adapter.handle("session/new", { cwd: "/repo", mcpServers: [] });
+    const sock = createConnection(spawns[0].socketPath);
+    await new Promise<void>((resolve, reject) => {
+      sock.on("connect", () => {
+        attachWireHandler(sock, new RequestTracker(), (_request, respond) => {
+          respond({ notices: ["edit mode: writes run without asking"] });
+        });
+        resolve();
+      });
+      sock.on("error", reject);
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const result = (await adapter.handle("session/set_config_option", {
+        sessionId: "pi-1",
+        configId: "mode",
+        value: "edit",
+      })) as {
+        configOptions: {
+          description: string;
+          options: { value: string; description: string }[];
+        }[];
+      };
+      const option = result.configOptions[0];
+      const edit = option.options.find((entry) => entry.value === "edit");
+      expect(edit?.description).toContain(
+        "edit mode: writes run without asking",
+      );
+      expect(option.description).toBe("Approval strictness for tool calls");
+    } finally {
+      sock.destroy();
+    }
+    adapter.shutdown();
+  });
+
+  it("offers the modes the extension reports", async () => {
+    const { adapter } = setup();
+    const created = (await adapter.handle("session/new", {
+      cwd: "/repo",
+      mcpServers: [],
+    })) as {
+      configOptions: { options: { value: string; description: string }[] }[];
+    };
+    const options = created.configOptions[0].options;
+    expect(options.map((option) => option.value)).toEqual([
+      "plan",
+      "ask",
+      "edit",
+      "autopilot",
+    ]);
+    expect(
+      options.find((option) => option.value === "autopilot")?.description,
+    ).toBe("Writes and non-dangerous bash run without asking");
+    expect(options.find((option) => option.value === "ask")?.description).toBe(
+      "Reads auto-run; writes and bash ask",
+    );
+  });
+
+  it("accepts a mode the extension registered", async () => {
+    const { adapter } = setup();
+    await adapter.handle("session/new", { cwd: "/repo", mcpServers: [] });
+    const result = (await adapter.handle("session/set_config_option", {
+      sessionId: "pi-1",
+      configId: "mode",
+      value: "autopilot",
+    })) as { configOptions: { currentValue: string }[] };
+    expect(result.configOptions[0].currentValue).toBe("autopilot");
+  });
+
+  it("closes the previous live session when reloading", async () => {
+    const { adapter, aborted, spawns } = setup();
+    await adapter.handle("session/new", { cwd: "/repo" });
+    await adapter.handle("session/load", { sessionId: "pi-1", cwd: "/repo" });
+    expect(spawns.length).toBe(2);
+    expect(aborted[0]).toContain("kill");
+  });
+
+  it("keeps the mode across a session reload", async () => {
+    const { adapter, spawns } = setup();
+    await adapter.handle("session/new", { cwd: "/repo" });
+    await adapter.handle("session/set_config_option", {
+      sessionId: "pi-1",
+      configId: "mode",
+      value: "plan",
+    });
+    await adapter.handle("session/load", { sessionId: "pi-1", cwd: "/repo" });
+
+    const received: { method: string; params?: unknown }[] = [];
+    const sock = createConnection(spawns[1].socketPath);
+    await new Promise<void>((resolve, reject) => {
+      sock.on("connect", () => {
+        attachWireHandler(sock, new RequestTracker(), (request, respond) => {
+          received.push(request);
+          respond({ ok: true });
+        });
+        resolve();
+      });
+      sock.on("error", reject);
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(
+        received.map(({ method, params }) => ({ method, params })),
+      ).toEqual([{ method: "set-mode", params: { mode: "plan" } }]);
+    } finally {
+      sock.destroy();
+    }
+    adapter.shutdown();
+  });
+
+  it("tears down the socket when startup validation fails", async () => {
+    const { adapter, spawns } = setup(async () => ({}), {
+      sessionId: undefined as never,
+    });
+    await expect(
+      adapter.handle("session/new", { cwd: "/repo" }),
+    ).rejects.toThrow("did not report a session");
+    expect(existsSync(spawns[0].socketPath)).toBe(false);
   });
 });
 
@@ -249,7 +405,7 @@ afterEach(() => {
 
 async function connectPeer(
   socketPath: string,
-): Promise<{ tracker: RequestTracker }> {
+): Promise<{ tracker: RequestTracker; sock: Socket }> {
   const tracker = new RequestTracker();
   const sock = createConnection(socketPath);
   openSockets.push(sock);
@@ -261,7 +417,7 @@ async function connectPeer(
     sock.on("error", reject);
   });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  return { tracker };
+  return { tracker, sock };
 }
 
 function peerRequest(
@@ -339,6 +495,53 @@ describe("socket bridge", () => {
       "terminal/create",
     ]);
   });
+
+  it("rejects pending client requests when the session closes", async () => {
+    const env = setup(() => new Promise(() => {}));
+    await env.adapter.handle("session/new", { cwd: "/repo" });
+    const socketPath = env.spawns[0].socketPath;
+    const { tracker, sock } = await connectPeer(socketPath);
+    const pending = sendWireRequest(
+      sock,
+      tracker,
+      "permission",
+      { tool: "acp_read", target: "/x", kind: "read" },
+      2000,
+    );
+    env.adapter.shutdown();
+    await expect(pending).rejects.toThrow();
+  });
+
+  it("forwards the real tool call id to the client", async () => {
+    const env = bridged((method) => {
+      if (method === "session/request_permission") {
+        return { outcome: { outcome: "selected", optionId: "allow_once" } };
+      }
+      return {};
+    });
+    await env.adapter.handle("session/new", { cwd: "/repo" });
+    const socketPath = env.spawns[0].socketPath;
+    const { tracker, sock } = await connectPeer(socketPath);
+    await sendWireRequest(
+      sock,
+      tracker,
+      "permission",
+      {
+        tool: "acp_read",
+        target: "/x",
+        kind: "read",
+        toolCallId: "call-42",
+      },
+      2000,
+    );
+    const call = env.clientCalls.find(
+      (entry) => entry.method === "session/request_permission",
+    );
+    const params = call?.params as {
+      toolCall: { toolCallId: string };
+    };
+    expect(params.toolCall.toolCallId).toBe("call-42");
+  });
 });
 
 describe("prompt turns", () => {
@@ -377,6 +580,42 @@ describe("prompt turns", () => {
     await tick();
     adapter.piEvent("pi-1", { type: "agent_settled", aborted: true });
     await expect(pending).resolves.toEqual({ stopReason: "cancelled" });
+  });
+
+  it("settles a prompt answered while the dispatch is in flight", async () => {
+    const { adapter } = setup();
+    await adapter.handle("session/new", { cwd: "/repo", mcpServers: [] });
+    const pending = adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "hello" }],
+    });
+    adapter.piEvent("pi-1", { type: "agent_settled", aborted: false });
+    await expect(pending).resolves.toEqual({ stopReason: "end_turn" });
+  });
+
+  it("rejects pending prompts when the session closes", async () => {
+    const { adapter } = setup();
+    await adapter.handle("session/new", { cwd: "/repo", mcpServers: [] });
+    const pending = adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "hello" }],
+    });
+    await tick();
+    adapter.shutdown();
+    await expect(pending).rejects.toThrow("session closed");
+  });
+
+  it("closes the session when the pi child exits", async () => {
+    const { adapter, aborted } = setup();
+    await adapter.handle("session/new", { cwd: "/repo", mcpServers: [] });
+    adapter.piEvent("pi-1", { type: "proc_exit", code: 1 });
+    expect(aborted.flat()).toContain("kill");
+    await expect(
+      adapter.handle("session/prompt", {
+        sessionId: "pi-1",
+        prompt: [{ type: "text", text: "hello" }],
+      }),
+    ).rejects.toThrow("unknown session");
   });
 
   it("maps tool execution to call updates", async () => {

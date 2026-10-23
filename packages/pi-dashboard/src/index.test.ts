@@ -1,12 +1,28 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { setCwd } from "@hollowheap/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "./exec.js";
 import extension, { createDashboard } from "./index.js";
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+const state = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
 }));
+
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+  getAgentDir: () => state.agentDir,
+}));
+
+vi.mock("./exec.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./exec.js")>();
+  return { ...actual, runCommand: vi.fn(actual.runCommand) };
+});
+
+afterEach(() => {
+  state.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+});
 
 function createMockPi() {
   return {
@@ -41,6 +57,24 @@ function installHeader(
 }
 
 describe("pi-dashboard extension", () => {
+  it("runs terminal sections in the effective cwd", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dash-"));
+    writeFileSync(
+      join(dir, "dashboard.json"),
+      JSON.stringify({
+        sections: [{ type: "terminal", command: "echo hi", intervalMs: 60000 }],
+      }),
+    );
+    state.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx();
+    setCwd(ctx.sessionManager, join(dir, "sub"));
+    installHeader(pi, ctx);
+    await vi.waitFor(() => expect(runCommand).toHaveBeenCalled());
+    expect(vi.mocked(runCommand).mock.calls[0][2]).toBe(join(dir, "sub"));
+  });
+
   it("installs the default banner on session_start in tui mode", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -136,6 +170,58 @@ describe("createDashboard", () => {
     await controller.refresh();
     expect(controller.lines()).toEqual(["a    ", "b    "]);
     expect(renderRequest).toHaveBeenCalled();
+    controller.stop();
+  });
+
+  it("aborts in-flight commands on stop and skips the render", async () => {
+    let captured: AbortSignal | undefined;
+    const deps = {
+      run: vi.fn(
+        async (
+          _command: string,
+          _args: string[],
+          signal: AbortSignal | undefined,
+        ) => {
+          captured = signal;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return "late\n";
+        },
+      ),
+      notify: vi.fn(),
+    };
+    const controller = createDashboard(
+      {
+        width: 5,
+        sections: [
+          { type: "terminal", command: "x", args: [], intervalMs: 50, gap: 0 },
+        ],
+      },
+      deps,
+    );
+    const renderRequest = vi.fn();
+    controller.start(renderRequest);
+    const pending = controller.refresh();
+    controller.stop();
+    expect(captured?.aborted).toBe(true);
+    await pending;
+    expect(renderRequest).not.toHaveBeenCalled();
+    expect(deps.notify).not.toHaveBeenCalled();
+  });
+
+  it("passes the render width to the terminal section", async () => {
+    const deps = fakeDeps("a\n");
+    const controller = createDashboard(
+      {
+        width: 5,
+        sections: [
+          { type: "terminal", command: "x", args: [], intervalMs: 50, gap: 0 },
+        ],
+      },
+      deps,
+    );
+    controller.start(vi.fn());
+    await controller.refresh();
+    expect(controller.lines(9)[0]).toHaveLength(9);
     controller.stop();
   });
 

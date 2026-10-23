@@ -1,15 +1,11 @@
 export type Tag = "edit" | "read" | "search" | "shell";
-export type Effect = "allow" | "deny";
-export type Verdict = "allow" | "deny" | "ask";
+export type Effect = "allow" | "ask" | "deny";
+export type Verdict = Effect;
 
 export interface Rule {
   tag: Tag;
   pattern: string;
   effect: Effect;
-}
-
-export interface ModeApplyDetails {
-  inPlanPaths: boolean;
 }
 
 export interface ModeNotice {
@@ -22,29 +18,13 @@ export interface ModeEnter {
   notice?: ModeNotice;
 }
 
-export interface ModeDefinition {
+export type ModeSource = "builtin" | "package" | "config";
+
+export interface ModeLayer {
   name: string;
-  apply: (tag: Tag, verdict: Verdict, details: ModeApplyDetails) => Verdict;
+  description?: string;
+  defaults: Record<Tag, Effect>;
+  overrides?: readonly Rule[];
   onEnter?: (owner: unknown) => ModeEnter | undefined;
-}
-
-export interface ModesQuery {
-  modes: ModeDefinition[];
-}
-
-export interface ModeEnterQuery {
-  mode: string;
-  owner: unknown;
-  veto?: string;
-  notice?: ModeNotice;
-}
-
-export interface CwdSetCommand {
-  owner: unknown;
-  dir: string | undefined;
-}
-
-export interface CwdQuery {
-  owner: unknown;
-  dir?: string;
+  source?: ModeSource;
 }

@@ -1,3 +1,4 @@
+import { setCwd } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
@@ -68,6 +69,16 @@ function publish(
 }
 
 describe("pi-statusline extension", () => {
+  it("renders the effective cwd from the core session", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx();
+    setCwd(ctx.sessionManager, "/tmp/effective-cwd-dir");
+    const { component } = installFooter(pi, ctx);
+    const lines = component.render(200).join(" ");
+    expect(lines).toContain("effective-cwd-dir");
+  });
+
   it("requests provider values and shows them on install", () => {
     const pi = createMockPi();
     extension(pi as never);

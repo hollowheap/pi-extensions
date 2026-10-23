@@ -1,11 +1,10 @@
 import { statSync } from "node:fs";
-import { basename, dirname, relative, resolve, sep } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { resolveEffectiveDir } from "./cwd.js";
+import { checkPath, displayPath, effectiveCwd } from "@hollowheap/core";
 import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
-import { loadRules } from "./loader.js";
-import { check } from "./rules.js";
+import { loadContextPermissions } from "./permissions.js";
 
 const RG_LINE = /^(.*):(\d+):(.*)$/;
 
@@ -35,6 +34,7 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
     label: "rg",
     description:
       "Search file contents with a regular expression. Returns file path, line number, and matching line.",
+    exposure: "codemode",
     parameters: Type.Object({
       pattern: Type.String({ description: "Regular expression to search for" }),
       path: Type.Optional(
@@ -57,7 +57,7 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const effective = resolveEffectiveDir(ctx.cwd, ctx.sessionManager);
+      const effective = effectiveCwd(ctx.cwd, ctx.sessionManager);
       const target = resolve(effective, params.path ?? ".");
       const targetIsFile = isFileTarget(target);
       const searchDir = targetIsFile ? dirname(target) : target;
@@ -68,14 +68,15 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
         "--with-filename",
         "--line-number",
         "--no-config",
+        "--regexp",
         params.pattern,
       ];
       if (params.glob !== undefined) args.push("--glob", params.glob);
-      args.push(operand);
+      args.push("--", operand);
       const stdout = await deps.run("rg", args, searchDir, signal, {
         okExitCodes: [1],
       });
-      const rules = loadRules(ctx);
+      const rules = loadContextPermissions(ctx);
       const limit = clampMaxResults(params.max_results);
       const matches: RgMatch[] = [];
       for (const raw of stdout.split("\n")) {
@@ -83,10 +84,8 @@ export function createRgTool(deps: ExecDeps = defaultExecDeps) {
         const parsed = parseRgLine(raw);
         if (parsed === undefined) continue;
         const abs = resolve(searchDir, parsed.path);
-        const display = relative(effective, abs).split(sep).join("/");
-        if (check(rules, abs, "search", root) !== "allow") {
-          continue;
-        }
+        const display = displayPath(effective, abs);
+        if (checkPath(rules, abs, "search", root) === "deny") continue;
         matches.push({ path: display, line: parsed.line, text: parsed.text });
         if (matches.length >= limit) break;
       }

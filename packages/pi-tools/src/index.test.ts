@@ -1,21 +1,33 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { session } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
+
 function createMockPi() {
+  const handlers: Record<string, (event: never, ctx: never) => unknown> = {};
   return {
-    on: vi.fn(
-      (_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
-    ),
+    on: vi.fn((event: string, fn: (event: never, ctx: never) => unknown) => {
+      handlers[event] = fn;
+      return () => {};
+    }),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
+    getAllTools: vi.fn((): Array<{ name: string }> => []),
+    getActiveTools: vi.fn((): string[] => []),
+    setActiveTools: vi.fn(),
     events: {
       on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
       emit: vi.fn((_channel: string, _data: unknown) => {}),
     },
+    handlers,
   };
 }
 
@@ -42,6 +54,7 @@ function setupCd(rulesFile: string = CD_RULES) {
     cwd: dir,
     sessionManager,
     hasUI: true,
+    isProjectTrusted: () => true,
     ui: { notify: vi.fn(), setStatus: vi.fn(), confirm: vi.fn() },
   };
   const commands = Object.fromEntries(
@@ -56,14 +69,18 @@ function setupCd(rulesFile: string = CD_RULES) {
   };
 }
 
-function cwdSets(
+function currentCwd(ctx: { sessionManager: unknown }): string | undefined {
+  return session(ctx.sessionManager).cwd;
+}
+
+function startSession(
   pi: ReturnType<typeof createMockPi>,
-): { owner: unknown; dir: string | undefined }[] {
-  return pi.events.emit.mock.calls
-    .filter(([channel]) => channel === "guard:cwd-set")
-    .map(
-      ([_channel, data]) => data as { owner: unknown; dir: string | undefined },
-    );
+  reason = "startup",
+): void {
+  pi.handlers.session_start(
+    { type: "session_start", reason } as never,
+    {} as never,
+  );
 }
 
 describe("pi-tools extension", () => {
@@ -72,65 +89,107 @@ describe("pi-tools extension", () => {
     extension(pi as never);
     const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
     expect(names).toEqual(["fd", "rg"]);
-    expect(pi.on).not.toHaveBeenCalled();
+    const tools = Object.fromEntries(
+      pi.registerTool.mock.calls.map(([tool]) => [tool.name, tool]),
+    );
+    expect(tools.fd.exposure).toBe("codemode");
+    expect(tools.rg.exposure).toBe("codemode");
+    expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd"]);
   });
 });
 
+describe("codemode activation", () => {
+  it("activates codemode on session_start when registered and inactive", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read", "bash"]);
+    extension(pi as never);
+    startSession(pi);
+    expect(pi.setActiveTools).toHaveBeenCalledWith([
+      "read",
+      "bash",
+      "codemode",
+    ]);
+  });
+
+  it("does nothing when codemode is not registered", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "fd" }, { name: "rg" }]);
+    pi.getActiveTools.mockReturnValue(["read", "bash"]);
+    extension(pi as never);
+    startSession(pi);
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate an already active codemode", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read", "codemode"]);
+    extension(pi as never);
+    startSession(pi);
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("reactivates codemode on reload when inactive", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read"]);
+    extension(pi as never);
+    startSession(pi, "reload");
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+  });
+});
+
 describe("/cd command", () => {
-  it("announces a valid directory inside the root", async () => {
-    const { dir, pi, ctx, cd } = setupCd();
+  it("stores the directory in the core session without pi-guard", async () => {
+    const { dir, ctx, cd } = setupCd();
     await cd("sub");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", "sub");
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining(join(dir, "sub")),
     );
-    expect(cwdSets(pi)).toEqual([
-      { owner: ctx.sessionManager, dir: join(dir, "sub") },
-    ]);
+    expect(currentCwd(ctx)).toBe(join(dir, "sub"));
   });
 
   it("rejects paths outside the root without announcing", async () => {
-    const { pi, ctx, cd } = setupCd();
+    const { ctx, cd } = setupCd();
     await cd("../..");
     expect(ctx.ui.notify).toHaveBeenLastCalledWith(
       expect.stringContaining("outside project root"),
       "error",
     );
-    expect(cwdSets(pi)).toEqual([]);
+    expect(currentCwd(ctx)).toBeUndefined();
   });
 
   it("rejects missing directories without announcing", async () => {
-    const { pi, ctx, cd } = setupCd();
+    const { ctx, cd } = setupCd();
     await cd("nope");
     expect(ctx.ui.notify).toHaveBeenLastCalledWith(
       expect.stringContaining("not a directory"),
       "error",
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-    expect(cwdSets(pi)).toEqual([]);
+    expect(currentCwd(ctx)).toBeUndefined();
   });
 
   it("rejects directories denied by the rules without announcing", async () => {
-    const { pi, ctx, cd } = setupCd();
+    const { ctx, cd } = setupCd();
     await cd("secret");
     expect(ctx.ui.notify).toHaveBeenLastCalledWith(
       expect.stringContaining("denied by rules"),
       "error",
     );
-    expect(cwdSets(pi)).toEqual([]);
+    expect(currentCwd(ctx)).toBeUndefined();
   });
 
   it("announces a reset to the project root on empty input", async () => {
-    const { pi, ctx, cd } = setupCd();
+    const { ctx, cd } = setupCd();
     await cd("sub");
     await cd("   ");
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("cwd", undefined);
-    expect(cwdSets(pi)).toEqual([
-      { owner: ctx.sessionManager, dir: expect.stringContaining("sub") },
-      { owner: ctx.sessionManager, dir: undefined },
-    ]);
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", undefined);
+    expect(currentCwd(ctx)).toBeUndefined();
   });
 
   it("completes directories for cd", () => {

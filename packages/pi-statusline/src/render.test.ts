@@ -83,6 +83,33 @@ describe("renderStatusline", () => {
     expect(visibleWidth(line)).toBeLessThanOrEqual(8);
   });
 
+  it("truncates the left side before the right-pinned sections", () => {
+    const config = defaultConfig();
+    config.sections = {
+      a: [{ type: "text", text: "left-long" }],
+      z: [{ type: "text", text: "RIGHT" }],
+    };
+    const line = renderStatusline(12, config, ctx(), theme());
+    expect(line).toContain("RIGHT");
+    expect(visibleWidth(line)).toBeLessThanOrEqual(12);
+  });
+
+  it("styles extension segments through the component pipeline", () => {
+    const config = defaultConfig();
+    config.extensions = ["mode-guard"];
+    config.sections = { a: [{ type: "mode-guard", accent: "accent" }] };
+    const line = renderStatusline(
+      40,
+      config,
+      ctx(),
+      theme(),
+      new Map([["mode-guard", "PLAN"]]),
+    );
+    expect(line).toContain("\uE0B6");
+    expect(line).toContain("\uE0B4");
+    expect(line).toContain("PLAN");
+  });
+
   it("styles separators through the theme", () => {
     const config = defaultConfig();
     config.sections = {

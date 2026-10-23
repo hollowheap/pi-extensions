@@ -15,15 +15,18 @@ Every package here is completely plug-and-play. You can grab individual packages
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@hollowheap/core`](./packages/core) | `0.1.0` | Shared contracts, rules, budgets, and mode-registry primitives |
-| [`@hollowheap/pi-statusline`](./packages/pi-statusline) | `0.1.0` | Configurable lualine-style statusline footer |
-| [`@hollowheap/pi-guard`](./packages/pi-guard) | `0.1.0` | Policy enforcement, approvals, shell safety gates, and modes |
-| [`@hollowheap/pi-dashboard`](./packages/pi-dashboard) | `0.1.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-budgets`](./packages/pi-budgets) | `0.1.0` | Token usage tracking, `/budget` controls, and hard-cap gates |
-| [`@hollowheap/pi-autopilot`](./packages/pi-autopilot) | `0.1.0` | Hands-free autopilot mode for autonomous workflow loops |
-| [`@hollowheap/pi-tools`](./packages/pi-tools) | `0.1.0` | High-speed ripgrep/fd search tools and `/cd` navigation |
-| [`@hollowheap/pi-question`](./packages/pi-question) | `0.1.0` | Single-question prompt tool for guided user input |
-| [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.1.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
+| [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, and mode-registry primitives |
+| [`@hollowheap/pi-statusline`](./packages/pi-statusline) | `0.2.0` | Configurable lualine-style statusline footer |
+| [`@hollowheap/pi-guard`](./packages/pi-guard) | `0.2.0` | Policy enforcement, approvals, shell safety gates, and modes |
+| [`@hollowheap/pi-hooks`](./packages/pi-hooks) | `0.2.0` | Pre-tool and post-tool commands configured in `hooks.json` |
+| [`@hollowheap/pi-dashboard`](./packages/pi-dashboard) | `0.2.0` | Interactive startup dashboard with ASCII banners and widgets |
+| [`@hollowheap/pi-budgets`](./packages/pi-budgets) | `0.2.0` | Token usage tracking, `/budget` controls, and hard-cap gates |
+| [`@hollowheap/pi-autopilot`](./packages/pi-autopilot) | `0.2.0` | Hands-free autopilot mode for autonomous workflow loops |
+| [`@hollowheap/pi-tools`](./packages/pi-tools) | `0.2.0` | High-speed ripgrep/fd search tools and `/cd` navigation |
+| [`@hollowheap/pi-code-intel`](./packages/pi-code-intel) | `0.2.0` | Read-only LSP code intelligence via a `code_intel` codemode tool |
+| [`@hollowheap/pi-question`](./packages/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
+| [`@hollowheap/pi-todos`](./packages/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
+| [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---
 

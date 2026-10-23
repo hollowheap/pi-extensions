@@ -1,8 +1,8 @@
 {
   "name": "@hollowheap/pi-question",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Ask the user one question and wait for the answer",
+  "description": "Ask the user questions with tagged blocks in assistant text",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -12,11 +12,11 @@
   "pi": {
     "extensions": ["./src/index.ts"]
   },
+  "dependencies": {
+    "@hollowheap/core": "^0.2.0"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "@earendil-works/pi-tui": "*"
   }
 }

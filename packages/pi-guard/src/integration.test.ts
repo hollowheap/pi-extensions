@@ -2,13 +2,18 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { session } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import autopilotExtension from "../../pi-autopilot/src/index.js";
 import budgetsExtension from "../../pi-budgets/src/index.js";
 import { createFdTool } from "../../pi-tools/src/fd.js";
 import toolsExtension from "../../pi-tools/src/index.js";
 import extension from "./index.js";
-import { getMode } from "./modes.js";
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+}));
 
 const ALL_ALLOW = JSON.stringify({
   rules: ["allow edit *", "allow read *", "allow search *"],
@@ -56,6 +61,7 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
     cwd: dir,
     sessionManager,
     hasUI: true,
+    isProjectTrusted: () => true,
     ui: {
       notify: vi.fn(),
       setStatus: vi.fn(),
@@ -100,30 +106,6 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
 }
 
 describe("split extensions over the event bus", () => {
-  it("cycles plan, ask, edit, autopilot with the cap gate", async () => {
-    const env = setupAll();
-    env.start();
-    expect(getMode(env.ctx.sessionManager)).toBe("ask");
-    await env.mode("autopilot");
-    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("set a token cap first"),
-      "error",
-    );
-    expect(getMode(env.ctx.sessionManager)).toBe("ask");
-    await env.budget("1000");
-    await env.mode("autopilot");
-    expect(getMode(env.ctx.sessionManager)).toBe("autopilot");
-    expect(env.ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("autopilot on"),
-      "warning",
-    );
-    const input = { path: "src/x.ts" };
-    await expect(env.hook("write", input)).resolves.toBeUndefined();
-    expect(env.ctx.ui.confirm).not.toHaveBeenCalled();
-    await env.shortcut();
-    expect(getMode(env.ctx.sessionManager)).toBe("plan");
-  });
-
   it("treats autopilot as unknown without pi-autopilot", async () => {
     const env = setupAll(ALL_ALLOW, false);
     env.start();
@@ -132,7 +114,31 @@ describe("split extensions over the event bus", () => {
       expect.stringContaining("unknown mode"),
       "error",
     );
-    expect(getMode(env.ctx.sessionManager)).toBe("ask");
+    expect(session(env.ctx.sessionManager).mode).toBe("ask");
+  });
+
+  it("cycles ask, edit, plan, autopilot with the cap gate", async () => {
+    const env = setupAll();
+    env.start();
+    expect(session(env.ctx.sessionManager).mode).toBe("ask");
+    await env.mode("autopilot");
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("set a token cap first"),
+      "error",
+    );
+    expect(session(env.ctx.sessionManager).mode).toBe("ask");
+    await env.budget("1000");
+    await env.mode("autopilot");
+    expect(session(env.ctx.sessionManager).mode).toBe("autopilot");
+    expect(env.ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("autopilot on"),
+      "warning",
+    );
+    const input = { path: "src/x.ts" };
+    await expect(env.hook("write", input)).resolves.toBeUndefined();
+    expect(env.ctx.ui.confirm).not.toHaveBeenCalled();
+    await env.shortcut();
+    expect(session(env.ctx.sessionManager).mode).toBe("ask");
   });
 
   it("rewrites hook paths after /cd across extensions", async () => {
@@ -181,6 +187,7 @@ describe("split extensions over the event bus", () => {
       cwd: dir,
       sessionManager,
       hasUI: true,
+      isProjectTrusted: () => true,
       ui: { notify: vi.fn(), setStatus: vi.fn(), confirm: vi.fn() },
     };
     const guardStart = guardPi.on.mock.calls.find(

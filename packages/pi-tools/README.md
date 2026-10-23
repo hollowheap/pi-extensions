@@ -1,6 +1,14 @@
 # pi-tools
 
-Permission-enforcing `fd` and `rg` search tools plus `/cd` for the Pi coding agent. `pi-guard` owns the working-directory override and gates every call; this package drives both through the `guard:cwd-set` / `guard:cwd-query` envelopes, and vendors byte-identical copies of `pi-guard`'s `rules.ts`/`loader.ts` for result filtering (canonical copies live in `pi-guard` — edit those, then copy over).
+Permission-enforcing `fd` and `rg` search tools plus `/cd` for the Pi coding agent. The working-directory override and the rule checks live in `@hollowheap/core`, so this package works with or without `pi-guard` installed: `/cd` stores the directory in the core session state, and search results are filtered by the core verdict (only `deny` drops a result — an `ask` result is kept).
+
+## Codemode exposure
+
+`fd` and `rg` register with `exposure: "codemode"`. Scripts call them as `tools.fd()` and `tools.rg()`, but the model does not see them in the declared tool schema by default. On `session_start`, `pi-tools` activates the registered `codemode` tool when it is inactive, so the tools stay reachable without a direct-schema fallback. `/reload` re-activates `codemode` if it was deactivated.
+
+Activating `codemode` changes what the model sees. With `codemode.mode: "on"` (default), every active direct tool's description gains a note on calling it from scripts. With `"only"`, active direct tools are hidden from the schema and reached through scripts. Both are stable while the tool set is unchanged.
+
+Keep `tool_search` disabled. It searches `codemode` tools too, so a search can activate `fd`/`rg` and change the declared tool set mid-session. Naming `fd` or `rg` in `--tools` or `defaultTools` still declares them; the exposure only removes them from the default set. If the `codemode` built-in is disabled or unavailable, `fd`/`rg` are unreachable. SDK sessions must load `createCodemodeExtension()` and call `session.bindExtensions()` for the activation to run.
 
 ## Try it
 

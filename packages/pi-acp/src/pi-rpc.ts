@@ -51,6 +51,7 @@ export class PiRpc {
     });
     proc.on("exit", (code) => {
       rpc.failAll(new Error(`pi exited with code ${code}`));
+      callbacks.onEvent({ type: "proc_exit", code });
     });
     return rpc;
   }
@@ -160,7 +161,7 @@ export interface SpawnPiRpcOptions {
   onEvent: (event: unknown) => void;
 }
 
-export function spawnPiRpc(options: SpawnPiRpcOptions): PiRpc {
+export function piRpcArgs(options: SpawnPiRpcOptions): string[] {
   const args = [
     "--mode",
     "rpc",
@@ -168,15 +169,20 @@ export function spawnPiRpc(options: SpawnPiRpcOptions): PiRpc {
     "-ne",
     "-e",
     options.extensionPath,
+    "-nbt",
     "--append-system-prompt",
     options.appendix,
   ];
   if (options.sessionFile !== undefined) {
     args.push("--session", options.sessionFile);
   }
+  return args;
+}
+
+export function spawnPiRpc(options: SpawnPiRpcOptions): PiRpc {
   return PiRpc.spawn(
     "pi",
-    args,
+    piRpcArgs(options),
     {
       cwd: options.cwd,
       env: {

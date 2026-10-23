@@ -1,11 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ModeDefinition, ModesQuery } from "@hollowheap/core";
+import { type ModeLayer, registerMode } from "@hollowheap/core";
 
-export const GUARD_MODES_CHANNEL = "guard:modes";
-
-const AUTOPILOT_MODE: ModeDefinition = {
+export const AUTOPILOT_MODE: ModeLayer = {
   name: "autopilot",
-  apply: (_tag, verdict) => (verdict === "deny" ? "deny" : "allow"),
+  description: "Writes and non-dangerous bash run without asking",
+  defaults: {
+    read: "allow",
+    search: "allow",
+    edit: "allow",
+    shell: "allow",
+  },
   onEnter: () => ({
     notice: {
       text: "autopilot on: writes and non-dangerous bash run without asking",
@@ -14,10 +18,6 @@ const AUTOPILOT_MODE: ModeDefinition = {
   }),
 };
 
-export default function (pi: ExtensionAPI): void {
-  pi.events.on(GUARD_MODES_CHANNEL, (data) => {
-    const query = data as ModesQuery;
-    if (query.modes.some((entry) => entry.name === AUTOPILOT_MODE.name)) return;
-    query.modes.push(AUTOPILOT_MODE);
-  });
+export default function (_pi: ExtensionAPI): void {
+  registerMode(AUTOPILOT_MODE);
 }

@@ -2,6 +2,7 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { effectiveCwd } from "@hollowheap/core";
 import { type DashboardConfig, loadConfig } from "./config.js";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
@@ -59,22 +60,30 @@ function terminalSection(
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
   let warned = false;
+  let stopped = false;
   let requestRender: (() => void) | undefined;
+  const controller = new AbortController();
 
   async function refresh(): Promise<void> {
     if (running) return;
     running = true;
+    let aborted = false;
     try {
-      lines = splitOutput(await deps.run(command, args, undefined));
+      lines = splitOutput(await deps.run(command, args, controller.signal));
     } catch (error) {
-      lines = [error instanceof Error ? error.message : String(error)];
-      if (!warned) {
-        warned = true;
-        deps.notify(lines[0]);
+      if (controller.signal.aborted) {
+        aborted = true;
+      } else {
+        lines = [error instanceof Error ? error.message : String(error)];
+        if (!warned) {
+          warned = true;
+          deps.notify(lines[0]);
+        }
       }
     } finally {
       running = false;
     }
+    if (aborted || stopped) return;
     requestRender?.();
   }
 
@@ -91,6 +100,8 @@ function terminalSection(
       timer = setInterval(() => void refresh(), intervalMs);
     },
     stop() {
+      stopped = true;
+      controller.abort();
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
     },
@@ -129,8 +140,10 @@ export function createDashboard(
 }
 
 export default function (pi: ExtensionAPI) {
+  let active: DashboardController | undefined;
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
+    active?.stop();
     const loaded = loadConfig(getAgentDir());
     if (loaded.diagnostics.length > 0) {
       ctx.ui.notify(
@@ -140,9 +153,15 @@ export default function (pi: ExtensionAPI) {
     }
     const controller = createDashboard(loaded.config, {
       run: (command, args, signal) =>
-        runCommand(command, args, ctx.cwd, signal),
+        runCommand(
+          command,
+          args,
+          effectiveCwd(ctx.cwd, ctx.sessionManager),
+          signal,
+        ),
       notify: (message) => ctx.ui.notify(message, "warning"),
     });
+    active = controller;
     ctx.ui.setHeader((tui, _theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
@@ -154,6 +173,8 @@ export default function (pi: ExtensionAPI) {
     });
   });
   pi.on("session_shutdown", (_event, ctx) => {
+    active?.stop();
+    active = undefined;
     ctx.ui.setHeader(undefined);
   });
 }

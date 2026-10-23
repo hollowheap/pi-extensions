@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { PiRpc } from "./pi-rpc.js";
+import { PiRpc, piRpcArgs } from "./pi-rpc.js";
 
 function setup(onEvent: (event: unknown) => void = () => {}): {
   rpc: PiRpc;
@@ -99,5 +99,35 @@ describe("pi rpc", () => {
     expect(
       sent.map((line) => (JSON.parse(line) as { type: string }).type),
     ).toEqual(["prompt", "abort"]);
+  });
+});
+
+describe("pi rpc spawn args", () => {
+  it("disables built-in tools and keeps the bundled extension", () => {
+    const args = piRpcArgs({
+      cwd: "/tmp/work",
+      socketPath: "/tmp/s.sock",
+      caps: "{}",
+      extensionPath: "/tmp/ext.ts",
+      appendix: "appendix",
+      onEvent: () => {},
+    });
+    expect(args).toContain("-nbt");
+    expect(args).toContain("-ne");
+    expect(args[args.indexOf("-e") + 1]).toBe("/tmp/ext.ts");
+    expect(args).not.toContain("--session");
+  });
+
+  it("passes the session file when given", () => {
+    const args = piRpcArgs({
+      cwd: "/tmp/work",
+      sessionFile: "/tmp/session.jsonl",
+      socketPath: "/tmp/s.sock",
+      caps: "{}",
+      extensionPath: "/tmp/ext.ts",
+      appendix: "appendix",
+      onEvent: () => {},
+    });
+    expect(args[args.indexOf("--session") + 1]).toBe("/tmp/session.jsonl");
   });
 });

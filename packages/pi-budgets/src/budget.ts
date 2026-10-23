@@ -15,6 +15,11 @@ export function clearBudget(owner: unknown): void {
   usedTokens.delete(owner);
 }
 
+export function setBudgetBaseline(owner: unknown, tokens: number): number {
+  usedTokens.set(owner, tokens);
+  return tokens;
+}
+
 export function getTokenCap(owner: unknown): number | undefined {
   return tokenCaps.get(owner);
 }

@@ -1,6 +1,6 @@
 # pi-budgets
 
-Session token budget for the Pi coding agent: accumulation, `/budget`, and the over-cap gate. Owns its totals and cap, and vetoes `pi-autopilot` entry without a cap through the `guard:mode-enter` envelope.
+Session token budget for the Pi coding agent: accumulation, `/budget`, and the over-cap gate. Owns its totals and cap, and registers an entry gate on `@hollowheap/core` that refuses `autopilot` without a cap.
 
 ## Try it
 
