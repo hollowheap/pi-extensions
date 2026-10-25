@@ -16,17 +16,17 @@ Every package here is completely plug-and-play. You can grab individual packages
 | Package | Version | Description |
 | :--- | :--- | :--- |
 | [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, and mode-registry primitives |
-| [`@hollowheap/pi-statusline`](./packages/pi-statusline) | `0.2.0` | Configurable lualine-style statusline footer |
-| [`@hollowheap/pi-guard`](./packages/pi-guard) | `0.2.0` | Policy enforcement, approvals, shell safety gates, and modes |
-| [`@hollowheap/pi-hooks`](./packages/pi-hooks) | `0.2.0` | Pre-tool and post-tool commands configured in `hooks.json` |
-| [`@hollowheap/pi-dashboard`](./packages/pi-dashboard) | `0.2.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-budgets`](./packages/pi-budgets) | `0.2.0` | Token usage tracking, `/budget` controls, and hard-cap gates |
-| [`@hollowheap/pi-autopilot`](./packages/pi-autopilot) | `0.2.0` | Hands-free autopilot mode for autonomous workflow loops |
-| [`@hollowheap/pi-tools`](./packages/pi-tools) | `0.2.0` | High-speed ripgrep/fd search tools and `/cd` navigation |
-| [`@hollowheap/pi-code-intel`](./packages/pi-code-intel) | `0.2.0` | Read-only LSP code intelligence via a direct `code_intel` tool |
-| [`@hollowheap/pi-question`](./packages/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
-| [`@hollowheap/pi-todos`](./packages/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
-| [`@hollowheap/pi-tasks`](./packages/pi-tasks) | `0.2.0` | Durable background shell tasks via a direct `task` tool |
+| [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.2.0` | Configurable lualine-style statusline footer |
+| [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.2.0` | Policy enforcement, approvals, shell safety gates, and modes |
+| [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.2.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
+| [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.2.0` | Interactive startup dashboard with ASCII banners and widgets |
+| [`@hollowheap/pi-budgets`](./extensions/pi-budgets) | `0.2.0` | Token usage tracking, `/budget` controls, and hard-cap gates |
+| [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.2.0` | Hands-free autopilot mode for autonomous workflow loops |
+| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.2.0` | High-speed ripgrep/fd search tools and `/cd` navigation |
+| [`@hollowheap/pi-code-intel`](./extensions/pi-code-intel) | `0.2.0` | Read-only LSP code intelligence via a direct `code_intel` tool |
+| [`@hollowheap/pi-question`](./extensions/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
+| [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
+| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks via a direct `task` tool |
 | [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---
@@ -40,7 +40,7 @@ Install the entire suite directly into Pi:
 pi install git:github.com/hollowheap/pi-extensions
 ```
 
-The git suite installs as one composed extension entry (`src/index.ts`), so startup lists one package instead of every package path. Install individual npm packages below when you want to enable or disable them separately.
+The git suite installs each extension from `extensions/pi-<name>/`; startup labels stay short because Pi strips the `extensions/` prefix. Install individual npm packages below when you want to enable or disable extensions separately.
 
 ### Pick and choose individual packages
 Want only the statusline or the safety guardrails? Install them separately from npm:
@@ -79,7 +79,7 @@ npm run lint        # check code with biome
 You can load any local extension into a live Pi session without installing it:
 
 ```bash
-pi -e ./packages/pi-statusline
+pi -e ./extensions/pi-statusline
 ```
 
 ### Scaffold a brand new extension
@@ -89,7 +89,7 @@ Want to add another tool or extension to the monorepo? Use the built-in generato
 npm run new -- pi-<name>
 ```
 
-This sets up `packages/pi-<name>`, configures the package manifest, wires up tests, and registers the entrypoint in the root `package.json`.
+This sets up `extensions/pi-<name>`, configures the package manifest, wires up tests, and registers the entrypoint in the root `package.json`.
 
 ---
 
