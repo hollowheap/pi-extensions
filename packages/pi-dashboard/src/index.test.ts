@@ -208,6 +208,29 @@ describe("createDashboard", () => {
     expect(deps.notify).not.toHaveBeenCalled();
   });
 
+  it("centers command output when align is center", async () => {
+    const deps = fakeDeps("hi\n");
+    const controller = createDashboard(
+      {
+        width: 6,
+        sections: [
+          {
+            type: "terminal",
+            command: "x",
+            args: [],
+            intervalMs: 50,
+            align: "center",
+            gap: 0,
+          },
+        ],
+      },
+      deps,
+    );
+    await controller.refresh();
+    expect(controller.lines()).toEqual(["  hi  "]);
+    controller.stop();
+  });
+
   it("passes the render width to the terminal section", async () => {
     const deps = fakeDeps("a\n");
     const controller = createDashboard(

@@ -10,6 +10,7 @@ export type DashboardSection =
       command: string;
       args: string[];
       intervalMs: number;
+      align?: "left" | "center";
       gap: number;
     };
 
@@ -117,11 +118,22 @@ function normalizeSection(
         diagnostics.push("terminal intervalMs must be positive; using default");
       }
     }
+    let align: "left" | "center" | undefined;
+    if (input.align !== undefined) {
+      if (input.align === "left" || input.align === "center") {
+        align = input.align;
+      } else {
+        diagnostics.push(
+          'terminal align must be "left" or "center"; using left',
+        );
+      }
+    }
     return {
       type: "terminal",
       command: input.command,
       args,
       intervalMs,
+      ...(align === undefined ? {} : { align }),
       gap: normalizeGap(input.gap, diagnostics),
     };
   }

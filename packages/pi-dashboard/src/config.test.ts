@@ -98,6 +98,29 @@ describe("normalizeConfig", () => {
     ]);
   });
 
+  it("accepts terminal alignment", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: [{ type: "terminal", command: "x", align: "center" }],
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.sections).toEqual([
+      {
+        type: "terminal",
+        command: "x",
+        args: [],
+        intervalMs: 30000,
+        align: "center",
+        gap: 0,
+      },
+    ]);
+
+    const invalid = normalizeConfig({
+      sections: [{ type: "terminal", command: "x", align: "middle" }],
+    });
+    expect(invalid.diagnostics).toHaveLength(1);
+    expect(invalid.config.sections[0]).not.toHaveProperty("align");
+  });
+
   it("skips invalid sections with diagnostics", () => {
     const { config, diagnostics } = normalizeConfig({
       sections: ["nope", { type: "mystery" }, { type: "terminal" }],

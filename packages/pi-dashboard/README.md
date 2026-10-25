@@ -1,6 +1,6 @@
 # pi-dashboard
 
-Replaces the startup header with a dashboard: built-in ASCII art by default, custom art, or the output of a command re-run on an interval. Every line is padded or truncated to one fixed character width; art lines are centered, command output stays left-aligned.
+Replaces the startup header with a dashboard: built-in ASCII art by default, custom art, or the output of a command re-run on an interval. Every line is padded or truncated to one fixed character width; art lines are centered, command output defaults to left-aligned and can be centered per section.
 
 ## Try it
 
@@ -28,6 +28,7 @@ Create `<agentDir>/dashboard.json` (`~/.pi/agent/dashboard.json`). Missing file 
       "command": "/home/u/bin/status",
       "args": ["--short"],
       "intervalMs": 30000,
+      "align": "left",
       "gap": 1
     }
   ]
@@ -36,7 +37,7 @@ Create `<agentDir>/dashboard.json` (`~/.pi/agent/dashboard.json`). Missing file 
 
 - `width`: fixed line width, an integer from 10 to 500 (default `60`).
 - `header`: static art lines, centered. Omitting `ascii` shows the built-in banner.
-- `terminal`: runs `command` with `args` (executable path plus argument array — no shell) and shows its output left-aligned, re-run every `intervalMs` (positive number, default `30000`). Failures render as one error line and warn once.
+- `terminal`: runs `command` with `args` (executable path plus argument array — no shell) and shows its output, re-run every `intervalMs` (positive number, default `30000`). Output is left-aligned unless `align` is `"center"`. Failures render as one error line and warn once.
 - `gap`: blank lines after the section (default `0`). Unknown section types are skipped with a warning.
 
 Commands run with your full user permissions. Review any dashboard command before installing it from a third party.

@@ -53,6 +53,7 @@ function terminalSection(
   args: string[],
   intervalMs: number,
   width: number,
+  align: "left" | "center" | undefined,
   gap: number,
   deps: DashboardDeps,
 ): SectionController {
@@ -89,7 +90,7 @@ function terminalSection(
 
   return {
     lines: (renderWidth?: number) => {
-      const fitted = fitLines(lines, renderWidth ?? width, "left");
+      const fitted = fitLines(lines, renderWidth ?? width, align ?? "left");
       for (let i = 0; i < gap; i++) fitted.push("");
       return fitted;
     },
@@ -120,6 +121,7 @@ export function createDashboard(
           section.args,
           section.intervalMs,
           config.width,
+          section.align,
           section.gap,
           deps,
         ),
