@@ -378,6 +378,13 @@ Traceable behavioral specs. Prose above carries rationale and anchors; this list
 - [x] S65 [D63]: built-in language mappings are overlaid by `<agentDir>/code-intel.json`; malformed entries are diagnosed and dropped; servers spawn only in trusted projects, never auto-install, and missing commands return a setup hint | Verify: `npx vitest run packages/pi-code-intel/src/config.test.ts packages/pi-code-intel/src/tool.test.ts`
 - [x] S66 [D64]: `code_intel` supports `definition`, `references`, `document_symbols`, and `workspace_symbols`; positions are 1-based; results are capped, formatted, and filtered with core read/search rules; validation and server failures return text | Verify: `npx vitest run packages/pi-code-intel/src/tool.test.ts`
 - [x] S67 [D61]: `pi-code-intel/README.md` documents actions, 1-based positions, built-in mappings, config schema, trust gating, no auto-install, and codemode exposure; the package manifest, root extension list, and lock are consistent; the full suite is green | Verify: `rg -q "code_intel" packages/pi-code-intel/README.md && npm test && npm run typecheck && npm run lint`
+- [x] S68 [D65, D66, D72]: `packages/pi-tasks` is a pi extension listed in the root `pi.extensions`, depends on `@hollowheap/core` at `^0.2.0` with no `typebox` dependency, registers the direct `task` tool (`exposure` omitted/direct) without overriding built-in `bash`, and is inactive under ACP (`-ne` omits it and `pi-acp` keeps `acp_bash`); `pi-tools` stays stateless and core gains no process or host code | Verify: `jq -e '.pi.extensions | index("./packages/pi-tasks/src/index.ts")' package.json >/dev/null && jq -e '.dependencies["@hollowheap/core"] == "^0.2.0"' packages/pi-tasks/package.json >/dev/null && ! rg -q 'typebox|exposure: "codemode"' packages/pi-tasks/src packages/pi-tasks/package.json`
+- [x] S69 [D70, D71]: the generic task registry exports `TaskRecord { id, kind, status, command?, cwd, pid?, startTime?, startedAt, finishedAt?, exitCode?, output, wait, cancel }` (`kind: "shell"` in v1, session-scoped subagents reserved for parent-hub RPC without `inbox`/`outbox` in v1) and persists durable shell tasks under `<agentDir>/tasks/<id>.json` and `<agentDir>/tasks/<id>.log` with `0600` permissions (`0700` dir) | Verify: `npx vitest run packages/pi-tasks/src/registry.test.ts`
+- [x] S70 [D69]: durable shell tasks spawn via a detached Node runner shim that streams stdout/stderr to `<id>.log` and atomically writes `status`, `exitCode`, and `finishedAt` to `<id>.json` on exit; `list`/`status`/`wait` reconcile dead shims using recorded `pid` plus OS process start time to prevent PID-reuse false positives, and `session_shutdown` leaves durable tasks running | Verify: `npx vitest run packages/pi-tasks/src/runner.test.ts packages/pi-tasks/src/registry.test.ts`
+- [x] S71 [D67]: `packages/pi-guard` gates `task` tool calls: when `action === "start"` (or unknown/missing action), it evaluates `command` under `tag: "shell"` (prompting via `ctx.ui.confirm` on `"ask"` and blocking on `"deny"`), while allowing read/control actions (`"list"`, `"status"`, `"wait"`, `"cancel"`) without an unnecessary shell prompt | Verify: `npx vitest run packages/pi-guard/src/index.test.ts`
+- [x] S72 [D66, D67, D68, D69]: the direct `task` tool supports `action: "start" | "list" | "status" | "wait" | "cancel"`, where `start` requires `ctx.isProjectTrusted()` and a non-empty `command` (checked against core shell permissions in `effectiveCwd`), spawns the detached runner shim, and returns task `id`/`pid`/log path immediately; `list` returns reconciled tasks; `status` returns metadata and tail output bounded by `truncateText`; `wait` blocks until task exit or `timeoutMs` (including across pi restarts by watching/polling `<id>.json`); `cancel` terminates the process group and marks the task `cancelled`; completion never triggers a model turn | Verify: `npx vitest run packages/pi-tasks/src/task-tool.test.ts`
+- [x] S73 [D65, D68, D69, D72]: `packages/pi-tasks/src/index.ts` registers only the direct `task` tool (no `bash` override or `/background` command), updates `ctx.ui.setStatus("tasks", "<n> running")` when non-zero (cleared when `0`), stays inert when `PI_ACP` is set, and leaves durable tasks running on `session_shutdown` | Verify: `npx vitest run packages/pi-tasks/src/index.test.ts`
+- [x] S74 [D65, D66, D67, D68, D69, D70, D71, D72]: `packages/pi-tasks/README.md` documents the direct `task` tool (`start`/`list`/`status`/`wait`/`cancel`), keeping built-in `bash` untouched, `pi-guard` shell gating on `task.start`, the `<agentDir>/tasks/` `0600` durability and PID+start-time reconciliation model, the project trust gate, ACP inactivity, and the v1 task-layer scope; root `README.md`, `package.json`, and workspace lock are consistent and the full suite is green | Verify: `rg -q "pi-tasks" README.md && rg -q "start" packages/pi-tasks/README.md && npm test && npm run typecheck && npm run lint`
 
 
 Status: resolved 2026-10-19 from pi and anchor sources; ready for implementation. Not implemented.
@@ -663,3 +670,70 @@ code_intel({
 - `src/index.test.ts` covers tool registration/exposure, codemode activation, session cleanup, and that no UI, command, or second tool is registered.
 - `packages/pi-code-intel/README.md` documents actions, 1-based positions, built-ins, the config schema, trust gating, no auto-install, codemode exposure, timeout behavior, and the read-only scope.
 - Root manifest, workspace lock, typecheck, full tests, and lint are consistent.
+
+## Spec: background tasks (pending 2026-10-25)
+
+Decision source: D65-D72. Implementation: pending in `artifacts/plan.md`. A new `packages/pi-tasks` extension owns durable shell task lifecycle, the generic task registry, and the direct `task` tool (`start`, `list`, `status`, `wait`, `cancel`) while leaving the host built-in `bash` tool untouched. `pi-tools` stays stateless and `@hollowheap/core` gains no process or host code.
+
+### 1. Package boundary and ACP scope
+
+- `packages/pi-tasks/src/index.ts` is the extension entry. Its `package.json` declares it as a pi extension, lists `@hollowheap/core` at `^0.2.0` in `dependencies`, and keeps `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` as peers. It has no `typebox` dependency.
+- The root `package.json` `pi.extensions` list includes `./packages/pi-tasks/src/index.ts`. The version stays `0.2.0`.
+- `task` is registered as a direct tool (`exposure` omitted). Built-in `bash` is not overridden, and no `/background` command or shortcut is registered. `code_intel` remains `exposure: "codemode"`.
+- ACP spawns pi with `-ne -e <bundled-extension> -nbt`, so `pi-tasks` is not loaded in ACP sessions and `acp_bash` remains the sole shell path over the client terminal. If `pi-tasks` is ever loaded in an environment where `PI_ACP` is active, it stays inert.
+
+### 2. Generic task record and durable storage
+
+```ts
+export type TaskKind = "shell" | "subagent";
+export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
+
+export interface TaskRecord {
+  id: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  command?: string;
+  cwd: string;
+  pid?: number;
+  startTime?: number;
+  startedAt: number;
+  finishedAt?: number;
+  exitCode?: number | null;
+  output: () => Promise<string>;
+  wait: (timeoutMs?: number, signal?: AbortSignal) => Promise<TaskRecord>;
+  cancel: () => Promise<TaskRecord>;
+}
+```
+
+- v1 implements `kind: "shell"`. `inbox`/`outbox` are deferred until the subagent RPC spec (D70, D71).
+- Durable shell tasks store metadata in `<agentDir>/tasks/<id>.json` (`0600`) and combined stdout/stderr in `<agentDir>/tasks/<id>.log` (`0600`), inside `<agentDir>/tasks/` (`0700`).
+- Durable tasks are spawned through a detached Node runner shim (`process.execPath -e ...`, `detached: true`, `stdio: "ignore"`, `unref()`) so the shell child is always spawned under a process group owned by the shim. When the command exits, the shim atomically updates `<id>.json` with `status` (`"completed"` for exit 0, `"failed"` otherwise), `exitCode`, and `finishedAt`.
+- To prevent OS PID-reuse false positives across sessions, `<id>.json` records the shim/child `pid` and OS process `startTime` (e.g., `/proc/<pid>/stat` field 22 on Linux). When `list`, `status`, or `wait` inspects a `"running"` task whose `pid` is dead or whose live process `startTime` does not match, it reconciles the record to `status: "failed"`, `exitCode: null`, `finishedAt: Date.now()`.
+- `session_shutdown` leaves durable tasks running; cleanup of `<agentDir>/tasks/` is manual in v1.
+
+### 3. `pi-guard` and `pi-hooks` integration
+
+- In `packages/pi-guard`, `task` is handled in `tool_call`:
+  - When `action` is `"list"`, `"status"`, `"wait"`, or `"cancel"`, `pi-guard` returns `undefined` (allowed without prompting), because those actions inspect or stop existing tasks in `<agentDir>/tasks/`.
+  - Otherwise (including `action === "start"`), `pi-guard` evaluates `command` under `tag: "shell"` in `ctx.cwd` using core `evaluate()`, blocking on `"deny"` and prompting via `ctx.ui.confirm("Allow task?", displayTarget(command))` on `"ask"`.
+- In `packages/pi-Tasks`, `task` (`action: "start"`) also checks core `evaluate()` (`tag: "shell"`) as defense-in-depth when `pi-guard` is not loaded, blocking on `"deny"` and requiring `ctx.isProjectTrusted()` before spawning.
+- `pi-hooks` automatically receives `pre_tool` and `post_tool` events for `toolName: "task"`.
+
+### 4. `task` tool contract
+
+```ts
+task({
+  action: "start" | "list" | "status" | "wait" | "cancel",
+  command?: string,   // required for start
+  id?: string,        // required for status, wait, cancel
+  timeoutMs?: number  // optional for wait (default 30000, max 600000)
+})
+```
+
+- `start`: requires `ctx.isProjectTrusted()` and a non-empty `command`. Resolves working directory via core `effectiveCwd(ctx.cwd, ctx.sessionManager)`. Spawns the detached runner shim and returns immediately with task `id`, `pid`, and log path.
+- `list`: reconciles all task records in `<agentDir>/tasks/` and returns a summary table (`id`, `kind`, `status`, `exitCode`, `startedAt`, `command`).
+- `status`: reconciles task `id` and returns its metadata plus the current log output truncated with core `truncateText`.
+- `wait`: if task `id` is already terminal, returns its status and truncated output immediately. Otherwise watches/polls `<id>.json` (and reconciles liveness) until the task exits, `timeoutMs` elapses, or `signal` aborts, then returns the updated status and truncated output. Completion never triggers an unsolicited model turn.
+- `cancel`: verifies `pid` + `startTime` liveness, sends `SIGTERM` (followed by `SIGKILL` grace timeout) to the process group, updates `<id>.json` to `status: "cancelled"` with `finishedAt`, and returns the updated state.
+- Unknown `id` or invalid parameters return explanatory text without throwing.
+- Statusline integration: `ctx.ui.setStatus("tasks", "<n> running")` when `n > 0`, cleared with `undefined` when `0`.
