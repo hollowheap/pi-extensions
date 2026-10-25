@@ -4,7 +4,8 @@
     "noEmit": true
   },
   "include": [
-    "src/**/*.ts",
+    "extensions/*/index.ts",
+    "extensions/*/src/**/*.ts",
     "packages/*/src/**/*.ts",
     "vitest.config.ts",
     "scripts/**/*.mjs"

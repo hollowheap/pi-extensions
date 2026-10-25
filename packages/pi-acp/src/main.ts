@@ -9,7 +9,7 @@ import { spawnPiRpc } from "./pi-rpc.js";
 const SYSTEM_APPENDIX = `ACP session tools: prefer acp_read, acp_write, acp_edit, acp_bash, acp_fd, acp_rg, acp_eza over built-in tools with overlapping jobs.
 - acp_write creates new files only and refuses existing paths.
 - acp_edit replaces exact oldText matches and refuses when the editor buffer differs from disk.
-- Approval modes, switched by the client, not by you: plan allows reads and allowlisted bash and writes only to artifacts/plan.md, artifacts/specs.md, and artifacts/tasks/ (those always ask); ask follows the rules and asks when unlisted; edit runs reads and writes silently and runs only allowlisted bash.
+- Approval modes, switched by the client, not by you: plan allows reads and allowlisted bash and writes only to artifacts/plan.md and artifacts/specs.md (those always ask); ask follows the rules and asks when unlisted; edit runs reads and writes silently and runs only allowlisted bash.
 - Denied calls stay denied: do not retry them with a different tool.`;
 
 export function storePath(): string {

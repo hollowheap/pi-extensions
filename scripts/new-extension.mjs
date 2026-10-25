@@ -13,9 +13,9 @@ if (!rawName || !/^pi-[a-z0-9-]+$/.test(rawName)) {
   process.exit(1);
 }
 
-const dest = join(root, "packages", rawName);
+const dest = join(root, "extensions", rawName);
 if (existsSync(dest)) {
-  console.error(`packages/${rawName} already exists`);
+  console.error(`extensions/${rawName} already exists`);
   process.exit(1);
 }
 
@@ -35,8 +35,8 @@ const pkg = {
   license: "MIT",
   engines: { node: ">=22.19.0" },
   keywords: ["pi-package"],
-  files: ["src", "README.md"],
-  pi: { extensions: ["./src/index.ts"] },
+  files: ["index.ts", "src", "README.md"],
+  pi: { extensions: ["./index.ts"] },
   peerDependencies: {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
@@ -48,11 +48,15 @@ const pkg = {
 writeFileSync(join(dest, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
 writeFileSync(
   join(dest, "tsconfig.json"),
-  `${JSON.stringify({ extends: "../../tsconfig.base.json", include: ["src/**/*.ts"] }, null, 2)}\n`,
+  `${JSON.stringify({ extends: "../../tsconfig.base.json", include: ["index.ts", "src/**/*.ts"] }, null, 2)}\n`,
+);
+writeFileSync(
+  join(dest, "index.ts"),
+  'export { default } from "./src/index.js";\n',
 );
 writeFileSync(
   join(dest, "README.md"),
-  `# ${rawName}\n\n${pkg.description}.\n\n## Try it\n\n\`\`\`bash\npi -e ./packages/${rawName}\n\`\`\`\n\n## Install\n\n\`\`\`bash\npi install npm:${pkg.name}\n\`\`\`\n`,
+  `# ${rawName}\n\n${pkg.description}.\n\n## Try it\n\n\`\`\`bash\npi -e ./extensions/${rawName}\n\`\`\`\n\n## Install\n\n\`\`\`bash\npi install npm:${pkg.name}\n\`\`\`\n`,
 );
 writeFileSync(
   join(dest, "src", "index.ts"),
@@ -70,14 +74,14 @@ try {
   });
 } catch {
   console.error(
-    `formatting failed; run: npx biome check --write ./packages/${rawName}`,
+    `formatting failed; run: npx biome check --write ./extensions/${rawName}`,
   );
 }
 
 // Register the new entrypoint in the root pi manifest (git-install-all path).
 const rootPkgPath = join(root, "package.json");
 const rootPkg = JSON.parse(readFileSync(rootPkgPath, "utf8"));
-const entry = `./packages/${rawName}/src/index.ts`;
+const entry = `./extensions/${rawName}/index.ts`;
 rootPkg.pi ??= {};
 rootPkg.pi.extensions ??= [];
 if (!rootPkg.pi.extensions.includes(entry)) {
@@ -85,4 +89,6 @@ if (!rootPkg.pi.extensions.includes(entry)) {
   writeFileSync(rootPkgPath, `${JSON.stringify(rootPkg, null, 2)}\n`);
 }
 
-console.log(`Created packages/${rawName}. Try: pi -e ./packages/${rawName}`);
+console.log(
+  `Created extensions/${rawName}. Try: pi -e ./extensions/${rawName}`,
+);

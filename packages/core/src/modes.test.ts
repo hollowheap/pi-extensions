@@ -76,10 +76,6 @@ describe("built-in modes", () => {
   it("asks on plan artifacts in plan mode", () => {
     expect(evaluateAs("plan", "edit", "artifacts/plan.md")).toBe("ask");
     expect(evaluateAs("plan", "edit", "artifacts/specs.md")).toBe("ask");
-    expect(evaluateAs("plan", "edit", "artifacts/tasks/T01.md")).toBe("ask");
-    expect(evaluateAs("plan", "edit", "artifacts/tasks/deep/T01.md")).toBe(
-      "ask",
-    );
     expect(evaluateAs("edit", "edit", "artifacts/plan.md")).toBe("allow");
   });
 

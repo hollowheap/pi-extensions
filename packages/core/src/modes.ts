@@ -46,7 +46,6 @@ const BUILTIN_LAYERS: ModeLayer[] = [
     overrides: [
       { tag: "edit", pattern: "artifacts/plan.md", effect: "ask" },
       { tag: "edit", pattern: "artifacts/specs.md", effect: "ask" },
-      { tag: "edit", pattern: "artifacts/tasks/*", effect: "ask" },
       { tag: "edit", pattern: "*", effect: "deny" },
     ],
   },

@@ -9,9 +9,21 @@
     "node": ">=22.19.0"
   },
   "keywords": ["pi-package"],
-  "workspaces": ["packages/*"],
+  "workspaces": ["packages/*", "extensions/*"],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./extensions/pi-statusline/index.ts",
+      "./extensions/pi-guard/index.ts",
+      "./extensions/pi-hooks/index.ts",
+      "./extensions/pi-question/index.ts",
+      "./extensions/pi-dashboard/index.ts",
+      "./extensions/pi-tools/index.ts",
+      "./extensions/pi-budgets/index.ts",
+      "./extensions/pi-autopilot/index.ts",
+      "./extensions/pi-todos/index.ts",
+      "./extensions/pi-code-intel/index.ts",
+      "./extensions/pi-tasks/index.ts"
+    ]
   },
   "scripts": {
     "build": "tsc -b",
