@@ -14,6 +14,7 @@ import {
   evaluate,
   loadModesConfig,
   loadPermissions,
+  loadToolTags,
   modeNames,
   replaceConfigModes,
   resetSession,
@@ -32,7 +33,10 @@ const TOOL_TAGS: Record<string, Tag> = {
   ls: "search",
   bash: "shell",
   powershell: "shell",
+  task: "shell",
 };
+
+const PASSTHROUGH_TASK_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
@@ -53,8 +57,25 @@ function readCommandArg(input: unknown): string {
   return typeof command === "string" ? command : "";
 }
 
+function isPassthroughTaskCall(toolName: string, input: unknown): boolean {
+  if (toolName !== "task" || typeof input !== "object" || input === null) {
+    return false;
+  }
+  const action = (input as Record<string, unknown>).action;
+  return typeof action === "string" && PASSTHROUGH_TASK_ACTIONS.has(action);
+}
+
 function loadContextPermissions(ctx: ExtensionContext) {
   return loadPermissions({
+    agentDir: getAgentDir(),
+    workspaceRoot: ctx.cwd,
+    trusted: ctx.isProjectTrusted(),
+    onDiagnostic: (message) => ctx.ui.notify(`pi-guard: ${message}`, "warning"),
+  });
+}
+
+function loadContextToolTags(ctx: ExtensionContext) {
+  return loadToolTags({
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
@@ -131,7 +152,11 @@ export default function (pi: ExtensionAPI) {
     if (lastOwner !== undefined) publishValues(lastOwner);
   });
   pi.on("tool_call", async (event, ctx) => {
-    const tag: Tag | undefined = TOOL_TAGS[event.toolName];
+    if (isPassthroughTaskCall(event.toolName, event.input)) {
+      return undefined;
+    }
+    const tag: Tag | undefined =
+      TOOL_TAGS[event.toolName] ?? loadContextToolTags(ctx)[event.toolName];
     if (tag === undefined) {
       const raw = readPathArg(event.input) ?? ".";
       return requestApproval(event.toolName, raw, ctx);

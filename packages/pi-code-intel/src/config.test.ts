@@ -70,7 +70,38 @@ describe("loadCodeIntelConfig", () => {
     const config = load(dir);
     expect(config.path).toBe(join(dir, CONFIG_FILE_NAME));
     expect(config.servers).toHaveLength(BUILTIN_SERVERS.length);
+    expect(config.exposure).toBe("direct");
     expect(config.diagnostics).toEqual([]);
+  });
+
+  it("reads the configured exposure", () => {
+    const dir = agentDir();
+    write(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({ exposure: "codemode" }),
+      1_000,
+    );
+    expect(load(dir).exposure).toBe("codemode");
+
+    write(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({ exposure: "hidden" }),
+      1_001,
+    );
+    expect(load(dir).exposure).toBe("hidden");
+  });
+
+  it("defaults invalid exposure to direct", () => {
+    const dir = agentDir();
+    const diagnostics: string[] = [];
+    write(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({ exposure: "always" }),
+      1_000,
+    );
+    const config = load(dir, diagnostics);
+    expect(config.exposure).toBe("direct");
+    expect(diagnostics[0]).toContain("using direct");
   });
 
   it("overlays servers by name and adds new servers first", () => {

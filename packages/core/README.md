@@ -42,6 +42,19 @@ Rules live in `<agentDir>/permissions.json` (default `~/.pi/agent/permissions.js
 
 Each rule is `"effect tag pattern"` or `{ "effect", "tag", "pattern" }`. `effect` is `allow`, `ask`, or `deny`; `tag` is `edit`, `read`, `search`, or `shell`. Patterns match the whole path relative to the workspace root; `*` spans directories and `?` matches one character.
 
+Unknown tool names can be tagged in the same file:
+
+```json
+{
+  "tools": {
+    "mcp__docs__search": "search",
+    "mcp__docs__read": "read"
+  }
+}
+```
+
+`loadToolTags` returns the merged `tools` map. Invalid tags are diagnosed and ignored. Consumers decide whether their built-in tool mappings override this map; `pi-guard` keeps its built-ins authoritative.
+
 The project overlay is ignored (with a diagnostic) when the project is not trusted. Missing or unreadable files yield no rules, and the mode default then decides.
 
 ## Mode layers

@@ -53,7 +53,25 @@ With no rules at all the mode default decides: `ask` mode asks for edits and she
 | `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
 | `bash`, `powershell` | `shell` | command name + argument prefix |
 
-Denied calls return `{ block: true, reason }`. Calls that resolve to `ask` open a confirmation dialog, and unknown tools (custom and MCP tools included) ask as well. Without dialog-capable UI the ask becomes a block.
+Unknown tools, including custom and MCP tools, ask by default. Add tags in `permissions.json` to classify them:
+
+```json
+{
+  "tools": {
+    "mcp__docs__search": "search",
+    "mcp__docs__read": "read",
+    "mcp__jira__create_issue": "edit"
+  },
+  "rules": [
+    "allow search *",
+    "allow read *"
+  ]
+}
+```
+
+User tags apply only to tools without a built-in tag; built-in mappings cannot be overridden. Invalid tags are diagnosed and ignored. A trusted project overlay can add tags to its own tools.
+
+Denied calls return `{ block: true, reason }`. Calls that resolve to `ask` open a confirmation dialog. Without dialog-capable UI the ask becomes a block.
 
 ## Shell allowlist
 

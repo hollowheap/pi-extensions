@@ -17,6 +17,7 @@ import {
 } from "@hollowheap/core";
 import {
   type CodeIntelConfig,
+  type CodeIntelExposure,
   findServer,
   loadCodeIntelConfig,
   missingCommandHint,
@@ -407,7 +408,10 @@ const defaultDeps: CodeIntelDeps = {
 
 export const codeIntelTool = createCodeIntelTool();
 
-export function createCodeIntelTool(overrides: Partial<CodeIntelDeps> = {}) {
+export function createCodeIntelTool(
+  overrides: Partial<CodeIntelDeps> = {},
+  exposure: CodeIntelExposure = "direct",
+) {
   const deps: CodeIntelDeps = { ...defaultDeps, ...overrides };
 
   return defineTool({
@@ -415,7 +419,7 @@ export function createCodeIntelTool(overrides: Partial<CodeIntelDeps> = {}) {
     label: "code_intel",
     description:
       "Read-only code intelligence from the project's language server. Actions: definition, references, document_symbols, workspace_symbols. line and column are 1-based. Requires a trusted project and an installed language server.",
-    exposure: "codemode",
+    exposure,
     parameters: Type.Object({
       action: Type.Union([
         Type.Literal("definition"),

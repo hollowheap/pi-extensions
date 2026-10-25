@@ -3,6 +3,7 @@ import { basename, dirname, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { checkPath, displayPath, effectiveCwd } from "@hollowheap/core";
+import type { ToolExposure } from "./config.js";
 import { type ExecDeps, clampMaxResults, defaultExecDeps } from "./exec.js";
 import { loadContextPermissions } from "./permissions.js";
 
@@ -28,13 +29,16 @@ export function parseRgLine(line: string): RgMatch | undefined {
   return { path: match[1], line: Number(match[2]), text: match[3] };
 }
 
-export function createRgTool(deps: ExecDeps = defaultExecDeps) {
+export function createRgTool(
+  deps: ExecDeps = defaultExecDeps,
+  exposure: ToolExposure = "direct",
+) {
   return defineTool({
     name: "rg",
     label: "rg",
     description:
       "Search file contents with a regular expression. Returns file path, line number, and matching line.",
-    exposure: "codemode",
+    exposure,
     parameters: Type.Object({
       pattern: Type.String({ description: "Regular expression to search for" }),
       path: Type.Optional(

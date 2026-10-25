@@ -124,7 +124,7 @@ export function formatTodoList(todos: readonly Todo[]): string {
     .join("\n");
 }
 
-const WIDGET_LIMIT = 5;
+const WIDGET_LIMIT = 10;
 
 export function formatTodoWidget(todos: readonly Todo[]): string[] | undefined {
   const open = byId(todos).filter((todo) => !todo.done);

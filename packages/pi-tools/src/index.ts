@@ -1,10 +1,12 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { checkPath, effectiveCwd, setCwd } from "@hollowheap/core";
-import { fdTool } from "./fd.js";
+import { loadToolsConfig } from "./config.js";
+import { createFdTool } from "./fd.js";
 import { loadContextPermissions } from "./permissions.js";
-import { rgTool } from "./rg.js";
+import { createRgTool } from "./rg.js";
 
 function completeCd(prefix: string) {
   const trimmed = prefix.trim();
@@ -26,9 +28,26 @@ function completeCd(prefix: string) {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerTool(fdTool);
-  pi.registerTool(rgTool);
-  pi.on("session_start", () => {
+  const diagnostics: string[] = [];
+  const config = loadToolsConfig(getAgentDir(), (message) =>
+    diagnostics.push(message),
+  );
+  if (config.fd !== "hidden") {
+    pi.registerTool(createFdTool(undefined, config.fd));
+  }
+  if (config.rg !== "hidden") {
+    pi.registerTool(createRgTool(undefined, config.rg));
+  }
+  const needsCodemode = config.fd === "codemode" || config.rg === "codemode";
+  let reported = false;
+  pi.on("session_start", (_event, ctx) => {
+    if (!reported && diagnostics.length > 0) {
+      reported = true;
+      for (const message of diagnostics) {
+        ctx.ui.notify(`pi-tools: ${message}`, "warning");
+      }
+    }
+    if (!needsCodemode) return;
     if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
     const active = pi.getActiveTools();
     if (active.includes("codemode")) return;

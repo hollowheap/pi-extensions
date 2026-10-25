@@ -13,6 +13,7 @@ interface PermissionsEntry {
   agentMtimeMs: number;
   overlayMtimeMs: number;
   rules: readonly Rule[];
+  toolTags: Readonly<Record<string, Tag>>;
   diagnostics: readonly string[];
   reported: boolean;
 }
@@ -98,45 +99,82 @@ function parseRuleEntry(
   return undefined;
 }
 
-function parseRulesFile(
+function parsePermissionsFile(
   content: string,
   path: string,
   diagnostics: string[],
-): Rule[] {
+): { rules: Rule[]; toolTags: Record<string, Tag> } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
     diagnostics.push(`permissions file is not valid JSON: ${path}`);
-    return [];
+    return { rules: [], toolTags: {} };
   }
-  const entries =
-    isRecord(parsed) && Array.isArray(parsed.rules)
-      ? parsed.rules
-      : Array.isArray(parsed)
-        ? parsed
-        : undefined;
-  if (entries === undefined) {
+
+  let entries: unknown[] = [];
+  let toolEntries: unknown;
+  if (Array.isArray(parsed)) {
+    entries = parsed;
+  } else if (isRecord(parsed)) {
+    if (parsed.rules !== undefined) {
+      if (Array.isArray(parsed.rules)) entries = parsed.rules;
+      else diagnostics.push(`permissions "rules" must be an array: ${path}`);
+    }
+    toolEntries = parsed.tools;
+    if (parsed.rules === undefined && parsed.tools === undefined) {
+      diagnostics.push(
+        `permissions file must be {"rules": [...]} or [...]: ${path}`,
+      );
+      return { rules: [], toolTags: {} };
+    }
+  } else {
     diagnostics.push(
       `permissions file must be {"rules": [...]} or [...]: ${path}`,
     );
-    return [];
+    return { rules: [], toolTags: {} };
   }
+
   const rules: Rule[] = [];
   for (const entry of entries) {
     const rule = parseRuleEntry(entry, diagnostics);
     if (rule !== undefined) rules.push(rule);
   }
-  return rules;
+
+  const toolTags: Record<string, Tag> = {};
+  if (toolEntries !== undefined) {
+    if (!isRecord(toolEntries)) {
+      diagnostics.push(`permissions "tools" must be an object: ${path}`);
+    } else {
+      for (const [name, tag] of Object.entries(toolEntries)) {
+        if (
+          name.trim() === "" ||
+          typeof tag !== "string" ||
+          !KNOWN_TAGS.includes(tag)
+        ) {
+          diagnostics.push(
+            `ignoring tool tag "${name}": expected edit, read, search, or shell`,
+          );
+          continue;
+        }
+        toolTags[name] = tag as Tag;
+      }
+    }
+  }
+  return { rules, toolTags };
 }
 
-function readRules(path: string, mtime: number, diagnostics: string[]): Rule[] {
-  if (mtime < 0) return [];
+function readPermissions(
+  path: string,
+  mtime: number,
+  diagnostics: string[],
+): { rules: Rule[]; toolTags: Record<string, Tag> } {
+  if (mtime < 0) return { rules: [], toolTags: {} };
   try {
-    return parseRulesFile(readFileSync(path, "utf8"), path, diagnostics);
+    return parsePermissionsFile(readFileSync(path, "utf8"), path, diagnostics);
   } catch {
     diagnostics.push(`cannot read permissions file: ${path}`);
-    return [];
+    return { rules: [], toolTags: {} };
   }
 }
 
@@ -160,7 +198,10 @@ function store(key: string, entry: CacheEntry): void {
   }
 }
 
-export function loadPermissions(options: LoadPermissionsOptions): Rule[] {
+function loadPolicy(options: LoadPermissionsOptions): {
+  rules: Rule[];
+  toolTags: Record<string, Tag>;
+} {
   const agentPath = join(options.agentDir, "permissions.json");
   const overlayPath = join(options.workspaceRoot, ".pi", "permissions.json");
   const agentMtime = mtimeMs(agentPath);
@@ -175,13 +216,20 @@ export function loadPermissions(options: LoadPermissionsOptions): Rule[] {
     cached.overlayMtimeMs === overlayMtime
   ) {
     report(cached, options.onDiagnostic);
-    return [...cached.rules];
+    return {
+      rules: [...cached.rules],
+      toolTags: { ...cached.toolTags },
+    };
   }
 
   const diagnostics: string[] = [];
-  const rules = readRules(agentPath, agentMtime, diagnostics);
+  const agent = readPermissions(agentPath, agentMtime, diagnostics);
+  const rules = [...agent.rules];
+  const toolTags = { ...agent.toolTags };
   if (options.trusted) {
-    rules.push(...readRules(overlayPath, overlayMtime, diagnostics));
+    const overlay = readPermissions(overlayPath, overlayMtime, diagnostics);
+    rules.push(...overlay.rules);
+    Object.assign(toolTags, overlay.toolTags);
   } else if (overlayMtime >= 0) {
     diagnostics.push("ignoring .pi/permissions.json: project is not trusted");
   }
@@ -191,12 +239,26 @@ export function loadPermissions(options: LoadPermissionsOptions): Rule[] {
     agentMtimeMs: agentMtime,
     overlayMtimeMs: overlayMtime,
     rules: Object.freeze(rules),
+    toolTags: Object.freeze(toolTags),
     diagnostics: Object.freeze(diagnostics),
     reported: false,
   };
   store(key, entry);
   report(entry, options.onDiagnostic);
-  return [...rules];
+  return {
+    rules: [...entry.rules],
+    toolTags: { ...entry.toolTags },
+  };
+}
+
+export function loadPermissions(options: LoadPermissionsOptions): Rule[] {
+  return loadPolicy(options).rules;
+}
+
+export function loadToolTags(
+  options: LoadPermissionsOptions,
+): Readonly<Record<string, Tag>> {
+  return loadPolicy(options).toolTags;
 }
 
 function parseModeDefaults(

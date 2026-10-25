@@ -165,6 +165,33 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow mcp__docs?", "src/x.ts");
   });
 
+  it("uses configured tags for unknown tools", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        tools: { mcp__docs__search: "search" },
+        rules: ["allow search *"],
+      }),
+    );
+    await expect(
+      call("mcp__docs__search", { path: "." }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not let configured tags override built-in tools", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        tools: { read: "search" },
+        rules: ["deny read *", "allow search *"],
+      }),
+      false,
+    );
+    await expect(call("read", { path: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
   it("asks for bash without allow rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
@@ -194,6 +221,40 @@ describe("pi-guard extension", () => {
       "Allow powershell?",
       "Remove-Item ./x",
     );
+  });
+
+  it("gates task start as shell and allows list/status/wait/cancel without asking", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: ["allow shell npm", "deny shell rm"],
+      }),
+    );
+    await expect(call("task", { action: "list" })).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "status", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "wait", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "cancel", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "start", command: "npm test" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+
+    await expect(
+      call("task", { action: "start", command: "rm -rf build" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+
+    await expect(
+      call("task", { action: "start", command: "cargo build" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build");
   });
 
   it("cuts bash output over 4000 characters", () => {

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModesConfig, loadPermissions } from "./config.js";
+import { loadModesConfig, loadPermissions, loadToolTags } from "./config.js";
 import { modeNames, replaceConfigModes } from "./modes.js";
 
 function workspace(): string {
@@ -230,6 +230,101 @@ describe("loadPermissions", () => {
       { tag: "read", pattern: "*", effect: "allow" },
       { tag: "edit", pattern: "two", effect: "deny" },
     ]);
+  });
+});
+
+describe("loadToolTags", () => {
+  it("parses tool tags from the permissions file", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({
+        tools: {
+          mcp__docs__search: "search",
+          mcp__docs__read: "read",
+          mcp__docs__edit: "edit",
+          mcp__docs__shell: "shell",
+        },
+      }),
+      1_000,
+    );
+
+    expect(
+      loadToolTags({ agentDir, workspaceRoot: root, trusted: false }),
+    ).toEqual({
+      mcp__docs__search: "search",
+      mcp__docs__read: "read",
+      mcp__docs__edit: "edit",
+      mcp__docs__shell: "shell",
+    });
+  });
+
+  it("ignores invalid tags with diagnostics", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({
+        tools: { good: "read", bad: "write", "": "read", number: 7 },
+      }),
+      1_000,
+    );
+
+    expect(
+      loadToolTags({
+        agentDir,
+        workspaceRoot: root,
+        trusted: false,
+        onDiagnostic: (message) => diagnostics.push(message),
+      }),
+    ).toEqual({ good: "read" });
+    expect(diagnostics).toHaveLength(3);
+  });
+
+  it("merges the trusted project overlay", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({ tools: { agent: "read", shared: "read" } }),
+      1_000,
+    );
+    write(
+      join(root, ".pi", "permissions.json"),
+      JSON.stringify({ tools: { project: "search", shared: "search" } }),
+      1_000,
+    );
+
+    expect(
+      loadToolTags({ agentDir, workspaceRoot: root, trusted: true }),
+    ).toEqual({
+      agent: "read",
+      project: "search",
+      shared: "search",
+    });
+    expect(
+      loadToolTags({ agentDir, workspaceRoot: root, trusted: false }),
+    ).toEqual({ agent: "read", shared: "read" });
+  });
+
+  it("reports invalid tools objects", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({ tools: ["read"] }),
+      1_000,
+    );
+    loadToolTags({
+      agentDir,
+      workspaceRoot: root,
+      trusted: false,
+      onDiagnostic: (message) => diagnostics.push(message),
+    });
+    expect(diagnostics[0]).toContain('"tools" must be an object');
   });
 });
 

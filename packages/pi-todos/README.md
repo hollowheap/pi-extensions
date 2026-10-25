@@ -51,7 +51,7 @@ fork stay consistent. There is no global or project-file state.
 
 ## UI
 
-- A compact widget above the editor lists up to five open todos with their IDs.
+- A compact widget above the editor lists up to ten open todos with their IDs.
   When more remain, it adds a `+N more (/todos)` line. It clears when no open
   todos remain.
 - `/todos` shows the full list. TUI opens a closeable list (Esc, Enter, q,

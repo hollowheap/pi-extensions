@@ -50,6 +50,7 @@ function server(overrides: Partial<ServerConfig> = {}): ServerConfig {
 function config(servers: ServerConfig[] = [server()]): CodeIntelConfig {
   return {
     servers,
+    exposure: "direct",
     path: "/agent/code-intel.json",
     diagnostics: [],
   };

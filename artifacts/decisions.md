@@ -102,7 +102,23 @@ Settled decisions from the architecture grill. One line each: `Dnn: decision | W
 - [x] D63: Server definitions come from built-in language mappings overlaid by `<agentDir>/code-intel.json`; servers spawn only when `ctx.isProjectTrusted()` is true, never auto-install, and return a setup hint when the command or config is missing | Why: language servers execute project code, so project trust is the boundary; auto-install would widen the supply-chain surface.
 - [x] D64: `code_intel` is read-only and supports `definition`, `references`, `document_symbols`, and `workspace_symbols`; input positions are 1-based, results are capped and path-checked with core read/search rules, and unsupported files or missing servers return explanatory text instead of throwing | Why: the model should query by editor-style coordinates, and returned locations must respect pi-guard policy.
 
-## Non-Goals
+## Background tasks and subagents
+
+- [x] D65: A new `packages/pi-tasks` extension owns durable task lifecycle, the task registry, and the direct `task`/future `subagent` tools while keeping the host built-in `bash` tool untouched; `pi-tools` stays stateless and core gains no process or host code | Why: persistence, trust, and cleanup need one lifecycle owner, while keeping built-in `bash` avoids reimplementing foreground shell execution.
+- [x] D66: `task` and the future `subagent` tool are direct tools; `code_intel` stays codemode | Why: essential orchestration must always be visible and callable, while auxiliary navigation can stay out of the direct schema.
+- [x] D67: `pi-tasks` keeps the built-in `bash` tool untouched (no `/background` or `alt+b` mid-flight detach) and starts background shell commands explicitly through `task({ action: "start", command })`; `pi-guard` gates `task` (`action === "start"` as `tag: "shell"` against `command`, while read-only `list`/`status`/`wait` and `cancel` pass without a shell prompt) and `pi-hooks` sees `task` tool calls | Why: deciding up front whether a command runs in the background avoids reimplementing Pi's foreground `bash` tool while preserving full `pi-guard` shell policy and user confirmation on `task.start`.
+- [x] D68: The `task` tool supports `start`, `list`, `status`, `wait`, and `cancel`; `wait` blocks until exit or timeout (including across pi restarts via the task state file); completion does not trigger a turn | Why: explicit `start` on `task` keeps background orchestration on a single tool, the agent stays in control of when to wait, and background work must not inject unsolicited model turns.
+- [x] D69: Durable shell tasks survive pi exit via a detached Node runner shim that streams output to `<agentDir>/tasks/<id>.log` and writes exit state to `<agentDir>/tasks/<id>.json` (both `0600`), start only in trusted projects, and are cleaned up manually; `list`/`status`/`wait` reconcile dead shims using recorded PID plus process start time to prevent PID-reuse false positives, and `session_shutdown` leaves them running | Why: a detached shim records exit status even when pi is closed, start-time checks prevent OS PID reuse bugs, and project trust plus `0600` files bound the risk of outliving the session.
+- [x] D70: The task layer is generic in v1: a task record has `id`, `kind`, `status`, `cwd`, `startedAt`, `finishedAt`, `exitCode`, `output`, `wait`, and `cancel` (`shell` is the first kind); `inbox`/`outbox` are deferred until the subagent RPC spec defines the message envelope | Why: subagents share the lifecycle and wait/cancel seam now, while deferring message queues avoids dead fields before the parent-hub protocol exists.
+- [x] D71: Subagents are session-scoped and use parent-hub routing between RPC child processes; only shell tasks are durable; no hub daemon | Why: a parent hub cannot route after the parent exits, and a durable daemon adds trust and lifecycle complexity before the subagent feature exists.
+- [x] D72: ACP mode keeps `acp_bash` and the client terminal; the `pi-tasks` local task tool is inactive there | Why: ACP command execution must stay behind the client terminal capability, and local background processes would bypass it.
+
+## Tool exposure and guard tags (2026-10-25)
+
+- [x] D73: `fd`, `rg`, and `code_intel` default to `direct`; each package reads `direct|codemode|hidden` from its agent config (`pi-tools.json`, `code-intel.json`), and codemode is activated only when a tool is configured as `codemode` | Why: a single search or LSP lookup through a script is worse than a direct call, direct tools stay visible and still pass `pi-guard`, and codemode remains for batch/filter/MCP orchestration. Supersedes the codemode-default parts of D42, D43, D61, and D66.
+- [x] D74: `permissions.json` accepts a `tools` map of tool name to `edit|read|search|shell`; built-in mappings win, invalid tags are diagnosed, and unknown tools still ask | Why: MCP tools need classification without letting config remap destructive built-ins.
+- [x] D75: The todo widget shows up to 10 open todos; `/todos` and the status count remain unchanged | Why: five hid too much of a normal list, while ten fits without taking over the transcript.
+
 
 - A ctags or tree-sitter fallback engine in v1; the first version is LSP-only.
 - Hover, diagnostics, rename, formatting, or code actions in v1.
@@ -122,4 +138,13 @@ Settled decisions from the architecture grill. One line each: `Dnn: decision | W
 - A direct-schema fallback when `codemode` is unavailable; the declared set must not depend on the environment.
 - A runtime dependency on the ACP SDK; an ACP SDK in core.
 - Sharing core state across processes.
-- Changing the permissions file format beyond the widened effect enum.
+- Changing the permissions rule schema beyond adding a `tools` tag map.
+- Durable subagents or a hub daemon in v1; only shell tasks survive pi exit.
+- ACP background terminal tasks; ACP keeps `acp_bash` and the client terminal.
+- Completion-triggered model turns for background tasks.
+- Local durable task starts in untrusted projects.
+- Automatic task garbage collection in v1; durable task cleanup is manual.
+- Remote or SSH task execution.
+- Codemode-only `task` or `subagent` tools.
+- Overriding the host built-in `bash` tool or detaching in-flight foreground commands via `/background` (`alt+b`).
+- Subagent spawning, messaging, or agent definitions in this feature; v1 builds only the task layer.

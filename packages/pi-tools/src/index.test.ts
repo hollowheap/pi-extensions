@@ -2,13 +2,26 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session } from "@hollowheap/core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CONFIG_FILE_NAME } from "./config.js";
 import extension from "./index.js";
+
+const state = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
+}));
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+  getAgentDir: () => state.agentDir,
 }));
+
+afterEach(() => {
+  state.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+});
+
+function writeToolsConfig(dir: string, value: unknown): void {
+  writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify(value));
+}
 
 function createMockPi() {
   const handlers: Record<string, (event: never, ctx: never) => unknown> = {};
@@ -92,16 +105,40 @@ describe("pi-tools extension", () => {
     const tools = Object.fromEntries(
       pi.registerTool.mock.calls.map(([tool]) => [tool.name, tool]),
     );
-    expect(tools.fd.exposure).toBe("codemode");
-    expect(tools.rg.exposure).toBe("codemode");
+    expect(tools.fd.exposure).toBe("direct");
+    expect(tools.rg.exposure).toBe("direct");
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
+    const commands = pi.registerCommand.mock.calls.map(([name]) => name);
+    expect(commands).toEqual(["cd"]);
+  });
+
+  it("skips hidden tools but keeps the command", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-tools-hidden-"));
+    writeToolsConfig(dir, { fd: "hidden" });
+    state.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+    const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
+    expect(names).toEqual(["rg"]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd"]);
   });
 });
 
 describe("codemode activation", () => {
-  it("activates codemode on session_start when registered and inactive", () => {
+  it("does not activate codemode for direct tools", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read", "bash"]);
+    extension(pi as never);
+    startSession(pi);
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("activates codemode when configured and inactive", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-tools-codemode-"));
+    writeToolsConfig(dir, { fd: "codemode" });
+    state.agentDir = dir;
     const pi = createMockPi();
     pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
     pi.getActiveTools.mockReturnValue(["read", "bash"]);
@@ -115,6 +152,9 @@ describe("codemode activation", () => {
   });
 
   it("does nothing when codemode is not registered", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-tools-codemode-"));
+    writeToolsConfig(dir, { rg: "codemode" });
+    state.agentDir = dir;
     const pi = createMockPi();
     pi.getAllTools.mockReturnValue([{ name: "fd" }, { name: "rg" }]);
     pi.getActiveTools.mockReturnValue(["read", "bash"]);
@@ -124,6 +164,9 @@ describe("codemode activation", () => {
   });
 
   it("does not duplicate an already active codemode", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-tools-codemode-"));
+    writeToolsConfig(dir, { fd: "codemode" });
+    state.agentDir = dir;
     const pi = createMockPi();
     pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
     pi.getActiveTools.mockReturnValue(["read", "codemode"]);
@@ -132,7 +175,10 @@ describe("codemode activation", () => {
     expect(pi.setActiveTools).not.toHaveBeenCalled();
   });
 
-  it("reactivates codemode on reload when inactive", () => {
+  it("reactivates codemode on reload when configured", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-tools-codemode-"));
+    writeToolsConfig(dir, { fd: "codemode" });
+    state.agentDir = dir;
     const pi = createMockPi();
     pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
     pi.getActiveTools.mockReturnValue(["read"]);

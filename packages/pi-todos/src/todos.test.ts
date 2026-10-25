@@ -151,18 +151,23 @@ describe("todo formatting", () => {
     ).toBeUndefined();
     expect(formatTodoWidget(todos)).toEqual(["Todos (1 open)", "#1 First"]);
 
-    const open = Array.from({ length: 7 }, (_, index) => ({
+    const open = Array.from({ length: 12 }, (_, index) => ({
       id: index + 1,
       text: `Task ${index + 1}`,
       done: false,
     }));
     expect(formatTodoWidget(open)).toEqual([
-      "Todos (7 open)",
+      "Todos (12 open)",
       "#1 Task 1",
       "#2 Task 2",
       "#3 Task 3",
       "#4 Task 4",
       "#5 Task 5",
+      "#6 Task 6",
+      "#7 Task 7",
+      "#8 Task 8",
+      "#9 Task 9",
+      "#10 Task 10",
       "+2 more (/todos)",
     ]);
   });

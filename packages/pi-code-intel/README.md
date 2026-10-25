@@ -16,13 +16,9 @@ pi -e ./packages/pi-code-intel
 pi install npm:@hollowheap/pi-code-intel
 ```
 
-## Codemode exposure
+## Tool exposure
 
-`code_intel` registers with `exposure: "codemode"`, so scripts call it as
-`tools.code_intel({ ... })` instead of seeing it in the direct tool schema. On
-`session_start`, the extension activates the registered `codemode` tool when it
-is available and inactive. If `codemode` is disabled or unavailable, `code_intel`
-is unreachable. `/reload` re-activates `codemode` if it was deactivated.
+`code_intel` defaults to `direct`, so the model sees it in the declared tool schema. Set `exposure` in `code-intel.json` to `"codemode"` to keep it script-callable without declaring it, or `"hidden"` to skip registration. When exposure is `codemode`, the extension activates the registered `codemode` tool on `session_start` when it is available and inactive. `/reload` re-activates `codemode` if it was deactivated.
 
 ## Actions
 
@@ -69,6 +65,7 @@ a new server:
 
 ```json
 {
+  "exposure": "direct",
   "servers": {
     "typescript": {
       "command": "typescript-language-server",
@@ -88,6 +85,7 @@ a new server:
 }
 ```
 
+- `exposure`: optional `"direct"`, `"codemode"`, or `"hidden"`; default `"direct"`.
 - `command`: non-empty string executed without a shell.
 - `args`: optional string array.
 - `extensions`: non-empty suffix-to-language-id object. Each key starts with `.`.

@@ -2,13 +2,20 @@
 
 Permission-enforcing `fd` and `rg` search tools plus `/cd` for the Pi coding agent. The working-directory override and the rule checks live in `@hollowheap/core`, so this package works with or without `pi-guard` installed: `/cd` stores the directory in the core session state, and search results are filtered by the core verdict (only `deny` drops a result — an `ask` result is kept).
 
-## Codemode exposure
+## Tool exposure
 
-`fd` and `rg` register with `exposure: "codemode"`. Scripts call them as `tools.fd()` and `tools.rg()`, but the model does not see them in the declared tool schema by default. On `session_start`, `pi-tools` activates the registered `codemode` tool when it is inactive, so the tools stay reachable without a direct-schema fallback. `/reload` re-activates `codemode` if it was deactivated.
+`fd` and `rg` default to `direct`, so the model sees them in the declared tool schema. Set exposure per tool in `<agentDir>/pi-tools.json`:
 
-Activating `codemode` changes what the model sees. With `codemode.mode: "on"` (default), every active direct tool's description gains a note on calling it from scripts. With `"only"`, active direct tools are hidden from the schema and reached through scripts. Both are stable while the tool set is unchanged.
+```json
+{
+  "fd": "direct",
+  "rg": "codemode"
+}
+```
 
-Keep `tool_search` disabled. It searches `codemode` tools too, so a search can activate `fd`/`rg` and change the declared tool set mid-session. Naming `fd` or `rg` in `--tools` or `defaultTools` still declares them; the exposure only removes them from the default set. If the `codemode` built-in is disabled or unavailable, `fd`/`rg` are unreachable. SDK sessions must load `createCodemodeExtension()` and call `session.bindExtensions()` for the activation to run.
+Values are `direct`, `codemode`, and `hidden`; missing values default to `direct`. `codemode` keeps the tool script-callable without declaring it, and `hidden` skips registration. When either tool is `codemode`, `pi-tools` activates `codemode` on `session_start` if it is available and inactive.
+
+Keep `tool_search` disabled while using `codemode` exposure. It searches `codemode` tools too, so a search can activate `fd`/`rg` and change the declared tool set mid-session.
 
 ## Try it
 

@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 export const CONFIG_FILE_NAME = "code-intel.json";
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const MAX_TIMEOUT_MS = 60_000;
+export const DEFAULT_EXPOSURE: CodeIntelExposure = "direct";
 
 export type ServerSource = "builtin" | "config";
 
@@ -16,8 +17,11 @@ export interface ServerConfig {
   readonly source: ServerSource;
 }
 
+export type CodeIntelExposure = "direct" | "codemode" | "hidden";
+
 export interface CodeIntelConfig {
   readonly servers: readonly ServerConfig[];
+  readonly exposure: CodeIntelExposure;
   readonly path: string;
   readonly diagnostics: readonly string[];
 }
@@ -29,6 +33,7 @@ interface ConfigEntry {
   mtimeMs: number;
   size: number;
   servers: readonly ServerConfig[];
+  exposure: CodeIntelExposure;
   diagnostics: readonly string[];
   reported: boolean;
 }
@@ -254,18 +259,34 @@ function parseServers(
   return userServers;
 }
 
+function parseExposure(
+  value: unknown,
+  diagnostics: string[],
+): CodeIntelExposure {
+  if (value === undefined) return DEFAULT_EXPOSURE;
+  if (value === "direct" || value === "codemode" || value === "hidden") {
+    return value;
+  }
+  diagnostics.push(
+    '"exposure" must be "direct", "codemode", or "hidden"; using direct',
+  );
+  return DEFAULT_EXPOSURE;
+}
+
 function readServers(
   path: string,
   mtimeMs: number,
   diagnostics: string[],
-): readonly ServerConfig[] {
-  if (mtimeMs < 0) return BUILTIN_SERVERS;
+): { servers: readonly ServerConfig[]; exposure: CodeIntelExposure } {
+  if (mtimeMs < 0) {
+    return { servers: BUILTIN_SERVERS, exposure: DEFAULT_EXPOSURE };
+  }
   let content: string;
   try {
     content = readFileSync(path, "utf8");
   } catch {
     diagnostics.push(`cannot read code-intel config: ${path}`);
-    return BUILTIN_SERVERS;
+    return { servers: BUILTIN_SERVERS, exposure: DEFAULT_EXPOSURE };
   }
 
   let parsed: unknown;
@@ -273,13 +294,13 @@ function readServers(
     parsed = JSON.parse(content);
   } catch {
     diagnostics.push(`${path} is not valid JSON; using built-in servers`);
-    return BUILTIN_SERVERS;
+    return { servers: BUILTIN_SERVERS, exposure: DEFAULT_EXPOSURE };
   }
   if (!isRecord(parsed)) {
     diagnostics.push(
       "code-intel config root must be an object; using built-in servers",
     );
-    return BUILTIN_SERVERS;
+    return { servers: BUILTIN_SERVERS, exposure: DEFAULT_EXPOSURE };
   }
 
   const userServers = parseServers(parsed, diagnostics);
@@ -287,7 +308,10 @@ function readServers(
   const builtins = BUILTIN_SERVERS.filter(
     (server) => !overridden.has(server.name),
   );
-  return [...userServers, ...builtins];
+  return {
+    servers: [...userServers, ...builtins],
+    exposure: parseExposure(parsed.exposure, diagnostics),
+  };
 }
 
 function report(
@@ -329,23 +353,30 @@ export function loadCodeIntelConfig(
     report(cached, onDiagnostic);
     return {
       servers: cached.servers,
+      exposure: cached.exposure,
       path,
       diagnostics: cached.diagnostics,
     };
   }
 
   const diagnostics: string[] = [];
-  const servers = readServers(path, stats.mtimeMs, diagnostics);
+  const { servers, exposure } = readServers(path, stats.mtimeMs, diagnostics);
   const entry: ConfigEntry = {
     mtimeMs: stats.mtimeMs,
     size: stats.size,
     servers,
+    exposure,
     diagnostics: Object.freeze(diagnostics),
     reported: false,
   };
   store(path, entry);
   report(entry, onDiagnostic);
-  return { servers, path, diagnostics: entry.diagnostics };
+  return {
+    servers,
+    exposure,
+    path,
+    diagnostics: entry.diagnostics,
+  };
 }
 
 export function findServer(
