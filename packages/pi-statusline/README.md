@@ -94,17 +94,19 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 
 ## Pill styling
 
-Components accept `accent` (and optional `icon`, `iconFg`, `iconBg`, `leftCap`, `rightCap`) to render as rounded two-tone powerline pills (`` … ``):
+Components accept `accent` (and optional `icon`, `iconSide`, `iconFg`, `iconBg`, `leftCap`, `rightCap`) to render as rounded two-tone powerline pills (`` … ``):
 
 ```json
 {
   "sections": {
     "a": [{ "type": "mode", "accent": "bright-yellow", "icon": "󰘧" }],
     "b": [{ "type": "git_branch", "accent": "bright-cyan", "icon": "" }],
-    "z": [{ "type": "clock", "accent": "bright-magenta", "icon": "󱑂" }]
+    "z": [{ "type": "clock", "accent": "bright-magenta", "icon": "󱑂", "iconSide": "right" }]
   }
 }
 ```
+
+`iconSide` defaults to `"left"`. Set it to `"right"` for right-pinned sections so the icon badge and cap colors mirror: the body sits on the left and the accent badge on the right.
 
 When `accent` is set, components without output (e.g. `git_branch` outside a repo) are omitted entirely without leaving dangling caps.
 

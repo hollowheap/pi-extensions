@@ -16,6 +16,7 @@ export interface StyledComponentSpec extends ComponentSpec {
   bold?: boolean;
   accent?: ThemeColor | Color;
   icon?: string;
+  iconSide?: "left" | "right";
   iconFg?: ThemeColor | Color;
   iconBg?: ThemeBg | Color;
   leftCap?: string;
@@ -191,6 +192,7 @@ const STYLE_KEYS: ReadonlySet<string> = new Set([
   "bold",
   "accent",
   "icon",
+  "iconSide",
   "iconFg",
   "iconBg",
   "leftCap",
@@ -216,6 +218,11 @@ export function normalizeComponentStyle(
     if (accent !== undefined) styled.accent = accent;
   }
   if (typeof spec.icon === "string") styled.icon = spec.icon;
+  if (spec.iconSide === "left" || spec.iconSide === "right") {
+    styled.iconSide = spec.iconSide;
+  } else if (spec.iconSide !== undefined) {
+    diagnostics.push(`${label}.iconSide must be "left" or "right"; ignoring`);
+  }
   if (spec.iconFg !== undefined) {
     const iconFg = resolveColor(
       spec.iconFg,

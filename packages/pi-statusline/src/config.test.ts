@@ -171,6 +171,7 @@ describe("normalizeConfig", () => {
             type: "git_branch",
             accent: "bright-cyan",
             icon: "",
+            iconSide: "right",
             leftCap: "",
             rightCap: "",
             iconFg: "black",
@@ -184,11 +185,25 @@ describe("normalizeConfig", () => {
       type: "git_branch",
       accent: { kind: "indexed", index: 14 },
       icon: "",
+      iconSide: "right",
       leftCap: "",
       rightCap: "",
       iconFg: { kind: "indexed", index: 0 },
       iconBg: { kind: "indexed", index: 14 },
     });
+  });
+
+  it("drops invalid iconSide values with diagnostics", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: { a: [{ type: "cwd", accent: "blue", iconSide: "middle" }] },
+    });
+    expect(config.sections.a[0]).toEqual({
+      type: "cwd",
+      accent: { kind: "indexed", index: 4 },
+    });
+    expect(diagnostics).toEqual([
+      'sections.a[0].iconSide must be "left" or "right"; ignoring',
+    ]);
   });
 
   it("drops invalid separator styling with diagnostics", () => {

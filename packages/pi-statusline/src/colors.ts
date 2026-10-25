@@ -55,6 +55,7 @@ export interface TextStyle {
 export interface ComponentStyle extends TextStyle {
   accent?: ThemeColor | Color;
   icon?: string;
+  iconSide?: "left" | "right";
   iconFg?: ThemeColor | Color;
   iconBg?: ThemeBg | Color;
   leftCap?: string;
@@ -116,6 +117,7 @@ export function styleComponent(
     return styleText(text, style, theme);
   }
   const accent = style.accent;
+  const iconOnRight = style.iconSide === "right";
   const leftCapChar = style.leftCap ?? "";
   const rightCapChar = style.rightCap ?? "";
   const defaultBodyBg =
@@ -125,11 +127,12 @@ export function styleComponent(
   const iconFg = style.iconFg ?? parseColorSpec("black");
   const iconBg = style.iconBg ?? accent;
 
-  const leftCap = styleText(leftCapChar, { fg: toFg(accent, theme) }, theme);
+  const capFg = iconOnRight ? bodyBg : accent;
+  const leftCap = styleText(leftCapChar, { fg: toFg(capFg, theme) }, theme);
   const iconPart =
     style.icon !== undefined && style.icon !== ""
       ? styleText(
-          `${style.icon} `,
+          iconOnRight ? ` ${style.icon}` : `${style.icon} `,
           {
             fg: toFg(iconFg, theme),
             bg: toBg(iconBg, theme),
@@ -143,6 +146,12 @@ export function styleComponent(
     { fg: toFg(bodyFg, theme), bg: toBg(bodyBg, theme), bold: style.bold },
     theme,
   );
-  const rightCap = styleText(rightCapChar, { fg: toFg(bodyBg, theme) }, theme);
-  return `${leftCap}${iconPart}${bodyPart}${rightCap}`;
+  const rightCap = styleText(
+    rightCapChar,
+    { fg: toFg(iconOnRight ? accent : bodyBg, theme) },
+    theme,
+  );
+  return iconOnRight
+    ? `${leftCap}${bodyPart}${iconPart}${rightCap}`
+    : `${leftCap}${iconPart}${bodyPart}${rightCap}`;
 }

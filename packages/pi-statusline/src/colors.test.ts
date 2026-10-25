@@ -139,6 +139,43 @@ describe("styleComponent", () => {
     });
   });
 
+  it("mirrors icon and cap colors when iconSide is right", () => {
+    const calls: Array<{ text: string; options: unknown }> = [];
+    const t = theme((text, options) => {
+      calls.push({ text, options });
+      return `(${text})`;
+    });
+    const cyan = parseColorSpec("bright-cyan");
+    const result = styleComponent(
+      "main",
+      { accent: cyan, icon: "", iconSide: "right" },
+      t,
+    );
+    expect(result).toBe("()( main )( )()");
+    expect(calls[0]).toEqual({
+      text: "",
+      options: { fg: { kind: "indexed", index: 15 } },
+    });
+    expect(calls[1]).toEqual({
+      text: " ",
+      options: {
+        fg: { kind: "indexed", index: 0 },
+        bg: cyan,
+      },
+    });
+    expect(calls[2]).toEqual({
+      text: " main ",
+      options: {
+        fg: { kind: "indexed", index: 0 },
+        bg: { kind: "indexed", index: 15 },
+      },
+    });
+    expect(calls[3]).toEqual({
+      text: "",
+      options: { fg: cyan },
+    });
+  });
+
   it("renders a single-tone pill when icon is omitted", () => {
     const calls: Array<{ text: string; options: unknown }> = [];
     const t = theme((text, options) => {
