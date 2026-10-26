@@ -446,7 +446,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: static text only; no browser; handle HTML, text, and non-text content types.
   - Risk: returning raw HTML, invoking a browser, or dropping content-type handling.
 
-- [ ] T66 [S82] (blocked-by: T65): add URL validation and redirect safety to `web_fetch`.
+- [x] T66 [S82] (blocked-by: T65): add URL validation and redirect safety to `web_fetch`.
   - Verify: `npx vitest run extensions/pi-web/src/url.test.ts`
   - Files: `extensions/pi-web/src/url.ts`, `extensions/pi-web/src/url.test.ts`, `extensions/pi-web/src/fetch.ts`
   - Notes: only http/https; reject loopback/private/link-local/metadata and credentialed URLs; revalidate each hop; cap 5.

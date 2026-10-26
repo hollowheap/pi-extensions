@@ -139,6 +139,39 @@ describe("fetchUrl", () => {
     expect(providerFetch).not.toHaveBeenCalled();
   });
 
+  it("rejects unsafe initial URLs before fetching", async () => {
+    const raw = vi.fn();
+    await expect(
+      rawFetch("http://127.0.0.1", { fetchImpl: raw }),
+    ).rejects.toThrow(/not allowed/);
+    expect(raw).not.toHaveBeenCalled();
+  });
+
+  it("rejects redirects to private targets", async () => {
+    const raw = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data" },
+      }),
+    );
+    await expect(
+      rawFetch("https://example.com", { fetchImpl: raw }),
+    ).rejects.toThrow(/not allowed/);
+  });
+
+  it("caps redirects at five", async () => {
+    const raw = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "/next" },
+      }),
+    );
+    await expect(
+      rawFetch("https://example.com", { fetchImpl: raw }),
+    ).rejects.toThrow(/too many redirects/);
+    expect(raw).toHaveBeenCalledTimes(6);
+  });
+
   it("rawFetch follows redirects and keeps the final URL", async () => {
     const raw = vi.fn().mockResolvedValue(
       new Response("ok", {
@@ -152,7 +185,7 @@ describe("fetchUrl", () => {
     expect(fetchResult.finalUrl).toBe("https://example.com/start");
     expect(raw).toHaveBeenCalledWith(
       "https://example.com/start",
-      expect.objectContaining({ redirect: "follow" }),
+      expect.objectContaining({ redirect: "manual" }),
     );
   });
 });
