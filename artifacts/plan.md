@@ -554,7 +554,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: `<agentDir>/agents/*.md`; `.pi/agents/*.md` only when trusted; project overrides user; model/thinking inherit.
   - Risk: untrusted project agents, invalid frontmatter, silent tool widening.
 
-- [ ] T98 [S100] (blocked-by: T95, T96): implement subagent state permissions, trust gate, and state records.
+- [x] T98 [S100] (blocked-by: T95, T96): implement subagent state permissions, trust gate, and state records.
   - Verify: `npx vitest run extensions/pi-subagents/src/state.test.ts`
   - Files: `extensions/pi-subagents/src/state.ts`, `extensions/pi-subagents/src/state.test.ts`
   - Notes: directory `0700`; JSON/log/session/socket `0600`; records agent/task/status/PID/start/socket/session/attempt; no keys.
