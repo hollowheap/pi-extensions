@@ -458,7 +458,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: add built-in entries; user `tools` entries cannot override them.
   - Risk: falling into unknown-tool approval or allowing a user override.
 
-- [ ] T68 [S84] (blocked-by: T60, T62, T65, T67): document the web-tool contract in package and root docs.
+- [x] T68 [S84] (blocked-by: T60, T62, T65, T67): document the web-tool contract in package and root docs.
   - Verify: `rg -q "TAVILY_API_KEY" extensions/pi-web/README.md && rg -q "pi-web" README.md`
   - Files: `extensions/pi-web/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
   - Notes: list providers, env keys, order arrays, shapes, caps, media, no-rendering limit, and fallback order.
