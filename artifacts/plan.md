@@ -536,7 +536,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: preserve task tool behavior, PID/start-time reconciliation, cancel grace, and permissions.
   - Risk: task regression or a second lifecycle implementation.
 
-- [ ] T95 [S105] (blocked-by: T92): scaffold `extensions/pi-subagents`, register it in the root suite, and add the package dependency.
+- [x] T95 [S105] (blocked-by: T92): scaffold `extensions/pi-subagents`, register it in the root suite, and add the package dependency.
   - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
   - Files: `extensions/pi-subagents/package.json`, `extensions/pi-subagents/tsconfig.json`, `extensions/pi-subagents/index.ts`, `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`, `extensions/pi-subagents/README.md`, `package.json`, `package-lock.json`
   - Notes: new extension; depend on core and process; no tool behavior yet.
