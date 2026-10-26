@@ -262,6 +262,23 @@ describe("/budget command", () => {
     expect(getBudgetUsed(ctx.sessionManager)).toBe(0);
     expect(getTokenCap(ctx.sessionManager)).toBeUndefined();
   });
+
+  it("sets dollar cap and enforces limit on before_agent_start", async () => {
+    const { ctx, budget, message, agentStart } = setupBudget();
+    (ctx as { model?: unknown }).model = {
+      id: "claude-3-5-sonnet",
+      cost: { input: 10.0, output: 20.0 },
+    };
+    await budget("$1.00");
+    // 50,000 * 20.0 / 1,000,000 = $1.00
+    message({ role: "assistant", usage: { input: 0, output: 50000 } });
+    agentStart();
+    expect(ctx.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("dollar budget reached"),
+      "error",
+    );
+  });
 });
 
 describe("statusline values", () => {

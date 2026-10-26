@@ -1,5 +1,9 @@
+import { formatDollarCost } from "./pricing.js";
+
 const usedTokens = new Map<unknown, number>();
 const tokenCaps = new Map<unknown, number>();
+const usedDollars = new Map<unknown, number>();
+const dollarCaps = new Map<unknown, number>();
 
 export function getBudgetUsed(owner: unknown): number {
   return usedTokens.get(owner) ?? 0;
@@ -9,10 +13,6 @@ export function addBudgetUsage(owner: unknown, tokens: number): number {
   const total = getBudgetUsed(owner) + tokens;
   usedTokens.set(owner, total);
   return total;
-}
-
-export function clearBudget(owner: unknown): void {
-  usedTokens.delete(owner);
 }
 
 export function setBudgetBaseline(owner: unknown, tokens: number): number {
@@ -32,11 +32,76 @@ export function clearTokenCap(owner: unknown): void {
   tokenCaps.delete(owner);
 }
 
+export function getDollarUsed(owner: unknown): number {
+  return usedDollars.get(owner) ?? 0;
+}
+
+export function addDollarUsage(owner: unknown, dollars: number): number {
+  const total = getDollarUsed(owner) + dollars;
+  usedDollars.set(owner, total);
+  return total;
+}
+
+export function setDollarBaseline(owner: unknown, dollars: number): number {
+  usedDollars.set(owner, dollars);
+  return dollars;
+}
+
+export function getDollarCap(owner: unknown): number | undefined {
+  return dollarCaps.get(owner);
+}
+
+export function setDollarCap(owner: unknown, cap: number): void {
+  dollarCaps.set(owner, cap);
+}
+
+export function clearDollarCap(owner: unknown): void {
+  dollarCaps.delete(owner);
+}
+
+export function clearBudget(owner: unknown): void {
+  usedTokens.delete(owner);
+  tokenCaps.delete(owner);
+  usedDollars.delete(owner);
+  dollarCaps.delete(owner);
+}
+
 function formatCount(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-export function formatBudget(used: number, cap: number | undefined): string {
-  if (cap === undefined) return used === 0 ? "" : `${formatCount(used)} used`;
-  return `${formatCount(used)} used, ${formatCount(Math.max(cap - used, 0))} remaining`;
+export function formatDollarBudget(
+  dollarsUsed: number,
+  dollarCap: number | undefined,
+): string {
+  if (dollarCap === undefined) {
+    return dollarsUsed <= 0 ? "" : `${formatDollarCost(dollarsUsed)} used`;
+  }
+  const remaining = Math.max(dollarCap - dollarsUsed, 0);
+  return `${formatDollarCost(dollarsUsed)} used, ${formatDollarCost(remaining)} remaining`;
+}
+
+export function formatBudget(
+  used: number,
+  cap: number | undefined,
+  dollarsUsed?: number,
+  dollarCap?: number,
+): string {
+  if (dollarCap !== undefined) {
+    const dollarStr = formatDollarBudget(dollarsUsed ?? 0, dollarCap);
+    if (cap !== undefined) {
+      return `${dollarStr} (${formatCount(used)} / ${formatCount(cap)} tokens)`;
+    }
+    return dollarStr;
+  }
+
+  if (cap !== undefined) {
+    return `${formatCount(used)} used, ${formatCount(Math.max(cap - used, 0))} remaining`;
+  }
+
+  if (dollarsUsed !== undefined && dollarsUsed > 0) {
+    return `${formatDollarCost(dollarsUsed)} used (${formatCount(used)} tokens)`;
+  }
+
+  return used === 0 ? "" : `${formatCount(used)} used`;
 }
