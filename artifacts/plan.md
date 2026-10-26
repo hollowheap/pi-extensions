@@ -518,7 +518,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: release on resolve/reject/cancel/throw; reject nested acquisition; serialize only blocking prompts, not status/widgets/headers/todo views.
   - Risk: duplicate queues across module roots, lost release on rejection, reentrant deadlock, serializing non-prompt UI.
 
-- [ ] T92 [S103] (blocked-by: none): scaffold `packages/process` as `@hollowheap/process` and implement detached lifecycle, log, and cancel primitives.
+- [x] T92 [S103] (blocked-by: none): scaffold `packages/process` as `@hollowheap/process` and implement detached lifecycle, log, and cancel primitives.
   - Verify: `npx vitest run packages/process/src/index.test.ts`
   - Files: `packages/process/package.json`, `packages/process/tsconfig.json`, `packages/process/src/index.ts`, `packages/process/src/process.ts`, `packages/process/src/index.test.ts`, `package.json`, `package-lock.json`
   - Notes: Node-only, no Pi host imports; consumers supply state directory; process-group cancel.

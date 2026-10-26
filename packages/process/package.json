@@ -1,0 +1,15 @@
+{
+  "name": "@hollowheap/process",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Detached process lifecycle primitives for Hollowheap Pi packages",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["src", "README.md"],
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
