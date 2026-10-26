@@ -10,9 +10,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 648 passed / 62 files (verified 2026-10-26).
+- `npm test` — vitest, 655 passed / 63 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
-- `npm run lint` — `biome check .`, 181 files clean (verified 2026-10-26).
+- `npm run lint` — `biome check .`, 183 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -26,7 +26,7 @@
 - `pi-tools` → direct `fd`/`rg` by default (configurable exposure), `/cd`.
 - `pi-code-intel` → direct `code_intel` by default (configurable exposure), LSP pool, trust and path checks.
 - `pi-classifier` → advisory `decide` tool, explicit classifier config, caps, cache, and payload privacy.
-- `pi-web` → direct `web_search`/`web_fetch` package seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, and static fetch extraction, and capped tool output.
+- `pi-web` → direct `web_search`/`web_fetch` package seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, and static fetch extraction, web.json order config, and capped tool output.
 - `pi-tasks` → durable background shell tasks, direct `task` tool, PID/start-time reconciliation.
 - `pi-budgets` → token cap, usage accumulation, cap abort, autopilot gate.
 - `pi-autopilot` → `autopilot` mode layer.

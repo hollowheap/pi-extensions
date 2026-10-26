@@ -1,5 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { loadWebConfig } from "./config.js";
 import { fetchUrl } from "./fetch.js";
 import { createExaAdapter } from "./providers/exa.js";
 import { createFirecrawlAdapter } from "./providers/firecrawl.js";
@@ -49,7 +50,8 @@ function fetchAdapterFor(provider: FetchProvider): ProviderAdapter {
 async function defaultSearch(
   request: SearchRequest,
 ): Promise<NormalizedSearchResult[]> {
-  const order = resolveSearchOrder();
+  const config = loadWebConfig(getAgentDir());
+  const order = resolveSearchOrder(config.searchOrder);
   const signal = providerSignal(request.signal);
   return withProviderFallback(
     order,
@@ -61,7 +63,8 @@ async function defaultSearch(
 async function defaultFetch(
   request: FetchRequest,
 ): Promise<NormalizedFetchResult> {
-  const order = resolveFetchOrder();
+  const config = loadWebConfig(getAgentDir());
+  const order = resolveFetchOrder(config.fetchOrder);
   const providers = order
     .filter((provider) => provider !== "raw")
     .map((provider) => fetchAdapterFor(provider));

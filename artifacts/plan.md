@@ -434,7 +434,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: search Exa → Tavily → Firecrawl; fetch Exa → Tavily → raw; 15s timeout.
   - Risk: selecting an unkeyed provider, stopping after a failure, or ignoring config order.
 
-- [ ] T64 [S80] (blocked-by: T63): add `web.json` order-array loading with env-only keys and diagnostics.
+- [x] T64 [S80] (blocked-by: T63): add `web.json` order-array loading with env-only keys and diagnostics.
   - Verify: `npx vitest run extensions/pi-web/src/config.test.ts`
   - Files: `extensions/pi-web/src/config.ts`, `extensions/pi-web/src/config.test.ts`
   - Notes: accept `search.order`/`fetch.order`; ignore `keys` with a diagnostic; never log env values.
