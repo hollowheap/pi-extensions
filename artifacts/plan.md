@@ -548,7 +548,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: defaults 4/1/30m/30s; caps 8/3/24h; invalid values fall back with diagnostics.
   - Risk: silent defaults, out-of-range values, secret fields.
 
-- [ ] T97 [S99] (blocked-by: T95): implement user and trusted project agent discovery with frontmatter overrides.
+- [x] T97 [S99] (blocked-by: T95): implement user and trusted project agent discovery with frontmatter overrides.
   - Verify: `npx vitest run extensions/pi-subagents/src/agents.test.ts`
   - Files: `extensions/pi-subagents/src/agents.ts`, `extensions/pi-subagents/src/agents.test.ts`
   - Notes: `<agentDir>/agents/*.md`; `.pi/agents/*.md` only when trusted; project overrides user; model/thinking inherit.
