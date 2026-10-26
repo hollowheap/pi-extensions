@@ -1,0 +1,22 @@
+{
+  "name": "@hollowheap/pi-usage",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Record and restore cumulative token and dollar usage across compaction",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["index.ts", "src", "README.md"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@hollowheap/core": "^0.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

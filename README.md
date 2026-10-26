@@ -31,6 +31,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, and explicit resume |
 | [`@hollowheap/pi-classifier`](./extensions/pi-classifier) | `0.2.0` | Advisory classifier tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
+| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Session custom entry persistence (`hollowheap.usage`) and compaction-safe cumulative tracking |
 | [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---
