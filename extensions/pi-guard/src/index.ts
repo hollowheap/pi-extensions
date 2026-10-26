@@ -20,6 +20,7 @@ import {
   resetSession,
   session,
   truncateText,
+  withPromptLock,
 } from "@hollowheap/core";
 
 const TOOL_TAGS: Record<string, Tag> = {
@@ -113,9 +114,8 @@ async function requestApproval(
       reason: `pi-guard: ${toolName} ${displayTarget(target)} needs approval (no UI)`,
     };
   }
-  const approved = await ctx.ui.confirm(
-    `Allow ${toolName}?`,
-    displayTarget(target),
+  const approved = await withPromptLock(() =>
+    ctx.ui.confirm(`Allow ${toolName}?`, displayTarget(target)),
   );
   if (!approved) {
     return {

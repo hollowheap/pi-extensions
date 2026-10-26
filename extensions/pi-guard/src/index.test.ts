@@ -1,7 +1,12 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { session, setCwd } from "@hollowheap/core";
+import { session, setCwd, withPromptLock } from "@hollowheap/core";
+
+vi.mock("@hollowheap/core", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
+});
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
@@ -246,6 +251,7 @@ describe("pi-guard extension", () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi");
+    expect(withPromptLock).toHaveBeenCalled();
   });
 
   it("runs allowlisted bash without asking", async () => {

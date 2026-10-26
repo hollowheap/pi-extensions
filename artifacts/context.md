@@ -10,9 +10,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 613 passed / 57 files (verified 2026-10-26).
+- `npm test` — vitest, 619 passed / 58 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
-- `npm run lint` — `biome check .`, 171 files clean (verified 2026-10-26).
+- `npm run lint` — `biome check .`, 173 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -20,7 +20,7 @@
 
 ## Module Seams
 
-- `core` → policy, config cache, shell analysis, exec/format, modes, session state.
+- `core` → policy, config cache, shell analysis, exec/format, modes, session state, process-wide prompt queue.
 - `pi-guard` → tool-call verdicts, approvals, bash truncation, `/mode`, `alt+m`.
 - `pi-hooks` → session-start, pre-tool, and post-tool commands from `hooks.json` plus a trusted project overlay; ships `hooks-init`.
 - `pi-tools` → direct `fd`/`rg` by default (configurable exposure), `/cd`.

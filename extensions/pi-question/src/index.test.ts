@@ -1,5 +1,11 @@
+import { withPromptLock } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
+
+vi.mock("@hollowheap/core", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
+});
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
@@ -154,6 +160,7 @@ describe("pi-question extension", () => {
       expect.objectContaining({ content: "1. custom" }),
       { deliverAs: "followUp" },
     );
+    expect(withPromptLock).toHaveBeenCalled();
   });
 
   it("asks a single-select question with a final write-in row", async () => {

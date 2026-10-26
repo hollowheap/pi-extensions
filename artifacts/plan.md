@@ -511,3 +511,9 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Files: `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`
   - Notes: state contains input only; no cwd/mode/session/files/tool output.
   - Risk: automatic context enrichment, file reads, hidden session data.
+
+- [x] T91 [S94] (blocked-by: none): add a process-wide FIFO prompt queue in core and route every blocking `pi-question`/`pi-guard` dialog through it.
+  - Verify: `npx vitest run packages/core/src/prompt-lock.test.ts extensions/pi-question/src/index.test.ts extensions/pi-guard/src/index.test.ts`
+  - Files: `packages/core/src/prompt-lock.ts`, `packages/core/src/prompt-lock.test.ts`, `packages/core/src/index.ts`, `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/index.test.ts`, `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`
+  - Notes: release on resolve/reject/cancel/throw; reject nested acquisition; serialize only blocking prompts, not status/widgets/headers/todo views.
+  - Risk: duplicate queues across module roots, lost release on rejection, reentrant deadlock, serializing non-prompt UI.

@@ -1061,3 +1061,8 @@
   - Seam: classifier payload construction.
   - Behavior: `state` contains input only; `questions` contains question and labels; no cwd/mode/session/files/tool output.
   - Failures: automatic context enrichment, file reads, hidden session data, undocumented redaction.
+
+- [ ] S94 [R29] [D94]: Core exposes one process-wide FIFO prompt queue; every blocking dialog or confirmation runs through it and releases the queue when it settles | Verify: `npx vitest run packages/core/src/prompt-lock.test.ts extensions/pi-question/src/index.test.ts extensions/pi-guard/src/index.test.ts`
+  - Seam: `@hollowheap/core` prompt-lock helper consumed by each blocking prompt owner.
+  - Behavior: one queue per process shared across extension module roots; callers acquire in FIFO order; release on resolve, rejection, cancellation, or throw; nested acquisition is rejected instead of deadlocking; status, widgets, headers, and todo views never acquire.
+  - Failures: overlapping prompts, a waiter lost on rejection, a duplicate queue per extension module, reentrant deadlock, or a non-prompt UI surface serialized.

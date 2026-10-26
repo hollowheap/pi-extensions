@@ -24,6 +24,7 @@ The version moves together with the extension packages: every workspace package 
 - `blocks.ts` — `scanTaggedBlocks` (finds `'''tag` … `'''` blocks, ignores markdown code fences, reports offsets and unclosed state) and `parseMarkdownBlocks` (minimal heading/list/listItem/paragraph AST with ordered and optional checked state). Host-free; shared with `pi-question` and future tagged-block consumers.
 - `state.ts` — `session`, `setMode`, `setCwd`, `effectiveCwd`, `dropSession`, `resetSession`: the per-session store keyed by the pi session owner.
 - `modes.ts` — `registerMode`, `registerModeGate`, `replaceConfigModes`, `enterMode`, `resetSession`, and `evaluate`: the mode registry, entry gates, and the five-step verdict ladder.
+- `prompt-lock.ts` — `withPromptLock`: process-wide FIFO queue for blocking UI prompts; releases on settle or throw and rejects nested acquisition.
 - `types.ts` — `Tag`, `Effect`, `Verdict`, `Rule`, `ModeLayer`, `ModeNotice`, `ModeEnter`.
 
 ## Permission rules

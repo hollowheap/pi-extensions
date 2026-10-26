@@ -438,6 +438,11 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: privacy depends on the caller and tool description; a remote classifier sees exactly what the model sends.
   - Classifier input may contain private text, so payload control must be explicit.
 
+- [ ] D94 [R29]: Use one process-wide FIFO prompt queue exported by core and shared across extension module roots; every blocking dialog or confirmation site opts in, while nested acquisition is forbidden.
+  - Alternatives: per-session queue; extension-local queue; rely on the host UI; monkey-patch `ctx.ui`.
+  - Consequences: a hung dialog blocks later prompts; consumers must call the helper explicitly; a reentrant prompt must bypass the lock or fail.
+  - Cross-extension collisions need one owner; process-wide is the smallest scope that covers main-session prompts without new dependencies.
+
 ## Non-Goals
 
 - A ctags or tree-sitter fallback engine in v1; the first version is LSP-only.
@@ -468,3 +473,5 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
 - Codemode-only `task` or `subagent` tools.
 - Overriding the host built-in `bash` tool or detaching in-flight foreground commands via `/background` (`alt+b`).
 - Subagent spawning, messaging, or agent definitions in this feature; v1 builds only the task layer.
+- Automatic monkey-patching of `ctx.ui` to acquire the prompt lock.
+- Serializing non-blocking UI surfaces such as status, widgets, headers, or todo lists.

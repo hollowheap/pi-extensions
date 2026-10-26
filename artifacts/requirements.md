@@ -144,6 +144,11 @@ None.
   - Acceptance: No automatic cwd, session history, tool output, or file contents are included.
   - Classifier inputs may contain private text, so the caller must control the payload.
 
+- [ ] R29: Interactive prompts across extensions are serialized so only one dialog or confirmation is open at a time.
+  - Verify: Tests cover two concurrent prompt requests, FIFO order, release on resolve and rejection, and adoption by every current prompt site.
+  - Acceptance: One process-wide queue; a second prompt waits; a failed or cancelled prompt releases the next; no new runtime dependency.
+  - Concurrent dialogs can overlap and steal input; one fair queue keeps prompts predictable.
+
 ## Open Questions
 
 None.
