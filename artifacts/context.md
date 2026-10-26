@@ -10,7 +10,7 @@
 
 ## Commands
 
-- `npm test` — vitest, 647 passed / 62 files (verified 2026-10-26).
+- `npm test` — vitest, 648 passed / 62 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
 - `npm run lint` — `biome check .`, 181 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.

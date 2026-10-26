@@ -11,6 +11,7 @@ import {
 } from "./providers/selection.js";
 import { createTavilyAdapter } from "./providers/tavily.js";
 import type {
+  FetchProvider,
   FetchRequest,
   NormalizedFetchResult,
   NormalizedSearchResult,
@@ -40,7 +41,7 @@ function adapterFor(provider: ProviderId): ProviderAdapter {
   return createFirecrawlAdapter();
 }
 
-function fetchAdapterFor(provider: ProviderId): ProviderAdapter {
+function fetchAdapterFor(provider: FetchProvider): ProviderAdapter {
   if (provider === "exa") return createExaAdapter();
   return createTavilyAdapter();
 }
