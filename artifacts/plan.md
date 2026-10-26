@@ -440,7 +440,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: accept `search.order`/`fetch.order`; ignore `keys` with a diagnostic; never log env values.
   - Risk: accepting secrets from JSON or leaking keys in error text.
 
-- [ ] T65 [S81] (blocked-by: T61): implement the fetch chain with Exa/Tavily extract and dependency-free raw HTML extraction.
+- [x] T65 [S81] (blocked-by: T61): implement the fetch chain with Exa/Tavily extract and dependency-free raw HTML extraction.
   - Verify: `npx vitest run extensions/pi-web/src/fetch.test.ts extensions/pi-web/src/extract.test.ts`
   - Files: `extensions/pi-web/src/fetch.ts`, `extensions/pi-web/src/extract.ts`, `extensions/pi-web/src/fetch.test.ts`, `extensions/pi-web/src/extract.test.ts`
   - Notes: static text only; no browser; handle HTML, text, and non-text content types.
