@@ -475,3 +475,39 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Files: `extensions/pi-web/src/extract.ts`, `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`
   - Notes: classify image/video/audio/pdf/other; cap 50 links and 20 media; never return base64.
   - Risk: downloading media, exceeding caps, or misclassifying kinds.
+
+- [x] T85 [S88] (blocked-by: none): scaffold `pi-classifier` and register one direct `decide` tool for choice/score/bool questions.
+  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts extensions/pi-classifier/src/decide.test.ts`
+  - Files: `extensions/pi-classifier/package.json`, `extensions/pi-classifier/tsconfig.json`, `extensions/pi-classifier/index.ts`, `extensions/pi-classifier/src/index.ts`, `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`, `extensions/pi-classifier/src/index.test.ts`, `package.json`, `package-lock.json`
+  - Notes: direct exposure; one question per call; return label/score/probability, confidence, model, usage.
+  - Risk: extra tools, codemode exposure, malformed label schema.
+
+- [x] T86 [S89] (blocked-by: T85): add explicit `classifier.json` model resolution with no first-available fallback.
+  - Verify: `npx vitest run extensions/pi-classifier/src/config.test.ts`
+  - Files: `extensions/pi-classifier/src/config.ts`, `extensions/pi-classifier/src/config.test.ts`, `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/README.md`
+  - Notes: require `provider/model-id`; validate timeout, input cap, cache TTL; use `getModelOfType("classifier", ...)`.
+  - Risk: fallback model selection, wrong model type, unconfigured auth.
+
+- [x] T87 [S90] (blocked-by: T85): enforce input cap, timeout, and explanatory capability errors.
+  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Files: `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`
+  - Notes: 20k default input cap; 5s default timeout; abort signal; errors as text, no session mutation.
+  - Risk: provider error, abort, timeout, missing config, unavailable auth.
+
+- [x] T88 [S91] (blocked-by: T85): add per-session result cache and in-flight dedupe.
+  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Files: `extensions/pi-classifier/src/cache.ts`, `extensions/pi-classifier/src/decide.ts`
+  - Notes: key model/kind/question/criteria/input; TTL from config; failed/aborted calls not cached.
+  - Risk: stale TTL, key collision, duplicate concurrent provider calls.
+
+- [x] T89 [S92] (blocked-by: T85, T86, T87, T88): document advisory use and verify direct-only exposure.
+  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts && rg -q "decide" extensions/pi-classifier/README.md`
+  - Files: `extensions/pi-classifier/README.md`, `extensions/pi-classifier/src/index.test.ts`, `package.json`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Notes: direct tool, no codemode activation, no CLI, no service registry; warn that input is sent to the classifier.
+  - Risk: hidden/codemode exposure, extra tools, undocumented privacy limits.
+
+- [x] T90 [S93] (blocked-by: T85): restrict the classifier payload to caller-supplied input, question, and criteria.
+  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Files: `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`
+  - Notes: state contains input only; no cwd/mode/session/files/tool output.
+  - Risk: automatic context enrichment, file reads, hidden session data.

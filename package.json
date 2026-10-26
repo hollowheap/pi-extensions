@@ -22,7 +22,8 @@
       "./extensions/pi-autopilot/index.ts",
       "./extensions/pi-todos/index.ts",
       "./extensions/pi-code-intel/index.ts",
-      "./extensions/pi-tasks/index.ts"
+      "./extensions/pi-tasks/index.ts",
+      "./extensions/pi-classifier/index.ts"
     ]
   },
   "scripts": {

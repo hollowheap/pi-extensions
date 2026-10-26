@@ -406,6 +406,38 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: the model cannot inspect image pixels or PDF bytes through this tool.
   - Metadata keeps the tool useful for media-heavy pages without blowing context or adding download cleanup.
 
+## Classifier
+
+- [ ] D88 [R23]: `pi-classifier` exposes one direct `decide` tool with one question per call. `kind` is `choice`, `score`, or `bool`; `choice` takes 2–10 `{label, description}` options, `score` takes an ordered 2–10 scale, and `bool` takes `true`/`false` descriptions. The tool returns the label/score/probability, confidence, model, and usage; it returns no free-form rationale.
+  - Alternatives: multiple questions per call; separate `decide` and `classify` tools; chat model with rationale.
+  - Consequences: callers repeat calls for multiple questions; output stays structured and cheap.
+  - The classifier primitives already provide choice, score, and bool; a rationale would require a different model path.
+
+- [ ] D89 [R24]: Model selection is explicit in `<agentDir>/classifier.json`; there is no fallback to the first available classifier. Config fields are `model` (`provider/model-id`), `timeoutMs` (default 5000), `maxInputChars` (default 20000), and `cacheTtlMs` (default 600000, 0 disables).
+  - Alternatives: first-available fallback; per-call model override; no config.
+  - Consequences: missing or invalid config makes `decide` unavailable until fixed.
+  - Explicit selection keeps cost, privacy, and behavior predictable.
+
+- [ ] D90 [R25]: `decide` caps input at the configured limit, times out on the configured deadline, and returns explanatory error text for invalid input, missing config, unavailable auth, classifier error, abort, or timeout. It never mutates session state or throws for capability failures.
+  - Alternatives: let provider errors throw; no input cap; no timeout.
+  - Consequences: callers must handle an error-string result; very large text is rejected rather than truncated silently.
+  - Classification is advisory and must not block the workflow.
+
+- [ ] D91 [R26]: Successful decisions are cached in memory per session and concurrent identical calls share one in-flight request. The key includes model, kind, question, criteria, and input; TTL comes from config; aborted or failed calls are not cached.
+  - Alternatives: no cache; disk cache; cache without in-flight dedupe.
+  - Consequences: identical calls after TTL or on a new session hit the classifier again.
+  - This removes duplicate latency and quota use without persisting private input.
+
+- [ ] D92 [R27]: The package is a direct Pi tool only. It does not activate codemode, add a CLI, register a service, or depend on `pi-guard`. A direct tool is callable from codemode scripts as well.
+  - Alternatives: CLI now; guard service now; core service registry.
+  - Consequences: OpenCode and other harnesses cannot use it until a CLI exists; `pi-guard` keeps its own judge.
+  - Start with the smallest useful surface and extract shared layers when a second consumer appears.
+
+- [ ] D93 [R28]: The classifier payload contains only the caller-supplied `input`, `question`, and criteria. It never adds cwd, mode, session history, file contents, or tool output, and v1 adds no automatic redaction; callers must omit secrets.
+  - Alternatives: automatic context enrichment; regex redaction; local-only enforcement.
+  - Consequences: privacy depends on the caller and tool description; a remote classifier sees exactly what the model sends.
+  - Classifier input may contain private text, so payload control must be explicit.
+
 ## Non-Goals
 
 - A ctags or tree-sitter fallback engine in v1; the first version is LSP-only.

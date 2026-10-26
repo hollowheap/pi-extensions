@@ -10,9 +10,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 578 passed / 50 files (verified 2026-10-26).
+- `npm test` — vitest, 596 passed / 53 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
-- `npm run lint` — `biome check .`, 149 files clean (verified 2026-10-26).
+- `npm run lint` — `biome check .`, 158 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -25,6 +25,7 @@
 - `pi-hooks` → session-start, pre-tool, and post-tool commands from `hooks.json` plus a trusted project overlay; ships `hooks-init`.
 - `pi-tools` → direct `fd`/`rg` by default (configurable exposure), `/cd`.
 - `pi-code-intel` → direct `code_intel` by default (configurable exposure), LSP pool, trust and path checks.
+- `pi-classifier` → advisory `decide` tool, explicit classifier config, caps, cache, and payload privacy.
 - `pi-tasks` → durable background shell tasks, direct `task` tool, PID/start-time reconciliation.
 - `pi-budgets` → token cap, usage accumulation, cap abort, autopilot gate.
 - `pi-autopilot` → `autopilot` mode layer.

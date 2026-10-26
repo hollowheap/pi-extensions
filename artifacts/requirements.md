@@ -114,6 +114,36 @@ None.
   - Acceptance: Users can audit what leaves the machine and how fallback works.
   - Provider terms and limits change, so the contract must stay visible.
 
+- [ ] R23: A direct `decide` tool returns one structured classifier answer for one caller-supplied question.
+  - Verify: Tests cover `choice`, `score`, and `bool`, plus invalid kind and label input.
+  - Acceptance: `choice` returns label, probabilities, and confidence; `score` returns index, label, and confidence; `bool` returns probability; result names model and usage.
+  - Skills need a cheap structured second opinion without free-form parsing.
+
+- [ ] R24: `decide` uses only the classifier explicitly configured for it.
+  - Verify: Missing, malformed, or unavailable model config returns an explanatory error and makes no fallback call.
+  - Acceptance: `<agentDir>/classifier.json` requires `model: "provider/id"`; optional timeout, input cap, and cache TTL; no first-available fallback.
+  - Predictable model choice matters for privacy, cost, and reproducibility.
+
+- [ ] R25: `decide` bounds input and latency and fails without mutating state or crashing the session.
+  - Verify: Tests cover oversized input, timeout, provider error, and aborted signal.
+  - Acceptance: 20k-character input cap and 5s timeout by default; errors return explanatory text; no file, tool, or session mutation.
+  - Classification is advisory and must not block the workflow when unavailable.
+
+- [ ] R26: Repeated identical `decide` calls reuse one session result, and concurrent identical calls share one request.
+  - Verify: Tests assert provider call counts for repeated, concurrent, changed, and expired inputs.
+  - Acceptance: In-memory per-session cache keyed by model, kind, question, criteria, and input; 10-minute TTL; aborted calls are not cached.
+  - Caching avoids duplicate latency and quota use.
+
+- [ ] R27: `decide` is a direct Pi tool documented as advisory; v1 adds no CLI or guard service.
+  - Verify: Index test asserts direct exposure; README documents advisory use and privacy; no CLI or service registration exists.
+  - Acceptance: Direct tool, no codemode activation, no `pi-guard` dependency, no new core registry.
+  - The Pi tool is the smallest useful surface; extract shared layers only when a second consumer appears.
+
+- [ ] R28: `decide` sends only caller-supplied input, question, labels, and model id to the classifier.
+  - Verify: Payload tests assert the exact classifier state and question fields; no filesystem or session reads occur.
+  - Acceptance: No automatic cwd, session history, tool output, or file contents are included.
+  - Classifier inputs may contain private text, so the caller must control the payload.
+
 ## Open Questions
 
 None.
