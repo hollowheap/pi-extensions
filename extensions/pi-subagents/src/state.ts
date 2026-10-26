@@ -84,6 +84,17 @@ export class SubagentStore {
     this.store.write(sanitize(state));
   }
 
+  update(
+    id: string,
+    patch: Partial<Omit<SubagentState, "id">>,
+  ): SubagentState | undefined {
+    const current = this.read(id);
+    if (current === undefined) return undefined;
+    const next: SubagentState = { ...current, ...patch, id: current.id };
+    this.write(next);
+    return next;
+  }
+
   read(id: string): SubagentState | undefined {
     return this.store.read(id) as SubagentState | undefined;
   }

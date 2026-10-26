@@ -560,7 +560,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: directory `0700`; JSON/log/session/socket `0600`; records agent/task/status/PID/start/socket/session/attempt; no keys.
   - Risk: loose permissions, untrusted start, missing fields.
 
-- [ ] T99 [S95] (blocked-by: T93, T95, T97, T98): implement the detached child runner and live reattach socket.
+- [x] T99 [S95] (blocked-by: T93, T95, T97, T98): implement the detached child runner and live reattach socket.
   - Verify: `npx vitest run extensions/pi-subagents/src/runner.test.ts extensions/pi-subagents/src/socket.test.ts`
   - Files: `extensions/pi-subagents/src/runner.ts`, `extensions/pi-subagents/src/runner.test.ts`, `extensions/pi-subagents/src/socket.ts`, `extensions/pi-subagents/src/socket.test.ts`
   - Notes: spawn `pi --mode rpc`, own stdio, persist state/log/session, reattach/steer, no daemon.
