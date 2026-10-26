@@ -285,6 +285,136 @@ describe("decide", () => {
     expect(detailsOf(result).error).toContain("model unavailable");
   });
 
+  it("returns a text error when classify rejects", async () => {
+    const dir = agentDir();
+    const classify = vi.fn(async () => {
+      throw new Error("transport failed");
+    });
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+      getAgentDir: () => dir,
+    });
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(textOf(result)).toContain("transport failed");
+    expect(detailsOf(result).error).toContain("transport failed");
+  });
+
+  it("does not let one caller's abort poison concurrent waiters", async () => {
+    const dir = agentDir();
+    let releaseClassify!: (value: unknown) => void;
+    const gate = new Promise<unknown>((resolve) => {
+      releaseClassify = resolve;
+    });
+    const classify = vi.fn(async () => {
+      await gate;
+      return classifierResult({ type: "bool", probability: 0.8 });
+    });
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+      getAgentDir: () => dir,
+    });
+    const params = {
+      kind: "bool" as const,
+      input: "x",
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    };
+    const controller = new AbortController();
+
+    const aborted = tool.execute(
+      "1",
+      params,
+      controller.signal,
+      undefined,
+      ctx(classify) as never,
+    );
+    const waiter = tool.execute(
+      "2",
+      params,
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+    expect(classify).toHaveBeenCalledTimes(1);
+    controller.abort();
+    releaseClassify(undefined);
+
+    const [abortedResult, waiterResult] = await Promise.all([aborted, waiter]);
+    expect(textOf(abortedResult)).toContain("aborted");
+    expect(detailsOf(waiterResult).error).toBeUndefined();
+    expect(detailsOf(waiterResult).value).toBe(true);
+    expect(classify).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a stable cache key across label order", async () => {
+    const dir = agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({
+        type: "choice",
+        choice: "a",
+        probabilities: { a: 0.8, b: 0.2 },
+        confidence: 0.8,
+      }),
+    );
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+      getAgentDir: () => dir,
+    });
+    const base = {
+      kind: "choice" as const,
+      input: "x",
+      question: "q",
+      labels: [
+        { label: "a", description: "first" },
+        { label: "b", description: "second" },
+      ],
+    };
+
+    await tool.execute("1", base, undefined, undefined, ctx(classify) as never);
+    await tool.execute(
+      "2",
+      { ...base, labels: [...base.labels].reverse() },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(classify).toHaveBeenCalledTimes(1);
+  });
+
   it("returns an error when the configured model cannot be used", async () => {
     const dir = agentDir();
     const tool = createDecideTool({
@@ -488,7 +618,7 @@ describe("decide", () => {
       classify: abortedClassify as DecideDeps["classify"],
       getAgentDir: () => dir,
     });
-    await abortTool.execute(
+    const aborted = await abortTool.execute(
       "3",
       {
         kind: "bool",
@@ -501,6 +631,7 @@ describe("decide", () => {
       undefined,
       ctx(abortedClassify) as never,
     );
+    expect(textOf(aborted)).toContain("aborted");
     await abortTool.execute(
       "3",
       {
@@ -514,7 +645,7 @@ describe("decide", () => {
       undefined,
       ctx(abortedClassify) as never,
     );
-    expect(abortedClassify).toHaveBeenCalledTimes(2);
+    expect(abortedClassify).toHaveBeenCalledTimes(1);
   });
 
   it("reports a classifier timeout as text", async () => {

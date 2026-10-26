@@ -37,6 +37,19 @@ export interface DecideDeps {
   ) => Promise<ClassifierResult>;
 }
 
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 const defaultDeps: DecideDeps = {
   loadConfig: () => loadClassifierConfig(getAgentDir()),
   getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
@@ -111,8 +124,11 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
     if (typeof question === "string") {
       return errorResult(question);
     }
+    if (signal?.aborted) {
+      return errorResult("aborted");
+    }
 
-    const key = JSON.stringify([
+    const key = stableStringify([
       config.model,
       params.kind,
       params.question,
@@ -129,16 +145,20 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
     }
 
     const task = (async (): Promise<DecideToolResult> => {
-      const timeout =
-        signal === undefined
-          ? AbortSignal.timeout(config.timeoutMs)
-          : AbortSignal.any([signal, AbortSignal.timeout(config.timeoutMs)]);
-      const result = await deps.classify(
-        ctx,
-        config.model as string,
-        { state: { input: params.input }, questions: { answer: question } },
-        timeout,
-      );
+      const timeout = AbortSignal.timeout(config.timeoutMs);
+      let result: ClassifierResult;
+      try {
+        result = await deps.classify(
+          ctx,
+          config.model as string,
+          { state: { input: params.input }, questions: { answer: question } },
+          timeout,
+        );
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
       if (result.stopReason !== "stop") {
         return errorResult(result.errorMessage ?? "classifier failed");
       }
@@ -158,25 +178,25 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
         config.model as string,
         result.usage,
       );
-      const toolResult = {
+      return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],
         details: output,
       };
-      if (signal?.aborted) {
-        return errorResult("aborted");
-      }
-      if (config.cacheTtlMs > 0) {
-        cache.set(key, {
-          result: toolResult,
-          expires: Date.now() + config.cacheTtlMs,
-        });
-      }
-      return toolResult;
     })();
 
     inflight.set(key, task);
     try {
-      return await task;
+      const result = await task;
+      if (signal?.aborted) {
+        return errorResult("aborted");
+      }
+      if (config.cacheTtlMs > 0 && result.details.error === undefined) {
+        cache.set(key, {
+          result,
+          expires: Date.now() + config.cacheTtlMs,
+        });
+      }
+      return result;
     } finally {
       inflight.delete(key);
     }
