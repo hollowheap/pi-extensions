@@ -595,3 +595,36 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Files: `extensions/pi-subagents/README.md`, `packages/process/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
   - Notes: config, agents, actions, state/socket, trust, depth, locks, recovery, ACP inactivity, limitations.
   - Risk: stale defaults, missing security limits.
+
+## Spec: workspace enhancements
+
+- [x] T105 [S107] (blocked-by: none): render todos in a sticky widget above prompt box alongside subagents; drop statusline segment.
+  - Verify: `npx vitest run extensions/pi-todos/src/index.test.ts extensions/pi-todos/src/todos.test.ts`
+  - Files: `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.test.ts`, `extensions/pi-todos/src/todos.test.ts`
+  - Notes: update `setWidget` to format open todos and subagent execution states; remove `ctx.ui.setStatus("todos", ...)`; retain tagged block parsing and follow-up message.
+  - Risk: widget height overflow, empty state clearing, missing subagent state coordination.
+
+- [x] T106 [S108] (blocked-by: none): implement /context command in pi-guard breaking down token usage by category against context limit.
+  - Verify: `npx vitest run extensions/pi-guard/src/context.test.ts`
+  - Files: `extensions/pi-guard/src/context.ts`, `extensions/pi-guard/src/context.test.ts`, `extensions/pi-guard/src/index.ts`
+  - Notes: register `/context` command; categorize session tokens (thinking, agent output, user input, tool output, tool input, system prompt, skills); output via notification/UI.
+  - Risk: unknown model context limits, empty session, malformed message parts.
+
+- [x] T107 [S109] (blocked-by: none): gate out-of-workspace paths against user-trusted roots with session or indefinite persistence.
+  - Verify: `npx vitest run extensions/pi-guard/src/rules.test.ts`
+  - Files: `extensions/pi-guard/src/rules.ts`, `extensions/pi-guard/src/rules.test.ts`, `extensions/pi-guard/src/config.ts`, `extensions/pi-guard/src/index.ts`
+  - Notes: check `trustedRoots` in guard user config; prompt on untrusted paths with allow/ask/deny and session vs indefinite options; persist indefinite decisions.
+  - Risk: path traversal, relative path escapes, permission prompt cancel.
+
+- [x] T108 [S110] (blocked-by: none): resolve provider pricing and enforce dollar-denominated budget caps in pi-budgets.
+  - Verify: `npx vitest run extensions/pi-budgets/src/budget.test.ts`
+  - Files: `extensions/pi-budgets/src/budget.ts`, `extensions/pi-budgets/src/budget.test.ts`, `extensions/pi-budgets/src/pricing.ts`, `extensions/pi-budgets/src/index.ts`
+  - Notes: lookup provider pricing per model; calculate dollar costs from input/output tokens; enforce dollar budget cap; update statusline and mode gates.
+  - Risk: missing provider pricing, zero cap edge cases, division by zero.
+
+- [x] T109 [S111] (blocked-by: T108): scaffold pi-usage to record and restore cumulative token and dollar usage across compaction.
+  - Verify: `npx vitest run extensions/pi-usage/src/index.test.ts`
+  - Files: `extensions/pi-usage/package.json`, `extensions/pi-usage/src/index.ts`, `extensions/pi-usage/src/index.test.ts`, `extensions/pi-usage/README.md`, `package.json`, `package-lock.json`
+  - Notes: track cumulative tokens and cost; emit `hollowheap.usage` custom entries; restore on session start and compaction.
+  - Risk: duplicate usage accumulation, missing session manager hook, compaction replay drift.
+

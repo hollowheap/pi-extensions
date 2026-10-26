@@ -447,9 +447,9 @@
   - Seam: a pre-hook that fails or times out blocks the call with the failure as the reason
   - Behavior: a pre-hook that fails or times out blocks the call with the failure as the reason
   - Failures: The Verify command and its tests fail when this invariant breaks.
-- [x] S35 [R15] [D41]: the bundled skill is contributed through `resources_discover` and is discoverable in both installed and local runs | Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
-  - Seam: the bundled skill is contributed through `resources_discover` and is discoverable in both installed and local runs
-  - Behavior: the bundled skill is contributed through `resources_discover` and is discoverable in both installed and local runs
+- [x] S35 [R15] [D41]: the bundled skill is disabled by default and contributed through `resources_discover` when `PI_HOOKS_DISCOVER_SKILL=1` | Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
+  - Seam: the bundled skill is disabled by default and contributed through `resources_discover` when `PI_HOOKS_DISCOVER_SKILL=1`
+  - Behavior: `resources_discover` is unregistered by default to minimize prompt noise and registered when `PI_HOOKS_DISCOVER_SKILL=1`
   - Failures: The Verify command and its tests fail when this invariant breaks.
 - [x] S36 [R17] [D44]: `pi-question` registers no model tool; a live assistant `message_end` parses text content for question blocks and opens dialogs; resumed/replayed messages are not re-asked | Verify: `npx vitest run extensions/pi-question/src/index.test.ts`
   - Seam: `pi-question` registers no model tool; a live assistant `message_end` parses text content for question blocks and opens dialogs; resumed/replayed messages are not re-asked
@@ -1097,32 +1097,60 @@
   - Behavior: directory `0700`; JSON/log/session/socket `0600`; start requires trust; child loads guard/core; no API keys; records agent/task/status/PID/start/socket/session/attempt.
   - Failures: loose permissions, untrusted start, guard bypass, key leakage, or missing reconciliation fields.
 
-- [ ] S101 [R33] [D101]: Resume is explicit, reuses the logical id and session, increments attempt, and never auto-resumes | Verify: `npx vitest run extensions/pi-subagents/src/resume.test.ts`
+- [x] S101 [R33] [D101]: Resume is explicit, reuses the logical id and session, increments attempt, and never auto-resumes | Verify: `npx vitest run extensions/pi-subagents/src/resume.test.ts`
   - Seam: recovery action.
   - Behavior: failed child resumes from its session file with a new runner/socket and incremented attempt; untrusted resume is denied.
   - Failures: auto-resume, duplicate live child, attempt reset, or resume after a successful/aborted run.
 
-- [ ] S102 [R34] [D102]: READMEs document config, agents, actions, state/socket, trust, depth, locks, recovery, ACP, and limitations | Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
+- [x] S102 [R34] [D102]: READMEs document config, agents, actions, state/socket, trust, depth, locks, recovery, ACP, and limitations | Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
   - Seam: package and root documentation.
   - Behavior: users can audit limits, storage, trust, write locking, recovery, ACP inactivity, and the shared process package.
   - Failures: stale defaults, missing key path, undocumented survival/cleanup, or no ACP limitation.
 
-- [ ] S103 [R35] [D103]: `@hollowheap/process` is a Node-only library exporting detached lifecycle and socket primitives | Verify: `npx vitest run packages/process/src/index.test.ts`
+- [x] S103 [R35] [D103]: `@hollowheap/process` is a Node-only library exporting detached lifecycle and socket primitives | Verify: `npx vitest run packages/process/src/index.test.ts`
   - Seam: package exports and host independence.
   - Behavior: no Pi host imports; exports spawn, state, log, cancel, and Unix socket server/client primitives.
   - Failures: host coupling, missing export, or a second lifecycle implementation.
 
-- [ ] S104 [R35] [D104]: Process state/socket uses `0700`/`0600`, atomic state, PID/start-time, and JSONL envelopes | Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
+- [x] S104 [R35] [D104]: Process state/socket uses `0700`/`0600`, atomic state, PID/start-time, and JSONL envelopes | Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
   - Seam: process state files and Unix socket transport.
   - Behavior: state writes are atomic; PID/start time recorded; directory `0700`; files/socket `0600`; one `{id,action,payload}` JSON object per line.
   - Failures: partial writes, wrong permissions, framing loss, missing request correlation, or stale owner reuse.
 
-- [ ] S105 [R35] [D105]: `pi-subagents` is a new extension; `pi-tasks` migrates to the shared process layer with no duplicate runner | Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts extensions/pi-subagents/src/index.test.ts`
+- [x] S105 [R35] [D105]: `pi-subagents` is a new extension; `pi-tasks` migrates to the shared process layer with no duplicate runner | Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts extensions/pi-subagents/src/index.test.ts`
   - Seam: package ownership and dependency graph.
   - Behavior: `pi-subagents` owns the parent tool, agents, write lock, and child RPC; `pi-tasks` keeps shell tasks and uses the shared process layer.
   - Failures: duplicate runner, missing workspace dependency, task regression, or subagent tool in the task package.
 
-- [ ] S106 [R33] [D106]: `pi-subagents` registers no tool and starts no children when `PI_ACP` is set | Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
+- [x] S106 [R33] [D106]: `pi-subagents` registers no tool and starts no children when `PI_ACP` is set | Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
   - Seam: extension registration under ACP.
   - Behavior: ACP sessions keep subagents inactive; no local child process is spawned.
   - Failures: tool visible under ACP, local child startup, or ACP execution bypass.
+
+## Spec: workspace enhancements
+
+- [x] S107 [R36] [D107]: `pi-todos` renders tasks in a sticky widget above prompt box alongside subagents; no statusline segment | Verify: `npx vitest run extensions/pi-todos/src/index.test.ts extensions/pi-todos/src/todos.test.ts`
+  - Seam: `pi-todos` UI widget and extension state.
+  - Behavior: `create_todos`/`complete_todos` tagged blocks update a sticky widget above the editor displaying open todos and subagent execution states (running, blocked, complete); no statusline segment is set.
+  - Failures: empty todo list clearing the section, malformed blocks, out-of-order IDs, or subagent state collision.
+
+- [x] S108 [R37] [D108]: `/context` in `pi-guard` outputs token counts by category against the window limit without a UI extension | Verify: `npx vitest run extensions/pi-guard/src/context.test.ts`
+  - Seam: `pi-guard` slash-command registration and token accounting.
+  - Behavior: running `/context` breaks down session tokens into thinking, agent output, user input, tool output, tool input, system prompt, and skills, reporting per-category counts and total usage against the model context limit.
+  - Failures: unknown model context limits, empty session, malformed message parts, or missing token counts.
+
+- [x] S109 [R38] [D109]: `pi-guard` gates out-of-workspace file paths against user-trusted roots, falling back to ask with session or indefinite persistence | Verify: `npx vitest run extensions/pi-guard/src/rules.test.ts`
+  - Seam: `pi-guard` path rule evaluation and approval prompt.
+  - Behavior: file operations target paths outside workspace roots; trusted roots allow without prompt; untrusted paths prompt user with allow/ask/deny and session vs indefinite persistence scopes, saving decisions to guard config.
+  - Failures: path traversal attacks, relative path escapes, invalid persistence scopes, or denied access throwing errors.
+
+- [x] S110 [R39] [D110]: `pi-budgets` reads provider pricing and enforces budget caps in dollars | Verify: `npx vitest run extensions/pi-budgets/src/budget.test.ts`
+  - Seam: `pi-budgets` pricing resolver and budget enforcement.
+  - Behavior: calculates dollar costs from token usage using provider pricing metadata for the configured model, rejecting turns when cumulative cost reaches or exceeds the configured dollar cap.
+  - Failures: missing provider pricing, non-numeric price data, zero caps, or token-count overflow.
+
+- [x] S111 [R39] [D111]: `pi-usage` persists token counts and dollar cost in session custom entries across compaction | Verify: `npx vitest run extensions/pi-usage/src/index.test.ts`
+  - Seam: `pi-usage` extension entry and session branch custom entries (`hollowheap.usage`).
+  - Behavior: records running token counts and cumulative dollar costs per turn; recovers baseline usage on session start and after context compaction from stored entries.
+  - Failures: corrupted custom entries, unrecorded compaction events, concurrent branch updates, or negative usage deltas.
+

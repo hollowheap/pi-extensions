@@ -4,32 +4,32 @@
   - [chapter] AGENTS.md (L1)
   - [section] Essential Commands (L5)
   - [section] Repository Layout (L15)
-  - [section] Workspace Skills (L23)
-  - [section] Architecture (L27)
+  - [section] Conventions (L24)
+  - [section] Architecture (L30)
 
 ## README.md
   - [chapter] pi-extensions (L1)
   - [section] Packages (L14)
-  - [section] Quick Install (L36)
-  - [subsection] Grab everything at once (L38)
-  - [subsection] Pick and choose individual packages (L47)
-  - [subsection] Manage your installed extensions (L55)
-  - [section] Development (L64)
-  - [subsection] Prerequisites (L68)
-  - [subsection] Setup & Verification (L72)
-  - [subsection] Test-drive an extension locally (L80)
-  - [subsection] Scaffold a brand new extension (L87)
-  - [section] Writing Extensions (L98)
-  - [subsection] Architectural Ground Rules (L115)
-  - [section] Publishing (L122)
-  - [section] Docs & Resources (L133)
-  - [section] License (L140)
+  - [section] Quick Install (L39)
+  - [subsection] Grab everything at once (L41)
+  - [subsection] Pick and choose individual packages (L50)
+  - [subsection] Manage your installed extensions (L58)
+  - [section] Development (L67)
+  - [subsection] Prerequisites (L71)
+  - [subsection] Setup & Verification (L75)
+  - [subsection] Test-drive an extension locally (L83)
+  - [subsection] Scaffold a brand new extension (L90)
+  - [section] Writing Extensions (L101)
+  - [subsection] Architectural Ground Rules (L118)
+  - [section] Publishing (L125)
+  - [section] Docs & Resources (L136)
+  - [section] License (L143)
 
 ## artifacts/context.md
   - [chapter] Context (L1)
   - [section] Stack & Entrypoints (L3)
-  - [section] Commands (L11)
-  - [section] Module Seams (L21)
+  - [section] Commands (L12)
+  - [section] Module Seams (L22)
 
 ## artifacts/decisions.md
   - [chapter] Decisions (L1)
@@ -55,11 +55,23 @@
   - [chapter] Plan (L1)
   - [section] Completed (oldest first) (L5)
   - [section] Open (L405)
+  - [section] Spec: workspace enhancements (L599)
 
 ## artifacts/requirements.md
   - [chapter] Requirements (L1)
   - [section] Open Questions (L73)
-  - [section] Open Questions (L182)
+  - [section] Open Questions (L202)
+
+## artifacts/retro.md
+  - [chapter] Retrospective: Workspace Enhancements & Prompt Minimization (L1)
+  - [section] Tool Efficiency & Errors (L5)
+  - [subsection] Metrics Summary (L7)
+  - [subsection] Failure Taxonomy (L19)
+  - [section] Rule Compliance (L33)
+  - [section] Winning Patterns (L40)
+  - [section] Actionable Improvements (L46)
+  - [subsection] 1. Rule Adjustments (`~/.gemini/config/rules/`) (L48)
+  - [subsection] 2. Repo Conventions (`AGENTS.md`) (L52)
 
 ## artifacts/specs.md
   - [chapter] Specs and interface contracts (L1)
@@ -132,6 +144,7 @@
   - [section] Spec: tool exposure (historical) (L963)
   - [section] Spec: web tools (L970)
   - [section] Spec: classifier (L1033)
+  - [section] Spec: workspace enhancements (L1130)
 
 ## biome.json
   - [string] $schema (L2)
@@ -185,22 +198,5 @@
 ## extensions/pi-autopilot/src/index.test.ts
   - [function] setup (L6)
   - [constant] owner (L39)
-
-## extensions/pi-autopilot/src/index.ts
-  - [alias] ModeLayer (L2)
-  - [constant] AUTOPILOT_MODE (L4)
-
-## extensions/pi-autopilot/tsconfig.json
-  - [string] extends (L2)
-  - [string] 0 (L3)
-  - [string] 1 (L3)
-  - [array] include (L3)
-
-## extensions/pi-budgets/README.md
-  - [chapter] pi-budgets (L1)
-  - [section] Try it (L5)
-  - [section] Install (L11)
-  - [section] Budget (L17)
-  - [section] Statusline values (L21)
 
 ... [Truncated at 200 lines. Use --max-lines to expand]

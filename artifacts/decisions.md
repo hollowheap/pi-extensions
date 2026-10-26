@@ -185,10 +185,10 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
   - a broken enforcement hook must not silently allow the call; the reason tells the user what to fix or disable.
-- [x] D41 [R15]: The default skill ships inside the pi-hooks package and is contributed through pi's `resources_discover` event, so it lands in pi's normal skill set
+- [x] D41 [R15]: The default skill ships inside the pi-hooks package and is contributed through pi's `resources_discover` event (opt-in via `PI_HOOKS_DISCOVER_SKILL=1` to avoid prompt noise)
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
-  - a package's `skills/` directory is only discovered for installed packages, so a local `pi -e ./extensions/pi-hooks` run would miss the skill; `resources_discover` is the only extension-level route and is the pattern pi's own example uses.
+  - a package's `skills/` directory is only discovered for installed packages, so a local `pi -e ./extensions/pi-hooks` run would miss the skill; `resources_discover` is the only extension-level route and is the pattern pi's own example uses. Disabled by default to keep the session prompt minimal.
 
 ## Tool exposure and caching
 
@@ -463,42 +463,42 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: read-only children proceed in parallel; writers wait; denied or crashed calls need release handling; lock wait is bounded.
   - Per-tool locking preserves concurrency without letting two children mutate the same tree.
 
-- [ ] D99 [R32]: Load agents from `<agentDir>/agents/*.md` and, only for trusted projects, `<project>/.pi/agents/*.md`; frontmatter supplies name, description, tools, model, and thinking, project agents override user agents by name, and missing model or thinking inherits the parent.
+- [x] D99 [R32]: Load agents from `<agentDir>/agents/*.md` and, only for trusted projects, `<project>/.pi/agents/*.md`; frontmatter supplies name, description, tools, model, and thinking, project agents override user agents by name, and missing model or thinking inherits the parent.
   - Alternatives: user agents only; inline prompts only; project agents without trust.
   - Consequences: project agents are repo-controlled prompt injection surface; tool allowlists can restrict a child; the subagent tool is removed at the depth cap.
   - Trust and explicit agent definitions make delegation reusable without hiding its scope.
 
-- [ ] D100 [R33]: Keep the subagents directory `0700` and JSON, log, session, and socket files `0600`; require project trust to start; load `pi-guard` and core policy in the child; store agent, task, status, PID, start time, socket, session, and attempt, never API keys.
+- [x] D100 [R33]: Keep the subagents directory `0700` and JSON, log, session, and socket files `0600`; require project trust to start; load `pi-guard` and core policy in the child; store agent, task, status, PID, start time, socket, session, and attempt, never API keys.
   - Alternatives: loose permissions; session-scoped children; no guard in children.
   - Consequences: prompts and results remain local but readable by the user; cancel and reconciliation need PID/start-time checks; parent exit leaves children running.
   - Durable processes must be traceable and must not bypass policy.
 
-- [ ] D101 [R33]: Resume only on an explicit `resume` action; a failed child restarts from its persisted session file with the same logical id, an incremented attempt, and a new runner/socket; there is no auto-resume.
+- [x] D101 [R33]: Resume only on an explicit `resume` action; a failed child restarts from its persisted session file with the same logical id, an incremented attempt, and a new runner/socket; there is no auto-resume.
   - Alternatives: auto-resume once; no resume; new id on resume.
   - Consequences: callers choose whether to spend again; the old runner is cleaned up; resume in an untrusted project is denied.
   - Explicit recovery avoids surprise cost and retry loops while preserving durable state.
 
-- [ ] D102 [R34]: Document `subagents.json`, agent frontmatter, the action schema, state/socket locations, trust gates, depth/concurrency limits, write locking, recovery, ACP inactivity, the shared process package, and known limitations in the package and root READMEs.
+- [x] D102 [R34]: Document `subagents.json`, agent frontmatter, the action schema, state/socket locations, trust gates, depth/concurrency limits, write locking, recovery, ACP inactivity, the shared process package, and known limitations in the package and root READMEs.
   - Alternatives: code comments only; separate operations guide.
   - Consequences: docs must track default limits and the process/socket layout; users can audit what leaves the machine and what survives.
   - Durable child processes and write locks are hard to reason about without an explicit contract.
 
-- [ ] D103 [R35]: Add `packages/process` as `@hollowheap/process`, a Node-only library with no Pi host imports, owning detached spawn, state, PID/start-time reconciliation, logs, cancellation, and Unix socket server/client primitives; `pi-tasks` and `pi-subagents` depend on it.
+- [x] D103 [R35]: Add `packages/process` as `@hollowheap/process`, a Node-only library with no Pi host imports, owning detached spawn, state, PID/start-time reconciliation, logs, cancellation, and Unix socket server/client primitives; `pi-tasks` and `pi-subagents` depend on it.
   - Alternatives: duplicate runners in both extensions; put process code in core; ship another extension.
   - Consequences: `pi-tasks` is refactored onto the shared layer; core stays host-free; the dependency graph gains one package.
   - Two durable subsystems need one lifecycle implementation to avoid cleanup and state drift; this supersedes D65's subagent ownership.
 
-- [ ] D104 [R35]: Consumers supply the state directory and socket path; the process package keeps the directory `0700`, files and sockets `0600`, writes state atomically, records PID/start time, appends logs, and speaks one JSON object per line with `{id, action, payload}` request/response envelopes.
+- [x] D104 [R35]: Consumers supply the state directory and socket path; the process package keeps the directory `0700`, files and sockets `0600`, writes state atomically, records PID/start time, appends logs, and speaks one JSON object per line with `{id, action, payload}` request/response envelopes.
   - Alternatives: JSON-RPC 2.0; Node IPC; per-consumer state formats.
   - Consequences: consumers define action names and handlers; the package carries no Pi, agent, or task semantics; reattach clients must correlate request ids.
   - A tiny transport contract is enough for shell tasks and subagent runners without coupling them to ACP.
 
-- [ ] D105 [R35]: `pi-subagents` is a new extension owning the parent tool, agent discovery, child-side write lock, and child Pi RPC wiring; it depends on core and the process package. `pi-tasks` keeps shell tasks and migrates its runner/registry primitives to the process package in the same change.
+- [x] D105 [R35]: `pi-subagents` is a new extension owning the parent tool, agent discovery, child-side write lock, and child Pi RPC wiring; it depends on core and the process package. `pi-tasks` keeps shell tasks and migrates its runner/registry primitives to the process package in the same change.
   - Alternatives: extend `pi-tasks` with subagents; keep two lifecycle implementations; leave `pi-tasks` untouched.
   - Consequences: package and dependency updates; task behavior tests must stay green; no duplicate runner.
   - Separate concerns keep shell tasks small while giving subagents their own control surface.
 
-- [ ] D106 [R33]: When `PI_ACP` is set, `pi-subagents` registers no tool and never starts local children; ACP execution stays behind the client terminal and fs capabilities.
+- [x] D106 [R33]: When `PI_ACP` is set, `pi-subagents` registers no tool and never starts local children; ACP execution stays behind the client terminal and fs capabilities.
   - Alternatives: allow local children; route child approvals through the ACP client.
   - Consequences: ACP parity with `pi-tasks`; subagents are CLI-only in v1.
   - ACP clients must remain the only execution path.
@@ -536,3 +536,28 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
 - In-process SDK subagents, worktree isolation, auto-resume, recursive depth beyond 3, or central parent-hub routing.
 - Automatic monkey-patching of `ctx.ui` to acquire the prompt lock.
 - Serializing non-blocking UI surfaces such as status, widgets, headers, or todo lists.
+
+- [x] D107 [R36]: Todos use tool-free tagged blocks and render in a sticky widget above the prompt box sharing the area with subagent execution states (running, blocked, complete); no statusline/dashboard segment.
+  - Alternatives: inline chat output only, statusline/footer segment, dashboard panel.
+  - Consequences: Shared widget area above prompt box coordinates todos and subagent states; tool-free tagged blocks preserved.
+  - A sticky section above the prompt box keeps active work visible without cluttering conversation history or requiring statusline integration.
+
+- [x] D108 [R37]: `/context` lives in the pi-guard slash-command family alongside `/mode` and `/cd`.
+  - Alternatives: separate pi-context/pi-utilities extension, core shared command.
+  - Consequences: Reuses existing command registration and UI; no new extension package.
+  - Co-locating with other slash commands keeps the command surface unified.
+
+- [x] D109 [R38]: Trusted roots are configured per user; untrusted roots fall back to `ask`, with allow/ask/deny decisions persistable for the session or indefinitely.
+  - Alternatives: hard deny only, automatic trust of parent directories.
+  - Consequences: Requires root-trust storage and a persistence scope on verdicts.
+  - User-controlled trust keeps out-of-workspace access explicit and reversible.
+
+- [x] D110 [R39]: pi-budget reads pricing from the configured provider and enforces caps in dollars.
+  - Alternatives: static price table, token-only caps.
+  - Consequences: Budget logic depends on provider pricing availability; fallback to tokens when missing.
+  - Provider pricing keeps budgets aligned with actual billed cost.
+
+- [x] D111 [R39]: A `pi-usage` extension persists cost and token usage across compaction.
+  - Alternatives: store usage only in pi-budget, recompute after compaction.
+  - Consequences: New extension package; shared state with pi-budget.
+  - Persistence prevents loss of cumulative cost on compaction.

@@ -139,45 +139,65 @@ None.
   - Acceptance: Direct tool, no codemode activation, no `pi-guard` dependency, no new core registry.
   - The Pi tool is the smallest useful surface; extract shared layers only when a second consumer appears.
 
-- [ ] R28: `decide` sends only caller-supplied input, question, labels, and model id to the classifier.
+- [x] R28: `decide` sends only caller-supplied input, question, labels, and model id to the classifier.
   - Verify: Payload tests assert the exact classifier state and question fields; no filesystem or session reads occur.
   - Acceptance: No automatic cwd, session history, tool output, or file contents are included.
   - Classifier inputs may contain private text, so the caller must control the payload.
 
-- [ ] R29: Interactive prompts across extensions are serialized so only one dialog or confirmation is open at a time.
+- [x] R29: Interactive prompts across extensions are serialized so only one dialog or confirmation is open at a time.
   - Verify: Tests cover two concurrent prompt requests, FIFO order, release on resolve and rejection, and adoption by every current prompt site.
   - Acceptance: One process-wide queue; a second prompt waits; a failed or cancelled prompt releases the next; no new runtime dependency.
   - Concurrent dialogs can overlap and steal input; one fair queue keeps prompts predictable.
 
-- [ ] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
+- [x] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
   - Verify: Tests cover start/status/send/wait/cancel/resume across parent restart and socket reconnect.
   - Acceptance: Child survives parent exit; `send` steers a running child; `resume` starts from the persisted session; one logical id never has two live children.
   - Delegation must survive a parent restart without a central daemon.
 
-- [ ] R31: Subagent concurrency and recursion are bounded by configuration, and write/edit/bash calls serialize across child processes.
+- [x] R31: Subagent concurrency and recursion are bounded by configuration, and write/edit/bash calls serialize across child processes.
   - Verify: Tests cover configured caps, depth-limited recursion, lock contention, stale-lock recovery, and read-only overlap.
   - Acceptance: `maxConcurrent` and `maxDepth` (1–3) come from agent config; one writer at a time; read-only calls proceed in parallel; locks release on success, error, abort, or timeout.
   - Parallel subagents are useful only if writes cannot interleave.
 
-- [ ] R32: Agent definitions load from user scope and trusted project scope, with model, thinking, and tool overrides.
+- [x] R32: Agent definitions load from user scope and trusted project scope, with model, thinking, and tool overrides.
   - Verify: Tests cover user agents, trusted project agents, untrusted rejection, invalid frontmatter, and project-over-user precedence.
   - Acceptance: User agents are always available; project agents require trust; missing model inherits the parent; `tools` can restrict a child; project agents override user agents by name.
   - Project agents are repo-controlled prompts, so trust is the boundary.
 
-- [ ] R33: Durable subagent processes and state are reconciled, permissioned, and cleaned up without a daemon.
+- [x] R33: Durable subagent processes and state are reconciled, permissioned, and cleaned up without a daemon.
   - Verify: Tests cover detached survival, PID/start-time reconciliation, socket/state permissions, corrupted state, cancel, resume, and orphan cleanup.
   - Acceptance: State and sockets live under the agent directory with restrictive permissions; a dead child reconciles to failed; `resume` is explicit; cancel terminates the process group; ACP sessions keep subagents inactive.
   - Durable delegation must not become an untracked process leak.
 
-- [ ] R34: Subagent configuration, agent format, actions, durability, write lock, and security limits are documented.
+- [x] R34: Subagent configuration, agent format, actions, durability, write lock, and security limits are documented.
   - Verify: README checks cover `subagents.json`, agent frontmatter, actions, state and socket locations, trust, depth, and recovery.
   - Acceptance: Users can audit concurrency/cost bounds and where prompts and results are stored.
   - Operators need to understand the process and permission surface before enabling delegation.
 
-- [ ] R35: Detached process lifecycle, state, logs, cancellation, and Unix sockets have one shared implementation used by both durable shell tasks and subagents.
+- [x] R35: Detached process lifecycle, state, logs, cancellation, and Unix sockets have one shared implementation used by both durable shell tasks and subagents.
   - Verify: Process package tests plus `pi-tasks` and `pi-subagents` suites cover spawn, persistence, reconciliation, cancel, JSONL framing, and permissions.
   - Acceptance: One lifecycle owner; no duplicated runner; state/log/socket permissions; PID/start-time reconciliation; request/response socket framing.
   - Two durable subsystems must not drift in cleanup or state semantics.
+
+- [x] R36: Todos created by tool-free blocks render as a sticky widget above the prompt box alongside running subagents.
+  - Verify: Sticky widget renders todos and subagents above the editor; no statusline/dashboard segment required.
+  - Acceptance: Tool-free tagged blocks update the sticky widget above the prompt box; displays todos and subagent execution states (running, blocked, complete).
+  - Sticky rendering keeps active task and subagent state visible without separate dashboard UI.
+
+- [x] R37: A `/context` command breaks down context-window usage by category.
+  - Verify: Command output lists agent thinking, agent output, user input, tool output, tool input, system prompt, and skills with token counts.
+  - Acceptance: Running `/context` shows per-category token usage and total against the window limit; no UI dependency required.
+  - Visibility into context composition helps diagnose bloat and compaction.
+
+- [x] R38: Out-of-workspace access is gated by trusted roots and user approval.
+  - Verify: Access outside the workspace prompts or is denied per root trust; no silent allow.
+  - Acceptance: Untrusted roots fall back to the asking scheme; trusted roots allow access; decisions can be session-only or indefinite.
+  - Prevents silent out-of-workspace reads while keeping legitimate cross-root workflows usable.
+
+- [x] R39: Budgets and usage are tracked in dollars using provider pricing, surviving compaction.
+  - Verify: Budget cap aborts on dollar threshold; usage report shows cost; compaction does not erase cumulative cost.
+  - Acceptance: Provider pricing feeds pi-budget; budgets set in $; usage accumulates $ across compaction.
+  - Dollar tracking matches real cost and survives context compaction.
 
 ## Open Questions
 

@@ -21,9 +21,11 @@ Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, Ty
 - `extensions/pi-hooks/src/skills/hooks-init/` — lifecycle-hooks skill.
 - `artifacts/` — requirements, decisions, specs, plan, context.
 
-## Workspace Skills
+## Conventions
 
-- `hooks-init` ships inside `pi-hooks` and is contributed through `resources_discover`.
+- In tests, clean `process.env` with `Reflect.deleteProperty` (`delete` triggers Biome lint).
+- Extension skills must be opt-in via env flags (e.g. `PI_HOOKS_DISCOVER_SKILL=1`) to prevent prompt bloat.
+- Verify changes narrowly (`npx vitest run <file>`) before chaining compound checks.
 
 ## Architecture
 
