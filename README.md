@@ -28,6 +28,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
 | [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks via a direct `task` tool |
 | [`@hollowheap/pi-classifier`](./extensions/pi-classifier) | `0.2.0` | Advisory classifier tool with structured `decide` calls |
+| [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
 | [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---

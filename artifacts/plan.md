@@ -404,19 +404,19 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 ## Open
 
-- [ ] T59 [S75] (blocked-by: none): scaffold `extensions/pi-web`, register it in the root suite, and keep host modules peer-only.
+- [x] T59 [S75] (blocked-by: none): scaffold `extensions/pi-web`, register it in the root suite, and keep host modules peer-only.
   - Verify: `npx vitest run extensions/pi-web/src/index.test.ts && npm run typecheck`
   - Files: `extensions/pi-web/package.json`, `extensions/pi-web/tsconfig.json`, `extensions/pi-web/index.ts`, `extensions/pi-web/src/index.ts`, `package.json`, `package-lock.json`
   - Notes: use the repo scaffold; no new runtime dependency; add the package to the root README table.
   - Risk: suite entry or workspace lock drift.
 
-- [ ] T60 [S76] (blocked-by: T59): register exactly `web_search` and `web_fetch` as direct tools without codemode activation.
+- [x] T60 [S76] (blocked-by: T59): register exactly `web_search` and `web_fetch` as direct tools without codemode activation.
   - Verify: `npx vitest run extensions/pi-web/src/index.test.ts`
   - Files: `extensions/pi-web/src/index.ts`, `extensions/pi-web/src/index.test.ts`
   - Notes: omit `exposure` or set `direct`; no session-start codemode calls.
   - Risk: accidental hidden/codemode exposure or a second tool.
 
-- [ ] T61 [S77] (blocked-by: T59): implement provider adapters for Tavily, Exa, and Firecrawl with one normalized search/fetch boundary.
+- [x] T61 [S77] (blocked-by: T59): implement provider adapters for Tavily, Exa, and Firecrawl with one normalized search/fetch boundary.
   - Verify: `npx vitest run extensions/pi-web/src/providers`
   - Files: `extensions/pi-web/src/providers/*.ts`, `extensions/pi-web/src/providers/*.test.ts`
   - Notes: mock `fetch`; keep provider payload parsing private to each adapter.
