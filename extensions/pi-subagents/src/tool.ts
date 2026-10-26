@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { truncateText } from "@hollowheap/core";
@@ -64,6 +65,8 @@ function childSpec(
     "-ne",
     "-e",
     join(guardDir, "index.ts"),
+    "-e",
+    fileURLToPath(new URL("../child.ts", import.meta.url)),
     "--append-system-prompt",
     agent.systemPrompt,
     "--session",
@@ -71,6 +74,7 @@ function childSpec(
   ];
   if (agent.model !== undefined) args.push("--model", agent.model);
   if (agent.thinking !== undefined) args.push("--thinking", agent.thinking);
+  if (agent.tools !== undefined) args.push("--tools", agent.tools.join(","));
   return { command: process.env.PI_BIN ?? "pi", args };
 }
 
