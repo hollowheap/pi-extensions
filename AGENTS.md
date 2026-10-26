@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, biome. Extensions live in `extensions/pi-*`; `packages/` holds `core` and `pi-acp`. `@hollowheap/core` is the only runtime dependency; host modules are peer-only. Never vendor policy, modes, or shell analysis. Commits are GPG-signed; never bypass hooks or signing.
+Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, biome. Extensions live in `extensions/pi-*`; shared runtime libraries live in `packages/`. Host modules are peer-only. Never vendor policy, modes, or shell analysis. Commits are GPG-signed; never bypass hooks or signing.
 
 ## Essential Commands
 
@@ -16,6 +16,7 @@ Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, Ty
 
 - `extensions/pi-*/` — one extension per package, entry `index.ts` re-exporting `src/index.ts`.
 - `packages/core/` — shared policy, config, shell/exec, formatting, modes, state.
+- `packages/process/` — detached process, atomic state, and JSONL Unix-socket primitives.
 - `packages/pi-acp/` — standalone ACP server plus bundled pi extension.
 - `extensions/pi-hooks/src/skills/hooks-init/` — lifecycle-hooks skill.
 - `artifacts/` — requirements, decisions, specs, plan, context.

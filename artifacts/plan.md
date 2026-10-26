@@ -584,13 +584,13 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: failed child only; same logical id; new runner/socket; no auto-resume; untrusted denied.
   - Risk: duplicate live child, attempt reset, resume after success/abort.
 
-- [ ] T103 [S106] (blocked-by: T95, T100): make `pi-subagents` register no tool and start no children under ACP.
+- [x] T103 [S106] (blocked-by: T95, T100): make `pi-subagents` register no tool and start no children under ACP.
   - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
   - Files: `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`
   - Notes: gate on `PI_ACP`; no local child spawn.
   - Risk: tool visible under ACP, accidental child startup.
 
-- [ ] T104 [S102] (blocked-by: T93, T94, T96, T97, T98, T99, T100, T101, T102, T103): document the subagent contract and shared process package.
+- [x] T104 [S102] (blocked-by: T93, T94, T96, T97, T98, T99, T100, T101, T102, T103): document the subagent contract and shared process package.
   - Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
   - Files: `extensions/pi-subagents/README.md`, `packages/process/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
   - Notes: config, agents, actions, state/socket, trust, depth, locks, recovery, ACP inactivity, limitations.

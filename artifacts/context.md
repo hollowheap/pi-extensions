@@ -5,14 +5,15 @@
 - Node >= 22.19, npm workspaces (`packages/*`, `extensions/*`), TypeScript via jiti (`noEmit`), vitest, biome.
 - Extensions: `extensions/pi-<name>/index.ts` re-exports `src/index.ts`; entry declared in `pi.extensions`.
 - `packages/core` (`@hollowheap/core`): shared policy, config, shell/exec, formatting, modes, and session/mode registry.
+- `packages/process` (`@hollowheap/process`): detached process, atomic state, and JSONL Unix-socket primitives.
 - `packages/pi-acp`: standalone ACP server (`src/main.ts`) plus a bundled extension (`src/extension/`) spawned as `pi --mode rpc -ne -e <ext> -nbt`.
 - Host loader: jiti per extension, `moduleCache: false`; installed packages get separate module roots, so shared state uses the core global registry.
 
 ## Commands
 
-- `npm test` — vitest, 707 passed / 75 files (verified 2026-10-26).
+- `npm test` — vitest, 711 passed / 76 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
-- `npm run lint` — `biome check .`, 214 files clean (verified 2026-10-26).
+- `npm run lint` — `biome check .`, 216 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -29,6 +30,7 @@
 - `@hollowheap/process` → detached lifecycle, atomic state, JSONL sockets, logs, cancellation, and PID/start-time reconciliation.
 - `pi-web` → direct `web_search`/`web_fetch` package seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, and static fetch extraction, web.json order config, URL safety, and capped tool output.
 - `pi-tasks` → durable background shell tasks, direct `task` tool, PID/start-time reconciliation.
+- `pi-subagents` → durable child RPC agents with live reattach, trusted agents, write lock, and explicit resume.
 - `pi-budgets` → token cap, usage accumulation, cap abort, autopilot gate.
 - `pi-autopilot` → `autopilot` mode layer.
 - `pi-statusline` / `pi-dashboard` → footer/header renderers.
