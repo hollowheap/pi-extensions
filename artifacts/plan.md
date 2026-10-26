@@ -517,3 +517,81 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Files: `packages/core/src/prompt-lock.ts`, `packages/core/src/prompt-lock.test.ts`, `packages/core/src/index.ts`, `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/index.test.ts`, `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`
   - Notes: release on resolve/reject/cancel/throw; reject nested acquisition; serialize only blocking prompts, not status/widgets/headers/todo views.
   - Risk: duplicate queues across module roots, lost release on rejection, reentrant deadlock, serializing non-prompt UI.
+
+- [ ] T92 [S103] (blocked-by: none): scaffold `packages/process` as `@hollowheap/process` and implement detached lifecycle, log, and cancel primitives.
+  - Verify: `npx vitest run packages/process/src/index.test.ts`
+  - Files: `packages/process/package.json`, `packages/process/tsconfig.json`, `packages/process/src/index.ts`, `packages/process/src/process.ts`, `packages/process/src/index.test.ts`, `package.json`, `package-lock.json`
+  - Notes: Node-only, no Pi host imports; consumers supply state directory; process-group cancel.
+  - Risk: workspace lock drift, orphan process, host coupling.
+
+- [ ] T93 [S104] (blocked-by: T92): add atomic process state, PID/start-time reconciliation, permissions, and JSONL Unix socket framing.
+  - Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
+  - Files: `packages/process/src/state.ts`, `packages/process/src/state.test.ts`, `packages/process/src/socket.ts`, `packages/process/src/socket.test.ts`, `packages/process/src/index.ts`
+  - Notes: `0700` dirs, `0600` files/sockets, atomic rename, `{id,action,payload}` per line.
+  - Risk: partial writes, framing loss, stale socket, request-id collision.
+
+- [ ] T94 [S105] (blocked-by: T93): migrate `pi-tasks` runner and registry primitives to `@hollowheap/process` without behavior changes.
+  - Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts`
+  - Files: `extensions/pi-tasks/package.json`, `extensions/pi-tasks/src/runner.ts`, `extensions/pi-tasks/src/registry.ts`, tests, `package-lock.json`
+  - Notes: preserve task tool behavior, PID/start-time reconciliation, cancel grace, and permissions.
+  - Risk: task regression or a second lifecycle implementation.
+
+- [ ] T95 [S105] (blocked-by: T92): scaffold `extensions/pi-subagents`, register it in the root suite, and add the package dependency.
+  - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
+  - Files: `extensions/pi-subagents/package.json`, `extensions/pi-subagents/tsconfig.json`, `extensions/pi-subagents/index.ts`, `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`, `extensions/pi-subagents/README.md`, `package.json`, `package-lock.json`
+  - Notes: new extension; depend on core and process; no tool behavior yet.
+  - Risk: suite entry, workspace lock, package metadata.
+
+- [ ] T96 [S97] (blocked-by: T95): implement `subagents.json` concurrency, depth, timeout, and lock-wait loading with diagnostics.
+  - Verify: `npx vitest run extensions/pi-subagents/src/config.test.ts`
+  - Files: `extensions/pi-subagents/src/config.ts`, `extensions/pi-subagents/src/config.test.ts`
+  - Notes: defaults 4/1/30m/30s; caps 8/3/24h; invalid values fall back with diagnostics.
+  - Risk: silent defaults, out-of-range values, secret fields.
+
+- [ ] T97 [S99] (blocked-by: T95): implement user and trusted project agent discovery with frontmatter overrides.
+  - Verify: `npx vitest run extensions/pi-subagents/src/agents.test.ts`
+  - Files: `extensions/pi-subagents/src/agents.ts`, `extensions/pi-subagents/src/agents.test.ts`
+  - Notes: `<agentDir>/agents/*.md`; `.pi/agents/*.md` only when trusted; project overrides user; model/thinking inherit.
+  - Risk: untrusted project agents, invalid frontmatter, silent tool widening.
+
+- [ ] T98 [S100] (blocked-by: T95, T96): implement subagent state permissions, trust gate, and state records.
+  - Verify: `npx vitest run extensions/pi-subagents/src/state.test.ts`
+  - Files: `extensions/pi-subagents/src/state.ts`, `extensions/pi-subagents/src/state.test.ts`
+  - Notes: directory `0700`; JSON/log/session/socket `0600`; records agent/task/status/PID/start/socket/session/attempt; no keys.
+  - Risk: loose permissions, untrusted start, missing fields.
+
+- [ ] T99 [S95] (blocked-by: T93, T95, T97, T98): implement the detached child runner and live reattach socket.
+  - Verify: `npx vitest run extensions/pi-subagents/src/runner.test.ts extensions/pi-subagents/src/socket.test.ts`
+  - Files: `extensions/pi-subagents/src/runner.ts`, `extensions/pi-subagents/src/runner.test.ts`, `extensions/pi-subagents/src/socket.ts`, `extensions/pi-subagents/src/socket.test.ts`
+  - Notes: spawn `pi --mode rpc`, own stdio, persist state/log/session, reattach/steer, no daemon.
+  - Risk: orphan, duplicate runner, dead socket, parent-exit cleanup.
+
+- [ ] T100 [S96] (blocked-by: T96, T97, T98, T99): register the direct `subagent` tool with start/list/status/send/wait/cancel actions.
+  - Verify: `npx vitest run extensions/pi-subagents/src/tool.test.ts`
+  - Files: `extensions/pi-subagents/src/tool.ts`, `extensions/pi-subagents/src/tool.test.ts`, `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`
+  - Notes: one child per start; send steers running or prompts idle; wait bounded; cancel group; resume added by T102.
+  - Risk: duplicate live child, unknown id, premature start result.
+
+- [ ] T101 [S98] (blocked-by: T95, T96, T98): add the child-side per-tool write lock for write/edit/bash.
+  - Verify: `npx vitest run extensions/pi-subagents/src/write-lock.test.ts`
+  - Files: `extensions/pi-subagents/src/write-lock.ts`, `extensions/pi-subagents/src/write-lock.test.ts`, child extension wiring
+  - Notes: atomic lock dir, owner PID/start-time, release on result/error/abort/timeout, stale reclaim; read-only tools skip.
+  - Risk: two writers, lost release, stale lock, denied call without result.
+
+- [ ] T102 [S101] (blocked-by: T99, T100): add explicit resume from the persisted session with attempt increment.
+  - Verify: `npx vitest run extensions/pi-subagents/src/resume.test.ts`
+  - Files: `extensions/pi-subagents/src/resume.ts`, `extensions/pi-subagents/src/resume.test.ts`, `extensions/pi-subagents/src/tool.ts`
+  - Notes: failed child only; same logical id; new runner/socket; no auto-resume; untrusted denied.
+  - Risk: duplicate live child, attempt reset, resume after success/abort.
+
+- [ ] T103 [S106] (blocked-by: T95, T100): make `pi-subagents` register no tool and start no children under ACP.
+  - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
+  - Files: `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`
+  - Notes: gate on `PI_ACP`; no local child spawn.
+  - Risk: tool visible under ACP, accidental child startup.
+
+- [ ] T104 [S102] (blocked-by: T93, T94, T96, T97, T98, T99, T100, T101, T102, T103): document the subagent contract and shared process package.
+  - Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
+  - Files: `extensions/pi-subagents/README.md`, `packages/process/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Notes: config, agents, actions, state/socket, trust, depth, locks, recovery, ACP inactivity, limitations.
+  - Risk: stale defaults, missing security limits.

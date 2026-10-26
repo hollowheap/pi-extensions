@@ -149,6 +149,36 @@ None.
   - Acceptance: One process-wide queue; a second prompt waits; a failed or cancelled prompt releases the next; no new runtime dependency.
   - Concurrent dialogs can overlap and steal input; one fair queue keeps prompts predictable.
 
+- [ ] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
+  - Verify: Tests cover start/status/send/wait/cancel/resume across parent restart and socket reconnect.
+  - Acceptance: Child survives parent exit; `send` steers a running child; `resume` starts from the persisted session; one logical id never has two live children.
+  - Delegation must survive a parent restart without a central daemon.
+
+- [ ] R31: Subagent concurrency and recursion are bounded by configuration, and write/edit/bash calls serialize across child processes.
+  - Verify: Tests cover configured caps, depth-limited recursion, lock contention, stale-lock recovery, and read-only overlap.
+  - Acceptance: `maxConcurrent` and `maxDepth` (1–3) come from agent config; one writer at a time; read-only calls proceed in parallel; locks release on success, error, abort, or timeout.
+  - Parallel subagents are useful only if writes cannot interleave.
+
+- [ ] R32: Agent definitions load from user scope and trusted project scope, with model, thinking, and tool overrides.
+  - Verify: Tests cover user agents, trusted project agents, untrusted rejection, invalid frontmatter, and project-over-user precedence.
+  - Acceptance: User agents are always available; project agents require trust; missing model inherits the parent; `tools` can restrict a child; project agents override user agents by name.
+  - Project agents are repo-controlled prompts, so trust is the boundary.
+
+- [ ] R33: Durable subagent processes and state are reconciled, permissioned, and cleaned up without a daemon.
+  - Verify: Tests cover detached survival, PID/start-time reconciliation, socket/state permissions, corrupted state, cancel, resume, and orphan cleanup.
+  - Acceptance: State and sockets live under the agent directory with restrictive permissions; a dead child reconciles to failed; `resume` is explicit; cancel terminates the process group; ACP sessions keep subagents inactive.
+  - Durable delegation must not become an untracked process leak.
+
+- [ ] R34: Subagent configuration, agent format, actions, durability, write lock, and security limits are documented.
+  - Verify: README checks cover `subagents.json`, agent frontmatter, actions, state and socket locations, trust, depth, and recovery.
+  - Acceptance: Users can audit concurrency/cost bounds and where prompts and results are stored.
+  - Operators need to understand the process and permission surface before enabling delegation.
+
+- [ ] R35: Detached process lifecycle, state, logs, cancellation, and Unix sockets have one shared implementation used by both durable shell tasks and subagents.
+  - Verify: Process package tests plus `pi-tasks` and `pi-subagents` suites cover spawn, persistence, reconciliation, cancel, JSONL framing, and permissions.
+  - Acceptance: One lifecycle owner; no duplicated runner; state/log/socket permissions; PID/start-time reconciliation; request/response socket framing.
+  - Two durable subsystems must not drift in cleanup or state semantics.
+
 ## Open Questions
 
 None.

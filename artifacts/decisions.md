@@ -443,6 +443,66 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: a hung dialog blocks later prompts; consumers must call the helper explicitly; a reentrant prompt must bypass the lock or fail.
   - Cross-extension collisions need one owner; process-wide is the smallest scope that covers main-session prompts without new dependencies.
 
+- [ ] D95 [R30]: Run each subagent as a detached `pi --mode rpc` child supervised by a per-child runner built on `@hollowheap/process`; the runner owns stdio, exposes a Unix socket for live reattach/steer, and persists state, logs, and session files under `<agentDir>/subagents/`; no central daemon.
+  - Alternatives: in-process SDK sessions; central parent-hub daemon; session-scoped children.
+  - Consequences: children outlive the parent; live reattach needs socket and state reconciliation; one runner and socket per child; supersedes D71's session-scoped parent-hub design.
+  - Live steering plus durable children need a process that owns the child after the parent exits; a per-child runner avoids a daemon.
+
+- [ ] D96 [R30]: Expose one direct `subagent` tool with `start`, `list`, `status`, `send`, `wait`, `cancel`, and `resume` actions; one child per `start`, no parallel-array parameter, and concurrency comes from multiple calls plus config.
+  - Alternatives: a parallel tasks array; single-call-only tool; separate prompt/steer tools.
+  - Consequences: the parent model tracks ids; the schema has lifecycle actions; `send` steers a running child and prompts an idle one.
+  - One child per call keeps failure attribution and write-lock ownership clear.
+
+- [ ] D97 [R31]: Read `<agentDir>/subagents.json` for `maxConcurrent` (default 4, max 8), `maxDepth` (default 1, max 3), `defaultTimeoutMs` (default 30 minutes, max 24 hours, 0 disables), and `writeLockTimeoutMs` (default 30 seconds); invalid values diagnose and fall back.
+  - Alternatives: hardcoded limits; per-call limits only; no timeout.
+  - Consequences: config is shared by parent and children; depth is passed through the child environment; limits bound cost and process growth.
+  - Defaults must be safe without configuration, while allowing tuned concurrency and recursion.
+
+- [ ] D98 [R31]: Serialize `write`, `edit`, and `bash` across child processes with a per-tool lock at `<agentDir>/subagents/write.lock`; atomic directory creation records owner PID and start time, the child extension releases on tool result, error, abort, or timeout, and stale owners are reclaimed.
+  - Alternatives: one write-lease per child lifetime; cap all children to one; worktrees per child.
+  - Consequences: read-only children proceed in parallel; writers wait; denied or crashed calls need release handling; lock wait is bounded.
+  - Per-tool locking preserves concurrency without letting two children mutate the same tree.
+
+- [ ] D99 [R32]: Load agents from `<agentDir>/agents/*.md` and, only for trusted projects, `<project>/.pi/agents/*.md`; frontmatter supplies name, description, tools, model, and thinking, project agents override user agents by name, and missing model or thinking inherits the parent.
+  - Alternatives: user agents only; inline prompts only; project agents without trust.
+  - Consequences: project agents are repo-controlled prompt injection surface; tool allowlists can restrict a child; the subagent tool is removed at the depth cap.
+  - Trust and explicit agent definitions make delegation reusable without hiding its scope.
+
+- [ ] D100 [R33]: Keep the subagents directory `0700` and JSON, log, session, and socket files `0600`; require project trust to start; load `pi-guard` and core policy in the child; store agent, task, status, PID, start time, socket, session, and attempt, never API keys.
+  - Alternatives: loose permissions; session-scoped children; no guard in children.
+  - Consequences: prompts and results remain local but readable by the user; cancel and reconciliation need PID/start-time checks; parent exit leaves children running.
+  - Durable processes must be traceable and must not bypass policy.
+
+- [ ] D101 [R33]: Resume only on an explicit `resume` action; a failed child restarts from its persisted session file with the same logical id, an incremented attempt, and a new runner/socket; there is no auto-resume.
+  - Alternatives: auto-resume once; no resume; new id on resume.
+  - Consequences: callers choose whether to spend again; the old runner is cleaned up; resume in an untrusted project is denied.
+  - Explicit recovery avoids surprise cost and retry loops while preserving durable state.
+
+- [ ] D102 [R34]: Document `subagents.json`, agent frontmatter, the action schema, state/socket locations, trust gates, depth/concurrency limits, write locking, recovery, ACP inactivity, the shared process package, and known limitations in the package and root READMEs.
+  - Alternatives: code comments only; separate operations guide.
+  - Consequences: docs must track default limits and the process/socket layout; users can audit what leaves the machine and what survives.
+  - Durable child processes and write locks are hard to reason about without an explicit contract.
+
+- [ ] D103 [R35]: Add `packages/process` as `@hollowheap/process`, a Node-only library with no Pi host imports, owning detached spawn, state, PID/start-time reconciliation, logs, cancellation, and Unix socket server/client primitives; `pi-tasks` and `pi-subagents` depend on it.
+  - Alternatives: duplicate runners in both extensions; put process code in core; ship another extension.
+  - Consequences: `pi-tasks` is refactored onto the shared layer; core stays host-free; the dependency graph gains one package.
+  - Two durable subsystems need one lifecycle implementation to avoid cleanup and state drift; this supersedes D65's subagent ownership.
+
+- [ ] D104 [R35]: Consumers supply the state directory and socket path; the process package keeps the directory `0700`, files and sockets `0600`, writes state atomically, records PID/start time, appends logs, and speaks one JSON object per line with `{id, action, payload}` request/response envelopes.
+  - Alternatives: JSON-RPC 2.0; Node IPC; per-consumer state formats.
+  - Consequences: consumers define action names and handlers; the package carries no Pi, agent, or task semantics; reattach clients must correlate request ids.
+  - A tiny transport contract is enough for shell tasks and subagent runners without coupling them to ACP.
+
+- [ ] D105 [R35]: `pi-subagents` is a new extension owning the parent tool, agent discovery, child-side write lock, and child Pi RPC wiring; it depends on core and the process package. `pi-tasks` keeps shell tasks and migrates its runner/registry primitives to the process package in the same change.
+  - Alternatives: extend `pi-tasks` with subagents; keep two lifecycle implementations; leave `pi-tasks` untouched.
+  - Consequences: package and dependency updates; task behavior tests must stay green; no duplicate runner.
+  - Separate concerns keep shell tasks small while giving subagents their own control surface.
+
+- [ ] D106 [R33]: When `PI_ACP` is set, `pi-subagents` registers no tool and never starts local children; ACP execution stays behind the client terminal and fs capabilities.
+  - Alternatives: allow local children; route child approvals through the ACP client.
+  - Consequences: ACP parity with `pi-tasks`; subagents are CLI-only in v1.
+  - ACP clients must remain the only execution path.
+
 ## Non-Goals
 
 - A ctags or tree-sitter fallback engine in v1; the first version is LSP-only.
@@ -464,7 +524,8 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
 - A runtime dependency on the ACP SDK; an ACP SDK in core.
 - Sharing core state across processes.
 - Changing the permissions rule schema beyond adding a `tools` tag map.
-- Durable subagents or a hub daemon in v1; only shell tasks survive pi exit.
+- A central subagent hub daemon; durable children use per-child runners and sockets.
+- Local subagent execution under ACP or subagent tool calls routed through the ACP client in v1.
 - ACP background terminal tasks; ACP keeps `acp_bash` and the client terminal.
 - Completion-triggered model turns for background tasks.
 - Local durable task starts in untrusted projects.
@@ -472,6 +533,6 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
 - Remote or SSH task execution.
 - Codemode-only `task` or `subagent` tools.
 - Overriding the host built-in `bash` tool or detaching in-flight foreground commands via `/background` (`alt+b`).
-- Subagent spawning, messaging, or agent definitions in this feature; v1 builds only the task layer.
+- In-process SDK subagents, worktree isolation, auto-resume, recursive depth beyond 3, or central parent-hub routing.
 - Automatic monkey-patching of `ctx.ui` to acquire the prompt lock.
 - Serializing non-blocking UI surfaces such as status, widgets, headers, or todo lists.

@@ -1066,3 +1066,63 @@
   - Seam: `@hollowheap/core` prompt-lock helper consumed by each blocking prompt owner.
   - Behavior: one queue per process shared across extension module roots; callers acquire in FIFO order; release on resolve, rejection, cancellation, or throw; nested acquisition is rejected instead of deadlocking; status, widgets, headers, and todo views never acquire.
   - Failures: overlapping prompts, a waiter lost on rejection, a duplicate queue per extension module, reentrant deadlock, or a non-prompt UI surface serialized.
+
+- [ ] S95 [R30] [D95]: Detached child runner owns stdio and a live socket; state, logs, and session persist under the agent dir | Verify: `npx vitest run extensions/pi-subagents/src/runner.test.ts extensions/pi-subagents/src/socket.test.ts`
+  - Seam: parent `subagent` tool and per-child runner/control socket.
+  - Behavior: start detaches; a later parent reattaches and steers; parent exit leaves the child running; no central daemon.
+  - Failures: duplicate runner, orphaned child, missing socket, stale state, or a child that cannot be reattached.
+
+- [ ] S96 [R30] [D96]: Direct `subagent` actions are start/list/status/send/wait/cancel/resume; one child per start | Verify: `npx vitest run extensions/pi-subagents/src/tool.test.ts`
+  - Seam: direct tool schema and action semantics.
+  - Behavior: `send` steers a running child or prompts an idle one; `wait` is bounded; `cancel` terminates the group; `resume` is explicit; no parallel-array parameter.
+  - Failures: invalid action, unknown id, duplicate live child for one id, or a start that returns before state is durable.
+
+- [ ] S97 [R31] [D97]: `subagents.json` validates concurrency, depth, timeout, and lock-wait limits with safe defaults | Verify: `npx vitest run extensions/pi-subagents/src/config.test.ts`
+  - Seam: agent-dir config loader.
+  - Behavior: `maxConcurrent` 4/8, `maxDepth` 1/3, `defaultTimeoutMs` 30m/24h/0, `writeLockTimeoutMs` 30s; invalid values diagnose and fall back.
+  - Failures: malformed JSON, out-of-range values, secret fields, or silent defaults.
+
+- [ ] S98 [R31] [D98]: write/edit/bash acquire one cross-process per-tool lock with stale-owner recovery | Verify: `npx vitest run extensions/pi-subagents/src/write-lock.test.ts`
+  - Seam: child-side tool lock boundary.
+  - Behavior: atomic lock directory records owner PID/start time; release on result, error, abort, or timeout; stale owners are reclaimed; read-only tools never acquire.
+  - Failures: two writers, lost release, stale lock forever, lock timeout, or a denied call that never releases.
+
+- [ ] S99 [R32] [D99]: Agent discovery loads user agents and trusted project agents with frontmatter overrides | Verify: `npx vitest run extensions/pi-subagents/src/agents.test.ts`
+  - Seam: agent discovery and trust boundary.
+  - Behavior: user agents always load; project agents only when trusted; project overrides user by name; name/description/tools/model/thinking parse; missing model inherits parent.
+  - Failures: project agents in untrusted repos, invalid frontmatter, duplicate names, or silent tool widening.
+
+- [ ] S100 [R33] [D100]: Subagent state and sockets are permissioned, trust-gated, guard-loaded, and secret-free | Verify: `npx vitest run extensions/pi-subagents/src/state.test.ts`
+  - Seam: subagent state, socket, trust, and child policy.
+  - Behavior: directory `0700`; JSON/log/session/socket `0600`; start requires trust; child loads guard/core; no API keys; records agent/task/status/PID/start/socket/session/attempt.
+  - Failures: loose permissions, untrusted start, guard bypass, key leakage, or missing reconciliation fields.
+
+- [ ] S101 [R33] [D101]: Resume is explicit, reuses the logical id and session, increments attempt, and never auto-resumes | Verify: `npx vitest run extensions/pi-subagents/src/resume.test.ts`
+  - Seam: recovery action.
+  - Behavior: failed child resumes from its session file with a new runner/socket and incremented attempt; untrusted resume is denied.
+  - Failures: auto-resume, duplicate live child, attempt reset, or resume after a successful/aborted run.
+
+- [ ] S102 [R34] [D102]: READMEs document config, agents, actions, state/socket, trust, depth, locks, recovery, ACP, and limitations | Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
+  - Seam: package and root documentation.
+  - Behavior: users can audit limits, storage, trust, write locking, recovery, ACP inactivity, and the shared process package.
+  - Failures: stale defaults, missing key path, undocumented survival/cleanup, or no ACP limitation.
+
+- [ ] S103 [R35] [D103]: `@hollowheap/process` is a Node-only library exporting detached lifecycle and socket primitives | Verify: `npx vitest run packages/process/src/index.test.ts`
+  - Seam: package exports and host independence.
+  - Behavior: no Pi host imports; exports spawn, state, log, cancel, and Unix socket server/client primitives.
+  - Failures: host coupling, missing export, or a second lifecycle implementation.
+
+- [ ] S104 [R35] [D104]: Process state/socket uses `0700`/`0600`, atomic state, PID/start-time, and JSONL envelopes | Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
+  - Seam: process state files and Unix socket transport.
+  - Behavior: state writes are atomic; PID/start time recorded; directory `0700`; files/socket `0600`; one `{id,action,payload}` JSON object per line.
+  - Failures: partial writes, wrong permissions, framing loss, missing request correlation, or stale owner reuse.
+
+- [ ] S105 [R35] [D105]: `pi-subagents` is a new extension; `pi-tasks` migrates to the shared process layer with no duplicate runner | Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts extensions/pi-subagents/src/index.test.ts`
+  - Seam: package ownership and dependency graph.
+  - Behavior: `pi-subagents` owns the parent tool, agents, write lock, and child RPC; `pi-tasks` keeps shell tasks and uses the shared process layer.
+  - Failures: duplicate runner, missing workspace dependency, task regression, or subagent tool in the task package.
+
+- [ ] S106 [R33] [D106]: `pi-subagents` registers no tool and starts no children when `PI_ACP` is set | Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts`
+  - Seam: extension registration under ACP.
+  - Behavior: ACP sessions keep subagents inactive; no local child process is spawned.
+  - Failures: tool visible under ACP, local child startup, or ACP execution bypass.
