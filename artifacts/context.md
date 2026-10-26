@@ -10,9 +10,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 666 passed / 65 files (verified 2026-10-26).
+- `npm test` — vitest, 675 passed / 67 files (verified 2026-10-26).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-26).
-- `npm run lint` — `biome check .`, 190 files clean (verified 2026-10-26).
+- `npm run lint` — `biome check .`, 194 files clean (verified 2026-10-26).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -26,7 +26,7 @@
 - `pi-tools` → direct `fd`/`rg` by default (configurable exposure), `/cd`.
 - `pi-code-intel` → direct `code_intel` by default (configurable exposure), LSP pool, trust and path checks.
 - `pi-classifier` → advisory `decide` tool, explicit classifier config, caps, cache, and payload privacy.
-- `@hollowheap/process` → detached lifecycle, logs, cancellation, and PID/start-time reconciliation.
+- `@hollowheap/process` → detached lifecycle, atomic state, JSONL sockets, logs, cancellation, and PID/start-time reconciliation.
 - `pi-web` → direct `web_search`/`web_fetch` package seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, and static fetch extraction, web.json order config, URL safety, and capped tool output.
 - `pi-tasks` → durable background shell tasks, direct `task` tool, PID/start-time reconciliation.
 - `pi-budgets` → token cap, usage accumulation, cap abort, autopilot gate.

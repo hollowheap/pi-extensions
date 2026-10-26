@@ -524,7 +524,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Node-only, no Pi host imports; consumers supply state directory; process-group cancel.
   - Risk: workspace lock drift, orphan process, host coupling.
 
-- [ ] T93 [S104] (blocked-by: T92): add atomic process state, PID/start-time reconciliation, permissions, and JSONL Unix socket framing.
+- [x] T93 [S104] (blocked-by: T92): add atomic process state, PID/start-time reconciliation, permissions, and JSONL Unix socket framing.
   - Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
   - Files: `packages/process/src/state.ts`, `packages/process/src/state.test.ts`, `packages/process/src/socket.ts`, `packages/process/src/socket.test.ts`, `packages/process/src/index.ts`
   - Notes: `0700` dirs, `0600` files/sockets, atomic rename, `{id,action,payload}` per line.
