@@ -22,6 +22,16 @@ import {
   truncateText,
   withPromptLock,
 } from "@hollowheap/core";
+import { loadGuardConfig } from "./config.js";
+import {
+  calculateContextBreakdown,
+  formatContextBreakdown,
+} from "./context.js";
+import {
+  type DecisionEffect,
+  checkPathTrust,
+  persistDecision,
+} from "./rules.js";
 
 const TOOL_TAGS: Record<string, Tag> = {
   write: "edit",
@@ -40,6 +50,8 @@ const TOOL_TAGS: Record<string, Tag> = {
 };
 
 const PASSTHROUGH_TASK_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
+
+const sessionDecisions = new Map<unknown, Map<string, DecisionEffect>>();
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
@@ -180,6 +192,139 @@ export default function (pi: ExtensionAPI) {
       tag === "shell"
         ? readCommandArg(event.input)
         : (readPathArg(event.input) ?? ".");
+
+    if (tag !== "shell") {
+      const guardConfig = loadGuardConfig(getAgentDir());
+      const sessionMap = sessionDecisions.get(ctx.sessionManager);
+      const trust = checkPathTrust(
+        target,
+        ctx.cwd,
+        guardConfig.trustedRoots ?? [],
+        sessionMap,
+        guardConfig.decisions,
+      );
+
+      if (trust.isOutsideWorkspace) {
+        if (trust.isTrusted) {
+          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+            return {
+              block: true,
+              reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+            };
+          }
+          return undefined;
+        }
+        if (trust.cachedDecision === "deny") {
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+          };
+        }
+
+        if (!ctx.hasUI || typeof ctx.ui.select !== "function") {
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to out-of-workspace ${displayTarget(target)} is denied`,
+          };
+        }
+
+        const choice = await withPromptLock(() =>
+          ctx.ui.select(
+            `Allow access to out-of-workspace path ${displayTarget(target)}?`,
+            [
+              "Allow (this session)",
+              "Allow indefinitely",
+              "Ask (this session)",
+              "Deny (this session)",
+              "Deny indefinitely",
+            ],
+          ),
+        );
+
+        if (choice === undefined) {
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to out-of-workspace ${displayTarget(target)} is denied`,
+          };
+        }
+
+        let currentSessionMap = sessionDecisions.get(ctx.sessionManager);
+        if (!currentSessionMap) {
+          currentSessionMap = new Map();
+          sessionDecisions.set(ctx.sessionManager, currentSessionMap);
+        }
+
+        if (choice === "Allow (this session)") {
+          persistDecision(
+            getAgentDir(),
+            trust.canonicalPath,
+            "allow",
+            "session",
+            currentSessionMap,
+          );
+          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+            return {
+              block: true,
+              reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+            };
+          }
+          return undefined;
+        }
+        if (choice === "Allow indefinitely") {
+          persistDecision(
+            getAgentDir(),
+            trust.canonicalPath,
+            "allow",
+            "indefinite",
+            currentSessionMap,
+          );
+          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+            return {
+              block: true,
+              reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+            };
+          }
+          return undefined;
+        }
+        if (choice === "Ask (this session)") {
+          persistDecision(
+            getAgentDir(),
+            trust.canonicalPath,
+            "ask",
+            "session",
+            currentSessionMap,
+          );
+          return requestApproval(event.toolName, target, ctx);
+        }
+        if (choice === "Deny (this session)") {
+          persistDecision(
+            getAgentDir(),
+            trust.canonicalPath,
+            "deny",
+            "session",
+            currentSessionMap,
+          );
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+          };
+        }
+        if (choice === "Deny indefinitely") {
+          persistDecision(
+            getAgentDir(),
+            trust.canonicalPath,
+            "deny",
+            "indefinite",
+            currentSessionMap,
+          );
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+          };
+        }
+      }
+    }
+
     const verdict = evaluate({
       owner: ctx.sessionManager,
       cwd: ctx.cwd,
@@ -223,6 +368,7 @@ export default function (pi: ExtensionAPI) {
     publishValues(ctx.sessionManager);
   });
   pi.on("session_shutdown", (_event, ctx) => {
+    sessionDecisions.delete(ctx.sessionManager);
     dropSession(ctx.sessionManager);
   });
   pi.registerCommand("mode", {
@@ -248,5 +394,21 @@ export default function (pi: ExtensionAPI) {
     description: "Cycle plan/approval mode",
     handler: (ctx) =>
       switchMode(ctx, nextMode(session(ctx.sessionManager).mode)),
+  });
+  pi.registerCommand("context", {
+    description: "Show context window usage broken down by category",
+    handler: async (_args, ctx) => {
+      const entries = ctx.sessionManager?.getBranch?.() ?? [];
+      const model = ctx.model as { contextWindow?: number } | undefined;
+      const breakdown = calculateContextBreakdown(entries, {
+        limit: model?.contextWindow,
+      });
+      const text = formatContextBreakdown(breakdown);
+      if (ctx.hasUI) {
+        ctx.ui.notify(text);
+      } else {
+        console.log(text);
+      }
+    },
   });
 }
