@@ -470,7 +470,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: two identical calls must invoke the provider twice.
   - Risk: hidden cache or stale results across calls.
 
-- [ ] T70 [S86] (blocked-by: T62, T65): extract links and media metadata with caps and no binary payloads.
+- [x] T70 [S86] (blocked-by: T62, T65): extract links and media metadata with caps and no binary payloads.
   - Verify: `npx vitest run extensions/pi-web/src/tools.test.ts`
   - Files: `extensions/pi-web/src/extract.ts`, `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`
   - Notes: classify image/video/audio/pdf/other; cap 50 links and 20 media; never return base64.

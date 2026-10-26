@@ -118,11 +118,11 @@ function mediaKind(
 export function extractMedia(html: string, base?: string): NormalizedMedia[] {
   const media: NormalizedMedia[] = [];
   const seen = new Set<string>();
-  const add = (url: string, tag: string, alt?: string) => {
+  const add = (url: string, tag: string, alt?: string, mimeHint?: string) => {
     const resolved = resolveUrl(url, base);
     if (resolved === "" || seen.has(resolved)) return;
     seen.add(resolved);
-    const mimeType = mimeFromUrl(resolved);
+    const mimeType = mimeHint?.trim().toLowerCase() || mimeFromUrl(resolved);
     media.push({
       url: resolved,
       kind: mediaKind(resolved, mimeType, tag),
@@ -133,26 +133,30 @@ export function extractMedia(html: string, base?: string): NormalizedMedia[] {
 
   for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
     const src = attr(match[0], "src");
-    if (src) add(src, "img", attr(match[0], "alt"));
+    if (src) add(src, "img", attr(match[0], "alt"), attr(match[0], "type"));
   }
   for (const match of html.matchAll(/<video\b[^>]*>/gi)) {
     const src = attr(match[0], "src");
-    if (src) add(src, "video", attr(match[0], "title"));
+    if (src) {
+      add(src, "video", attr(match[0], "title"), attr(match[0], "type"));
+    }
   }
   for (const match of html.matchAll(/<audio\b[^>]*>/gi)) {
     const src = attr(match[0], "src");
-    if (src) add(src, "audio", attr(match[0], "title"));
+    if (src) {
+      add(src, "audio", attr(match[0], "title"), attr(match[0], "type"));
+    }
   }
   for (const match of html.matchAll(/<source\b[^>]*>/gi)) {
     const src = attr(match[0], "src");
     const type = attr(match[0], "type");
     if (src) {
-      const tag = type?.startsWith("audio/")
+      const tag = type?.toLowerCase().startsWith("audio/")
         ? "audio"
-        : type?.startsWith("video/")
+        : type?.toLowerCase().startsWith("video/")
           ? "video"
           : "other";
-      add(src, tag);
+      add(src, tag, undefined, type);
     }
   }
   return media;

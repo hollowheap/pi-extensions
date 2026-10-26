@@ -60,6 +60,8 @@ describe("HTML extraction", () => {
       <video src="/clip.mp4"></video>
       <audio src="/sound.mp3"></audio>
       <source src="/movie.webm" type="video/webm">
+      <source src="/manual.pdf" type="application/pdf">
+      <source src="/blob.bin" type="application/octet-stream">
       <img src="data:image/png;base64,x" alt="Inline">
     `;
     const links = extractLinks(html, "https://example.com/docs/");
@@ -87,6 +89,16 @@ describe("HTML extraction", () => {
         url: "https://example.com/movie.webm",
         kind: "video",
         mimeType: "video/webm",
+      },
+      {
+        url: "https://example.com/manual.pdf",
+        kind: "pdf",
+        mimeType: "application/pdf",
+      },
+      {
+        url: "https://example.com/blob.bin",
+        kind: "other",
+        mimeType: "application/octet-stream",
       },
     ]);
   });

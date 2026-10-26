@@ -93,6 +93,10 @@ function errorResult(tool: string, message: string) {
   };
 }
 
+function isDataUrl(url: string): boolean {
+  return url.trim().toLowerCase().startsWith("data:");
+}
+
 function textResult(details: Record<string, unknown>) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(details) }],
@@ -177,8 +181,10 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
       try {
         const result = await (deps.fetch ?? defaultFetch)({ url });
         const content = result.content.slice(0, limit);
-        const links = result.links.slice(0, FETCH_MAX_LINKS);
-        const media = result.media.slice(0, FETCH_MAX_MEDIA);
+        const safeLinks = result.links.filter((link) => !isDataUrl(link.url));
+        const safeMedia = result.media.filter((item) => !isDataUrl(item.url));
+        const links = safeLinks.slice(0, FETCH_MAX_LINKS);
+        const media = safeMedia.slice(0, FETCH_MAX_MEDIA);
         return textResult({
           url: result.url,
           finalUrl: result.finalUrl,
@@ -190,8 +196,8 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
           truncated:
             result.truncated ||
             result.content.length > limit ||
-            result.links.length > FETCH_MAX_LINKS ||
-            result.media.length > FETCH_MAX_MEDIA,
+            safeLinks.length > FETCH_MAX_LINKS ||
+            safeMedia.length > FETCH_MAX_MEDIA,
         });
       } catch (error) {
         return errorResult(

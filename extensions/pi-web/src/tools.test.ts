@@ -185,6 +185,46 @@ describe("web_fetch", () => {
     expect(details.truncated).toBe(true);
   });
 
+  it("keeps metadata only and drops data URLs", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      finalUrl: "https://example.com",
+      provider: "raw",
+      contentType: "text/html",
+      content: "# Page",
+      links: [
+        { url: "https://example.com/doc", text: "Doc" },
+        { url: "data:text/html,secret", text: "Bad" },
+      ],
+      media: [
+        { url: "https://example.com/pic.png", kind: "image" as const },
+        { url: "https://example.com/manual.pdf", kind: "pdf" as const },
+        { url: "https://example.com/blob.bin", kind: "other" as const },
+        { url: "data:image/png;base64,secret", kind: "image" as const },
+      ],
+      truncated: false,
+    });
+    const tool = createWebFetchTool({ fetch });
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const details = detailsOf(result);
+    expect(details.content).toBe("# Page");
+    expect(details.links).toEqual([
+      { url: "https://example.com/doc", text: "Doc" },
+    ]);
+    expect(details.media).toEqual([
+      { url: "https://example.com/pic.png", kind: "image" },
+      { url: "https://example.com/manual.pdf", kind: "pdf" },
+      { url: "https://example.com/blob.bin", kind: "other" },
+    ]);
+    expect(JSON.stringify(details)).not.toContain("data:");
+  });
+
   it("returns text for invalid input and provider errors", async () => {
     const fetch = vi.fn();
     const tool = createWebFetchTool({ fetch });
