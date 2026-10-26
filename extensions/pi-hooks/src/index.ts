@@ -58,7 +58,9 @@ function notifySessionWarning(ctx: ExtensionContext, message: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.on("resources_discover", () => ({ skillPaths: [SKILL_PATH] }));
+  if (process.env.PI_HOOKS_DISCOVER_SKILL === "1") {
+    pi.on("resources_discover", () => ({ skillPaths: [SKILL_PATH] }));
+  }
   pi.on("session_start", async (_event, ctx) => {
     try {
       const hooks = loadContextHooks(ctx).sessionStart;

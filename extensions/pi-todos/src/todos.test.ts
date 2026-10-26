@@ -170,6 +170,22 @@ describe("todo formatting", () => {
       "#10 Task 10",
       "+2 more (/todos)",
     ]);
+    expect(formatTodoWidget([], [{ id: "sub-1", state: "running" }])).toEqual([
+      "Subagents (1 active)",
+      "@sub-1 [running]",
+    ]);
+    expect(
+      formatTodoWidget(todos, [
+        { id: "sub-1", agent: "worker", state: "running" },
+        { id: "sub-2", state: "blocked" },
+      ]),
+    ).toEqual([
+      "Todos (1 open)",
+      "#1 First",
+      "Subagents (2 active)",
+      "@sub-1 [running] (worker)",
+      "@sub-2 [blocked]",
+    ]);
   });
 
   it("starts from a fresh state", () => {

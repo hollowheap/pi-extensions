@@ -77,7 +77,7 @@ A post-tool hook receives the same fields with `"event": "post_tool"`.
 
 ## The skill
 
-`pi-hooks` ships a skill named `hooks-init` that teaches the model the schema, the protocol, and the trust model, so the model can write `hooks.json` for you. The skill is contributed to pi through the `resources_discover` event, which means it works both for an installed package and for a local `pi -e ./extensions/pi-hooks` run.
+`pi-hooks` ships a skill named `hooks-init` that teaches the model the schema, the protocol, and the trust model, so the model can write `hooks.json` for you. Skill discovery via `resources_discover` is disabled by default to avoid prompt bloat and can be enabled by setting `PI_HOOKS_DISCOVER_SKILL=1`.
 
 ## Trust
 

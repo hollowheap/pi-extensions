@@ -7,11 +7,20 @@ const TOOL_REGISTRATION = "register" + "Tool";
 
 function createMockPi() {
   const handlers: Record<string, Handler> = {};
+  const eventHandlers: Record<string, (data: unknown) => void> = {};
   const pi = {
     on: vi.fn((event: string, handler: Handler) => {
       handlers[event] = handler;
       return () => {};
     }),
+    events: {
+      on: vi.fn((event: string, handler: (data: unknown) => void) => {
+        eventHandlers[event] = handler;
+      }),
+      emit: vi.fn((event: string, data: unknown) => {
+        eventHandlers[event]?.(data);
+      }),
+    },
     registerMessageRenderer: vi.fn(),
     registerMarkdownTransformer: vi.fn(),
     registerCommand: vi.fn(),
@@ -19,7 +28,7 @@ function createMockPi() {
     appendEntry: vi.fn(),
     [TOOL_REGISTRATION]: vi.fn(),
   };
-  return { pi, handlers };
+  return { pi, handlers, eventHandlers };
 }
 
 function assistant(...text: string[]) {
@@ -524,13 +533,13 @@ describe("pi-todos extension", () => {
     expect(transform(open)).toBe(open);
   });
 
-  it("updates the status count and compact widget after restore and changes", async () => {
-    const { pi, handlers } = createMockPi();
+  it("updates the compact widget after restore and changes without setting statusline", async () => {
+    const { pi, handlers, eventHandlers } = createMockPi();
     extension(pi as never);
     const ctx = context();
 
     handlers.session_start({ type: "session_start", reason: "startup" }, ctx);
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("todos", undefined);
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", undefined);
 
     await emit(
@@ -538,7 +547,7 @@ describe("pi-todos extension", () => {
       assistant("'''create_todos\n1. First\n2. Second\n'''"),
       ctx,
     );
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("todos", "2/2");
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
       "Todos (2 open)",
       "#1 First",
@@ -550,10 +559,21 @@ describe("pi-todos extension", () => {
       assistant("'''complete_todos\n1. 1\n'''"),
       ctx,
     );
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("todos", "1/2");
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
       "Todos (1 open)",
       "#2 Second",
+    ]);
+
+    // Subagent state arrives and is rendered alongside todos
+    eventHandlers["subagents:state"]?.([
+      { id: "sub-1", agent: "worker", state: "running" },
+    ]);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+      "Todos (1 open)",
+      "#2 Second",
+      "Subagents (1 active)",
+      "@sub-1 [running] (worker)",
     ]);
 
     await emit(
@@ -561,7 +581,15 @@ describe("pi-todos extension", () => {
       assistant("'''complete_todos\n1. 2\n'''"),
       ctx,
     );
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("todos", "0/2");
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
+    // Todos completed, but subagents still active
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+      "Subagents (1 active)",
+      "@sub-1 [running] (worker)",
+    ]);
+
+    // Subagents finished
+    eventHandlers["subagents:state"]?.([]);
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", undefined);
   });
 

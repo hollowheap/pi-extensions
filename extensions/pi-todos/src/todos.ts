@@ -124,19 +124,40 @@ export function formatTodoList(todos: readonly Todo[]): string {
     .join("\n");
 }
 
+export interface SubagentStateItem {
+  id: string;
+  agent?: string;
+  state: "running" | "blocked" | "complete" | string;
+}
+
 const WIDGET_LIMIT = 10;
 
-export function formatTodoWidget(todos: readonly Todo[]): string[] | undefined {
+export function formatTodoWidget(
+  todos: readonly Todo[],
+  subagents: readonly SubagentStateItem[] = [],
+): string[] | undefined {
   const open = byId(todos).filter((todo) => !todo.done);
-  if (open.length === 0) return undefined;
+  if (open.length === 0 && subagents.length === 0) return undefined;
 
-  const lines = [`Todos (${open.length} open)`];
-  for (const todo of open.slice(0, WIDGET_LIMIT)) {
-    lines.push(`#${todo.id} ${todo.text}`);
+  const lines: string[] = [];
+  if (open.length > 0) {
+    lines.push(`Todos (${open.length} open)`);
+    for (const todo of open.slice(0, WIDGET_LIMIT)) {
+      lines.push(`#${todo.id} ${todo.text}`);
+    }
+    if (open.length > WIDGET_LIMIT) {
+      lines.push(`+${open.length - WIDGET_LIMIT} more (/todos)`);
+    }
   }
-  if (open.length > WIDGET_LIMIT) {
-    lines.push(`+${open.length - WIDGET_LIMIT} more (/todos)`);
+
+  if (subagents.length > 0) {
+    lines.push(`Subagents (${subagents.length} active)`);
+    for (const sub of subagents) {
+      const agentInfo = sub.agent ? ` (${sub.agent})` : "";
+      lines.push(`@${sub.id} [${sub.state}]${agentInfo}`);
+    }
   }
+
   return lines;
 }
 

@@ -8,7 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
 let agentDir = "";
@@ -73,6 +73,10 @@ beforeEach(() => {
   mkdirSync(join(agentDir, ".pi"), { recursive: true });
 });
 
+afterEach(() => {
+  Reflect.deleteProperty(process.env, "PI_HOOKS_DISCOVER_SKILL");
+});
+
 describe("pi-hooks extension", () => {
   it("registers no model-callable tool", () => {
     const pi = {
@@ -86,8 +90,15 @@ describe("pi-hooks extension", () => {
     expect(pi.registerTool).not.toHaveBeenCalled();
   });
 
-  it("contributes the hooks skill to pi", async () => {
+  it("does not contribute the hooks skill by default", () => {
     const { handlers } = setup();
+    expect(handlers.resources_discover).toBeUndefined();
+  });
+
+  it("contributes the hooks skill to pi when PI_HOOKS_DISCOVER_SKILL is set", async () => {
+    process.env.PI_HOOKS_DISCOVER_SKILL = "1";
+    const { handlers } = setup();
+    expect(handlers.resources_discover).toBeDefined();
     const result = (await handlers.resources_discover(
       { type: "resources_discover", cwd: agentDir, reason: "startup" },
       {},

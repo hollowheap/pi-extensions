@@ -5,6 +5,7 @@ import type {
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
 import { scanTaggedBlocks } from "@hollowheap/core";
 import {
+  type SubagentStateItem,
   type Todo,
   type TodoState,
   applyTodoCommand,
@@ -13,7 +14,6 @@ import {
   formatTodoList,
   formatTodoWidget,
   parseTodoBlock,
-  statusText,
 } from "./todos.js";
 
 const TODOS_TYPE = "hollowheap.todos";
@@ -128,12 +128,23 @@ function readState(data: unknown): TodoState | undefined {
 export default function (pi: ExtensionAPI) {
   const handled = new WeakSet<object>();
   let state: TodoState = emptyTodoState();
+  let subagents: SubagentStateItem[] = [];
+  let lastCtx: ExtensionContext | undefined;
 
   const updateUI = (ctx: ExtensionContext) => {
+    lastCtx = ctx;
     if (!ctx.hasUI) return;
-    ctx.ui.setStatus("todos", statusText(state.todos));
-    ctx.ui.setWidget("todos", formatTodoWidget(state.todos));
+    ctx.ui.setWidget("todos", formatTodoWidget(state.todos, subagents));
   };
+
+  pi.events.on("subagents:state", (data: unknown) => {
+    if (Array.isArray(data)) {
+      subagents = data as SubagentStateItem[];
+      if (lastCtx?.hasUI) {
+        lastCtx.ui.setWidget("todos", formatTodoWidget(state.todos, subagents));
+      }
+    }
+  });
 
   const restore = (ctx: ExtensionContext) => {
     state = emptyTodoState();
