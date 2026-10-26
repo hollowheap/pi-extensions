@@ -57,6 +57,9 @@ describe("provider selection", () => {
     expect(
       resolveFetchOrder(["raw", "tavily", "exa"], { EXA_API_KEY: "x" }),
     ).toEqual(["raw", "exa"]);
+    expect(
+      resolveFetchOrder(["firecrawl", "raw"], { FIRECRAWL_API_KEY: "z" }),
+    ).toEqual(["raw"]);
   });
 
   it("falls through provider failures and stops on abort", async () => {

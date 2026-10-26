@@ -1,6 +1,6 @@
 export type ProviderId = "tavily" | "exa" | "firecrawl";
 
-export type FetchProvider = ProviderId | "raw";
+export type FetchProvider = "exa" | "tavily" | "raw";
 
 export type MediaKind = "image" | "video" | "audio" | "pdf" | "other";
 

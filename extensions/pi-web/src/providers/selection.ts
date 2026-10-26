@@ -17,7 +17,7 @@ export function isProviderId(value: unknown): value is ProviderId {
 }
 
 export function isFetchProvider(value: unknown): value is FetchProvider {
-  return isProviderId(value) || value === "raw";
+  return value === "exa" || value === "tavily" || value === "raw";
 }
 
 export function providerEnvKey(provider: ProviderId): string {
@@ -25,7 +25,7 @@ export function providerEnvKey(provider: ProviderId): string {
 }
 
 export function hasProviderKey(
-  provider: FetchProvider,
+  provider: ProviderId | "raw",
   env: EnvLike = process.env,
 ): boolean {
   if (provider === "raw") return true;
