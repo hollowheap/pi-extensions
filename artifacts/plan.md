@@ -464,7 +464,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: list providers, env keys, order arrays, shapes, caps, media, no-rendering limit, and fallback order.
   - Risk: stale provider list or undocumented security limits.
 
-- [ ] T69 [S85] (blocked-by: T62): prove there is no response cache.
+- [x] T69 [S85] (blocked-by: T62): prove there is no response cache.
   - Verify: `npx vitest run extensions/pi-web/src/tools.test.ts`
   - Files: `extensions/pi-web/src/tools.test.ts`
   - Notes: two identical calls must invoke the provider twice.

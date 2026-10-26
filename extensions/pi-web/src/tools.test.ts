@@ -225,6 +225,35 @@ describe("web_fetch", () => {
     expect(JSON.stringify(details)).not.toContain("data:");
   });
 
+  it("does not cache repeated fetches", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      finalUrl: "https://example.com",
+      provider: "raw",
+      contentType: "text/plain",
+      content: "fresh",
+      links: [],
+      media: [],
+      truncated: false,
+    });
+    const tool = createWebFetchTool({ fetch });
+    await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    await tool.execute(
+      "2",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("returns text for invalid input and provider errors", async () => {
     const fetch = vi.fn();
     const tool = createWebFetchTool({ fetch });
