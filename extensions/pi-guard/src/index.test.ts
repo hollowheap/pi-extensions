@@ -192,6 +192,56 @@ describe("pi-guard extension", () => {
     });
   });
 
+  it("tags web_search as search", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: ["deny search secret/*", "allow search *"],
+      }),
+    );
+    await expect(
+      call("web_search", { path: "src/x" }),
+    ).resolves.toBeUndefined();
+    await expect(call("web_search", { path: "secret/x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("tags web_fetch as read", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: [
+          { effect: "deny", tag: "read", pattern: "secret/*" },
+          { effect: "allow", tag: "read", pattern: "src/*" },
+        ],
+      }),
+    );
+    await expect(
+      call("web_fetch", { path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    await expect(call("web_fetch", { path: "secret/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not let configured tags override web tool built-ins", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        tools: { web_search: "read", web_fetch: "search" },
+        rules: ["deny read *", "allow search *"],
+      }),
+      false,
+    );
+    await expect(call("web_search", { path: "x" })).resolves.toBeUndefined();
+    await expect(call("web_fetch", { path: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
   it("asks for bash without allow rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();

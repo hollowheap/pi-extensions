@@ -34,6 +34,8 @@ const TOOL_TAGS: Record<string, Tag> = {
   bash: "shell",
   powershell: "shell",
   task: "shell",
+  web_search: "search",
+  web_fetch: "read",
 };
 
 const PASSTHROUGH_TASK_ACTIONS = new Set(["list", "status", "wait", "cancel"]);

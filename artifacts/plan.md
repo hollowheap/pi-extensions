@@ -452,7 +452,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: only http/https; reject loopback/private/link-local/metadata and credentialed URLs; revalidate each hop; cap 5.
   - Risk: private redirect targets, unlimited hops, or non-http schemes.
 
-- [ ] T67 [S83] (blocked-by: none): tag `web_search` as `search` and `web_fetch` as `read` in `pi-guard`.
+- [x] T67 [S83] (blocked-by: none): tag `web_search` as `search` and `web_fetch` as `read` in `pi-guard`.
   - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts`
   - Files: `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`, `extensions/pi-guard/README.md`
   - Notes: add built-in entries; user `tools` entries cannot override them.

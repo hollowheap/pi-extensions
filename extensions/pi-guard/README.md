@@ -51,6 +51,8 @@ With no rules at all the mode default decides: `ask` mode asks for edits and she
 | `write`, `edit` | `edit` | file path |
 | `read` | `read` | file path |
 | `find`, `grep`, `fd`, `rg`, `ls` | `search` | search root path |
+| `web_search` | `search` | (built-in; cannot be overridden) |
+| `web_fetch` | `read` | (built-in; cannot be overridden) |
 | `bash`, `powershell` | `shell` | command name + argument prefix |
 
 Unknown tools, including custom and MCP tools, ask by default. Add tags in `permissions.json` to classify them:
