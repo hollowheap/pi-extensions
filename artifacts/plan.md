@@ -578,7 +578,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: atomic lock dir, owner PID/start-time, release on result/error/abort/timeout, stale reclaim; read-only tools skip.
   - Risk: two writers, lost release, stale lock, denied call without result.
 
-- [ ] T102 [S101] (blocked-by: T99, T100): add explicit resume from the persisted session with attempt increment.
+- [x] T102 [S101] (blocked-by: T99, T100): add explicit resume from the persisted session with attempt increment.
   - Verify: `npx vitest run extensions/pi-subagents/src/resume.test.ts`
   - Files: `extensions/pi-subagents/src/resume.ts`, `extensions/pi-subagents/src/resume.test.ts`, `extensions/pi-subagents/src/tool.ts`
   - Notes: failed child only; same logical id; new runner/socket; no auto-resume; untrusted denied.

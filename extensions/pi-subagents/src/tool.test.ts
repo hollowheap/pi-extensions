@@ -147,6 +147,54 @@ describe("subagent tool", () => {
     expect(abort).toHaveBeenCalled();
   });
 
+  it("resumes a failed child with the same id and an incremented attempt", async () => {
+    const failed: SubagentState = {
+      ...running,
+      status: "failed",
+      attempt: 1,
+      session: "/tmp/sub-1.session.jsonl",
+    };
+    const start = vi.fn(async () => running);
+    const send = vi.fn(async () => undefined);
+    const tool = createTool({
+      attach: (async () => failed) as never,
+      start: start as never,
+      send: send as never,
+    });
+    const result = await tool.execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "sub-1",
+        attempt: 2,
+        agent: "scout",
+        task: "find",
+        sessionPath: "/tmp/sub-1.session.jsonl",
+      }),
+    );
+    expect(send).toHaveBeenCalledWith(
+      "/tmp/pi-subagents-tool",
+      "sub-1",
+      expect.objectContaining({ type: "prompt", message: "find" }),
+    );
+    expect(detailsOf(result).status).toBe("running");
+
+    const runningTool = createTool();
+    const notFailed = await runningTool.execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(notFailed)).toContain("only failed");
+  });
+
   it("reports validation errors", async () => {
     const tool = createTool();
     const missing = await tool.execute(

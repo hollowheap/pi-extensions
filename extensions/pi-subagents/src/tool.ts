@@ -134,6 +134,7 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
         Type.Literal("send"),
         Type.Literal("wait"),
         Type.Literal("cancel"),
+        Type.Literal("resume"),
       ]),
       agent: Type.Optional(
         Type.String({ description: "Agent name for start" }),
@@ -279,6 +280,75 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
           const state = await deps.wait(agentDir, id, 1_000);
           if (state === undefined) return errorResult(`unknown id: ${id}`);
           return textResult(stateWithLog(deps, agentDir, state));
+        }
+        if (action === "resume") {
+          if (!ctx.isProjectTrusted()) {
+            return errorResult("resume requires a trusted project");
+          }
+          const state = await deps.attach(agentDir, id);
+          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          if (state.status !== "failed") {
+            return errorResult(
+              `only failed subagents can resume: ${state.status}`,
+            );
+          }
+          const config = loadSubagentsConfig(agentDir);
+          if (state.depth > config.maxDepth) {
+            return errorResult(
+              `subagent depth ${state.depth} exceeds maxDepth ${config.maxDepth}`,
+            );
+          }
+          const running = deps
+            .list(agentDir)
+            .filter(
+              (item) => item.status === "running" || item.status === "starting",
+            ).length;
+          if (running >= config.maxConcurrent) {
+            return errorResult(`maxConcurrent ${config.maxConcurrent} reached`);
+          }
+          const discovery = deps.agents({
+            cwd: ctx.cwd,
+            agentDir,
+            trusted: true,
+          });
+          const agent = discovery.agents.find(
+            (item) => item.name === state.agent,
+          );
+          if (agent === undefined) {
+            return errorResult(
+              `unknown agent "${state.agent}"; available: ${
+                discovery.agents.map((item) => item.name).join(", ") || "none"
+              }`,
+            );
+          }
+          const sessionPath =
+            state.session ?? join(agentDir, "subagents", `${id}.session.jsonl`);
+          const spec = deps.childSpec(agent, sessionPath);
+          const resumed = await deps.start({
+            agentDir,
+            id,
+            agent: agent.name,
+            task: state.task,
+            depth: state.depth,
+            attempt: state.attempt + 1,
+            command: spec.command,
+            args: spec.args,
+            cwd: ctx.cwd,
+            env: { PI_SUBAGENT_DEPTH: String(state.depth) },
+            ...(agent.model !== undefined ? { model: agent.model } : {}),
+            sessionPath,
+          });
+          try {
+            await deps.send(agentDir, id, {
+              id: Math.floor(Math.random() * 1_000_000_000),
+              type: "prompt",
+              message: state.task,
+            });
+          } catch (error) {
+            await deps.abort(agentDir, id).catch(() => {});
+            throw error;
+          }
+          return textResult(stateWithLog(deps, agentDir, resumed));
         }
         return errorResult(`invalid action: ${String(action)}`);
       } catch (error) {
