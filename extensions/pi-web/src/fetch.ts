@@ -112,14 +112,20 @@ export async function fetchUrl(
   ];
 
   for (const provider of providers) {
+    if (signal.aborted) {
+      throw new DOMException("fetch aborted", "AbortError");
+    }
     if (provider.fetch === undefined) continue;
     if (provider.capabilities.fetch === false) continue;
     try {
       const request: FetchRequest = { url, apiKey: options.apiKey, signal };
       const result = ensureResult(await provider.fetch(request), url);
+      if (signal.aborted) {
+        throw new DOMException("fetch aborted", "AbortError");
+      }
       if (result.content.trim() !== "") return result;
-    } catch {
-      // Try the next provider.
+    } catch (error) {
+      if (signal.aborted) throw error;
     }
   }
 

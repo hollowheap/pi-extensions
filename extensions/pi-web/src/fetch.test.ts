@@ -126,6 +126,19 @@ describe("fetchUrl", () => {
     ).rejects.toThrow("raw fetch failed: 500");
   });
 
+  it("stops on caller abort instead of falling through", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const providerFetch = vi.fn();
+    await expect(
+      fetchUrl("https://example.com", {
+        providers: [provider("exa", providerFetch)],
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/abort/i);
+    expect(providerFetch).not.toHaveBeenCalled();
+  });
+
   it("rawFetch follows redirects and keeps the final URL", async () => {
     const raw = vi.fn().mockResolvedValue(
       new Response("ok", {

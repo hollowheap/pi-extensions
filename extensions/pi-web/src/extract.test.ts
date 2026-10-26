@@ -16,7 +16,9 @@ describe("HTML extraction", () => {
       "https://example.com/next",
     );
     expect(resolveUrl("javascript:alert(1)")).toBe("");
+    expect(resolveUrl("JavaScript:alert(1)")).toBe("");
     expect(resolveUrl("data:text/html,x")).toBe("");
+    expect(resolveUrl("DATA:text/html,x")).toBe("");
   });
 
   it("extracts the page title", () => {
@@ -46,6 +48,7 @@ describe("HTML extraction", () => {
     expect(markdown).toContain("- One");
     expect(markdown).toContain("![Pic](https://example.com/img.png)");
     expect(markdown).not.toContain("bad()");
+    expect(htmlToMarkdown("Visible<script>bad()")).toBe("Visible");
   });
 
   it("extracts unique links and media metadata", () => {

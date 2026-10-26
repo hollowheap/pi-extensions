@@ -25,10 +25,11 @@ export function stripTags(value: string): string {
 
 export function resolveUrl(href: string, base?: string): string {
   const trimmed = href.trim();
+  const lower = trimmed.toLowerCase();
   if (
     trimmed === "" ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("javascript:")
+    lower.startsWith("data:") ||
+    lower.startsWith("javascript:")
   ) {
     return "";
   }
@@ -161,7 +162,10 @@ export function htmlToMarkdown(html: string, base?: string): string {
   let out = html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<script\b[\s\S]*$/gi, "")
+    .replace(/<style\b[\s\S]*$/gi, "")
+    .replace(/<noscript\b[\s\S]*$/gi, "");
 
   out = out.replace(
     /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi,
