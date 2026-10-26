@@ -572,7 +572,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: one child per start; send steers running or prompts idle; wait bounded; cancel group; resume added by T102.
   - Risk: duplicate live child, unknown id, premature start result.
 
-- [ ] T101 [S98] (blocked-by: T95, T96, T98): add the child-side per-tool write lock for write/edit/bash.
+- [x] T101 [S98] (blocked-by: T95, T96, T98): add the child-side per-tool write lock for write/edit/bash.
   - Verify: `npx vitest run extensions/pi-subagents/src/write-lock.test.ts`
   - Files: `extensions/pi-subagents/src/write-lock.ts`, `extensions/pi-subagents/src/write-lock.test.ts`, child extension wiring
   - Notes: atomic lock dir, owner PID/start-time, release on result/error/abort/timeout, stale reclaim; read-only tools skip.
