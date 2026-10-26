@@ -422,7 +422,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: mock `fetch`; keep provider payload parsing private to each adapter.
   - Risk: payload drift or a provider-specific field leaking into the tool contract.
 
-- [ ] T62 [S78] (blocked-by: T61): implement `web_search`/`web_fetch` fields and result, character, link, and media caps.
+- [x] T62 [S78] (blocked-by: T61): implement `web_search`/`web_fetch` fields and result, character, link, and media caps.
   - Verify: `npx vitest run extensions/pi-web/src/tools.test.ts`
   - Files: `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`
   - Notes: search 5/10; fetch 20k/100k chars, 50 links, 20 media; report truncation.
