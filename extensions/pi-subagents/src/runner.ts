@@ -33,7 +33,7 @@ interface RunnerConfig {
   env: NodeJS.ProcessEnv;
 }
 
-function generateId(): string {
+export function generateSubagentId(): string {
   return `subagent-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
 }
 
@@ -70,7 +70,7 @@ export async function startSubagent(
   options: StartSubagentOptions,
 ): Promise<SubagentState> {
   const store = new SubagentStore(options.agentDir);
-  const id = options.id ?? generateId();
+  const id = options.id ?? generateSubagentId();
   const socketPath = store.socketPath(id);
   const state: SubagentState = {
     id,

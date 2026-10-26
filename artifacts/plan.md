@@ -566,7 +566,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: spawn `pi --mode rpc`, own stdio, persist state/log/session, reattach/steer, no daemon.
   - Risk: orphan, duplicate runner, dead socket, parent-exit cleanup.
 
-- [ ] T100 [S96] (blocked-by: T96, T97, T98, T99): register the direct `subagent` tool with start/list/status/send/wait/cancel actions.
+- [x] T100 [S96] (blocked-by: T96, T97, T98, T99): register the direct `subagent` tool with start/list/status/send/wait/cancel actions.
   - Verify: `npx vitest run extensions/pi-subagents/src/tool.test.ts`
   - Files: `extensions/pi-subagents/src/tool.ts`, `extensions/pi-subagents/src/tool.test.ts`, `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/index.test.ts`
   - Notes: one child per start; send steers running or prompts idle; wait bounded; cancel group; resume added by T102.
