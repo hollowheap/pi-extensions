@@ -542,7 +542,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: new extension; depend on core and process; no tool behavior yet.
   - Risk: suite entry, workspace lock, package metadata.
 
-- [ ] T96 [S97] (blocked-by: T95): implement `subagents.json` concurrency, depth, timeout, and lock-wait loading with diagnostics.
+- [x] T96 [S97] (blocked-by: T95): implement `subagents.json` concurrency, depth, timeout, and lock-wait loading with diagnostics.
   - Verify: `npx vitest run extensions/pi-subagents/src/config.test.ts`
   - Files: `extensions/pi-subagents/src/config.ts`, `extensions/pi-subagents/src/config.test.ts`
   - Notes: defaults 4/1/30m/30s; caps 8/3/24h; invalid values fall back with diagnostics.
