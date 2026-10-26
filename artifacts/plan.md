@@ -428,7 +428,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: search 5/10; fetch 20k/100k chars, 50 links, 20 media; report truncation.
   - Risk: missing fields, uncapped output, or wrong truncation flags.
 
-- [ ] T63 [S79] (blocked-by: T61): implement key detection, cheapest-first order, and provider fallback.
+- [x] T63 [S79] (blocked-by: T61): implement key detection, cheapest-first order, and provider fallback.
   - Verify: `npx vitest run extensions/pi-web/src/providers/selection.test.ts`
   - Files: `extensions/pi-web/src/providers/selection.ts`, `extensions/pi-web/src/providers/selection.test.ts`
   - Notes: search Exa → Tavily → Firecrawl; fetch Exa → Tavily → raw; 15s timeout.

@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./selection.js";
 export * from "./tavily.js";
 export * from "./exa.js";
 export * from "./firecrawl.js";
