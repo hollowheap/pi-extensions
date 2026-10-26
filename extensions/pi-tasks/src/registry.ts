@@ -1,14 +1,6 @@
 import { randomBytes } from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
 import { join } from "node:path";
+import { type ProcessState, ProcessStore, readLog } from "@hollowheap/process";
 
 export type TaskKind = "shell" | "subagent";
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
@@ -42,101 +34,51 @@ export interface TaskOperations {
   cancel?: (agentDir: string, id: string) => Promise<TaskRecord>;
 }
 
+function store(agentDir: string): ProcessStore {
+  return new ProcessStore(tasksDir(agentDir));
+}
+
 export function tasksDir(agentDir: string): string {
   return join(agentDir, "tasks");
 }
 
 export function ensureTasksDir(agentDir: string): string {
-  const dir = tasksDir(agentDir);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try {
-    chmodSync(dir, 0o700);
-  } catch {
-    // Best-effort chmod on platforms/filesystems that support POSIX modes.
-  }
-  return dir;
+  return store(agentDir).dir;
 }
 
 export function generateTaskId(): string {
   return `task-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
 }
 
-function sanitizeTaskId(id: string): string {
-  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
-    throw new Error(`Invalid task id: ${id}`);
-  }
-  return id;
-}
-
 export function taskMetaPath(agentDir: string, id: string): string {
-  return join(tasksDir(agentDir), `${sanitizeTaskId(id)}.json`);
+  return store(agentDir).statePath(id);
 }
 
 export function taskLogPath(agentDir: string, id: string): string {
-  return join(tasksDir(agentDir), `${sanitizeTaskId(id)}.log`);
+  return store(agentDir).logPath(id);
 }
 
 export function writeTaskMetadata(agentDir: string, meta: TaskMetadata): void {
-  const dir = ensureTasksDir(agentDir);
-  const target = taskMetaPath(agentDir, meta.id);
-  const tmp = join(
-    dir,
-    `.${sanitizeTaskId(meta.id)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
-  );
-  writeFileSync(tmp, `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, target);
+  store(agentDir).write(meta as unknown as ProcessState);
 }
 
 export function readTaskMetadata(
   agentDir: string,
   id: string,
 ): TaskMetadata | undefined {
-  let path: string;
-  try {
-    path = taskMetaPath(agentDir, id);
-  } catch {
-    return undefined;
-  }
-  if (!existsSync(path)) return undefined;
-  try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as TaskMetadata;
-    if (!raw || typeof raw !== "object" || typeof raw.id !== "string")
-      return undefined;
-    return raw;
-  } catch {
-    return undefined;
-  }
+  return store(agentDir).read(id) as TaskMetadata | undefined;
 }
 
 export function readTaskLog(agentDir: string, id: string): string {
-  let path: string;
   try {
-    path = taskLogPath(agentDir, id);
-  } catch {
-    return "";
-  }
-  if (!existsSync(path)) return "";
-  try {
-    return readFileSync(path, "utf8");
+    return readLog(taskLogPath(agentDir, id));
   } catch {
     return "";
   }
 }
 
 export function listTaskMetadata(agentDir: string): TaskMetadata[] {
-  const dir = tasksDir(agentDir);
-  if (!existsSync(dir)) return [];
-  const entries = readdirSync(dir);
-  const items: TaskMetadata[] = [];
-  for (const name of entries) {
-    if (!name.endsWith(".json") || name.startsWith(".")) continue;
-    const id = name.slice(0, -".json".length);
-    const meta = readTaskMetadata(agentDir, id);
-    if (meta) items.push(meta);
-  }
-  items.sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
-  return items;
+  return store(agentDir).list() as unknown as TaskMetadata[];
 }
 
 export function toTaskRecord(
@@ -171,12 +113,8 @@ export function createTaskRecord(
   meta: TaskMetadata,
   ops?: TaskOperations,
 ): TaskRecord {
-  ensureTasksDir(agentDir);
-  const log = taskLogPath(agentDir, meta.id);
-  if (!existsSync(log)) {
-    writeFileSync(log, "", { mode: 0o600 });
-  }
-  chmodSync(log, 0o600);
-  writeTaskMetadata(agentDir, meta);
+  const processStore = store(agentDir);
+  processStore.ensureLog(meta.id);
+  processStore.write(meta as unknown as ProcessState);
   return toTaskRecord(agentDir, meta, ops);
 }

@@ -530,7 +530,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: `0700` dirs, `0600` files/sockets, atomic rename, `{id,action,payload}` per line.
   - Risk: partial writes, framing loss, stale socket, request-id collision.
 
-- [ ] T94 [S105] (blocked-by: T93): migrate `pi-tasks` runner and registry primitives to `@hollowheap/process` without behavior changes.
+- [x] T94 [S105] (blocked-by: T93): migrate `pi-tasks` runner and registry primitives to `@hollowheap/process` without behavior changes.
   - Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts`
   - Files: `extensions/pi-tasks/package.json`, `extensions/pi-tasks/src/runner.ts`, `extensions/pi-tasks/src/registry.ts`, tests, `package-lock.json`
   - Notes: preserve task tool behavior, PID/start-time reconciliation, cancel grace, and permissions.

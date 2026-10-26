@@ -1,5 +1,9 @@
-import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+  cancelProcessGroup,
+  isProcessAlive,
+  spawnDetachedProcess,
+} from "@hollowheap/process";
+export { readProcStartTime } from "@hollowheap/process";
 import {
   type TaskMetadata,
   type TaskOperations,
@@ -88,48 +92,6 @@ child.on("close", (code) => {
 });
 `;
 
-export function readProcStartTime(pid: number): number | undefined {
-  if (!Number.isInteger(pid) || pid <= 0) return undefined;
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    const closeParen = stat.lastIndexOf(")");
-    if (closeParen < 0) return undefined;
-    const fields = stat
-      .slice(closeParen + 2)
-      .trim()
-      .split(/\s+/);
-    const val = Number.parseInt(fields[19] ?? "", 10);
-    return Number.isFinite(val) ? val : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function isProcessAlive(
-  pid?: number,
-  expectedStartTime?: number,
-): boolean {
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
-    return false;
-  }
-  try {
-    process.kill(pid, 0);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code !== "EPERM") return false;
-  }
-  if (expectedStartTime !== undefined) {
-    const actualStartTime = readProcStartTime(pid);
-    if (
-      actualStartTime !== undefined &&
-      actualStartTime !== expectedStartTime
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
 const runnerOps: TaskOperations = {
   wait: async (agentDir, id, timeoutMs, signal) => {
     const record = await waitForTask(agentDir, id, timeoutMs, signal);
@@ -205,21 +167,25 @@ export async function spawnShellTask(
   const metaPath = taskMetaPath(opts.agentDir, id);
   const logPath = taskLogPath(opts.agentDir, id);
 
-  const shim = spawn(
-    process.execPath,
-    ["-e", SHIM_SCRIPT, metaPath, logPath, opts.cwd, shellBin, opts.command],
-    {
-      cwd: opts.cwd,
-      detached: true,
-      stdio: "ignore",
-    },
-  );
-  shim.unref();
+  const spawned = spawnDetachedProcess({
+    command: process.execPath,
+    args: [
+      "-e",
+      SHIM_SCRIPT,
+      metaPath,
+      logPath,
+      opts.cwd,
+      shellBin,
+      opts.command,
+    ],
+    cwd: opts.cwd,
+    logPath,
+  });
 
-  const pid = shim.pid;
-  const startTime = pid !== undefined ? readProcStartTime(pid) : undefined;
+  const pid = spawned.pid;
+  const startTime = spawned.startTime;
   const current = readTaskMetadata(opts.agentDir, id) ?? initialMeta;
-  if (current.status === "running" && pid !== undefined) {
+  if (current.status === "running") {
     const updated: TaskMetadata = {
       ...current,
       pid,
@@ -268,20 +234,6 @@ export async function waitForTask(
   }
 }
 
-function killProcessGroupOrPid(pid: number, sig: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, sig);
-    return;
-  } catch {
-    // Fallback to direct pid if process group kill fails.
-  }
-  try {
-    process.kill(pid, sig);
-  } catch {
-    // Already dead.
-  }
-}
-
 export async function cancelTask(
   agentDir: string,
   id: string,
@@ -294,14 +246,7 @@ export async function cancelTask(
   }
 
   if (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) {
-    killProcessGroupOrPid(meta.pid, "SIGTERM");
-    const deadline = Date.now() + graceMs;
-    while (Date.now() < deadline && isProcessAlive(meta.pid, meta.startTime)) {
-      await sleep(20);
-    }
-    if (isProcessAlive(meta.pid, meta.startTime)) {
-      killProcessGroupOrPid(meta.pid, "SIGKILL");
-    }
+    await cancelProcessGroup(meta.pid, meta.startTime, graceMs);
   }
 
   const cancelled: TaskMetadata = {
