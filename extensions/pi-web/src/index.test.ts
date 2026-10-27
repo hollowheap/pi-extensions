@@ -21,7 +21,7 @@ function createMockPi() {
 }
 
 describe("pi-web extension", () => {
-  it("registers exactly two direct tools", () => {
+  it("registers exactly two codemode tools", () => {
     const pi = createMockPi();
     extension(pi as never);
 
@@ -31,7 +31,7 @@ describe("pi-web extension", () => {
     );
     expect(names).toEqual(["web_search", "web_fetch"]);
     for (const [tool] of pi.registerTool.mock.calls) {
-      expect((tool as { exposure: string }).exposure).toBe("direct");
+      expect((tool as { exposure: string }).exposure).toBe("codemode");
     }
     expect(pi.registerCommand).not.toHaveBeenCalled();
     expect(pi.on).not.toHaveBeenCalled();

@@ -289,3 +289,12 @@ describe("web_fetch", () => {
     expect(textOf(failed)).toContain("fetch failed");
   });
 });
+
+describe("tool exposure", () => {
+  it("declares exposure strictly as codemode for web_search and web_fetch", () => {
+    const searchTool = createWebSearchTool();
+    const fetchTool = createWebFetchTool();
+    expect(searchTool.exposure).toBe("codemode");
+    expect(fetchTool.exposure).toBe("codemode");
+  });
+});

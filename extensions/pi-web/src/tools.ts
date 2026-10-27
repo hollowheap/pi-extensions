@@ -110,7 +110,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
     label: "web_search",
     description:
       "Search the web for current docs and results. Returns title, url, snippet, and provider.",
-    exposure: "direct",
+    exposure: "codemode",
     parameters: Type.Object({
       query: Type.String({ minLength: 1 }),
       max_results: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -160,7 +160,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
     label: "web_fetch",
     description:
       "Fetch a web page and return readable text, links, and media metadata.",
-    exposure: "direct",
+    exposure: "codemode",
     parameters: Type.Object({
       url: Type.String({ minLength: 1 }),
       max_chars: Type.Optional(Type.Integer({ minimum: 1 })),
