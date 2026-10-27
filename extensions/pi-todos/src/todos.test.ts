@@ -144,12 +144,22 @@ describe("todo formatting", () => {
     );
   });
 
-  it("formats a compact widget of open todos only", () => {
+  it("formats a compact widget of todos with status checkboxes and strikethrough", () => {
     expect(formatTodoWidget([])).toBeUndefined();
+    expect(formatTodoWidget([{ id: 1, text: "Done", done: true }])).toEqual([
+      "Todos (1 done)",
+      "[x] #1 \x1b[9mDone\x1b[29m",
+    ]);
     expect(
-      formatTodoWidget([{ id: 1, text: "Done", done: true }]),
-    ).toBeUndefined();
-    expect(formatTodoWidget(todos)).toEqual(["Todos (1 open)", "#1 First"]);
+      formatTodoWidget([{ id: 1, text: "Done", done: true }], [], {
+        strikethrough: (s) => `~~${s}~~`,
+      }),
+    ).toEqual(["Todos (1 done)", "[x] #1 ~~Done~~"]);
+    expect(formatTodoWidget(todos)).toEqual([
+      "Todos (1 open, 1 done)",
+      "[ ] #1 First",
+      "[x] #2 \x1b[9mSecond\x1b[29m",
+    ]);
 
     const open = Array.from({ length: 12 }, (_, index) => ({
       id: index + 1,
@@ -158,16 +168,16 @@ describe("todo formatting", () => {
     }));
     expect(formatTodoWidget(open)).toEqual([
       "Todos (12 open)",
-      "#1 Task 1",
-      "#2 Task 2",
-      "#3 Task 3",
-      "#4 Task 4",
-      "#5 Task 5",
-      "#6 Task 6",
-      "#7 Task 7",
-      "#8 Task 8",
-      "#9 Task 9",
-      "#10 Task 10",
+      "[ ] #1 Task 1",
+      "[ ] #2 Task 2",
+      "[ ] #3 Task 3",
+      "[ ] #4 Task 4",
+      "[ ] #5 Task 5",
+      "[ ] #6 Task 6",
+      "[ ] #7 Task 7",
+      "[ ] #8 Task 8",
+      "[ ] #9 Task 9",
+      "[ ] #10 Task 10",
       "+2 more (/todos)",
     ]);
     expect(formatTodoWidget([], [{ id: "sub-1", state: "running" }])).toEqual([
@@ -180,8 +190,9 @@ describe("todo formatting", () => {
         { id: "sub-2", state: "blocked" },
       ]),
     ).toEqual([
-      "Todos (1 open)",
-      "#1 First",
+      "Todos (1 open, 1 done)",
+      "[ ] #1 First",
+      "[x] #2 \x1b[9mSecond\x1b[29m",
       "Subagents (2 active)",
       "@sub-1 [running] (worker)",
       "@sub-2 [blocked]",

@@ -550,8 +550,8 @@ describe("pi-todos extension", () => {
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
       "Todos (2 open)",
-      "#1 First",
-      "#2 Second",
+      "[ ] #1 First",
+      "[ ] #2 Second",
     ]);
 
     await emit(
@@ -561,8 +561,9 @@ describe("pi-todos extension", () => {
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "Todos (1 open)",
-      "#2 Second",
+      "Todos (1 open, 1 done)",
+      "[x] #1 \x1b[9mFirst\x1b[29m",
+      "[ ] #2 Second",
     ]);
 
     // Subagent state arrives and is rendered alongside todos
@@ -570,8 +571,9 @@ describe("pi-todos extension", () => {
       { id: "sub-1", agent: "worker", state: "running" },
     ]);
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "Todos (1 open)",
-      "#2 Second",
+      "Todos (1 open, 1 done)",
+      "[x] #1 \x1b[9mFirst\x1b[29m",
+      "[ ] #2 Second",
       "Subagents (1 active)",
       "@sub-1 [running] (worker)",
     ]);
@@ -582,15 +584,21 @@ describe("pi-todos extension", () => {
       ctx,
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-    // Todos completed, but subagents still active
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+      "Todos (2 done)",
+      "[x] #1 \x1b[9mFirst\x1b[29m",
+      "[x] #2 \x1b[9mSecond\x1b[29m",
       "Subagents (1 active)",
       "@sub-1 [running] (worker)",
     ]);
 
-    // Subagents finished
+    // Subagents finished, todos still displayed as 2 done
     eventHandlers["subagents:state"]?.([]);
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", undefined);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+      "Todos (2 done)",
+      "[x] #1 \x1b[9mFirst\x1b[29m",
+      "[x] #2 \x1b[9mSecond\x1b[29m",
+    ]);
   });
 
   it("shows a closeable TUI todo list", async () => {

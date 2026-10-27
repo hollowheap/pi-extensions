@@ -132,21 +132,45 @@ export interface SubagentStateItem {
 
 const WIDGET_LIMIT = 10;
 
+export interface FormatTodoWidgetOptions {
+  strikethrough?: (text: string) => string;
+}
+
 export function formatTodoWidget(
   todos: readonly Todo[],
   subagents: readonly SubagentStateItem[] = [],
+  options?: FormatTodoWidgetOptions,
 ): string[] | undefined {
-  const open = byId(todos).filter((todo) => !todo.done);
-  if (open.length === 0 && subagents.length === 0) return undefined;
+  if (todos.length === 0 && subagents.length === 0) return undefined;
+
+  const strikethrough =
+    options?.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
 
   const lines: string[] = [];
-  if (open.length > 0) {
-    lines.push(`Todos (${open.length} open)`);
-    for (const todo of open.slice(0, WIDGET_LIMIT)) {
-      lines.push(`#${todo.id} ${todo.text}`);
+  if (todos.length > 0) {
+    const sorted = byId(todos);
+    const openCount = sorted.filter((todo) => !todo.done).length;
+    const doneCount = sorted.length - openCount;
+
+    let header: string;
+    if (openCount === 0) {
+      header = `Todos (${doneCount} done)`;
+    } else if (doneCount > 0) {
+      header = `Todos (${openCount} open, ${doneCount} done)`;
+    } else {
+      header = `Todos (${openCount} open)`;
     }
-    if (open.length > WIDGET_LIMIT) {
-      lines.push(`+${open.length - WIDGET_LIMIT} more (/todos)`);
+    lines.push(header);
+
+    for (const todo of sorted.slice(0, WIDGET_LIMIT)) {
+      if (todo.done) {
+        lines.push(`[x] #${todo.id} ${strikethrough(todo.text)}`);
+      } else {
+        lines.push(`[ ] #${todo.id} ${todo.text}`);
+      }
+    }
+    if (sorted.length > WIDGET_LIMIT) {
+      lines.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
     }
   }
 

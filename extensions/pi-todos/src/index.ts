@@ -134,14 +134,25 @@ export default function (pi: ExtensionAPI) {
   const updateUI = (ctx: ExtensionContext) => {
     lastCtx = ctx;
     if (!ctx.hasUI) return;
-    ctx.ui.setWidget("todos", formatTodoWidget(state.todos, subagents));
+    const strikethrough =
+      typeof ctx.ui.theme?.strikethrough === "function"
+        ? (text: string) => ctx.ui.theme.strikethrough(text)
+        : undefined;
+    ctx.ui.setWidget(
+      "todos",
+      formatTodoWidget(
+        state.todos,
+        subagents,
+        strikethrough ? { strikethrough } : undefined,
+      ),
+    );
   };
 
   pi.events.on("subagents:state", (data: unknown) => {
     if (Array.isArray(data)) {
       subagents = data as SubagentStateItem[];
       if (lastCtx?.hasUI) {
-        lastCtx.ui.setWidget("todos", formatTodoWidget(state.todos, subagents));
+        updateUI(lastCtx);
       }
     }
   });
