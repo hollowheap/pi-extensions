@@ -561,3 +561,18 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Alternatives: store usage only in pi-budget, recompute after compaction.
   - Consequences: New extension package; shared state with pi-budget.
   - Persistence prevents loss of cumulative cost on compaction.
+
+- [x] D112 [R40]: `pi-modal` implements a `CustomEditor` with Vim normal/insert/visual modes and loads key overrides exclusively from global `~/.pi/agent/modal.json`.
+  - Alternatives: project-level `.pi/modal.json` overrides, hardcoded key bindings without user config.
+  - Consequences: Custom editor component replaces default prompt input; users configure one shared Vim keymap globally without project churn.
+  - Global user keybindings maintain consistent muscle memory across all repositories.
+
+- [x] D113 [R41]: Subagent model failures query Pi's active runtime models and prompt an interactive swap via `ctx.ui.select`, while callers remain barred from model overrides.
+  - Alternatives: silent subagent failure, hardcoded static fallback lists, allowing callers to pass arbitrary models in tool inputs.
+  - Consequences: Dynamic runtime model list + current session model fallback guarantees usable replacement options; callers cannot override frontmatter models; sequenced as the immediate first vertical task.
+  - User steering maintains execution continuity when free or experimental models experience outages.
+
+- [x] D114 [R42]: `pi-web` exposes `web_search` and `web_fetch` exclusively with `exposure: "codemode"`, and core pricing treats `:free` models as $0.00.
+  - Alternatives: dual direct/codemode exposure, declaring tools in LLM prompt by default.
+  - Consequences: Tools are callable only within QuickJS scripts; prompt tokens are saved; free models evaluate to $0.00 without NaN.
+  - Pure codemode execution eliminates LLM prompt overhead and enables multi-step research loops in a single turn.

@@ -628,3 +628,23 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: track cumulative tokens and cost; emit `hollowheap.usage` custom entries; restore on session start and compaction.
   - Risk: duplicate usage accumulation, missing session manager hook, compaction replay drift.
 
+- [x] T110 [S113] (blocked-by: none): pre-flight subagent model against runtime models and prompt interactive user swap via ctx.ui.select.
+  - Verify: `npx vitest run extensions/pi-subagents/src/swap.test.ts`
+  - Files: `extensions/pi-subagents/src/swap.ts`, `extensions/pi-subagents/src/swap.test.ts`, `extensions/pi-subagents/src/tool.ts`
+  - Notes: probe model validity before spawning child; if unlisted/unavailable, prompt user with `ctx.ui.select` displaying active models and session model fallback; disallow caller tool model parameter.
+  - Risk: headless execution handling, cancellation.
+
+- [x] T111 [S114] (blocked-by: T110): expose web tools exclusively in codemode and evaluate :free models as $0.00 in core pricing.
+  - Verify: `npx vitest run extensions/pi-web/src/tools.test.ts packages/core/src/pricing.test.ts`
+  - Files: `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`, `packages/core/src/pricing.ts`, `packages/core/src/pricing.test.ts`
+  - Notes: set `exposure: "codemode"` exclusively on `web_search` and `web_fetch`; evaluate `:free` model suffixes to $0.00 in `resolveModelPricing` and `calculateDollarCost`.
+  - Risk: direct prompt usage expectation, missing pricing test.
+
+- [x] T112 [S112] (blocked-by: T111): scaffold pi-modal with Vim normal/insert/visual modes and ~/.pi/agent/modal.json key overrides.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/package.json`, `extensions/pi-modal/index.ts`, `extensions/pi-modal/src/index.ts`, `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/keymap.ts`, `extensions/pi-modal/src/index.test.ts`, `package.json`
+  - Notes: register CustomEditor in pi-modal; support normal/insert/visual modes; load key overrides exclusively from `~/.pi/agent/modal.json`; render mode badge in prompt border.
+  - Risk: CustomEditor terminal event handling, key escape sequence collision.
+
+
+

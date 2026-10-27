@@ -11,9 +11,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 745 passed / 79 files (verified 2026-10-27).
+- `npm test` — vitest, 776 passed / 82 files (verified 2026-10-27).
 - `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-27).
-- `npm run lint` — `biome check .`, 227 files clean (verified 2026-10-27).
+- `npm run lint` — `biome check .`, 239 files clean (verified 2026-10-27).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
@@ -21,7 +21,7 @@
 
 ## Module Seams
 
-- `core` → policy, config cache, shell analysis, exec/format, modes, session state, process-wide prompt queue.
+- `core` → policy, config cache, pricing resolution, shell analysis, exec/format, modes, session state, process-wide prompt queue.
 - `pi-guard` → tool-call verdicts, approvals, bash truncation, `/mode`, `/context`, `alt+m`.
 - `pi-hooks` → session-start, pre-tool, and post-tool commands from `hooks.json` plus a trusted project overlay; opt-in `hooks-init`.
 - `pi-todos` → sticky widget rendering tagged todos and active subagent states (`running`, `blocked`, `complete`).
@@ -29,11 +29,12 @@
 - `pi-code-intel` → direct `code_intel` by default (configurable exposure), LSP pool, trust and path checks.
 - `pi-classifier` → advisory `decide` tool, explicit classifier config, caps, cache, and payload privacy.
 - `@hollowheap/process` → detached lifecycle, atomic state, JSONL sockets, logs, cancellation, and PID/start-time reconciliation.
-- `pi-web` → direct `web_search`/`web_fetch` package seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, and static fetch extraction, web.json order config, URL safety, and capped tool output.
+- `pi-web` → codemode `web_search`/`web_fetch` seam plus normalized Tavily/Exa/Firecrawl provider adapters, key-based selection, static fetch extraction, web.json order config, URL safety, and capped tool output.
 - `pi-tasks` → durable background shell tasks, direct `task` tool, PID/start-time reconciliation.
-- `pi-subagents` → durable child RPC agents with live reattach, trusted agents, write lock, and explicit resume.
-- `pi-budgets` → token/dollar caps, model pricing resolution, usage accumulation, cap abort, autopilot gate.
+- `pi-subagents` → durable child RPC agents with live reattach, trusted agents, write lock, model pre-flight check and interactive swap prompt (`ctx.ui.select`), and explicit resume.
+- `pi-budgets` → token/dollar caps, model pricing resolution (free models at $0.00), usage accumulation, cap abort, autopilot gate.
 - `pi-usage` → session custom entry persistence (`hollowheap.usage`), compaction-safe cumulative token/dollar tracking, `/usage` command.
+- `pi-modal` → CustomEditor with Vim normal/insert/visual modes, mode badge, and `~/.pi/agent/modal.json` key overrides.
 - `pi-autopilot` → `autopilot` mode layer.
 - `pi-statusline` / `pi-dashboard` → footer/header renderers.
 - `pi-acp` adapter → JSON-RPC framing, one pi child + per-session socket, session store, permission/fs/terminal requests.

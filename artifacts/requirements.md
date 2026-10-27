@@ -199,6 +199,21 @@ None.
   - Acceptance: Provider pricing feeds pi-budget; budgets set in $; usage accumulates $ across compaction.
   - Dollar tracking matches real cost and survives context compaction.
 
+- [x] R40: A configurable modal editor extension (`pi-modal`) provides Vim navigation with global user keybindings.
+  - Verify: Editor handles normal, insert, and visual modes; keys map to Vim defaults and can be overridden via `~/.pi/agent/modal.json`.
+  - Acceptance: Switching modes changes cursor and border badge; commands and navigation execute in normal/visual mode; typing inserts in insert mode; custom keymaps load exclusively from global user config.
+  - Keyboard-driven modal editing improves prompt authoring ergonomics in terminal environments without project pollution.
+
+- [x] R41: Subagent model failures trigger an interactive swap prompt without allowing caller tool overrides.
+  - Verify: Failing/broken subagent models trigger `ctx.ui.select` populated from Pi's active runtime models and session model fallback; subagent tool input rejects caller model mutation.
+  - Acceptance: Subagents honor frontmatter `model` definitions; when a model fails or is unresolvable, the user is prompted to swap it using available runtime models; main agent cannot override subagent models in tool calls.
+  - Keeps subagent model governance under user control while recovering gracefully from broken or rate-limited endpoints.
+
+- [x] R42: Web search and fetch are exposed exclusively through codemode with zero-cost model pricing support.
+  - Verify: Tools declare `exposure: "codemode"` without direct tool exposure; QuickJS scripts can execute multi-query fetch pipelines; `:free` models evaluate to $0.00 cost.
+  - Acceptance: `web_search` and `web_fetch` are callable only via `tools.*` in `codemode` without prompt declaration overhead; free model tags produce 0 dollar accrual.
+  - Pure programmatic tool execution eliminates multi-turn latency and prompt bloat while pricing accurately tracks zero-cost models.
+
 ## Open Questions
 
 None.

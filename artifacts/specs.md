@@ -1154,3 +1154,20 @@
   - Behavior: records running token counts and cumulative dollar costs per turn; recovers baseline usage on session start and after context compaction from stored entries.
   - Failures: corrupted custom entries, unrecorded compaction events, concurrent branch updates, or negative usage deltas.
 
+- [x] S112 [R40] [D112]: `pi-modal` provides a `CustomEditor` with Vim normal, insert, and visual modes, loading overrides from global `~/.pi/agent/modal.json` | Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Seam: `pi-modal` extension registration and CustomEditor implementation.
+  - Behavior: intercepts keystrokes in normal, insert, and visual modes; displays current mode badge; applies keybinding overrides defined exclusively in global `~/.pi/agent/modal.json`.
+  - Failures: unhandled key combinations, missing or invalid `modal.json` syntax, editor buffer desynchronization, or unhandled exit/submit events.
+
+- [x] S113 [R41] [D113]: `pi-subagents` pre-flights subagent model availability against runtime models and prompts interactive swap via `ctx.ui.select` | Verify: `npx vitest run extensions/pi-subagents/src/swap.test.ts`
+  - Seam: `pi-subagents` spawn pre-flight and model selection prompt.
+  - Behavior: checks whether subagent frontmatter model is accessible in Pi's runtime models; on failure, prompts user with available model choices using `ctx.ui.select` falling back to session model; ignores any caller tool model overrides.
+  - Failures: unhandled interactive cancellation, missing model registry, caller tool parameter hijacking subagent model, or unhandled spawn errors.
+
+- [x] S114 [R42] [D114]: `pi-web` exposes `web_search` and `web_fetch` exclusively with `exposure: "codemode"` and pricing calculates `:free` models as $0.00 | Verify: `npx vitest run extensions/pi-web/src/tools.test.ts packages/core/src/pricing.test.ts`
+  - Seam: `pi-web` tool registration and `packages/core/src/pricing.ts`.
+  - Behavior: registers `web_search` and `web_fetch` strictly with `exposure: "codemode"` (no direct tool exposure); `resolveModelPricing` and `calculateDollarCost` treat models ending with `:free` as $0.00 per token.
+  - Failures: direct prompt exposure, non-zero pricing for free models, or NaN cost results.
+
+
+
