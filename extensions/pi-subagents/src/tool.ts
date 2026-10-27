@@ -2,7 +2,13 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, getAgentDir } from "@earendil-works/pi-coding-agent";
+import {
+  type Theme,
+  defineTool,
+  getAgentDir,
+  keyHint,
+} from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { truncateText } from "@hollowheap/core";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { loadSubagentsConfig } from "./config.js";
@@ -125,6 +131,23 @@ function stateWithLog(
   };
 }
 
+function expandHint(theme: Theme, count: number, noun: string): string {
+  let hint = "to expand";
+  try {
+    hint = keyHint("app.tools.expand", "to expand");
+  } catch {
+    hint = "[Space] to expand";
+  }
+  return `${theme.fg("muted", `... (${count} more ${noun},`)} ${hint}${theme.fg("muted", ")")}`;
+}
+
+function firstText(result: { content?: readonly unknown[] }): string {
+  const item = result.content?.[0] as
+    | { type?: string; text?: string }
+    | undefined;
+  return item && typeof item.text === "string" ? item.text : "";
+}
+
 export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
   const deps: SubagentToolDeps = { ...defaultDeps, ...overrides };
   return defineTool({
@@ -162,6 +185,116 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
       ),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
     }),
+    renderCall(args, theme, context) {
+      const text =
+        context?.lastComponent instanceof Text
+          ? context.lastComponent
+          : new Text("", 0, 0);
+      const action = args?.action ?? "subagent";
+      let line = `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("accent", action)}`;
+      if (action === "start") {
+        if (args?.agent) line += ` ${theme.fg("toolTitle", args.agent)}`;
+        if (args?.task) {
+          const taskSummary =
+            args.task.length > 60 ? `${args.task.slice(0, 57)}...` : args.task;
+          line += ` ${theme.fg("muted", `"${taskSummary}"`)}`;
+        }
+      } else if (args?.id) {
+        line += ` ${theme.fg("dim", `@${args.id}`)}`;
+        if (action === "send" && args?.message) {
+          const msg =
+            args.message.length > 40
+              ? `${args.message.slice(0, 37)}...`
+              : args.message;
+          line += ` ${theme.fg("muted", `"${msg}"`)}`;
+        }
+      }
+      text.setText(line);
+      return text;
+    },
+    renderResult(result, options, theme, context) {
+      const text =
+        context?.lastComponent instanceof Text
+          ? context.lastComponent
+          : new Text("", 0, 0);
+      const details = result.details as Record<string, unknown> | undefined;
+      const textOutput = firstText(result);
+      if (!details || details.error) {
+        text.setText(
+          theme.fg(
+            "error",
+            textOutput !== "" ? textOutput : "Subagent action failed",
+          ),
+        );
+        return text;
+      }
+
+      if (Array.isArray(details.agents)) {
+        const agents = details.agents as Array<{
+          id: string;
+          status: string;
+          agent: string;
+        }>;
+        if (agents.length === 0) {
+          text.setText(theme.fg("muted", "No active subagents."));
+          return text;
+        }
+        const lines: string[] = [
+          `${theme.fg("toolTitle", "Subagents")} ${theme.fg("muted", `(${agents.length} active):`)}`,
+        ];
+        for (const a of agents) {
+          const icon =
+            a.status === "running"
+              ? theme.fg("warning", "●")
+              : theme.fg("success", "✓");
+          lines.push(
+            `  ${icon} ${theme.fg("toolTitle", `@${a.id}`)} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("muted", a.agent)}`,
+          );
+        }
+        text.setText(lines.join("\n"));
+        return text;
+      }
+
+      const id = String(details.id ?? "");
+      const status = String(details.status ?? "");
+      const agent = String(details.agent ?? "");
+      const exitCode = details.exitCode;
+      const log = typeof details.log === "string" ? details.log : "";
+
+      let icon = theme.fg("muted", "○");
+      if (status === "running") {
+        icon = theme.fg("warning", "●");
+      } else if (status === "completed" || status === "succeeded") {
+        icon = theme.fg("success", "✓");
+      } else if (status === "failed" || status === "error") {
+        icon = theme.fg("error", "✗");
+      } else if (status === "cancelled" || status === "aborted") {
+        icon = theme.fg("muted", "⊘");
+      }
+
+      let header = `${icon} ${theme.fg("toolTitle", `@${id}`)} ${theme.fg("accent", `[${status}]`)} ${theme.fg("muted", agent)}`;
+      if (exitCode !== undefined) {
+        header += ` ${theme.fg("dim", `(exit ${exitCode})`)}`;
+      }
+
+      const lines: string[] = [header];
+      if (log.trim().length > 0) {
+        const logLines = log.split("\n").filter((l) => l.trim().length > 0);
+        const maxLines = options.expanded ? logLines.length : 6;
+        const displayed = logLines.slice(-maxLines);
+        const hidden = logLines.length - displayed.length;
+
+        if (hidden > 0) {
+          lines.push(`  ${expandHint(theme, hidden, "earlier log lines")}`);
+        }
+        for (const l of displayed) {
+          lines.push(`  ${theme.fg("toolOutput", l)}`);
+        }
+      }
+
+      text.setText(lines.join("\n"));
+      return text;
+    },
     async execute(_toolCallId, raw, _signal, _onUpdate, ctx) {
       const params = (raw ?? {}) as {
         action?: string;

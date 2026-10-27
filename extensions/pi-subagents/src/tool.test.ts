@@ -224,4 +224,60 @@ describe("subagent tool", () => {
     );
     expect(textOf(noId)).toContain("requires id");
   });
+
+  it("renders subagent call and result", async () => {
+    const mockTheme = {
+      fg: (_token: string, text: string) => text,
+      bg: (_token: string, text: string) => text,
+      bold: (text: string) => `**${text}**`,
+      italic: (text: string) => text,
+      underline: (text: string) => text,
+      dim: (text: string) => text,
+    } as never;
+
+    const tool = createTool({
+      list: (() => [running]) as never,
+      log: (() => "line 1\nline 2") as never,
+    });
+
+    const callComp = tool.renderCall?.(
+      { action: "start", agent: "scout", task: "find facts" },
+      mockTheme,
+      {} as never,
+    );
+    expect(callComp?.render(80).join("\n")).toContain("subagent");
+    expect(callComp?.render(80).join("\n")).toContain("scout");
+
+    const listRes = await tool.execute(
+      "1",
+      { action: "list" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const listComp = tool.renderResult?.(
+      listRes as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    expect(listComp?.render(80).join("\n")).toContain("@sub-1");
+
+    const statusRes = await tool.execute(
+      "2",
+      { action: "status", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const statusComp = tool.renderResult?.(
+      statusRes as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const rendered = statusComp?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("@sub-1");
+    expect(rendered).toContain("line 1");
+  });
 });

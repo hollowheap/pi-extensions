@@ -50,9 +50,13 @@ describe("web_search", () => {
       title: "t0",
       url: "https://example.com/0",
       snippet: "s0",
-      provider: "exa",
     });
+    expect(
+      (details.results as Array<Record<string, unknown>>)[0]?.provider,
+    ).toBeUndefined();
     expect(details.truncated).toBe(true);
+    expect(textOf(result)).toContain("1. [t0](https://example.com/0)");
+    expect(textOf(result)).not.toContain("provider");
     expect(search).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "q",
@@ -158,7 +162,11 @@ describe("web_fetch", () => {
     expect(details.media).toHaveLength(FETCH_MAX_MEDIA);
     expect(details.truncated).toBe(true);
     expect(details.finalUrl).toBe("https://example.com/final");
-    expect(details.provider).toBe("exa");
+    expect(details.provider).toBeUndefined();
+    expect(textOf(result)).toContain(
+      "*Redirected to: https://example.com/final*",
+    );
+    expect(textOf(result)).not.toContain("provider");
   });
 
   it("caps max_chars at 100k", async () => {
@@ -296,5 +304,100 @@ describe("tool exposure", () => {
     const fetchTool = createWebFetchTool();
     expect(searchTool.exposure).toBe("codemode");
     expect(fetchTool.exposure).toBe("codemode");
+  });
+});
+
+describe("tool renderers", () => {
+  const mockTheme = {
+    fg: (_token: string, text: string) => text,
+    bg: (_token: string, text: string) => text,
+    bold: (text: string) => `**${text}**`,
+    italic: (text: string) => text,
+    underline: (text: string) => text,
+    dim: (text: string) => text,
+  } as never;
+
+  it("renders web_search call and result", async () => {
+    const tool = createWebSearchTool({
+      search: vi
+        .fn()
+        .mockResolvedValue([
+          { title: "Doc", url: "https://doc.com", snippet: "Doc snippet" },
+        ]),
+    });
+    const callComp = tool.renderCall?.(
+      { query: "vitest", max_results: 5 },
+      mockTheme,
+      {} as never,
+    );
+    expect(callComp?.render(80).join("\n")).toContain("web_search");
+    expect(callComp?.render(80).join("\n")).toContain('"vitest"');
+
+    const result = await tool.execute(
+      "1",
+      { query: "vitest" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const resComp = tool.renderResult?.(
+      result as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const collapsed = resComp?.render(80).join("\n") ?? "";
+    expect(collapsed).toContain("Found");
+    expect(collapsed).toContain("1 results");
+    expect(collapsed).toContain("doc.com");
+
+    const expandedComp = tool.renderResult?.(
+      result as never,
+      { expanded: true, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const expanded = expandedComp?.render(80).join("\n") ?? "";
+    expect(expanded).toContain("Doc");
+    expect(expanded).toContain("https://doc.com");
+    expect(expanded).toContain("Doc snippet");
+  });
+
+  it("renders web_fetch call and result", async () => {
+    const tool = createWebFetchTool({
+      fetch: vi.fn().mockResolvedValue({
+        url: "https://example.com",
+        finalUrl: "https://example.com",
+        contentType: "text/plain",
+        content: "hello world\nline two",
+        links: [],
+        media: [],
+        truncated: false,
+      }),
+    });
+    const callComp = tool.renderCall?.(
+      { url: "https://example.com" },
+      mockTheme,
+      {} as never,
+    );
+    expect(callComp?.render(80).join("\n")).toContain("web_fetch");
+    expect(callComp?.render(80).join("\n")).toContain("https://example.com");
+
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const resComp = tool.renderResult?.(
+      result as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const rendered = resComp?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Fetched");
+    expect(rendered).toContain("hello world");
   });
 });
