@@ -25,6 +25,25 @@
   - [section] Docs & Resources (L136)
   - [section] License (L143)
 
+## artifacts/brainstorm.md
+  - [chapter] Architectural Brainstorm: Web Search & Sandbox Execution (L1)
+  - [section] 1. Problem Space & Context (L9)
+  - [subsection] 1.1 Web Search (`pi-web`) (L11)
+  - [subsection] 1.2 Execution Sandboxing (L17)
+  - [section] 2. Keyless Web Search: Architectural Archetypes (L27)
+  - [subsection] Archetype S1: Built-in DuckDuckGo HTML Fallback in `pi-web` (L29)
+  - [subsection] Archetype S2: Configurable Metasearch Engine / SearXNG Endpoint (L41)
+  - [subsection] Archetype S3: Search CLI Subprocess Delegation (e.g. `ddgr` / `w3m`) (L52)
+  - [subsection] Trade-Off Matrix: Web Search (L61)
+  - [section] 3. Sandboxing Architecture: Architectural Archetypes (L73)
+  - [subsection] Archetype K1: Whole-Process Containerization (`Dockerfile.pi` + Podman Run) (L75)
+  - [subsection] Archetype K2: Selective Tool Sandboxing Extension (`pi-sandbox` with Podman Exec) (L94)
+  - [subsection] Archetype K3: Bubblewrap (`bwrap`) OS-Level Sandbox (L106)
+  - [subsection] Trade-Off Matrix: Sandboxing (L114)
+  - [section] 4. Recommended Directions & Decisions to Frame (L126)
+  - [subsection] Recommendation 1: Web Search (L128)
+  - [subsection] Recommendation 2: Sandboxing (L134)
+
 ## artifacts/context.md
   - [chapter] Context (L1)
   - [section] Stack & Entrypoints (L3)
@@ -60,7 +79,7 @@
 ## artifacts/requirements.md
   - [chapter] Requirements (L1)
   - [section] Open Questions (L73)
-  - [section] Open Questions (L202)
+  - [section] Open Questions (L217)
 
 ## artifacts/retro.md
   - [chapter] Retrospective: Workspace Enhancements & Prompt Minimization (L1)
@@ -72,6 +91,12 @@
   - [section] Actionable Improvements (L46)
   - [subsection] 1. Rule Adjustments (`~/.gemini/config/rules/`) (L48)
   - [subsection] 2. Repo Conventions (`AGENTS.md`) (L52)
+
+## artifacts/scripts/probe-ddg.mjs
+  - [function] probeDuckDuckGo (query) (L2)
+  - [variable] anonymousObject960e17f00105 (L5)
+  - [property] headers (L6)
+  - [property] User-Agent (L7)
 
 ## artifacts/specs.md
   - [chapter] Specs and interface contracts (L1)
@@ -194,9 +219,5 @@
   - [string] typebox (L20)
   - [object] dependencies (L22)
   - [string] @hollowheap/core (L23)
-
-## extensions/pi-autopilot/src/index.test.ts
-  - [function] setup (L6)
-  - [constant] owner (L39)
 
 ... [Truncated at 200 lines. Use --max-lines to expand]
