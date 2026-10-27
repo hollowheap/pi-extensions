@@ -17,6 +17,7 @@ import {
   waitSubagent,
 } from "./runner.js";
 import type { SubagentState } from "./state.js";
+import { resolveSubagentModel } from "./swap.js";
 
 export interface SubagentToolDeps {
   start: typeof startSubagent;
@@ -32,6 +33,7 @@ export interface SubagentToolDeps {
     agent: AgentConfig,
     sessionPath: string,
   ) => { command: string; args: string[] };
+  resolveModel?: typeof resolveSubagentModel;
 }
 
 const defaultDeps: SubagentToolDeps = {
@@ -45,6 +47,7 @@ const defaultDeps: SubagentToolDeps = {
   agents: discoverAgents,
   getAgentDir,
   childSpec,
+  resolveModel: resolveSubagentModel,
 };
 
 function childSpec(
@@ -220,17 +223,24 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
               }`,
             );
           }
+          const resolvedModel = await (
+            deps.resolveModel ?? resolveSubagentModel
+          )(agent, ctx);
+          const effectiveAgent =
+            resolvedModel !== undefined
+              ? { ...agent, model: resolvedModel }
+              : agent;
           const id = generateSubagentId();
           const sessionPath = join(
             agentDir,
             "subagents",
             `${id}.session.jsonl`,
           );
-          const spec = deps.childSpec(agent, sessionPath);
+          const spec = deps.childSpec(effectiveAgent, sessionPath);
           const state = await deps.start({
             agentDir,
             id,
-            agent: agent.name,
+            agent: effectiveAgent.name,
             task,
             depth,
             command: spec.command,
@@ -239,7 +249,9 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             env: {
               PI_SUBAGENT_DEPTH: String(depth),
             },
-            ...(agent.model !== undefined ? { model: agent.model } : {}),
+            ...(effectiveAgent.model !== undefined
+              ? { model: effectiveAgent.model }
+              : {}),
             sessionPath,
           });
           try {
@@ -327,11 +339,19 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
           }
           const sessionPath =
             state.session ?? join(agentDir, "subagents", `${id}.session.jsonl`);
-          const spec = deps.childSpec(agent, sessionPath);
+          const modelToUse = state.model ?? agent.model;
+          const resolvedModel = await (
+            deps.resolveModel ?? resolveSubagentModel
+          )({ ...agent, model: modelToUse }, ctx);
+          const effectiveAgent =
+            resolvedModel !== undefined
+              ? { ...agent, model: resolvedModel }
+              : agent;
+          const spec = deps.childSpec(effectiveAgent, sessionPath);
           const resumed = await deps.start({
             agentDir,
             id,
-            agent: agent.name,
+            agent: effectiveAgent.name,
             task: state.task,
             depth: state.depth,
             attempt: state.attempt + 1,
@@ -339,7 +359,9 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             args: spec.args,
             cwd: ctx.cwd,
             env: { PI_SUBAGENT_DEPTH: String(state.depth) },
-            ...(agent.model !== undefined ? { model: agent.model } : {}),
+            ...(effectiveAgent.model !== undefined
+              ? { model: effectiveAgent.model }
+              : {}),
             sessionPath,
           });
           try {
