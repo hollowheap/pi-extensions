@@ -26,7 +26,8 @@
       "./extensions/pi-classifier/index.ts",
       "./extensions/pi-web/index.ts",
       "./extensions/pi-subagents/index.ts",
-      "./extensions/pi-usage/index.ts"
+      "./extensions/pi-usage/index.ts",
+      "./extensions/pi-modal/index.ts"
     ]
   },
   "scripts": {
