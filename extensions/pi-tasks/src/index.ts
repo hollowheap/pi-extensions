@@ -21,14 +21,26 @@ function updateTasksStatus(ctx: ExtensionContext, runningCount: number): void {
 export default function (pi: ExtensionAPI) {
   if (process.env.PI_ACP) return;
 
+  const emitTasksState = (agentDir: string) => {
+    const all = reconcileAllTasks(agentDir);
+    const running = all
+      .filter((t) => t.status === "running")
+      .map((t) => ({ id: t.id, command: t.command, status: t.status }));
+    pi.events?.emit?.("tasks:state", running);
+    return all;
+  };
+
   pi.registerTool(
     createTaskTool({
       onStatusChange: updateTasksStatus,
+      onTasksChange: (tasks) => {
+        pi.events?.emit?.("tasks:state", tasks);
+      },
     }),
   );
 
   pi.on("session_start", (_event, ctx) => {
-    const all = reconcileAllTasks(getAgentDir());
+    const all = emitTasksState(getAgentDir());
     let runningCount = 0;
     for (const t of all) {
       if (t.status === "running") runningCount++;

@@ -20,21 +20,21 @@ pi install npm:@hollowheap/pi-todos
 Create tasks with exactly one ordered list:
 
 ```text
-'''create_todos
+```create_todos
 1. Write the parser tests
 2. Update the README
-'''
+```
 ```
 
 Complete tasks by numeric ID with exactly one ordered list:
 
 ```text
-'''complete_todos
+```complete_todos
 1. 2
-'''
+```
 ```
 
-`create_todos` appends tasks and assigns stable numeric IDs; it never replaces
+Fences support both markdown backticks (```` ```create_todos ````) and triple single quotes (`'''create_todos`). `create_todos` appends tasks and assigns stable numeric IDs; it never replaces
 the list. `complete_todos` marks matching IDs done and reports unknown IDs.
 Do not add checkboxes or use unordered lists. Only closed, valid blocks are
 handled; invalid, unknown, and unclosed blocks stay visible.
@@ -51,9 +51,10 @@ fork stay consistent. There is no global or project-file state.
 
 ## UI
 
-- A compact widget above the editor lists up to ten open todos with their IDs.
-  When more remain, it adds a `+N more (/todos)` line. It clears when no open
-  todos remain.
+- A boxed widget above the editor displays open todos, running shell tasks, and active subagents inside a unified border (`┌─ ... ─┐`, `│ ... │`, `└─ ... ─┘`).
+  - Todos list up to ten open items with `[ ]` checkboxes (and completed items with strikethrough). When more remain, it adds a `+N more (/todos)` line.
+  - Running background tasks (from `pi-tasks`) and active subagents (from `pi-subagents`) appear in dedicated sub-sections separated by divider borders (`├─ ... ─┤`).
+  - The widget clears when all sections are empty.
 - `/todos` shows the full list. TUI opens a closeable list (Esc, Enter, q,
   or Ctrl+C); RPC uses a notification.
 - The status count shows `open/total` and clears when the list is empty.

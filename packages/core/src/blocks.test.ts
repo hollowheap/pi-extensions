@@ -90,6 +90,35 @@ describe("scanTaggedBlocks", () => {
     expect(scanTaggedBlocks("  '''question\nx\n'''")).toEqual([]);
     expect(scanTaggedBlocks("")).toEqual([]);
   });
+
+  it("finds tagged blocks delimited by backticks and tildes", () => {
+    const markdown =
+      "```create_todos\n1. Task\n```\n~~~\n'''ignored\n~~~\n```complete_todos\n1. 1\n```";
+    const blocks = scanTaggedBlocks(markdown);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      tag: "create_todos",
+      body: "1. Task",
+      closed: true,
+    });
+    expect(blocks[1]).toMatchObject({
+      tag: "complete_todos",
+      body: "1. 1",
+      closed: true,
+    });
+  });
+
+  it("requires matching closing delimiter for backticks and single quotes", () => {
+    expect(scanTaggedBlocks("```create_todos\n1. Task\n'''\n```")).toEqual([
+      {
+        tag: "create_todos",
+        body: "1. Task\n'''",
+        start: 0,
+        end: 31,
+        closed: true,
+      },
+    ]);
+  });
 });
 
 describe("parseMarkdownBlocks", () => {

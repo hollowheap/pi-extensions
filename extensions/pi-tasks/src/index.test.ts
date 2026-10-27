@@ -19,6 +19,9 @@ function createMockPi() {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
+    events: {
+      emit: vi.fn(),
+    },
   };
 }
 
@@ -94,6 +97,7 @@ describe("pi-tasks extension", () => {
     // 0 running -> undefined
     onSessionStart({}, ctx);
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("tasks", undefined);
+    expect(pi.events.emit).toHaveBeenCalledWith("tasks:state", []);
 
     // 1 running -> "1 running"
     createTaskRecord(mockAgentDir, {
@@ -109,6 +113,9 @@ describe("pi-tasks extension", () => {
 
     onSessionStart({}, ctx);
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("tasks", "1 running");
+    expect(pi.events.emit).toHaveBeenLastCalledWith("tasks:state", [
+      { id: "task-live", command: "sleep 30", status: "running" },
+    ]);
   });
 
   it("leaves durable tasks running on session_shutdown", async () => {

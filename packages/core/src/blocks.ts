@@ -31,8 +31,9 @@ export interface ParagraphNode {
 
 export type MarkdownNode = HeadingNode | ListNode | ParagraphNode;
 
-const OPEN_TAG = /^'''([a-z][a-z0-9_]*)[ \t]*$/;
-const CLOSE_TAG = /^'''[ \t]*$/;
+const OPEN_SINGLE = /^'''([a-z][a-z0-9_]*)[ \t]*$/;
+const CLOSE_SINGLE = /^'''[ \t]*$/;
+const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})([a-z][a-z0-9_]*)[ \t]*$/;
 const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 interface CodeFence {
@@ -44,6 +45,8 @@ interface OpenBlock {
   tag: string;
   start: number;
   lines: string[];
+  delimiter: "single" | string;
+  markerLength: number;
 }
 
 export function scanTaggedBlocks(markdown: string): TaggedBlock[] {
@@ -69,11 +72,16 @@ export function scanTaggedBlocks(markdown: string): TaggedBlock[] {
         codeFence = undefined;
       }
       if (open) open.lines.push(line);
-    } else if (fence) {
-      codeFence = { marker: fence[1][0], length: fence[1].length };
-      if (open) open.lines.push(line);
     } else if (open) {
-      if (CLOSE_TAG.test(line)) {
+      const isClose =
+        open.delimiter === "single"
+          ? CLOSE_SINGLE.test(line)
+          : fence !== null &&
+            fence[1][0] === open.delimiter &&
+            fence[1].length >= open.markerLength &&
+            line.slice(fence[0].length).trim() === "";
+
+      if (isClose) {
         blocks.push({
           tag: open.tag,
           body: open.lines.join("\n"),
@@ -82,13 +90,34 @@ export function scanTaggedBlocks(markdown: string): TaggedBlock[] {
           closed: true,
         });
         open = undefined;
+      } else if (fence) {
+        codeFence = { marker: fence[1][0], length: fence[1].length };
+        open.lines.push(line);
       } else {
         open.lines.push(line);
       }
     } else {
-      const match = OPEN_TAG.exec(line);
-      if (match) {
-        open = { tag: match[1], start: lineStart, lines: [] };
+      const matchSingle = OPEN_SINGLE.exec(line);
+      const matchFence = OPEN_FENCE.exec(line);
+
+      if (matchSingle) {
+        open = {
+          tag: matchSingle[1],
+          start: lineStart,
+          lines: [],
+          delimiter: "single",
+          markerLength: 3,
+        };
+      } else if (matchFence) {
+        open = {
+          tag: matchFence[2],
+          start: lineStart,
+          lines: [],
+          delimiter: matchFence[1][0],
+          markerLength: matchFence[1].length,
+        };
+      } else if (fence) {
+        codeFence = { marker: fence[1][0], length: fence[1].length };
       }
     }
 

@@ -32,6 +32,9 @@ export interface TaskToolParams {
 export interface TaskToolDeps {
   getAgentDir?: () => string;
   onStatusChange?: (ctx: ExtensionContext, runningCount: number) => void;
+  onTasksChange?: (
+    tasks: Array<{ id: string; command?: string; status: string }>,
+  ) => void;
 }
 
 interface TaskToolDetails {
@@ -142,6 +145,11 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
         const all = reconcileAllTasks(agentDir);
         const running = countRunning(all);
         deps.onStatusChange?.(ctx, running);
+        deps.onTasksChange?.(
+          all
+            .filter((t) => t.status === "running")
+            .map((t) => ({ id: t.id, command: t.command, status: t.status })),
+        );
         return running;
       };
 

@@ -6,6 +6,7 @@ import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
 import { scanTaggedBlocks } from "@hollowheap/core";
 import {
   type SubagentStateItem,
+  type TaskStateItem,
   type Todo,
   type TodoState,
   applyTodoCommand,
@@ -22,15 +23,15 @@ const UPDATED_TYPE = "hollowheap.todos.updated";
 const TODOS_FORMAT = `Todo blocks are tool-free. Do not call a todo tool; none exists.
 
 Create tasks with exactly one ordered list:
-'''create_todos
+\`\`\`create_todos
 1. First task
 2. Second task
-'''
+\`\`\`
 
 Complete tasks by numeric ID with exactly one ordered list:
-'''complete_todos
+\`\`\`complete_todos
 1. 2
-'''
+\`\`\`
 
 create_todos appends tasks and assigns stable numeric IDs; it never replaces the list. Do not use checkboxes or unordered lists. complete_todos marks the listed IDs done and reports unknown IDs. After a change, a follow-up message lists every todo with its ID and done marker so you can learn the assigned IDs. /todos shows the current list.`;
 
@@ -129,6 +130,7 @@ export default function (pi: ExtensionAPI) {
   const handled = new WeakSet<object>();
   let state: TodoState = emptyTodoState();
   let subagents: SubagentStateItem[] = [];
+  let tasks: TaskStateItem[] = [];
   let lastCtx: ExtensionContext | undefined;
 
   const updateUI = (ctx: ExtensionContext) => {
@@ -138,12 +140,21 @@ export default function (pi: ExtensionAPI) {
       typeof ctx.ui.theme?.strikethrough === "function"
         ? (text: string) => ctx.ui.theme.strikethrough(text)
         : undefined;
+    const borderColor =
+      typeof ctx.ui.theme?.fg === "function"
+        ? (text: string) => ctx.ui.theme.fg("border", text)
+        : undefined;
     ctx.ui.setWidget(
       "todos",
       formatTodoWidget(
         state.todos,
         subagents,
-        strikethrough ? { strikethrough } : undefined,
+        tasks,
+        strikethrough
+          ? { strikethrough, borderColor }
+          : borderColor
+            ? { borderColor }
+            : undefined,
       ),
     );
   };
@@ -151,6 +162,15 @@ export default function (pi: ExtensionAPI) {
   pi.events.on("subagents:state", (data: unknown) => {
     if (Array.isArray(data)) {
       subagents = data as SubagentStateItem[];
+      if (lastCtx?.hasUI) {
+        updateUI(lastCtx);
+      }
+    }
+  });
+
+  pi.events.on("tasks:state", (data: unknown) => {
+    if (Array.isArray(data)) {
+      tasks = data as TaskStateItem[];
       if (lastCtx?.hasUI) {
         updateUI(lastCtx);
       }

@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
 
 export interface Todo {
@@ -130,23 +131,45 @@ export interface SubagentStateItem {
   state: "running" | "blocked" | "complete" | string;
 }
 
+export interface TaskStateItem {
+  id: string;
+  command?: string;
+  status: "running" | string;
+}
+
 const WIDGET_LIMIT = 10;
 
 export interface FormatTodoWidgetOptions {
   strikethrough?: (text: string) => string;
+  borderColor?: (text: string) => string;
+  width?: number;
+}
+
+interface WidgetSection {
+  title: string;
+  items: string[];
 }
 
 export function formatTodoWidget(
   todos: readonly Todo[],
   subagents: readonly SubagentStateItem[] = [],
+  tasksOrOptions?: readonly TaskStateItem[] | FormatTodoWidgetOptions,
   options?: FormatTodoWidgetOptions,
 ): string[] | undefined {
-  if (todos.length === 0 && subagents.length === 0) return undefined;
+  let tasks: readonly TaskStateItem[] = [];
+  let opts: FormatTodoWidgetOptions | undefined;
 
+  if (Array.isArray(tasksOrOptions)) {
+    tasks = tasksOrOptions;
+    opts = options;
+  } else if (tasksOrOptions) {
+    opts = tasksOrOptions as FormatTodoWidgetOptions;
+  }
+
+  const sections: WidgetSection[] = [];
   const strikethrough =
-    options?.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
+    opts?.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
 
-  const lines: string[] = [];
   if (todos.length > 0) {
     const sorted = byId(todos);
     const openCount = sorted.filter((todo) => !todo.done).length;
@@ -160,28 +183,78 @@ export function formatTodoWidget(
     } else {
       header = `Todos (${openCount} open)`;
     }
-    lines.push(header);
 
+    const items: string[] = [];
     for (const todo of sorted.slice(0, WIDGET_LIMIT)) {
       if (todo.done) {
-        lines.push(`[x] #${todo.id} ${strikethrough(todo.text)}`);
+        items.push(`[x] #${todo.id} ${strikethrough(todo.text)}`);
       } else {
-        lines.push(`[ ] #${todo.id} ${todo.text}`);
+        items.push(`[ ] #${todo.id} ${todo.text}`);
       }
     }
     if (sorted.length > WIDGET_LIMIT) {
-      lines.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
+      items.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
     }
+    sections.push({ title: header, items });
+  }
+
+  const runningTasks = tasks.filter((t) => t.status === "running");
+  if (runningTasks.length > 0) {
+    const items: string[] = [];
+    for (const t of runningTasks) {
+      const cmdInfo = t.command ? ` (${t.command})` : "";
+      items.push(`${t.id} [${t.status}]${cmdInfo}`);
+    }
+    sections.push({
+      title: `Tasks (${runningTasks.length} running)`,
+      items,
+    });
   }
 
   if (subagents.length > 0) {
-    lines.push(`Subagents (${subagents.length} active)`);
+    const items: string[] = [];
     for (const sub of subagents) {
       const agentInfo = sub.agent ? ` (${sub.agent})` : "";
-      lines.push(`@${sub.id} [${sub.state}]${agentInfo}`);
+      items.push(`@${sub.id} [${sub.state}]${agentInfo}`);
+    }
+    sections.push({
+      title: `Subagents (${subagents.length} active)`,
+      items,
+    });
+  }
+
+  if (sections.length === 0) return undefined;
+
+  let maxInner = 0;
+  for (const s of sections) {
+    maxInner = Math.max(maxInner, visibleWidth(s.title) + 5);
+    for (const item of s.items) {
+      maxInner = Math.max(maxInner, visibleWidth(item) + 4);
     }
   }
 
+  const boxWidth = Math.max(opts?.width ?? 0, maxInner);
+  const contentWidth = boxWidth - 4;
+  const b = opts?.borderColor ?? ((s: string) => s);
+  const lines: string[] = [];
+
+  sections.forEach((s, idx) => {
+    const titleWidth = visibleWidth(s.title);
+    const fillCount = Math.max(0, boxWidth - 5 - titleWidth);
+    const fill = "─".repeat(fillCount);
+    if (idx === 0) {
+      lines.push(`${b("┌─ ")}${s.title}${b(` ${fill}┐`)}`);
+    } else {
+      lines.push(`${b("├─ ")}${s.title}${b(` ${fill}┤`)}`);
+    }
+    for (const item of s.items) {
+      const itemW = visibleWidth(item);
+      const pad = " ".repeat(Math.max(0, contentWidth - itemW));
+      lines.push(`${b("│ ")}${item}${pad}${b(" │")}`);
+    }
+  });
+
+  lines.push(`${b("└")}${b("─".repeat(boxWidth - 2))}${b("┘")}`);
   return lines;
 }
 
