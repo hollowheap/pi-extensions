@@ -51,6 +51,16 @@ You are a read-only scout. Return compressed findings.
 
 `tools` accepts a comma-separated string or a YAML list. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. Children run Pi’s built-in tools plus `pi-guard` and the child write-lock extension.
 
+## Agent selection
+
+The `/agent` slash command switches the active main session persona:
+
+- `/agent` — opens an interactive selector (`ctx.ui.select`) of available user and project agents, plus a `(default)` reset option.
+- `/agent <name>` — activates agent `<name>` directly (with tab completion).
+- `/agent default` (or `reset`) — restores the default persona, clears agent status, and restores tools.
+
+When switched, the active session adopts the agent's system prompt persona, model, guard mode (`plan`/`ask`), thinking effort, and active tools. The selection persists across turns and restores on session start.
+
 ## Tool
 
 `subagent` is a direct tool. One child per `start`; callers can start multiple children up to `maxConcurrent`.

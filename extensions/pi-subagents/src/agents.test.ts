@@ -25,7 +25,7 @@ describe("discoverAgents", () => {
     writeAgent(
       join(agentDir, "agents"),
       "scout.md",
-      "name: scout\ndescription: Fast recon\ntools: read, grep\nmodel: p/m\nthinking: high",
+      "name: scout\ndescription: Fast recon\ntools: read, grep\nmodel: p/m\nthinking: high\nmode: plan\neffort: low",
     );
 
     const result = discoverAgents({
@@ -40,6 +40,8 @@ describe("discoverAgents", () => {
         tools: ["read", "grep"],
         model: "p/m",
         thinking: "high",
+        mode: "plan",
+        effort: "low",
         source: "user",
         systemPrompt: "System prompt",
       }),

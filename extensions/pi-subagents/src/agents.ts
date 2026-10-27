@@ -10,6 +10,8 @@ export interface AgentConfig {
   tools?: string[];
   model?: string;
   thinking?: string;
+  mode?: string;
+  effort?: string;
   systemPrompt: string;
   source: "user" | "project";
   filePath: string;
@@ -33,6 +35,8 @@ type AgentFrontmatter = {
   tools?: unknown;
   model?: unknown;
   thinking?: unknown;
+  mode?: unknown;
+  effort?: unknown;
 };
 
 function parseTools(value: unknown): string[] | undefined {
@@ -84,6 +88,14 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
         ...(typeof frontmatter.thinking === "string" &&
         frontmatter.thinking.trim() !== ""
           ? { thinking: frontmatter.thinking.trim() }
+          : {}),
+        ...(typeof frontmatter.mode === "string" &&
+        frontmatter.mode.trim() !== ""
+          ? { mode: frontmatter.mode.trim() }
+          : {}),
+        ...(typeof frontmatter.effort === "string" &&
+        frontmatter.effort.trim() !== ""
+          ? { effort: frontmatter.effort.trim() }
           : {}),
         systemPrompt: body.trim(),
         source,
