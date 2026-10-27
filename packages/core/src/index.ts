@@ -8,3 +8,4 @@ export * from "./policy.js";
 export * from "./shell.js";
 export * from "./state.js";
 export * from "./prompt-lock.js";
+export * from "./pricing.js";

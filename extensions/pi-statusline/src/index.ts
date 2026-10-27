@@ -5,7 +5,11 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { effectiveCwd } from "@hollowheap/core";
+import {
+  calculateDollarCost,
+  effectiveCwd,
+  resolveModelPricing,
+} from "@hollowheap/core";
 import {
   BUILTINS,
   type GitDiffCache,
@@ -19,14 +23,47 @@ import { renderStatusline } from "./render.js";
 
 function sumTokens(ctx: ExtensionContext): TokenTotals {
   const totals: TokenTotals = { input: 0, output: 0, cost: 0 };
+  let customUsageCost: number | undefined;
+
   for (const entry of ctx.sessionManager.getBranch()) {
+    if (
+      entry.type === "custom" &&
+      (entry as { customType?: string }).customType === "hollowheap.usage"
+    ) {
+      const data = (entry as { data?: { totalCost?: unknown } }).data;
+      if (
+        typeof data?.totalCost === "number" &&
+        !Number.isNaN(data.totalCost)
+      ) {
+        customUsageCost = data.totalCost;
+      }
+    }
     if (entry.type !== "message") continue;
     const message = entry.message as AssistantMessage;
     if (message.role !== "assistant") continue;
-    totals.input += message.usage.input;
-    totals.output += message.usage.output;
-    totals.cost += message.usage.cost.total;
+    totals.input += message.usage?.input ?? 0;
+    totals.output += message.usage?.output ?? 0;
+    totals.cost += message.usage?.cost?.total ?? 0;
   }
+
+  if (
+    totals.cost === 0 &&
+    customUsageCost !== undefined &&
+    customUsageCost > 0
+  ) {
+    totals.cost = customUsageCost;
+  }
+
+  if (totals.cost === 0 && (totals.input > 0 || totals.output > 0)) {
+    const pricing = resolveModelPricing(ctx.model);
+    if (pricing) {
+      totals.cost = calculateDollarCost(
+        { input: totals.input, output: totals.output },
+        pricing,
+      );
+    }
+  }
+
   return totals;
 }
 

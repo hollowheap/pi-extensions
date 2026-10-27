@@ -88,7 +88,7 @@ describe("pi-statusline extension", () => {
       names: ["mode-guard", "budgets"],
     });
     publish(pi, "mode-guard", "PLAN");
-    const lines = component.render(40);
+    const lines = component.render(80);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("PLAN");
   });
@@ -109,6 +109,7 @@ describe("pi-statusline extension", () => {
     expect(line).toContain("main");
     expect(line).toContain("claude-opus-4-6");
     expect(line).toMatch(/↑0/);
+    expect(line).toMatch(/\$0\.000/);
   });
 
   it("re-renders when provider values arrive", () => {
@@ -116,10 +117,10 @@ describe("pi-statusline extension", () => {
     extension(pi as never);
     const ctx = createMockCtx();
     const { component, tui } = installFooter(pi, ctx);
-    expect(component.render(40)[0]).not.toContain("PLAN");
+    expect(component.render(80)[0]).not.toContain("PLAN");
     publish(pi, "mode-guard", "PLAN");
     expect(tui.requestRender).toHaveBeenCalled();
-    expect(component.render(40)[0]).toContain("PLAN");
+    expect(component.render(80)[0]).toContain("PLAN");
   });
 
   it("clears the footer on session_shutdown for the owning session", () => {
@@ -129,5 +130,54 @@ describe("pi-statusline extension", () => {
     installFooter(pi, ctx);
     handlers(pi).session_shutdown(undefined as never, ctx as never);
     expect(ctx.ui.setFooter).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("falls back to hollowheap.usage custom entry when message cost is 0", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx({
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              usage: { input: 1000, output: 500, cost: { total: 0 } },
+            },
+          },
+          {
+            type: "custom",
+            customType: "hollowheap.usage",
+            data: { totalCost: 0.125 },
+          },
+        ],
+      },
+    });
+    const { component } = installFooter(pi, ctx);
+    const line = component.render(120)[0] as string;
+    expect(line).toContain("$0.125");
+  });
+
+  it("falls back to model pricing when message cost is 0 and no custom entry exists", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx({
+      model: { id: "anthropic/claude-3-5-sonnet" },
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              usage: { input: 100_000, output: 20_000, cost: { total: 0 } },
+            },
+          },
+        ],
+      },
+    });
+    const { component } = installFooter(pi, ctx);
+    const line = component.render(120)[0] as string;
+    // 100k input @ $3/M = $0.30; 20k output @ $15/M = $0.30; total = $0.60
+    expect(line).toContain("$0.600");
   });
 });

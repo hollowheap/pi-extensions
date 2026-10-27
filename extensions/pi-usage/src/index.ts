@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { calculateDollarCost, resolveModelPricing } from "@hollowheap/core";
 
 export const USAGE_ENTRY_TYPE = "hollowheap.usage";
 
@@ -129,17 +130,9 @@ function calculateCostFromModel(
   model: unknown,
   usage: { input: number; output: number },
 ): number {
-  if (typeof model !== "object" || model === null) return 0;
-  const typed = model as { cost?: unknown };
-  if (typeof typed.cost !== "object" || typed.cost === null) return 0;
-  const cost = typed.cost as { input?: unknown; output?: unknown };
-  if (typeof cost.input !== "number" || typeof cost.output !== "number") {
-    return 0;
-  }
-  return (
-    (usage.input / 1_000_000) * cost.input +
-    (usage.output / 1_000_000) * cost.output
-  );
+  const pricing = resolveModelPricing(model);
+  if (!pricing) return 0;
+  return calculateDollarCost(usage, pricing);
 }
 
 export default function (pi: ExtensionAPI) {
