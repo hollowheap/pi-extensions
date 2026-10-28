@@ -313,6 +313,30 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build");
   });
 
+  it("treats read-only subagent actions as passthrough and gates start by mode", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("subagent", { action: "list" })).resolves.toBeUndefined();
+    await expect(
+      call("subagent", { action: "status", id: "sub-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("subagent", { action: "cancel", id: "sub-1" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+
+    await expect(
+      call("subagent", {
+        action: "start",
+        agent: "scout",
+        task: "Analyze auth",
+      }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow subagent?",
+      "subagent scout",
+    );
+  });
+
   it("cuts bash output over 4000 characters", () => {
     const pi = createMockPi();
     extension(pi as never);

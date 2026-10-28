@@ -75,7 +75,10 @@ describe("subagent tool", () => {
         agent: "scout",
         task: "find",
         depth: 1,
-        env: { PI_SUBAGENT_DEPTH: "1" },
+        env: expect.objectContaining({
+          PI_SUBAGENT_DEPTH: "1",
+          PI_SUBAGENT_MODE: "ask",
+        }),
       }),
     );
     expect(send).toHaveBeenCalledWith(
@@ -84,6 +87,61 @@ describe("subagent tool", () => {
       expect.objectContaining({ type: "prompt", message: "find" }),
     );
     expect(detailsOf(result).status).toBe("running");
+  });
+
+  it("prioritizes parent mode over frontmatter mode, falling back to frontmatter", async () => {
+    const start = vi.fn().mockResolvedValue({ id: "sub-1", status: "running" });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const tool = createTool({
+      start,
+      send,
+      agents: () => ({
+        agents: [
+          {
+            name: "scout",
+            description: "",
+            systemPrompt: "",
+            source: "user",
+            mode: "plan",
+            filePath: "/tmp/scout.md",
+          },
+        ],
+        diagnostics: [],
+      }),
+    });
+
+    // 1. Parent in edit mode overrides agent mode "plan"
+    const editOwner = {};
+    const { enterMode } = await import("@hollowheap/core");
+    enterMode(editOwner, "edit");
+    await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      { ...ctx, sessionManager: editOwner } as never,
+    );
+    expect(start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({ PI_SUBAGENT_MODE: "edit" }),
+      }),
+    );
+
+    // 2. Parent in default ask falls back to agent mode "plan"
+    const askOwner = {};
+    enterMode(askOwner, "ask");
+    await tool.execute(
+      "2",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      { ...ctx, sessionManager: askOwner } as never,
+    );
+    expect(start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({ PI_SUBAGENT_MODE: "plan" }),
+      }),
+    );
   });
 
   it("rejects untrusted projects and depth overflow", async () => {

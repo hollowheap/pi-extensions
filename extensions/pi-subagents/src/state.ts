@@ -19,6 +19,8 @@ export interface SubagentState extends ProcessState {
   socket?: string;
   session?: string;
   model?: string;
+  activeTool?: string;
+  activeToolStartedAt?: number;
 }
 
 export function subagentsDir(agentDir: string): string {
@@ -47,6 +49,10 @@ function sanitize(state: SubagentState): ProcessState {
     ...(state.socket !== undefined ? { socket: state.socket } : {}),
     ...(state.session !== undefined ? { session: state.session } : {}),
     ...(state.model !== undefined ? { model: state.model } : {}),
+    ...(state.activeTool !== undefined ? { activeTool: state.activeTool } : {}),
+    ...(state.activeToolStartedAt !== undefined
+      ? { activeToolStartedAt: state.activeToolStartedAt }
+      : {}),
   };
 }
 

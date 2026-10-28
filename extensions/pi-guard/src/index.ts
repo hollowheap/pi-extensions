@@ -45,11 +45,12 @@ const TOOL_TAGS: Record<string, Tag> = {
   bash: "shell",
   powershell: "shell",
   task: "shell",
+  subagent: "shell",
   web_search: "search",
   web_fetch: "read",
 };
 
-const PASSTHROUGH_TASK_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
+const PASSTHROUGH_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
 
 const sessionDecisions = new Map<unknown, Map<string, DecisionEffect>>();
 
@@ -69,15 +70,25 @@ function readPathArg(input: unknown): string | undefined {
 function readCommandArg(input: unknown): string {
   if (typeof input !== "object" || input === null) return "";
   const command = (input as Record<string, unknown>).command;
-  return typeof command === "string" ? command : "";
+  if (typeof command === "string" && command !== "") return command;
+  const agent = (input as Record<string, unknown>).agent;
+  if (typeof agent === "string") {
+    return `subagent ${agent}`;
+  }
+  const id = (input as Record<string, unknown>).id;
+  if (typeof id === "string") return `subagent @${id}`;
+  return "";
 }
 
 function isPassthroughTaskCall(toolName: string, input: unknown): boolean {
-  if (toolName !== "task" || typeof input !== "object" || input === null) {
+  if (toolName !== "task" && toolName !== "subagent") {
+    return false;
+  }
+  if (typeof input !== "object" || input === null) {
     return false;
   }
   const action = (input as Record<string, unknown>).action;
-  return typeof action === "string" && PASSTHROUGH_TASK_ACTIONS.has(action);
+  return typeof action === "string" && PASSTHROUGH_ACTIONS.has(action);
 }
 
 function loadContextPermissions(ctx: ExtensionContext) {

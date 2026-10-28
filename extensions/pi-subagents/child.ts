@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { enterMode } from "@hollowheap/core";
 import { loadSubagentsConfig } from "./src/config.js";
+import { SubagentStore } from "./src/state.js";
 import { acquireWriteLock } from "./src/write-lock.js";
 
 const WRITE_TOOLS = new Set(["write", "edit", "bash"]);
@@ -29,7 +31,27 @@ export function createChildLockExtension(
       releaseLock?.();
     };
 
+    pi.on("session_start", (_event, ctx) => {
+      const mode = process.env.PI_SUBAGENT_MODE;
+      if (mode && ctx.sessionManager) {
+        enterMode(ctx.sessionManager, mode);
+      }
+    });
+
     pi.on("tool_call", async (event) => {
+      const subagentId = process.env.PI_SUBAGENT_ID;
+      if (subagentId) {
+        try {
+          const store = new SubagentStore(resolveAgentDir());
+          store.update(subagentId, {
+            activeTool: event.toolName,
+            activeToolStartedAt: Date.now(),
+          });
+        } catch {
+          // Best-effort
+        }
+      }
+
       if (!WRITE_TOOLS.has(event.toolName)) return;
       const agentDir = resolveAgentDir();
       const config = loadSubagentsConfig(agentDir);
@@ -43,10 +65,34 @@ export function createChildLockExtension(
     });
 
     pi.on("tool_result", (event) => {
+      const subagentId = process.env.PI_SUBAGENT_ID;
+      if (subagentId) {
+        try {
+          const store = new SubagentStore(resolveAgentDir());
+          store.update(subagentId, {
+            activeTool: undefined,
+            activeToolStartedAt: undefined,
+          });
+        } catch {
+          // Best-effort
+        }
+      }
       release(event.toolCallId);
     });
 
     pi.on("session_shutdown", () => {
+      const subagentId = process.env.PI_SUBAGENT_ID;
+      if (subagentId) {
+        try {
+          const store = new SubagentStore(resolveAgentDir());
+          store.update(subagentId, {
+            activeTool: undefined,
+            activeToolStartedAt: undefined,
+          });
+        } catch {
+          // Best-effort
+        }
+      }
       for (const id of [...releases.keys()]) release(id);
     });
   };

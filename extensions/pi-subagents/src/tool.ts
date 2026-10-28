@@ -9,7 +9,7 @@ import {
   keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { truncateText } from "@hollowheap/core";
+import { session, truncateText } from "@hollowheap/core";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { loadSubagentsConfig } from "./config.js";
 import {
@@ -40,6 +40,7 @@ export interface SubagentToolDeps {
     sessionPath: string,
   ) => { command: string; args: string[] };
   resolveModel?: typeof resolveSubagentModel;
+  onSubagentsChange?: () => void;
 }
 
 const defaultDeps: SubagentToolDeps = {
@@ -370,6 +371,13 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             `${id}.session.jsonl`,
           );
           const spec = deps.childSpec(effectiveAgent, sessionPath);
+          const parentMode = ctx.sessionManager
+            ? session(ctx.sessionManager).mode
+            : undefined;
+          const effectiveMode =
+            parentMode && parentMode !== "ask"
+              ? parentMode
+              : (effectiveAgent.mode ?? "ask");
           const state = await deps.start({
             agentDir,
             id,
@@ -381,12 +389,15 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             cwd: ctx.cwd,
             env: {
               PI_SUBAGENT_DEPTH: String(depth),
+              PI_SUBAGENT_ID: id,
+              PI_SUBAGENT_MODE: effectiveMode,
             },
             ...(effectiveAgent.model !== undefined
               ? { model: effectiveAgent.model }
               : {}),
             sessionPath,
           });
+          deps.onSubagentsChange?.();
           try {
             await deps.send(agentDir, state.id, {
               id: Math.floor(Math.random() * 1_000_000_000),
@@ -395,8 +406,10 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             });
           } catch (error) {
             await deps.abort(agentDir, state.id).catch(() => {});
+            deps.onSubagentsChange?.();
             throw error;
           }
+          deps.onSubagentsChange?.();
           return textResult(stateWithLog(deps, agentDir, state));
         }
 
@@ -416,17 +429,20 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             type: mode,
             message,
           });
+          deps.onSubagentsChange?.();
           return textResult({ id, mode });
         }
         if (action === "wait") {
           const timeoutMs = Math.min(params.timeoutMs ?? 30_000, 600_000);
           const state = await deps.wait(agentDir, id, timeoutMs);
+          deps.onSubagentsChange?.();
           if (state === undefined) return errorResult(`unknown id: ${id}`);
           return textResult(stateWithLog(deps, agentDir, state));
         }
         if (action === "cancel") {
           await deps.abort(agentDir, id);
           const state = await deps.wait(agentDir, id, 1_000);
+          deps.onSubagentsChange?.();
           if (state === undefined) return errorResult(`unknown id: ${id}`);
           return textResult(stateWithLog(deps, agentDir, state));
         }
@@ -481,6 +497,13 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
               ? { ...agent, model: resolvedModel }
               : agent;
           const spec = deps.childSpec(effectiveAgent, sessionPath);
+          const parentMode = ctx.sessionManager
+            ? session(ctx.sessionManager).mode
+            : undefined;
+          const effectiveMode =
+            parentMode && parentMode !== "ask"
+              ? parentMode
+              : (effectiveAgent.mode ?? "ask");
           const resumed = await deps.start({
             agentDir,
             id,
@@ -491,12 +514,17 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             command: spec.command,
             args: spec.args,
             cwd: ctx.cwd,
-            env: { PI_SUBAGENT_DEPTH: String(state.depth) },
+            env: {
+              PI_SUBAGENT_DEPTH: String(state.depth),
+              PI_SUBAGENT_ID: id,
+              PI_SUBAGENT_MODE: effectiveMode,
+            },
             ...(effectiveAgent.model !== undefined
               ? { model: effectiveAgent.model }
               : {}),
             sessionPath,
           });
+          deps.onSubagentsChange?.();
           try {
             await deps.send(agentDir, id, {
               id: Math.floor(Math.random() * 1_000_000_000),
