@@ -151,7 +151,7 @@ describe("pi-todos extension", () => {
     expect(pi.sendMessage).toHaveBeenCalledWith(
       {
         customType: "hollowheap.todos.updated",
-        content: "Todos:\n#1 [ ] Write tests\n#2 [ ] Update docs",
+        content: "Todos:\n• 1 Write tests\n• 2 Update docs",
         display: true,
         details: { todos, unknownIds: [] },
       },
@@ -250,7 +250,7 @@ describe("pi-todos extension", () => {
     expect(pi.sendMessage).toHaveBeenCalledWith(
       {
         customType: "hollowheap.todos.updated",
-        content: "Todos:\n#1 [x] First\nUnknown IDs: 9",
+        content: "Todos:\n✓ 1 First\nUnknown IDs: 9",
         display: true,
         details: { todos, unknownIds: [9] },
       },
@@ -284,7 +284,7 @@ describe("pi-todos extension", () => {
     expect(pi.sendMessage).toHaveBeenCalledWith(
       {
         customType: "hollowheap.todos.updated",
-        content: "Todos:\n#1 [x] First\n#2 [ ] Second",
+        content: "Todos:\n✓ 1 First\n• 2 Second",
         display: true,
         details: { todos, unknownIds: [] },
       },
@@ -313,7 +313,7 @@ describe("pi-todos extension", () => {
     expect(pi.appendEntry).not.toHaveBeenCalled();
     expect(pi.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "Todos:\n#1 [ ] First\nUnknown IDs: 9",
+        content: "Todos:\n• 1 First\nUnknown IDs: 9",
         details: {
           todos: [{ id: 1, text: "First", done: false }],
           unknownIds: [9],
@@ -549,10 +549,10 @@ describe("pi-todos extension", () => {
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (2 open) ┐",
-      "│ [ ] #1 First    │",
-      "│ [ ] #2 Second   │",
-      "└─────────────────┘",
+      "╭─ Todos (2 open) ╮",
+      "│ • 1 First       │",
+      "│ • 2 Second      │",
+      "╰─────────────────╯",
     ]);
 
     await emit(
@@ -562,10 +562,10 @@ describe("pi-todos extension", () => {
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (1 open, 1 done) ┐",
-      "│ [x] #1 \x1b[9mFirst\x1b[29m            │",
-      "│ [ ] #2 Second           │",
-      "└─────────────────────────┘",
+      "╭─ Todos (1 open, 1 ✓) ╮",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m            │",
+      "│ • 2 Second           │",
+      "╰──────────────────────╯",
     ]);
 
     // Subagent state arrives and is rendered alongside todos
@@ -573,12 +573,12 @@ describe("pi-todos extension", () => {
       { id: "sub-1", agent: "worker", state: "running" },
     ]);
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (1 open, 1 done) ──┐",
-      "│ [x] #1 \x1b[9mFirst\x1b[29m              │",
-      "│ [ ] #2 Second             │",
-      "├─ Subagents (1 active) ────┤",
-      "│ @sub-1 [running] (worker) │",
-      "└───────────────────────────┘",
+      "╭─ Todos (1 open, 1 ✓) ─╮",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
+      "│ • 2 Second            │",
+      "├─ Subagents (1 active) ┤",
+      "│ @sub-1 ● (worker)     │",
+      "╰───────────────────────╯",
     ]);
 
     // Running tasks arrive and are rendered alongside todos and subagents
@@ -586,14 +586,14 @@ describe("pi-todos extension", () => {
       { id: "task-1", command: "npm test", status: "running" },
     ]);
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (1 open, 1 done) ────┐",
-      "│ [x] #1 \x1b[9mFirst\x1b[29m                │",
-      "│ [ ] #2 Second               │",
-      "├─ Tasks (1 running) ─────────┤",
-      "│ task-1 [running] (npm test) │",
-      "├─ Subagents (1 active) ──────┤",
-      "│ @sub-1 [running] (worker)   │",
-      "└─────────────────────────────┘",
+      "╭─ Todos (1 open, 1 ✓) ─╮",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
+      "│ • 2 Second            │",
+      "├─ Tasks (1 running) ───┤",
+      "│ task-1 ● (npm test)   │",
+      "├─ Subagents (1 active) ┤",
+      "│ @sub-1 ● (worker)     │",
+      "╰───────────────────────╯",
     ]);
 
     // Tasks finish
@@ -606,21 +606,21 @@ describe("pi-todos extension", () => {
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (2 done) ──────────┐",
-      "│ [x] #1 \x1b[9mFirst\x1b[29m              │",
-      "│ [x] #2 \x1b[9mSecond\x1b[29m             │",
-      "├─ Subagents (1 active) ────┤",
-      "│ @sub-1 [running] (worker) │",
-      "└───────────────────────────┘",
+      "╭─ Todos (2 ✓) ─────────╮",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
+      "│ ✓ 2 \x1b[9mSecond\x1b[29m            │",
+      "├─ Subagents (1 active) ┤",
+      "│ @sub-1 ● (worker)     │",
+      "╰───────────────────────╯",
     ]);
 
     // Subagents finished, todos still displayed as 2 done
     eventHandlers["subagents:state"]?.([]);
     expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
-      "┌─ Todos (2 done) ┐",
-      "│ [x] #1 \x1b[9mFirst\x1b[29m    │",
-      "│ [x] #2 \x1b[9mSecond\x1b[29m   │",
-      "└─────────────────┘",
+      "╭─ Todos (2 ✓) ╮",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m    │",
+      "│ ✓ 2 \x1b[9mSecond\x1b[29m   │",
+      "╰──────────────╯",
     ]);
   });
 
@@ -642,7 +642,7 @@ describe("pi-todos extension", () => {
 
     expect(custom).toHaveBeenCalledTimes(1);
     expect(rendered).toContain("Todos");
-    expect(rendered).toContain("#1 [ ] First");
+    expect(rendered).toContain("• 1 First");
     expect(rendered).toContain("Esc, Enter, q, or Ctrl+C to close");
     expect(ctx.ui.notify).not.toHaveBeenCalled();
 
@@ -669,7 +669,7 @@ describe("pi-todos extension", () => {
     const rpc = context({ mode: "rpc" });
     await command(pi).handler("", rpc);
     expect(rpc.ui.custom).not.toHaveBeenCalled();
-    expect(rpc.ui.notify).toHaveBeenCalledWith("#1 [ ] First", "info");
+    expect(rpc.ui.notify).toHaveBeenCalledWith("• 1 First", "info");
 
     const print = context({ hasUI: false, mode: "print" });
     await command(pi).handler("", print);
@@ -723,7 +723,7 @@ describe("pi-todos extension", () => {
     );
     const renderedText = rendered.render(80).join("\n");
     expect(renderedText).toContain("Todos:");
-    expect(renderedText).toContain("#1 [ ] First");
+    expect(renderedText).toContain("• 1 First");
 
     const fallback = renderer(
       { content: "fallback", details: undefined },

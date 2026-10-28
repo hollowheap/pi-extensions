@@ -51,8 +51,8 @@ fork stay consistent. There is no global or project-file state.
 
 ## UI
 
-- A boxed widget above the editor displays open todos, running shell tasks, and active subagents inside a unified border (`┌─ ... ─┐`, `│ ... │`, `└─ ... ─┘`).
-  - Todos list up to ten open items with `[ ]` checkboxes (and completed items with strikethrough). When more remain, it adds a `+N more (/todos)` line.
+- A boxed widget above the editor displays open todos, running shell tasks, and active subagents inside a rounded Unicode border (`╭─ ... ─╮`, `│ ... │`, `╰─ ... ─╯`). When terminal width supports 80+ columns and both todos and background jobs are active, sections split into side-by-side columns.
+  - Todos list up to ten items with status icons (`•` open, `✓` completed with strikethrough). When more remain, it adds a `+N more (/todos)` line.
   - Running background tasks (from `pi-tasks`) and active subagents (from `pi-subagents`) appear in dedicated sub-sections separated by divider borders (`├─ ... ─┤`).
   - The widget clears when all sections are empty.
 - `/todos` shows the full list. TUI opens a closeable list (Esc, Enter, q,

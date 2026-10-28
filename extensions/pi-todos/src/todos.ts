@@ -1,4 +1,4 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
 
 export interface Todo {
@@ -121,14 +121,18 @@ function byId(todos: readonly Todo[]): Todo[] {
 export function formatTodoList(todos: readonly Todo[]): string {
   if (todos.length === 0) return "No todos";
   return byId(todos)
-    .map((todo) => `#${todo.id} [${todo.done ? "x" : " "}] ${todo.text}`)
+    .map((todo) => `${todo.done ? "✓" : "•"} ${todo.id} ${todo.text}`)
     .join("\n");
 }
 
 export interface SubagentStateItem {
   id: string;
   agent?: string;
+  task?: string;
   state: "running" | "blocked" | "complete" | string;
+  startedAt?: number;
+  activeTool?: string;
+  activeToolStartedAt?: number;
 }
 
 export interface TaskStateItem {
@@ -143,6 +147,37 @@ export interface FormatTodoWidgetOptions {
   strikethrough?: (text: string) => string;
   borderColor?: (text: string) => string;
   width?: number;
+  now?: number;
+}
+
+function stateIcon(state: string): string {
+  switch (state) {
+    case "running":
+      return "●";
+    case "blocked":
+      return "⏸";
+    case "complete":
+      return "✓";
+    default:
+      return state;
+  }
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatToolDuration(ms: number): string {
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m${seconds > 0 ? `${seconds}s` : ""}`;
 }
 
 interface WidgetSection {
@@ -164,6 +199,8 @@ export function formatTodoWidget(
     opts = options;
   } else if (tasksOrOptions) {
     opts = tasksOrOptions as FormatTodoWidgetOptions;
+  } else {
+    opts = options;
   }
 
   const sections: WidgetSection[] = [];
@@ -177,9 +214,9 @@ export function formatTodoWidget(
 
     let header: string;
     if (openCount === 0) {
-      header = `Todos (${doneCount} done)`;
+      header = `Todos (${doneCount} ✓)`;
     } else if (doneCount > 0) {
-      header = `Todos (${openCount} open, ${doneCount} done)`;
+      header = `Todos (${openCount} open, ${doneCount} ✓)`;
     } else {
       header = `Todos (${openCount} open)`;
     }
@@ -187,9 +224,9 @@ export function formatTodoWidget(
     const items: string[] = [];
     for (const todo of sorted.slice(0, WIDGET_LIMIT)) {
       if (todo.done) {
-        items.push(`[x] #${todo.id} ${strikethrough(todo.text)}`);
+        items.push(`✓ ${todo.id} ${strikethrough(todo.text)}`);
       } else {
-        items.push(`[ ] #${todo.id} ${todo.text}`);
+        items.push(`• ${todo.id} ${todo.text}`);
       }
     }
     if (sorted.length > WIDGET_LIMIT) {
@@ -203,7 +240,7 @@ export function formatTodoWidget(
     const items: string[] = [];
     for (const t of runningTasks) {
       const cmdInfo = t.command ? ` (${t.command})` : "";
-      items.push(`${t.id} [${t.status}]${cmdInfo}`);
+      items.push(`${t.id} ●${cmdInfo}`);
     }
     sections.push({
       title: `Tasks (${runningTasks.length} running)`,
@@ -213,9 +250,34 @@ export function formatTodoWidget(
 
   if (subagents.length > 0) {
     const items: string[] = [];
+    const now = opts?.now ?? Date.now();
     for (const sub of subagents) {
-      const agentInfo = sub.agent ? ` (${sub.agent})` : "";
-      items.push(`@${sub.id} [${sub.state}]${agentInfo}`);
+      if (sub.startedAt !== undefined) {
+        const elapsed = formatDuration(now - sub.startedAt);
+        const normalizedTask = sub.task
+          ? sub.task.replace(/\s+/g, " ").trim()
+          : "";
+        const taskText = normalizedTask
+          ? normalizedTask.length > 25
+            ? `${normalizedTask.slice(0, 24)}…`
+            : normalizedTask
+          : "";
+        const taskPart = taskText !== "" ? ` (${taskText})` : "";
+        let toolPart = "";
+        if (sub.activeTool) {
+          const toolTime =
+            sub.activeToolStartedAt !== undefined
+              ? ` ${formatToolDuration(now - sub.activeToolStartedAt)}`
+              : "";
+          toolPart = ` · ${sub.activeTool}${toolTime}`;
+        }
+        items.push(
+          `@${sub.id} ${elapsed}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
+        );
+      } else {
+        const agentInfo = sub.agent ? ` (${sub.agent})` : "";
+        items.push(`@${sub.id} ${stateIcon(sub.state)}${agentInfo}`);
+      }
     }
     sections.push({
       title: `Subagents (${subagents.length} active)`,
@@ -233,17 +295,98 @@ export function formatTodoWidget(
     }
   }
 
-  const boxWidth = Math.max(opts?.width ?? 0, maxInner);
-  const contentWidth = boxWidth - 4;
+  const todoSections = sections.filter((s) => s.title.startsWith("Todos"));
+  const otherSections = sections.filter((s) => !s.title.startsWith("Todos"));
+  const canSplit =
+    (opts?.width ?? 0) >= 80 &&
+    todoSections.length > 0 &&
+    otherSections.length > 0;
+
   const b = opts?.borderColor ?? ((s: string) => s);
   const lines: string[] = [];
+
+  if (canSplit) {
+    const boxWidth = Math.max(opts?.width ?? 0, 80);
+    const col1Width = Math.floor((boxWidth - 1) / 2);
+    const col2Width = boxWidth - 1 - col1Width;
+    const col1Inner = col1Width - 3;
+    const col2Inner = col2Width - 3;
+
+    const leftRows: { text: string }[] = [];
+    for (const item of todoSections[0]?.items ?? []) {
+      const fit =
+        visibleWidth(item) > col1Inner
+          ? `${truncateToWidth(item, col1Inner - 1, "")}…`
+          : item;
+      leftRows.push({ text: fit });
+    }
+
+    type RightRow =
+      | { type: "item"; text: string }
+      | { type: "divider"; title: string };
+    const rightRows: RightRow[] = [];
+    otherSections.forEach((sec, idx) => {
+      if (idx > 0) {
+        rightRows.push({ type: "divider", title: sec.title });
+      }
+      for (const item of sec.items) {
+        const fit =
+          visibleWidth(item) > col2Inner
+            ? `${truncateToWidth(item, col2Inner - 1, "")}…`
+            : item;
+        rightRows.push({ type: "item", text: fit });
+      }
+    });
+
+    const title1 = todoSections[0]?.title ?? "";
+    const title2 = otherSections[0]?.title ?? "";
+
+    const fill1 = "─".repeat(Math.max(0, col1Width - 4 - visibleWidth(title1)));
+    const fill2 = "─".repeat(Math.max(0, col2Width - 4 - visibleWidth(title2)));
+
+    const top = `${b("╭─ ")}${title1}${b(` ${fill1}`)}${b("┬─ ")}${title2}${b(` ${fill2}╮`)}`;
+    lines.push(top);
+
+    const rowCount = Math.max(leftRows.length, rightRows.length);
+    for (let i = 0; i < rowCount; i++) {
+      const leftRow = leftRows[i];
+      const leftText = leftRow ? leftRow.text : "";
+      const leftPad = " ".repeat(
+        Math.max(0, col1Inner - visibleWidth(leftText)),
+      );
+      const leftCell = `${b("│ ")}${leftText}${leftPad}${b(" ")}`;
+
+      const rightRow = rightRows[i];
+      if (rightRow && rightRow.type === "divider") {
+        const fillDivider = "─".repeat(
+          Math.max(0, col2Width - 4 - visibleWidth(rightRow.title)),
+        );
+        lines.push(
+          `${leftCell}${b("├─ ")}${rightRow.title}${b(` ${fillDivider}┤`)}`,
+        );
+      } else {
+        const rightText = rightRow ? rightRow.text : "";
+        const rightPad = " ".repeat(
+          Math.max(0, col2Inner - visibleWidth(rightText)),
+        );
+        lines.push(`${leftCell}${b("│ ")}${rightText}${rightPad}${b(" │")}`);
+      }
+    }
+
+    const bot = `${b("╰")}${b("─".repeat(col1Width - 1))}${b("┴")}${b("─".repeat(col2Width - 1))}${b("╯")}`;
+    lines.push(bot);
+    return lines;
+  }
+
+  const boxWidth = Math.max(opts?.width ?? 0, maxInner);
+  const contentWidth = boxWidth - 4;
 
   sections.forEach((s, idx) => {
     const titleWidth = visibleWidth(s.title);
     const fillCount = Math.max(0, boxWidth - 5 - titleWidth);
     const fill = "─".repeat(fillCount);
     if (idx === 0) {
-      lines.push(`${b("┌─ ")}${s.title}${b(` ${fill}┐`)}`);
+      lines.push(`${b("╭─ ")}${s.title}${b(` ${fill}╮`)}`);
     } else {
       lines.push(`${b("├─ ")}${s.title}${b(` ${fill}┤`)}`);
     }
@@ -254,7 +397,7 @@ export function formatTodoWidget(
     }
   });
 
-  lines.push(`${b("└")}${b("─".repeat(boxWidth - 2))}${b("┘")}`);
+  lines.push(`${b("╰")}${b("─".repeat(boxWidth - 2))}${b("╯")}`);
   return lines;
 }
 
