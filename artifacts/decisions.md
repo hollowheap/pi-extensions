@@ -142,7 +142,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
   - current maps reset on resume/fork and undercount against the cap.
-- [x] D31 [R14]: All nine workspace packages move to `0.2.0` together, and consumer dependencies use `^0.2.0`
+- [x] D31 [R14] [R22]: All nine workspace packages move to `0.2.0` together, and consumer dependencies use `^0.2.0`
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
   - one coordinated release; consumer behavior changes with the core refactor.
@@ -448,17 +448,17 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: children outlive the parent; live reattach needs socket and state reconciliation; one runner and socket per child; supersedes D71's session-scoped parent-hub design.
   - Live steering plus durable children need a process that owns the child after the parent exits; a per-child runner avoids a daemon.
 
-- [ ] D96 [R30]: Expose one direct `subagent` tool with `start`, `list`, `status`, `send`, `wait`, `cancel`, and `resume` actions; one child per `start`, no parallel-array parameter, and concurrency comes from multiple calls plus config.
+- [x] D96 [R30]: Expose one direct `subagent` tool with `start`, `list`, `status`, `send`, `wait`, `cancel`, and `resume` actions; one child per `start`, no parallel-array parameter, and concurrency comes from multiple calls plus config.
   - Alternatives: a parallel tasks array; single-call-only tool; separate prompt/steer tools.
   - Consequences: the parent model tracks ids; the schema has lifecycle actions; `send` steers a running child and prompts an idle one.
   - One child per call keeps failure attribution and write-lock ownership clear.
 
-- [ ] D97 [R31]: Read `<agentDir>/subagents.json` for `maxConcurrent` (default 4, max 8), `maxDepth` (default 1, max 3), `defaultTimeoutMs` (default 30 minutes, max 24 hours, 0 disables), and `writeLockTimeoutMs` (default 30 seconds); invalid values diagnose and fall back.
+- [x] D97 [R31]: Read `<agentDir>/subagents.json` for `maxConcurrent` (default 4, max 8), `maxDepth` (default 1, max 3), `defaultTimeoutMs` (default 30 minutes, max 24 hours, 0 disables), and `writeLockTimeoutMs` (default 30 seconds); invalid values diagnose and fall back.
   - Alternatives: hardcoded limits; per-call limits only; no timeout.
   - Consequences: config is shared by parent and children; depth is passed through the child environment; limits bound cost and process growth.
   - Defaults must be safe without configuration, while allowing tuned concurrency and recursion.
 
-- [ ] D98 [R31]: Serialize `write`, `edit`, and `bash` across child processes with a per-tool lock at `<agentDir>/subagents/write.lock`; atomic directory creation records owner PID and start time, the child extension releases on tool result, error, abort, or timeout, and stale owners are reclaimed.
+- [x] D98 [R31]: Serialize `write`, `edit`, and `bash` across child processes with a per-tool lock at `<agentDir>/subagents/write.lock`; atomic directory creation records owner PID and start time, the child extension releases on tool result, error, abort, or timeout, and stale owners are reclaimed.
   - Alternatives: one write-lease per child lifetime; cap all children to one; worktrees per child.
   - Consequences: read-only children proceed in parallel; writers wait; denied or crashed calls need release handling; lock wait is bounded.
   - Per-tool locking preserves concurrency without letting two children mutate the same tree.
@@ -576,3 +576,46 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Alternatives: dual direct/codemode exposure, declaring tools in LLM prompt by default.
   - Consequences: Tools are callable only within QuickJS scripts; prompt tokens are saved; free models evaluate to $0.00 without NaN.
   - Pure codemode execution eliminates LLM prompt overhead and enables multi-step research loops in a single turn.
+
+- [x] D115 [R43]: Dedicated `pi-agent` extension owns `/agent` slash command, auto-forking, branch labeling, and skill filtering.
+  - Alternatives: Keep `/agent` in `pi-subagents`, make `/agent` a simple persona switcher without session forking, filter skills by unloading extension modules.
+  - Consequences: `pi-subagents` stays focused strictly on child process execution; switching agents automatically creates a branch in the session tree (`agent: <name>`) and renames the session `[<agent>] <title>`; skill filtering dynamically restricts `event.systemPromptOptions.skills` without altering extension registrations; modal overlay popup presents agent details.
+  - Distinct agent roles require isolated system prompts, tailored skills, and branched session histories to maintain conversational and architectural integrity.
+
+- [x] D116 [R44]: Parent session mode takes priority over subagent frontmatter mode, and `pi-todos` renders live subagent progress `@<id> <elapsed> (<task>) <state> · <tool> <duration>` driven by `subagents:state` events.
+  - Alternatives: subagent always uses frontmatter mode, child prompts separately, todo widget shows static status text only.
+  - Consequences: Non-default parent modes (`autopilot`, `plan`, `edit`) force child into matching constraints/automation; `ask` parents allow frontmatter mode; `pi-guard` treats read-only subagent actions as passthrough; child hooks track active tool and elapsed duration; 1-second interval ticker refreshes widget.
+  - Parent session intent governs automation scope, while live progress in the sticky prompt widget gives immediate visibility without separate polling.
+
+- [x] D117 [R45]: Budget displays as `$0.012` (usage only) or `$0.012/$1.000` (cap active) in `pi-statusline`, while `pi-budgets` provides a detailed breakdown panel and discontinues `ctx.ui.setStatus("budget")`.
+  - Alternatives: Keep verbose footer string, show budget only inside todo widget, token counts only in statusline.
+  - Consequences: Statusline gains simple ratio/usage rendering; `pi-budgets` emits structured metrics for statusline and panel; verbose default footer is silenced.
+  - A compact statusline element keeps cost constantly observable without distracting footer changes.
+
+- [x] D118 [R46]: `ModalEditor` tracks anchor and active cursor offsets to render visual selection highlighting and executes yank/cut/change using terminal clipboard utilities.
+  - Alternatives: rely on native terminal mouse selection, pass shift-arrow escape sequences to underlying editor.
+  - Consequences: Editor maintains internal visual selection range; `render()` styles highlighted characters with selection background; `y`, `d`, `x`, `c` operate on selection range.
+  - Vim visual mode requires character-exact in-buffer selection tracking to work reliably in raw terminal mode.
+
+- [x] D119 [R47]: Prompt decoration adds a configurable `promptChar` (default `'❯'`) to `modal.json`, and all bordered components adopt Unicode rounded box-drawing characters (`╭`, `╮`, `╯`, `╰`).
+  - Alternatives: keep sharp 90-degree corners, allow arbitrary string prefixes, hardcode prompt characters without user configuration.
+  - Consequences: `pi-modal`, `pi-todos`, `pi-agent` popup, and any future bordered widgets share rounded box framing; `modal.json` adds `promptChar: string`.
+  - Unified rounded borders give cohesive visual identity across extensions while single-character prompt decoration prevents layout breakage.
+
+- [ ] D120 [R48]: Sandboxing uses `bwrap` (Bubblewrap) to isolate shell execution with read-only root and workspace-only writable bind mounts.
+  - Alternatives: Podman rootless container exec, Docker container wrapper, Landlock/seccomp native Node bindings.
+  - Consequences: Uses host `bwrap` binary without daemon requirements; maps workspace directory read-write; isolates `~/.ssh`, `~/.gnupg`, and host dotfiles.
+  - Bubblewrap provides instant sub-10ms startup, unprivileged namespace isolation, and zero background daemon maintenance.
+
+- [ ] D121 [R49]: `pi-todos` introduces `delete_todos` block requiring all items to be marked complete before execution, and adds `/todo delete [id]` and `/todo complete <id>` user commands.
+  - Alternatives: allow agent to delete incomplete items, require user confirmation prompt on every deletion, allow only complete without delete.
+  - Consequences: Parser enforces completion precondition for `delete_todos`; slash commands `/todo delete [id]` and `/todo complete <id>` give user full manual control.
+  - Requiring all items to be complete before agent deletion ensures tasks are not lost mid-flight while users retain immediate manual override.
+
+- [ ] D122 [R50]: `pi-todos` implements a `^x p` (`Ctrl+X` then `p`) prefixed keybinding handler and `/panel toggle` command to collapse/expand sticky panels, and unifies task and subagent widget layouts.
+  - Alternatives: single un-prefixed hotkey, slash command only, separate toggle keys per section.
+  - Consequences: Prefix chord state machine intercepts `^x` then `p` in raw keyboard input; widget can collapse to zero lines; task and subagent rows share `@<id> <elapsed> (<task>) <status> · <action> <duration>` format.
+  - Prefixed hotkeys avoid colliding with text input or standard editor keybindings while unified row formatting minimizes visual cognitive load.
+
+
+

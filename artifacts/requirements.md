@@ -79,62 +79,62 @@ None.
   - Acceptance: Core owns runtime foundations; guard, tools, budgets, autopilot, statusline, dashboard, and question are separate packages.
   - The split replaced the monolithic mode-guard package without changing behavior.
 
-- [ ] R01: A standalone web-tools extension exposes `web_search` and `web_fetch` as direct tools and is included in the git suite.
+- [x] R01: A standalone web-tools extension exposes `web_search` and `web_fetch` as direct tools and is included in the git suite.
   - Verify: Installing the suite or the package alone registers exactly these two tools; the full test suite and typecheck pass.
   - Acceptance: No other package owns the tools; both are direct, not codemode.
   - Coding agents need current docs and web results without adding a browser stack.
 
-- [ ] R02: `web_search` returns one normalized result shape regardless of provider.
+- [x] R02: `web_search` returns one normalized result shape regardless of provider.
   - Verify: Tests cover each provider adapter and fallback with the same output fields.
   - Acceptance: Each result has `title`, `url`, `snippet`, and `provider`; failures fall through; results are capped and truncation is reported.
   - Provider APIs disagree on field names and nesting, so the model should not branch per provider.
 
-- [ ] R03: `web_fetch` returns readable page content for a URL with a normalized result shape.
+- [x] R03: `web_fetch` returns readable page content for a URL with a normalized result shape.
   - Verify: Tests cover provider extract, raw fallback, caps, and media metadata.
   - Acceptance: Each fetch has `url`, `finalUrl`, `provider`, `contentType`, `content`, `links`, `media`, and `truncated`; no headless-browser mode; media is metadata only; links cap at 50 and media at 20.
   - Search snippets are insufficient for API docs and long pages.
 
-- [ ] R04: Provider keys and selection are user configurable without editing code.
+- [x] R04: Provider keys and selection are user configurable without editing code.
   - Verify: Tests cover env keys, `web.json` order arrays, missing keys, and invalid entries.
   - Acceptance: Keys come only from environment variables; `web.json` contains only search/fetch order arrays; unkeyed providers are skipped; configured order wins; errors never include keys.
   - Free tiers change and keys differ per machine.
 
-- [ ] R05: `web_fetch` refuses internal targets.
+- [x] R05: `web_fetch` refuses internal targets.
   - Verify: Tests cover private, loopback, link-local, metadata, non-http(s), and redirect targets.
   - Acceptance: Only `http`/`https`; private targets rejected on every hop; redirects capped; rejection returns explanatory text.
   - A URL tool that can reach internal networks is an SSRF primitive.
 
-- [ ] R06: Web tools obey `pi-guard` policy.
+- [x] R06: Web tools obey `pi-guard` policy.
   - Verify: Guard tests cover both tool names and built-in tag precedence.
   - Acceptance: `web_search` tags as `search`, `web_fetch` as `read`, without user config; built-ins stay authoritative.
   - Network reads cross a trust boundary just like local reads.
 
-- [ ] R07: Configuration and provider behavior are documented.
+- [x] R07: Configuration and provider behavior are documented.
   - Verify: Package and root README checks pass; docs list providers, env keys, order arrays, shapes, caps, media, and no rendering.
   - Acceptance: Users can audit what leaves the machine and how fallback works.
   - Provider terms and limits change, so the contract must stay visible.
 
-- [ ] R23: A direct `decide` tool returns one structured classifier answer for one caller-supplied question.
+- [x] R23: A direct `decide` tool returns one structured classifier answer for one caller-supplied question.
   - Verify: Tests cover `choice`, `score`, and `bool`, plus invalid kind and label input.
   - Acceptance: `choice` returns label, probabilities, and confidence; `score` returns index, label, and confidence; `bool` returns probability; result names model and usage.
   - Skills need a cheap structured second opinion without free-form parsing.
 
-- [ ] R24: `decide` uses only the classifier explicitly configured for it.
+- [x] R24: `decide` uses only the classifier explicitly configured for it.
   - Verify: Missing, malformed, or unavailable model config returns an explanatory error and makes no fallback call.
   - Acceptance: `<agentDir>/classifier.json` requires `model: "provider/id"`; optional timeout, input cap, and cache TTL; no first-available fallback.
   - Predictable model choice matters for privacy, cost, and reproducibility.
 
-- [ ] R25: `decide` bounds input and latency and fails without mutating state or crashing the session.
+- [x] R25: `decide` bounds input and latency and fails without mutating state or crashing the session.
   - Verify: Tests cover oversized input, timeout, provider error, and aborted signal.
   - Acceptance: 20k-character input cap and 5s timeout by default; errors return explanatory text; no file, tool, or session mutation.
   - Classification is advisory and must not block the workflow when unavailable.
 
-- [ ] R26: Repeated identical `decide` calls reuse one session result, and concurrent identical calls share one request.
+- [x] R26: Repeated identical `decide` calls reuse one session result, and concurrent identical calls share one request.
   - Verify: Tests assert provider call counts for repeated, concurrent, changed, and expired inputs.
   - Acceptance: In-memory per-session cache keyed by model, kind, question, criteria, and input; 10-minute TTL; aborted calls are not cached.
   - Caching avoids duplicate latency and quota use.
 
-- [ ] R27: `decide` is a direct Pi tool documented as advisory; v1 adds no CLI or guard service.
+- [x] R27: `decide` is a direct Pi tool documented as advisory; v1 adds no CLI or guard service.
   - Verify: Index test asserts direct exposure; README documents advisory use and privacy; no CLI or service registration exists.
   - Acceptance: Direct tool, no codemode activation, no `pi-guard` dependency, no new core registry.
   - The Pi tool is the smallest useful surface; extract shared layers only when a second consumer appears.
@@ -214,6 +214,48 @@ None.
   - Acceptance: `web_search` and `web_fetch` are callable only via `tools.*` in `codemode` without prompt declaration overhead; free model tags produce 0 dollar accrual.
   - Pure programmatic tool execution eliminates multi-turn latency and prompt bloat while pricing accurately tracks zero-cost models.
 
+- [x] R43: Agent switcher isolates agent profiles with session auto-forking and dynamic skill filtering.
+  - Verify: `/agent <name>` forks ongoing session, renames session title, labels branch point, filters declared skills, and injects system prompt.
+  - Acceptance: `pi-agent` discovers user and project agent markdown files; switches fork the session tree when history exists and update the title to `[<agent>] ...`; frontmatter `skills` explicitly filters available skills; modal overlay displays agent details; `/agent default` resets profile.
+  - Agent specialization requires distinct system prompts, skills, and tools without polluting or desynchronizing parent conversation branches.
+
+- [x] R44: Subagents inherit parent mode permissions with frontmatter fallback, and progress displays live execution state and active tool duration.
+  - Verify: Tests cover mode priority (parent mode overrides frontmatter, ask mode falls back to frontmatter), pi-guard subagent passthrough vs mode gating, and sticky widget subagent format `@<id> <mm:ss> (<task>) <status> · <tool> <tool_duration>`.
+  - Acceptance: `subagent` actions `list`, `status`, `wait`, `cancel` are passthrough in `pi-guard`; `start`, `send`, `resume` follow active mode; child process enters parent mode when non-default, else frontmatter `mode`; `pi-subagents` emits state on tick and tool events; `pi-todos` formats active subagent elapsed time and running tool duration.
+  - Transparent subagent execution tracking and mode enforcement prevent runaway child executions and provide clear progress visibility.
+
+- [x] R45: Budget statusline compact display and detailed widget panel.
+  - Verify: Statusline renders `$0.012` when no cap is set or `$0.012/$1.000` when a cap is active; widget panel renders detailed token and dollar breakdown; `ctx.ui.setStatus("budget")` verbose output is removed.
+  - Acceptance: Statusline shows simple usage or ratio; detailed widget shows comprehensive token and dollar breakdown; turn completions update both without chat or footer clutter.
+  - Concise statusline tracking keeps costs visible without consuming prompt or chat real estate.
+
+- [x] R46: Vim visual mode text selection and clipboard operations in modal editor.
+  - Verify: Pressing `v` enters visual mode; movements (`h`, `j`, `k`, `l`, `0`, `$`, `w`, `b`) expand or contract highlighted text selection; `y` copies selection to clipboard and returns to normal mode; `d`/`x` cuts selection and returns to normal mode; `c` cuts and enters insert mode.
+  - Acceptance: Selected text renders with distinct visual highlight; yank puts text on system/terminal clipboard; delete removes text; escape or `v` cancels selection.
+  - Full vim visual selection ergonomics allow precise prompt editing without leaving the terminal keyboard layout.
+
+- [x] R47: Configurable prompt decoration character and rounded box borders.
+  - Verify: Modal prompt renders configured single prompt character (defaulting to `❯`); sticky todos widget, agent modal, and popup dialogs render with rounded corner characters (`╭`, `╮`, `╯`, `╰`).
+  - Acceptance: Prompt character defaults to `❯` and can be customized to any single character; box borders use rounded Unicode box-drawing characters consistently across all UI elements.
+  - Consistent rounded borders and a clean prompt indicator provide modern, polished terminal ergonomics.
+
+- [ ] R48: Bubblewrap OS-level command execution sandboxing.
+  - Verify: Commands executed via bash or background tasks run under `bwrap` restricting filesystem access outside the workspace; attempts to read or write sensitive directories (e.g. `~/.ssh`, `~/.gnupg`, `/etc`) are blocked; workspace reads and writes succeed cleanly.
+  - Acceptance: Sandboxed execution uses system `bwrap`; workspace directory is read-write; system binaries and libraries are read-only; user secrets are isolated; failure or missing sandbox fails closed.
+  - OS-level user namespace sandboxing protects host credentials and filesystems against untrusted shell commands without container daemon overhead.
+
+- [ ] R49: Guarded todo deletion for assistant and flexible todo management for users.
+  - Verify: Assistant `delete_todos` block succeeds only when all todos are marked done, failing or rejecting if any todo remains open; `/todo complete <id>`, `/todo delete <id>`, and `/todo delete` commands let users complete or remove any todo at any time.
+  - Acceptance: Incomplete todos block agent-triggered bulk deletion; user slash commands allow explicit deletion and completion; deleted todos are removed from the sticky widget immediately.
+  - Guarding agent deletion prevents accidental premature task clearing while leaving full interactive control in user hands.
+
+- [ ] R50: Prefixed keybinding and command toggle for sticky panels with unified task and subagent formatting.
+  - Verify: Pressing `Ctrl+X` followed by `p` (`^x p`) or running `/panel toggle` toggles sticky panel visibility; tasks and subagents render with matching styling showing ID, elapsed time, status, and active command/tool.
+  - Acceptance: `^x p` hides or reveals sticky widgets (todos, tasks, subagents); background tasks and subagents display consistent metadata fields; hidden state persists across prompt submissions in the session.
+  - Hotkey toggle and consistent panel formatting preserve vertical screen space on demand while unifying execution state visualization.
+
 ## Open Questions
 
 None.
+
+

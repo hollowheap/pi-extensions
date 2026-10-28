@@ -4,172 +4,206 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 ## Completed (oldest first)
 
-- [x] T71 [S28] (blocked-by: none): recon (rpc shapes, socket lifecycle, SDK/spec surface) + this plan. | Verify: rg -q "^## " artifacts/plan.md
+- [x] T71 [S28] (blocked-by: none): recon (rpc shapes, socket lifecycle, SDK/spec surface) + this plan.
+  - Verify: rg -q "^## " artifacts/plan.md
   - Files: see A1 in git history
   - Notes: Archived ACP task A1, renumbered to T71; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T72 [S16] (blocked-by: none): scaffold `packages/pi-acp`, reshape to adapter layout (no external deps), `npm install`. | Verify: npm run typecheck
+- [x] T72 [S16] (blocked-by: none): scaffold `packages/pi-acp`, reshape to adapter layout (no external deps), `npm install`.
+  - Verify: npm run typecheck
   - Files: see A2 in git history
   - Notes: Archived ACP task A2, renumbered to T72; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T73 [S16] [S18] (blocked-by: none): ACP server skeleton (initialize/new/list/load/cancel/set_config + JSON store + socket transport + pi spawn/request) with tests. | Verify: npm test
+- [x] T73 [S16] [S18] (blocked-by: none): ACP server skeleton (initialize/new/list/load/cancel/set_config + JSON store + socket transport + pi spawn/request) with tests.
+  - Verify: npm test
   - Files: see A3 in git history
   - Notes: Archived ACP task A3, renumbered to T73; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T74 [S19] (blocked-by: none): permission/fs/terminal client-request paths (10s timeout) with tests. | Verify: npm test
+- [x] T74 [S19] (blocked-by: none): permission/fs/terminal client-request paths (10s timeout) with tests.
+  - Verify: npm test
   - Files: see A4 in git history
   - Notes: Archived ACP task A4, renumbered to T74; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T75 [S16] (blocked-by: none): bundled extension (tools, modes, gates, socket client, markers/existence/compare checks) with tests. | Verify: npm test
+- [x] T75 [S16] (blocked-by: none): bundled extension (tools, modes, gates, socket client, markers/existence/compare checks) with tests.
+  - Verify: npm test
   - Files: see A5 in git history
   - Notes: Archived ACP task A5, renumbered to T75; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T76 [S18] (blocked-by: none): prompt-turn bridge (event mapping, settle response, cancel→abort) with tests. | Verify: npm test
+- [x] T76 [S18] (blocked-by: none): prompt-turn bridge (event mapping, settle response, cancel→abort) with tests.
+  - Verify: npm test
   - Files: see A6 in git history
   - Notes: Archived ACP task A6, renumbered to T76; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T77 [S18] (blocked-by: none): session/load replay via `get_messages` fixtures with tests. | Verify: npm test
+- [x] T77 [S18] (blocked-by: none): session/load replay via `get_messages` fixtures with tests.
+  - Verify: npm test
   - Files: see A7 in git history
   - Notes: Archived ACP task A7, renumbered to T77; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T78 [S17] (blocked-by: none): spawn wiring + bin + README; live smoke (initialize/new/list, zero load errors, no model call). | Verify: test -f artifacts/logs/acp-live.log
+- [x] T78 [S17] (blocked-by: none): spawn wiring + bin + README; live smoke (initialize/new/list, zero load errors, no model call).
+  - Verify: test -f artifacts/logs/acp-live.log
   - Files: see A8 in git history
   - Notes: Archived ACP task A8, renumbered to T78; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T79 [S16] [S17] [S18] [S19] [S20] (blocked-by: none): final `npm run typecheck`, `npm test`, `npm run lint`. | Verify: npm run typecheck && npm test && npm run lint
+- [x] T79 [S16] [S17] [S18] [S19] [S20] (blocked-by: none): final `npm run typecheck`, `npm test`, `npm run lint`.
+  - Verify: npm run typecheck && npm test && npm run lint
   - Files: see A9 in git history
   - Notes: Archived ACP task A9, renumbered to T79; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T80 [S14] (blocked-by: none): three-way `checkBash` in `pi-guard/src/bash.ts` + tests; `pi-guard` shell path asks on no-allow-rule; README matrix updated. | Verify: npm test
+- [x] T80 [S14] (blocked-by: none): three-way `checkBash` in `pi-guard/src/bash.ts` + tests; `pi-guard` shell path asks on no-allow-rule; README matrix updated.
+  - Verify: npm test
   - Files: see A10 in git history
   - Notes: Archived ACP task A10, renumbered to T80; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T81 [S14] [S19] (blocked-by: none): pi-acp vendored `bash.ts` three-way + hook/`acp_bash` ask client, local-rules fallback (`ToolDeps.connected`); tests. | Verify: npm test
+- [x] T81 [S14] [S15] [S19] (blocked-by: none): pi-acp vendored `bash.ts` three-way + hook/`acp_bash` ask client, local-rules fallback (`ToolDeps.connected`); tests.
+  - Verify: npm test
   - Files: see A11 in git history
   - Notes: Archived ACP task A11, renumbered to T81; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T82 [S28] (blocked-by: none): rename pi-acp modes to `plan/ask/edit` and plan paths to `artifacts/plan.md` + `artifacts/specs.md` (extension, adapter, main appendix, README); tests. | Verify: npm test && npm run typecheck
+- [x] T82 [S28] (blocked-by: none): rename pi-acp modes to `plan/ask/edit` and plan paths to `artifacts/plan.md` + `artifacts/specs.md` (extension, adapter, main appendix, README); tests.
+  - Verify: npm test && npm run typecheck
   - Files: see A12 in git history
   - Notes: Archived ACP task A12, renumbered to T82; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T83 [S19] (blocked-by: none): guard `session/list` missing params; fix `plan.md:29` `-xt` drift. | Verify: npm test
+- [x] T83 [S19] (blocked-by: none): guard `session/list` missing params; fix `plan.md:29` `-xt` drift.
+  - Verify: npm test
   - Files: see A13 in git history
   - Notes: Archived ACP task A13, renumbered to T83; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T84 [S16] [S17] [S18] [S19] [S20] (blocked-by: none): `npm run typecheck`, `npm test`, `npm run lint`; rebuild `packages/pi-acp/dist`. | Verify: npm test
+- [x] T84 [S16] [S17] [S18] [S19] [S20] (blocked-by: none): `npm run typecheck`, `npm test`, `npm run lint`; rebuild `packages/pi-acp/dist`.
+  - Verify: npm test
   - Files: see A14 in git history
   - Notes: Archived ACP task A14, renumbered to T84; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T01 [S01] [S06] [S08]: core `policy.ts`: widen effects to allow/ask/deny, move glob/specificity/realpath/workspace-boundary matching from `extensions/pi-guard/src/rules.ts:14-99`, omit array order; bump every workspace package to `0.2.0`. | Verify: `npm test` (core table tests: specificity, ties stricter, outside-root deny).
+- [x] T01 [S01] [S06] [S08]: core `policy.ts`: widen effects to allow/ask/deny, move glob/specificity/realpath/workspace-boundary matching from `extensions/pi-guard/src/rules.ts:14-99`, omit array order; bump every workspace package to `0.2.0`.
+  - Verify: `npm test` (core table tests: specificity, ties stricter, outside-root deny).
   - Files: extensions/pi-guard/src/rules.ts:14-99
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T02 [S01]: core `config.ts`: mtime-cached permission loader for `<agentDir>/permissions.json` plus a `.pi/permissions.json` overlay only when `trusted`, with once-per-change diagnostics (port `extensions/pi-guard/src/loader.ts:79-121`) and widened rule parsing. | Verify: `npm test` (cache hit, mtime change, malformed file, untrusted overlay skipped).
+- [x] T02 [S01]: core `config.ts`: mtime-cached permission loader for `<agentDir>/permissions.json` plus a `.pi/permissions.json` overlay only when `trusted`, with once-per-change diagnostics (port `extensions/pi-guard/src/loader.ts:79-121`) and widened rule parsing.
+  - Verify: `npm test` (cache hit, mtime change, malformed file, untrusted overlay skipped).
   - Files: extensions/pi-guard/src/loader.ts:79-121
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T03 [S08] [S14]: core `shell.ts`: token-boundary prefix matching, split on `\n` and `&` as well as `&&`/`||`/`;`/`|`, strictest-part result, extend hard denies to interpreters and process substitution (port `extensions/pi-guard/src/bash.ts:27-87`). | Verify: `npm test` (cases for `git` vs `github`, newline/background chains, `<(`, `bash -c`).
+- [x] T03 [S08] [S14]: core `shell.ts`: token-boundary prefix matching, split on `\n` and `&` as well as `&&`/`||`/`;`/`|`, strictest-part result, extend hard denies to interpreters and process substitution (port `extensions/pi-guard/src/bash.ts:27-87`).
+  - Verify: `npm test` (cases for `git` vs `github`, newline/background chains, `<(`, `bash -c`).
   - Files: extensions/pi-guard/src/bash.ts:27-87
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T04 [S05]: core `exec.ts`/`format.ts`: bounded `runBinary` (maxBuffer, abort, okExitCodes, ENOENT/cwd errors), `truncateText`, `displayTarget`, `displayPath`; fold the three current implementations. | Verify: `npm test`.
+- [x] T04 [S05]: core `exec.ts`/`format.ts`: bounded `runBinary` (maxBuffer, abort, okExitCodes, ENOENT/cwd errors), `truncateText`, `displayTarget`, `displayPath`; fold the three current implementations.
+  - Verify: `npm test`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T05 [S02] [S03] [S07] [S09] [S10] [S11]: core `state.ts`/`modes.ts`: globalThis-backed `Symbol.for("@hollowheap/core/state")` registry (survives duplicate module instances), session store for mode/cwd, layer registry (first-wins, diagnostics), entry gates, and `evaluate()` implementing the five-step ladder; mode persistence via `appendCustomEntry("hollowheap.core.mode", { mode })` and `getEntries()` restore, re-running gates on restore (veto → `ask`). | Verify: `npm test` (two module instances share state; ladder cases for plan/edit/ask/autopilot; resume/fork restore; removed mode → ask).
+- [x] T05 [S02] [S03] [S07] [S09] [S10] [S11] [S24] [S27]: core `state.ts`/`modes.ts`: globalThis-backed `Symbol.for("@hollowheap/core/state")` registry (survives duplicate module instances), session store for mode/cwd, layer registry (first-wins, diagnostics), entry gates, and `evaluate()` implementing the five-step ladder; mode persistence via `appendCustomEntry("hollowheap.core.mode", { mode })` and `getEntries()` restore, re-running gates on restore (veto → `ask`).
+  - Verify: `npm test` (two module instances share state; ladder cases for plan/edit/ask/autopilot; resume/fork restore; removed mode → ask).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T06 [S12]: pi-guard: use core `evaluate`/`loadPermissions`/`truncateText`; delete `rules.ts`, `loader.ts`, `bash.ts`, `modes.ts` and their tests; keep prompting, `/mode`, `alt+m`, statusline value. | Verify: `npm test` + `npm run typecheck`.
+- [x] T06 [S12]: pi-guard: use core `evaluate`/`loadPermissions`/`truncateText`; delete `rules.ts`, `loader.ts`, `bash.ts`, `modes.ts` and their tests; keep prompting, `/mode`, `alt+m`, statusline value.
+  - Verify: `npm test` + `npm run typecheck`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T07 [S13]: pi-budgets: register the autopilot entry gate on core; drop the `guard:mode-enter` listener/envelope. | Verify: `npm test` (veto without cap, allow with cap).
+- [x] T07 [S13]: pi-budgets: register the autopilot entry gate on core; drop the `guard:mode-enter` listener/envelope.
+  - Verify: `npm test` (veto without cap, allow with cap).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T08 [S13]: pi-autopilot: register the `autopilot` layer with allow defaults; drop the `guard:modes` listener. | Verify: `npm test`.
+- [x] T08 [S13]: pi-autopilot: register the `autopilot` layer with allow defaults; drop the `guard:modes` listener.
+  - Verify: `npm test`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T09 [S14]: pi-tools: `/cd` and `effectiveCwd` via core (works standalone); `fd`/`rg` keep `ask` paths (filter only `deny`) and pass `--glob … --` / `--regexp … --`; delete `rules.ts`, `loader.ts`. | Verify: `npm test` (standalone /cd, dash-leading pattern, ask-path result retained).
+- [x] T09 [S14]: pi-tools: `/cd` and `effectiveCwd` via core (works standalone); `fd`/`rg` keep `ask` paths (filter only `deny`) and pass `--glob … --` / `--regexp … --`; delete `rules.ts`, `loader.ts`.
+  - Verify: `npm test` (standalone /cd, dash-leading pattern, ask-path result retained).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T10 [S21] [S22]: pi-statusline + pi-dashboard cwd segments read core `effectiveCwd`. | Verify: `npm test`.
+- [x] T10 [S21] [S22]: pi-statusline + pi-dashboard cwd segments read core `effectiveCwd`.
+  - Verify: `npm test`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T11 [S16]: pi-acp extension: replace vendored policy/`decide()` with core `evaluate`; delete `rules.ts`, `loader.ts`, `bash.ts`, `modes.ts`, `exec.ts` and the local policy tests; hook asks over the socket on `ask`, denies when disconnected. | Verify: `npm test` + `rg -n "checkBash|loadRules|decide|isPlanPath" packages/pi-acp/src` empty.
+- [x] T11 [S16]: pi-acp extension: replace vendored policy/`decide()` with core `evaluate`; delete `rules.ts`, `loader.ts`, `bash.ts`, `modes.ts`, `exec.ts` and the local policy tests; hook asks over the socket on `ask`, denies when disconnected.
+  - Verify: `npm test` + `rg -n "checkBash|loadRules|decide|isPlanPath" packages/pi-acp/src` empty.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T12 [S17]: pi-acp spawn: add `-nbt` so built-ins cannot bypass ACP tools; assert args. | Verify: `npm test`.
+- [x] T12 [S17]: pi-acp spawn: add `-nbt` so built-ins cannot bypass ACP tools; assert args.
+  - Verify: `npm test`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T13 [S18]: pi-acp lifecycle: close existing live session before reload and on startup-validation failure; register prompt completion before `prompt` (`adapter.ts:795-801`); reject pending prompts/permissions/clients on exit and close; push mode on connect/reconnect and buffer pre-handshake sets. | Verify: `npm test` (reload leak, prompt race, early set_config).
+- [x] T13 [S18]: pi-acp lifecycle: close existing live session before reload and on startup-validation failure; register prompt completion before `prompt` (`adapter.ts:795-801`); reject pending prompts/permissions/clients on exit and close; push mode on connect/reconnect and buffer pre-handshake sets.
+  - Verify: `npm test` (reload leak, prompt race, early set_config).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T14 [S19] [S20]: pi-acp protocol/tools: forward the real tool-call id to `session/request_permission` (`adapter.ts:576-581`); bound terminal polling with a wall-clock timeout (`extension/tools.ts:217-241`); delete timed-out client entries (`client-requests.ts:40-56`); `acp_write` parent mkdir, `acp_edit` missing-file error, `acp_fd`/`acp_rg` separators, `acp_eza` `isDirectory()`; remove unused helpers. | Verify: `npm test` + `npm run typecheck`.
+- [x] T14 [S19] [S20]: pi-acp protocol/tools: forward the real tool-call id to `session/request_permission` (`adapter.ts:576-581`); bound terminal polling with a wall-clock timeout (`extension/tools.ts:217-241`); delete timed-out client entries (`client-requests.ts:40-56`); `acp_write` parent mkdir, `acp_edit` missing-file error, `acp_fd`/`acp_rg` separators, `acp_eza` `isDirectory()`; remove unused helpers.
+  - Verify: `npm test` + `npm run typecheck`.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T15 [S21]: pi-statusline: render extension segments through `styleComponent` (not `styleText`) and truncate left text first so right-pinned sections stay visible (`render.ts:40-61`). | Verify: `npm test` (pill styling, narrow width keeps right).
+- [x] T15 [S21]: pi-statusline: render extension segments through `styleComponent` (not `styleText`) and truncate left text first so right-pinned sections stay visible (`render.ts:40-61`).
+  - Verify: `npm test` (pill styling, narrow width keeps right).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T16 [S22]: pi-dashboard: AbortController per section, abort in-flight commands on `stop()` and `session_shutdown`; confirm dynamic width reaches `fitLines` (`index.ts:64-98,146-158`). | Verify: `npm test` (abort called, no post-shutdown render).
+- [x] T16 [S22]: pi-dashboard: AbortController per section, abort in-flight commands on `stop()` and `session_shutdown`; confirm dynamic width reaches `fitLines` (`index.ts:64-98,146-158`).
+  - Verify: `npm test` (abort called, no post-shutdown render).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T17 [S04] [S23]: docs/policy: `AGENTS.md:4` (core runtime dependency exception, drop "types-only"), core/pi-* READMEs (delete vendoring claims, document `dependencies`, `0.2.0`, and the `<agentDir>/permissions.json` + trusted overlay locations), pi-acp README spawn/mode/permission text, and `modes.json` schema plus mode-persistence behavior in core/guard READMEs. | Verify: `npm run lint` + read-back.
+- [x] T17 [S04] [S23]: docs/policy: `AGENTS.md:4` (core runtime dependency exception, drop "types-only"), core/pi-* READMEs (delete vendoring claims, document `dependencies`, `0.2.0`, and the `<agentDir>/permissions.json` + trusted overlay locations), pi-acp README spawn/mode/permission text, and `modes.json` schema plus mode-persistence behavior in core/guard READMEs.
+  - Verify: `npm run lint` + read-back.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T18 [S23] [S28]: full verification: `npm run typecheck`, `npm test`, `npm run lint`, `npx tsc -p packages/pi-acp`; live ACP smoke (client mode switch, one permission prompt with the real tool id, no built-in tool execution, mode restored after resume). | Verify: commands green + smoke log.
+- [x] T18 [S23] [S28]: full verification: `npm run typecheck`, `npm test`, `npm run lint`, `npx tsc -p packages/pi-acp`; live ACP smoke (client mode switch, one permission prompt with the real tool id, no built-in tool execution, mode restored after resume).
+  - Verify: commands green + smoke log.
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T19 [S25] [S26]: core `config.ts` + wiring: `loadModesConfig(agentDir)` for `<agentDir>/modes.json` (schema, restrictive-override validation, name collisions, once-per-change diagnostics) and `replaceConfigModes` at session start in pi-guard and the pi-acp extension. | Verify: `npm test` (valid layer, `allow` override rejected, collision diagnosed, reload replaces config layers).
+- [x] T19 [S25] [S26]: core `config.ts` + wiring: `loadModesConfig(agentDir)` for `<agentDir>/modes.json` (schema, restrictive-override validation, name collisions, once-per-change diagnostics) and `replaceConfigModes` at session start in pi-guard and the pi-acp extension.
+  - Verify: `npm test` (valid layer, `allow` override rejected, collision diagnosed, reload replaces config layers).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
 
-- [x] T20 [S28]: the extension answers `get-modes` over the socket with the core registry's layers (`name`, optional `description`); the adapter fetches them at session start, validates `set_config` against them, and builds the mode config option from them, falling back to its built-in list. A mode notice rides in the returned option's description. | Verify: `npm test` (adapter offers the extension's modes, accepts `autopilot`, notice lands in the option description; extension answers `get-modes`).
+- [x] T20 [S28]: the extension answers `get-modes` over the socket with the core registry's layers (`name`, optional `description`); the adapter fetches them at session start, validates `set_config` against them, and builds the mode config option from them, falling back to its built-in list. A mode notice rides in the returned option's description.
+  - Verify: `npm test` (adapter offers the extension's modes, accepts `autopilot`, notice lands in the option description; extension answers `get-modes`).
   - Files: see task text
   - Notes: Archived task; implementation and tests are recorded in git history.
   - Risk: Historical regression coverage is in the Verify command.
@@ -192,19 +226,19 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T24 [S31, S32, S34] (blocked-by: T23): `extensions/pi-hooks/src/index.ts` runs the matching pre-hooks on `tool_call` and stops at the first block, runs the matching post-hooks on `tool_result` and appends their output truncated by core's `truncateText`, never mutates `event.input` and never replaces result content; the package is registered in the root `package.json` `pi.extensions` list after `pi-guard` so the core policy decides first.
+- [x] T24 [S31] [S32] [S34] (blocked-by: T23): `extensions/pi-hooks/src/index.ts` runs the matching pre-hooks on `tool_call` and stops at the first block, runs the matching post-hooks on `tool_result` and appends their output truncated by core's `truncateText`, never mutates `event.input` and never replaces result content; the package is registered in the root `package.json` `pi.extensions` list after `pi-guard` so the core policy decides first.
   - Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
   - Files: extensions/pi-hooks/src/index.ts, package.json
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T25 [S33, S35] (blocked-by: T24): `extensions/pi-hooks/src/skills/hooks-init/SKILL.md` is contributed through `pi.on("resources_discover", ...)`, is not under the package's conventional `skills/` root so it is never discovered twice, and teaches the file locations, the schema, the verdict protocol, and the trust consequence of writing `hooks.json`; pi-hooks registers no model-callable tool.
+- [x] T25 [S33] [S35] (blocked-by: T24): `extensions/pi-hooks/src/skills/hooks-init/SKILL.md` is contributed through `pi.on("resources_discover", ...)`, is not under the package's conventional `skills/` root so it is never discovered twice, and teaches the file locations, the schema, the verdict protocol, and the trust consequence of writing `hooks.json`; pi-hooks registers no model-callable tool.
   - Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
   - Files: extensions/pi-hooks/src/skills/hooks-init/SKILL.md
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T26 [S29, S30] (blocked-by: T25): the pi-hooks README documents the config schema, the stdin payload, the verdict protocol, the trust model, and the skill; the core README documents `runCapture`; `npm test`, `npm run typecheck`, and `npm run lint` are green.
+- [x] T26 [S29] [S30] (blocked-by: T25): the pi-hooks README documents the config schema, the stdin payload, the verdict protocol, the trust model, and the skill; the core README documents `runCapture`; `npm test`, `npm run typecheck`, and `npm run lint` are green.
   - Verify: `npm test`
   - Files: see task text
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -222,19 +256,19 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T29 [S37, S38, S39] (blocked-by: none): core `packages/core/src/blocks.ts` exports `scanTaggedBlocks(markdown)` returning `{ tag, body, start, end, closed }` for `'''tag` through `'''` (multiple/unclosed blocks, markdown code fences ignored) and `parseMarkdownBlocks(body)` returning heading/list/listItem/paragraph nodes with ordered and optional checked state (no inline parsing, no throw); export both from `src/index.ts`; the module imports no host/typebox and core gains no dependency; `packages/core/src/blocks.test.ts` covers the edge cases.
+- [x] T29 [S37] [S38] [S39] (blocked-by: none): core `packages/core/src/blocks.ts` exports `scanTaggedBlocks(markdown)` returning `{ tag, body, start, end, closed }` for `'''tag` through `'''` (multiple/unclosed blocks, markdown code fences ignored) and `parseMarkdownBlocks(body)` returning heading/list/listItem/paragraph nodes with ordered and optional checked state (no inline parsing, no throw); export both from `src/index.ts`; the module imports no host/typebox and core gains no dependency; `packages/core/src/blocks.test.ts` covers the edge cases.
   - Verify: `npx vitest run packages/core/src/blocks.test.ts && ! rg -l "@earendil-works|typebox" packages/core/src/blocks.ts && jq -e 'has("dependencies") | not' packages/core/package.json >/dev/null`
   - Files: packages/core/src/blocks.ts, src/index.ts, packages/core/src/blocks.test.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T30 [S40, S51] (blocked-by: T29): `extensions/pi-question/src/questions.ts` parses valid `question` blocks from the core AST into `{ prompt, mode, options }` (H2 per question, ordered lists, all checked => multi marker, none => single, mixed/9+ options/reserved `Write-in answer` => block invalid, zero options => free-text, source order) and formats numbered answers with the 500-character write-in cap and explicit `none selected`/`no answer`; `extensions/pi-question/src/questions.test.ts` covers valid, invalid, multi, single, free-text, and limit cases.
+- [x] T30 [S40] [S51] (blocked-by: T29): `extensions/pi-question/src/questions.ts` parses valid `question` blocks from the core AST into `{ prompt, mode, options }` (H2 per question, ordered lists, all checked => multi marker, none => single, mixed/9+ options/reserved `Write-in answer` => block invalid, zero options => free-text, source order) and formats numbered answers with the 500-character write-in cap and explicit `none selected`/`no answer`; `extensions/pi-question/src/questions.test.ts` covers valid, invalid, multi, single, free-text, and limit cases.
   - Verify: `npx vitest run extensions/pi-question/src/questions.test.ts`
   - Files: extensions/pi-question/src/questions.ts, extensions/pi-question/src/questions.test.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T31 [S36, S41, S48] (blocked-by: T30): `extensions/pi-question/src/index.ts` removes the `question` tool registration; on a live assistant `message_end` it parses text content and asks valid single-select questions sequentially through `ctx.ui.select` plus a final `Write-in answer` row and `ctx.ui.input`; no-UI paths are inert; any cancelled dialog cancels the whole set; resumed messages are not re-asked; `index.test.ts` asserts no `registerTool`, the select/input call shapes, cancellation, and no re-prompt.
+- [x] T31 [S36] [S41] [S48] (blocked-by: T30): `extensions/pi-question/src/index.ts` removes the `question` tool registration; on a live assistant `message_end` it parses text content and asks valid single-select questions sequentially through `ctx.ui.select` plus a final `Write-in answer` row and `ctx.ui.input`; no-UI paths are inert; any cancelled dialog cancels the whole set; resumed messages are not re-asked; `index.test.ts` asserts no `registerTool`, the select/input call shapes, cancellation, and no re-prompt.
   - Verify: `npx vitest run extensions/pi-question/src/index.test.ts`
   - Files: extensions/pi-question/src/index.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -300,13 +334,13 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T42 [S54, S55] (blocked-by: T41): `extensions/pi-todos/src/todos.ts` parses `create_todos` and `complete_todos` bodies from the core AST into create/complete commands, rejecting any node other than exactly one ordered list, checkbox markers, unordered/empty lists, empty task text, and non-positive or leading-zero IDs; it exports pure append/complete/format/status/confirmation helpers with monotonic IDs and unknown-ID reporting; `todos.test.ts` covers valid, invalid, unknown-ID, append, and ID-boundary cases.
+- [x] T42 [S54] [S55] (blocked-by: T41): `extensions/pi-todos/src/todos.ts` parses `create_todos` and `complete_todos` bodies from the core AST into create/complete commands, rejecting any node other than exactly one ordered list, checkbox markers, unordered/empty lists, empty task text, and non-positive or leading-zero IDs; it exports pure append/complete/format/status/confirmation helpers with monotonic IDs and unknown-ID reporting; `todos.test.ts` covers valid, invalid, unknown-ID, append, and ID-boundary cases.
   - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts`
   - Files: extensions/pi-todos/src/todos.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T43 [S53, S56] (blocked-by: T42): `extensions/pi-todos/src/index.ts` registers no model tool; on assistant `message_end` with `ctx.hasUI` it scans text blocks, processes closed valid todo blocks in source order, ignores unknown/invalid/unclosed blocks, restores the latest `hollowheap.todos` custom entry from `getBranch()` on `session_start`/`session_tree`, appends one state entry per changed message, and sends one `hollowheap.todos.updated` follow-up (`display: true`, `deliverAs: "followUp"`) with the full ID list and unknown IDs; a renderer falls back to content; duplicate same-message events do not reapply; `index.test.ts` covers restore/persist, append/complete, confirmation, duplicate guard, and malformed input.
+- [x] T43 [S53] [S56] (blocked-by: T42): `extensions/pi-todos/src/index.ts` registers no model tool; on assistant `message_end` with `ctx.hasUI` it scans text blocks, processes closed valid todo blocks in source order, ignores unknown/invalid/unclosed blocks, restores the latest `hollowheap.todos` custom entry from `getBranch()` on `session_start`/`session_tree`, appends one state entry per changed message, and sends one `hollowheap.todos.updated` follow-up (`display: true`, `deliverAs: "followUp"`) with the full ID list and unknown IDs; a renderer falls back to content; duplicate same-message events do not reapply; `index.test.ts` covers restore/persist, append/complete, confirmation, duplicate guard, and malformed input.
   - Verify: `npx vitest run extensions/pi-todos/src/index.test.ts`
   - Files: extensions/pi-todos/src/index.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -318,7 +352,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T45 [S58, S59] (blocked-by: T43): `before_agent_start` sets a stable `sections.todos_format` only when `ctx.hasUI`, teaching both fences, ordered lists, numeric IDs, append semantics, confirmation, `/todos`, and no model tool; `registerMarkdownTransformer` strips valid closed todo blocks from assistant TUI markdown and open todo fences while streaming, leaving unknown tags, closed invalid blocks, non-assistant messages, code fences, stored text, and RPC text untouched; `index.test.ts` covers gating and each strip case.
+- [x] T45 [S58] [S59] (blocked-by: T43): `before_agent_start` sets a stable `sections.todos_format` only when `ctx.hasUI`, teaching both fences, ordered lists, numeric IDs, append semantics, confirmation, `/todos`, and no model tool; `registerMarkdownTransformer` strips valid closed todo blocks from assistant TUI markdown and open todo fences while streaming, leaving unknown tags, closed invalid blocks, non-assistant messages, code fences, stored text, and RPC text untouched; `index.test.ts` covers gating and each strip case.
   - Verify: `npx vitest run extensions/pi-todos/src/index.test.ts`
   - Files: see task text
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -354,7 +388,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T51 [S63, S65, S66] (blocked-by: T49, T50): implement `src/index.ts` and `src/tool.ts`: register exactly one `code_intel` tool with `exposure: "codemode"` and the action/parameter contract; validate action-specific fields; convert 1-based input positions; call definition/references/documentSymbol/workspaceSymbol; format locations, hierarchical symbols, and workspace symbols with caps and `... (truncated)`; check the target and every returned location through core `loadPermissions`/`checkPath` read rules; reject untrusted projects before spawn; resolve the server by file suffix, map language ids, return text for missing servers, timeouts, crashes, and denied paths; activate codemode on `session_start` if available; `tool.test.ts` and `index.test.ts` cover actions, conversion, formatting, caps, empty results, trust, denial, missing server, timeouts, registration, and cleanup.
+- [x] T51 [S63] [S65] [S66] (blocked-by: T49, T50): implement `src/index.ts` and `src/tool.ts`: register exactly one `code_intel` tool with `exposure: "codemode"` and the action/parameter contract; validate action-specific fields; convert 1-based input positions; call definition/references/documentSymbol/workspaceSymbol; format locations, hierarchical symbols, and workspace symbols with caps and `... (truncated)`; check the target and every returned location through core `loadPermissions`/`checkPath` read rules; reject untrusted projects before spawn; resolve the server by file suffix, map language ids, return text for missing servers, timeouts, crashes, and denied paths; activate codemode on `session_start` if available; `tool.test.ts` and `index.test.ts` cover actions, conversion, formatting, caps, empty results, trust, denial, missing server, timeouts, registration, and cleanup.
   - Verify: `npx vitest run extensions/pi-code-intel/src/tool.test.ts extensions/pi-code-intel/src/index.test.ts && jq -e '.pi.extensions | index("./extensions/pi-code-intel/index.ts")' package.json >/dev/null && jq -e '.dependencies["@hollowheap/core"] == "^0.2.0"' extensions/pi-code-intel/package.json >/dev/null && rg -q 'name: "code_intel"' extensions/pi-code-intel/src && rg -q 'exposure: "codemode"' extensions/pi-code-intel/src && ! rg -q 'typebox' extensions/pi-code-intel/package.json`
   - Files: src/index.ts, src/tool.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -366,7 +400,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T53 [S68, S69] (blocked-by: none): scaffold `extensions/pi-tasks` with `npm run new -- pi-tasks`; set `@hollowheap/core` at `^0.2.0` in `dependencies`, keep `pi-coding-agent`/`pi-tui` as peers, remove `typebox` and any generated tool placeholder, keep version `0.2.0`, and add `./extensions/pi-tasks/index.ts` to the root `pi.extensions` list; implement `src/registry.ts` exporting `TaskRecord { id, kind, status, command?, cwd, pid?, startTime?, startedAt, finishedAt?, exitCode?, output, wait, cancel }` (`kind: "shell"` in v1, no `inbox`/`outbox`) with `<agentDir>/tasks/` (`0700`) and `<id>.json`/`<id>.log` (`0600`) persistence and atomic metadata writes; `registry.test.ts` covers record creation, `0600`/`0700` permissions, and atomic read/write.
+- [x] T53 [S68] [S69] (blocked-by: none): scaffold `extensions/pi-tasks` with `npm run new -- pi-tasks`; set `@hollowheap/core` at `^0.2.0` in `dependencies`, keep `pi-coding-agent`/`pi-tui` as peers, remove `typebox` and any generated tool placeholder, keep version `0.2.0`, and add `./extensions/pi-tasks/index.ts` to the root `pi.extensions` list; implement `src/registry.ts` exporting `TaskRecord { id, kind, status, command?, cwd, pid?, startTime?, startedAt, finishedAt?, exitCode?, output, wait, cancel }` (`kind: "shell"` in v1, no `inbox`/`outbox`) with `<agentDir>/tasks/` (`0700`) and `<id>.json`/`<id>.log` (`0600`) persistence and atomic metadata writes; `registry.test.ts` covers record creation, `0600`/`0700` permissions, and atomic read/write.
   - Verify: `jq -e '.pi.extensions | index("./extensions/pi-tasks/index.ts")' package.json >/dev/null && jq -e '.dependencies["@hollowheap/core"] == "^0.2.0"' extensions/pi-tasks/package.json >/dev/null && ! rg -q 'typebox' extensions/pi-tasks/package.json && npx vitest run extensions/pi-tasks/src/registry.test.ts && npm run typecheck`
   - Files: extensions/pi-tasks, src/registry.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -390,7 +424,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: Implemented as described in the canonical task; see the Verify command.
   - Risk: Regression in the covered behavior; the Verify command catches it.
 
-- [x] T57 [S68, S73] (blocked-by: T55, T56): implement `src/index.ts` wiring only the direct `task` tool (leaving built-in `bash` untouched and registering no `/background` command), statusline updates via `ctx.ui.setStatus("tasks", "<n> running")` (cleared when `0`), inert behavior when `PI_ACP` is set, and `session_shutdown` leaving durable tasks running; `index.test.ts` covers tool registration, status updates, ACP inertness, and `session_shutdown` durability.
+- [x] T57 [S68] [S73] (blocked-by: T55, T56): implement `src/index.ts` wiring only the direct `task` tool (leaving built-in `bash` untouched and registering no `/background` command), statusline updates via `ctx.ui.setStatus("tasks", "<n> running")` (cleared when `0`), inert behavior when `PI_ACP` is set, and `session_shutdown` leaving durable tasks running; `index.test.ts` covers tool registration, status updates, ACP inertness, and `session_shutdown` durability.
   - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts && ! rg -q 'typebox|exposure: "codemode"' extensions/pi-tasks/src extensions/pi-tasks/package.json`
   - Files: src/index.ts
   - Notes: Implemented as described in the canonical task; see the Verify command.
@@ -646,5 +680,50 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: register CustomEditor in pi-modal; support normal/insert/visual modes; load key overrides exclusively from `~/.pi/agent/modal.json`; render mode badge in prompt border.
   - Risk: CustomEditor terminal event handling, key escape sequence collision.
 
+- [x] T113 [S115] (blocked-by: T112): scaffold pi-agent with /agent command, auto-forking, branch labeling, skill filtering, and modal popup.
+  - Verify: `npx vitest run extensions/pi-agent/src/index.test.ts extensions/pi-agent/src/agents.test.ts extensions/pi-agent/src/popup.test.ts`
+  - Files: `extensions/pi-agent/package.json`, `extensions/pi-agent/index.ts`, `extensions/pi-agent/src/index.ts`, `extensions/pi-agent/src/agents.ts`, `extensions/pi-agent/src/popup.ts`, `extensions/pi-agent/src/index.test.ts`, `extensions/pi-agent/src/agents.test.ts`, `extensions/pi-agent/src/popup.test.ts`, `package.json`
+  - Notes: register `/agent` command; discover agents in user and project dirs; auto-fork existing sessions and label branch; filter skills per agent definition; inject system prompt; render popup overlay.
+  - Risk: session fork timing, empty history fork errors, mode preservation on start.
 
+- [x] T114 [S116] (blocked-by: T113): update mode permissions for subagent tool and render live subagent progress widget in pi-todos.
+  - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts extensions/pi-subagents/src/tool.test.ts extensions/pi-todos/src/todos.test.ts`
+  - Files: `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`, `extensions/pi-subagents/src/tool.ts`, `extensions/pi-subagents/src/tool.test.ts`, `extensions/pi-subagents/child.ts`, `extensions/pi-subagents/src/state.ts`, `extensions/pi-subagents/src/index.ts`, `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/todos.test.ts`
+  - Notes: map subagent execution actions to shell tag in pi-guard and allow read-only passthrough; inherit parent mode with frontmatter fallback; track active child tool and emit state with live 1s ticker; format `@<id> <elapsed> (<task>) <state> · <tool> <tool_duration>` in pi-todos widget.
+  - Risk: ticker leak, timer math errors, mode reset regressions.
 
+- [x] T115 [S117] (blocked-by: none): compact budget statusline item and silence footer status.
+  - Verify: `npx vitest run extensions/pi-budgets/src/budget.test.ts extensions/pi-statusline/src/components.test.ts`
+  - Files: `extensions/pi-budgets/src/budget.ts`, `extensions/pi-budgets/src/index.ts`, `extensions/pi-budgets/src/budget.test.ts`, `extensions/pi-statusline/src/components.ts`, `extensions/pi-statusline/src/components.test.ts`
+  - Notes: format compact budget strings (usage only e.g. `$0.012` when no cap, `$0.012/$1.000` when cap active); emit `statusline:values` with name `budgets`; remove `ctx.ui.setStatus("budget")` call; expand `/budget` command output for full breakdown.
+  - Risk: statusline truncation, zero dollar cap handling.
+
+- [x] T116 [S118] (blocked-by: none): implement visual mode text selection highlighting and vim operations in modal editor.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/keymap.ts`, `extensions/pi-modal/src/index.test.ts`
+  - Notes: track visual mode anchor and cursor indices; highlight selection in `render()`; wire `y` (yank), `d`/`x` (cut), `c` (change), and `escape` cancellation.
+  - Risk: multi-line cursor wrapping, clipboard compatibility in headless environments.
+
+- [x] T117 [S119] (blocked-by: none): add configurable prompt character and apply Unicode rounded borders across widgets.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts extensions/pi-todos/src/todos.test.ts extensions/pi-agent/src/popup.test.ts`
+  - Files: `extensions/pi-modal/src/keymap.ts`, `extensions/pi-modal/src/editor.ts`, `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-agent/src/popup.ts`, `extensions/pi-agent/src/popup.test.ts`
+  - Notes: add `promptChar` option in `modal.json` defaulting to `❯`; render prompt character prefix in `ModalEditor`; update border corners to `╭`, `╮`, `╯`, `╰` in `pi-todos`, `pi-agent` popup, and modal dialogs.
+  - Risk: prompt alignment width calculations, unicode display widths.
+
+- [x] T118 [S120] (blocked-by: none): Bubblewrap OS-level command execution sandboxing.
+  - Verify: `npx vitest run packages/core/src/sandbox.test.ts`
+  - Files: `packages/core/src/sandbox.ts`, `packages/core/src/sandbox.test.ts`, `packages/core/src/exec.ts`, `packages/core/src/index.ts`
+  - Notes: implement `bwrap` command wrapper checking binary presence; construct sandbox arguments with read-only root, dev, proc, tmpfs, and workspace bind mount; mask sensitive user credential paths (`.ssh`, `.gnupg`); integrate into core exec/command runner; fail closed if sandbox required and missing.
+  - Risk: bwrap permission flags across Linux distributions, missing /dev or /proc nodes in containers.
+
+- [ ] T119 [S121] (blocked-by: none): guarded delete_todos assistant block and /todo management commands.
+  - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
+  - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-todos/src/index.test.ts`
+  - Notes: add `delete_todos` tag support in `parseTodoBlock`; reject in `applyTodoCommand` if any todo is incomplete; add `/todo complete <id>`, `/todo delete <id>`, and `/todo delete` slash commands.
+  - Risk: empty state deletion, non-numeric ID inputs.
+
+- [ ] T120 [S122] (blocked-by: T119): prefixed panel toggle keybinding (^x p) and unified task/subagent widget layout.
+  - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
+  - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-todos/src/index.test.ts`
+  - Notes: register `/panel toggle [todos|dashboard|all]` slash command; add raw input listener for `^x p` prefix chord toggling widget collapse; harmonize task and subagent row formatting with consistent `#<id> <elapsed> (<target>) <status>`.
+  - Risk: key chord state timeout, focus stealing.
