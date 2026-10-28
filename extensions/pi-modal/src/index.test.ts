@@ -31,7 +31,7 @@ afterEach(() => {
 function createMockEditor(config = {}, options: { initialText?: string } = {}) {
   const tui = {
     requestRender: vi.fn(),
-    terminal: { rows: 24, columns: 80 },
+    terminal: { rows: 24, columns: 80, write: vi.fn() },
   };
   const theme = {
     borderColor: (s: string) => s,
@@ -64,7 +64,29 @@ describe("keymap config loading and resolution", () => {
     const config = loadModalConfig(dir);
     expect(config.enabled).toBe(true);
     expect(config.initialMode).toBe("insert");
+    expect(config.promptChar).toBe("❯");
     expect(config.keymaps?.normal).toEqual({});
+  });
+
+  it("loads single-character promptChar from modal.json and validates length", () => {
+    const dir = createTempDir();
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({
+        promptChar: "$",
+      }),
+    );
+    const config = loadModalConfig(dir);
+    expect(config.promptChar).toBe("$");
+
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({
+        promptChar: ">>>",
+      }),
+    );
+    const multiConfig = loadModalConfig(dir);
+    expect(multiConfig.promptChar).toBe("❯");
   });
 
   it("loads user key overrides and initialMode from modal.json", () => {
@@ -168,6 +190,168 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("normal");
   });
 
+  it("highlights visual selection across movement keys in render()", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello world" },
+    );
+    // Move to start of line
+    editor.handleInput("0");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+
+    // Enter visual mode
+    editor.handleInput("v");
+    expect(editor.getMode()).toBe("visual");
+    expect(editor.getSelectionAnchor()).toEqual({ line: 0, col: 0 });
+
+    // Move cursor right by 4 characters (covering "hello")
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 4 });
+
+    const selection = editor.getSelection();
+    expect(selection).not.toBeNull();
+    expect(selection?.text).toBe("hello");
+
+    const lines = editor.render(80);
+    expect(lines.length).toBeGreaterThan(2);
+    // The rendered text content line should contain the highlighted text
+    expect(
+      lines.some((l) => l.includes("\x1b[7m") && l.includes("hello")),
+    ).toBe(true);
+  });
+
+  it("yank (y) copies selection to clipboard without mutating buffer and returns to normal mode", () => {
+    const { editor, tui } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "foo bar baz" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l"); // selected "foo"
+
+    editor.handleInput("y");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getText()).toBe("foo bar baz");
+    expect(editor.getYankedText()).toBe("foo");
+    expect(editor.getSelection()).toBeNull();
+    // OSC 52 base64 write for "foo" is Zm9v
+    expect(tui.terminal.write).toHaveBeenCalledWith(
+      expect.stringContaining("Zm9v"),
+    );
+  });
+
+  it("cut (d and x) deletes selection, updates clipboard, and returns to normal mode", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "foo bar baz" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("l"); // selected "foo " (col 0..3)
+
+    editor.handleInput("d");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getText()).toBe("bar baz");
+    expect(editor.getYankedText()).toBe("foo ");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+
+    // Also test cut with 'x'
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("l"); // selected "bar "
+    editor.handleInput("x");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getText()).toBe("baz");
+    expect(editor.getYankedText()).toBe("bar ");
+  });
+
+  it("change (c) cuts selection, updates clipboard, and enters insert mode", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "foo bar baz" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("l"); // "foo "
+
+    editor.handleInput("c");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe("bar baz");
+    expect(editor.getYankedText()).toBe("foo ");
+
+    // Type replacement text in insert mode
+    editor.handleInput("q");
+    editor.handleInput("u");
+    editor.handleInput("x");
+    editor.handleInput(" ");
+    expect(editor.getText()).toBe("qux bar baz");
+  });
+
+  it("multi-line visual selection highlighting, yanking, and deletion", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "first line\nsecond line" },
+    );
+    // Move up to line 0 and start of line
+    editor.handleInput("k");
+    editor.handleInput("0");
+    editor.handleInput("w");
+    editor.handleInput("l"); // col 6 ("line")
+    expect(editor.getCursor()).toEqual({ line: 0, col: 6 });
+
+    editor.handleInput("v");
+    editor.handleInput("j"); // Move down to line 1
+    const sel = editor.getSelection();
+    expect(sel).not.toBeNull();
+    expect(sel?.text).toBe("line\nsecond ");
+
+    const lines = editor.render(80);
+    // Both lines should include visual highlight
+    const contentLines = lines.slice(1, -1);
+    expect(
+      contentLines.filter((l) => l.includes("\x1b[7m")).length,
+    ).toBeGreaterThanOrEqual(2);
+
+    editor.handleInput("d");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getText()).toBe("first line");
+    expect(editor.getYankedText()).toBe("line\nsecond ");
+  });
+
+  it("escape or v cancels visual selection without mutating buffer", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "keep this safe" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("w");
+    expect(editor.getMode()).toBe("visual");
+    expect(editor.getSelection()).not.toBeNull();
+
+    // Escape cancels
+    editor.handleInput("\x1b");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getSelection()).toBeNull();
+    expect(editor.getText()).toBe("keep this safe");
+
+    // 'v' toggles off
+    editor.handleInput("v");
+    expect(editor.getMode()).toBe("visual");
+    editor.handleInput("v");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getSelection()).toBeNull();
+  });
+
   it("supports custom insert mode exit chords like jk", () => {
     const { editor } = createMockEditor({
       initialMode: "insert",
@@ -217,6 +401,24 @@ describe("ModalEditor modal behavior", () => {
     editor.setMode("visual");
     lines = editor.render(80);
     expect(lines[lines.length - 1]).toContain("VISUAL");
+  });
+
+  it("decorates input with default promptChar ❯ and indents continuation lines", () => {
+    const { editor } = createMockEditor({}, { initialText: "line1\nline2" });
+    const lines = editor.render(80);
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+    expect(lines[1]).toMatch(/^❯ line1/);
+    expect(lines[2]).toMatch(/^ {2}line2/);
+  });
+
+  it("respects custom single-character promptChar in render", () => {
+    const { editor } = createMockEditor(
+      { promptChar: "$" },
+      { initialText: "custom prompt" },
+    );
+    expect(editor.getPromptChar()).toBe("$");
+    const lines = editor.render(80);
+    expect(lines[1]).toMatch(/^\$ custom prompt/);
   });
 });
 

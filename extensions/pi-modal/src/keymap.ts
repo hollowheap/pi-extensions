@@ -12,6 +12,7 @@ export interface ModalKeymapConfig {
 export interface ModalConfig {
   enabled?: boolean;
   initialMode?: EditorMode;
+  promptChar?: string;
   keymaps?: ModalKeymapConfig;
 }
 
@@ -20,6 +21,8 @@ export const DEFAULT_NORMAL_KEYS: Record<string, string | null> = {
   j: "\x1b[B", // Down
   k: "\x1b[A", // Up
   l: "\x1b[C", // Right
+  w: "\x1bf", // Word forward
+  b: "\x1bb", // Word backward
   "0": "\x01", // Start of line
   $: "\x05", // End of line
   x: "\x1b[3~", // Delete char
@@ -37,10 +40,15 @@ export const DEFAULT_VISUAL_KEYS: Record<string, string | null> = {
   j: "\x1b[B",
   k: "\x1b[A",
   l: "\x1b[C",
+  w: "\x1bf",
+  b: "\x1bb",
+  "0": "\x01",
+  $: "\x05",
   v: null, // Toggle back to normal
   y: null, // Yank selection
   d: null, // Delete selection
   x: null, // Cut selection
+  c: null, // Cut selection and enter insert mode
 };
 
 export const DEFAULT_INSERT_KEYS: Record<string, string | null> = {};
@@ -51,6 +59,7 @@ export function loadModalConfig(agentDir: string): ModalConfig {
     return {
       enabled: true,
       initialMode: "insert",
+      promptChar: "❯",
       keymaps: {
         normal: {},
         visual: {},
@@ -62,9 +71,14 @@ export function loadModalConfig(agentDir: string): ModalConfig {
   try {
     const raw = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(raw) as ModalConfig;
+    const rawPromptChar =
+      typeof parsed.promptChar === "string" ? parsed.promptChar : undefined;
+    const promptChar =
+      rawPromptChar && [...rawPromptChar].length === 1 ? rawPromptChar : "❯";
     return {
       enabled: parsed.enabled ?? true,
       initialMode: parsed.initialMode ?? "insert",
+      promptChar,
       keymaps: {
         normal: parsed.keymaps?.normal ?? {},
         visual: parsed.keymaps?.visual ?? {},
@@ -75,6 +89,7 @@ export function loadModalConfig(agentDir: string): ModalConfig {
     return {
       enabled: true,
       initialMode: "insert",
+      promptChar: "❯",
       keymaps: {
         normal: {},
         visual: {},
