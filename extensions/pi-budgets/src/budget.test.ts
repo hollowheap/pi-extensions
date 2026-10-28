@@ -5,6 +5,8 @@ import {
   clearBudget,
   clearDollarCap,
   formatBudget,
+  formatCompactBudget,
+  formatCompactDollarBudget,
   getBudgetUsed,
   getDollarCap,
   getDollarUsed,
@@ -68,6 +70,33 @@ describe("formatBudget", () => {
     expect(formatBudget(1000, 5000, 2.5, 2.0)).toBe(
       "$2.50 used, $0.00 remaining (1,000 / 5,000 tokens)",
     );
+  });
+});
+
+describe("formatCompactBudget", () => {
+  it("formats compact dollar ratio with matching precision", () => {
+    expect(formatCompactDollarBudget(0.012, 1.0)).toBe("$0.012/$1.000");
+    expect(formatCompactDollarBudget(0.5, 2.0)).toBe("$0.50/$2.00");
+    expect(formatCompactBudget(1000, undefined, 0.012, 1.0)).toBe(
+      "$0.012/$1.000",
+    );
+    expect(formatCompactBudget(1000, undefined, 0.5, 2.0)).toBe("$0.50/$2.00");
+  });
+
+  it("formats dollar usage when no cap is set", () => {
+    expect(formatCompactBudget(1000, undefined, 0.012, undefined)).toBe(
+      "$0.012",
+    );
+    expect(formatCompactBudget(1000, undefined, 0.5, undefined)).toBe("$0.50");
+  });
+
+  it("formats compact token ratio when token cap is set without dollar cap", () => {
+    expect(formatCompactBudget(12500, 100000)).toBe("12,500/100,000");
+  });
+
+  it("formats token usage alone without cap", () => {
+    expect(formatCompactBudget(500, undefined)).toBe("500");
+    expect(formatCompactBudget(0, undefined)).toBe("");
   });
 });
 

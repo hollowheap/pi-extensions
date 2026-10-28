@@ -192,13 +192,17 @@ describe("/budget command", () => {
     );
   });
 
-  it("updates the status line on every response", () => {
-    const { ctx, message } = setupBudget();
+  it("emits compact statusline event and silences setStatus on every response", () => {
+    const { ctx, pi, message } = setupBudget();
     message({ role: "assistant", usage: { input: 100, output: 0 } });
-    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith(
+    expect(ctx.ui.setStatus).not.toHaveBeenCalledWith(
       "budget",
-      expect.stringContaining("used"),
+      expect.anything(),
     );
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "budgets",
+      text: "100",
+    });
   });
 
   it("sets a cap and prints used and remaining", async () => {
@@ -301,7 +305,7 @@ describe("statusline values", () => {
     message({ role: "assistant", usage: { input: 60, output: 40 } });
     expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
       name: "budgets",
-      text: "100 used, 900 remaining",
+      text: "100/1,000",
     });
   });
 
@@ -318,7 +322,7 @@ describe("statusline values", () => {
     expect(pi.events.emit.mock.calls.length).toBeGreaterThan(calls);
     expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
       name: "budgets",
-      text: "100 used",
+      text: "100",
     });
   });
 });

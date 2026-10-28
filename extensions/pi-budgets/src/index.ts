@@ -10,6 +10,7 @@ import {
   clearDollarCap,
   clearTokenCap,
   formatBudget,
+  formatCompactBudget,
   formatDollarBudget,
   getBudgetUsed,
   getDollarCap,
@@ -20,7 +21,11 @@ import {
   setDollarCap,
   setTokenCap,
 } from "./budget.js";
-import { calculateDollarCost, resolveModelPricing } from "./pricing.js";
+import {
+  calculateDollarCost,
+  formatDollarCost,
+  resolveModelPricing,
+} from "./pricing.js";
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
@@ -65,7 +70,7 @@ function publishBudget(owner: unknown): void {
   if (eventSink === undefined) return;
   eventSink.emit("statusline:values", {
     name: "budgets",
-    text: formatBudget(
+    text: formatCompactBudget(
       getBudgetUsed(owner),
       getTokenCap(owner),
       getDollarUsed(owner),
@@ -75,13 +80,6 @@ function publishBudget(owner: unknown): void {
 }
 
 function refreshBudget(ctx: ExtensionContext): void {
-  const text = formatBudget(
-    getBudgetUsed(ctx.sessionManager),
-    getTokenCap(ctx.sessionManager),
-    getDollarUsed(ctx.sessionManager),
-    getDollarCap(ctx.sessionManager),
-  );
-  ctx.ui.setStatus("budget", text === "" ? undefined : text);
   publishBudget(ctx.sessionManager);
 }
 
@@ -188,12 +186,20 @@ export default function (pi: ExtensionAPI) {
       const dollarCap = getDollarCap(ctx.sessionManager);
 
       if (raw === "") {
-        const text =
-          formatBudget(tokensUsed, tokenCap, dollarsUsed, dollarCap) ||
-          "0 used";
-        ctx.ui.notify(
-          `pi-budgets: budget ${text}${tokenCap === undefined && dollarCap === undefined ? " (no cap set)" : ""}`,
-        );
+        const parts: string[] = [];
+        if (dollarCap !== undefined) {
+          parts.push(`cost: ${formatDollarBudget(dollarsUsed, dollarCap)}`);
+        } else {
+          parts.push(`cost: ${formatDollarCost(dollarsUsed)} (no cap set)`);
+        }
+        if (tokenCap !== undefined) {
+          parts.push(`tokens: ${formatBudget(tokensUsed, tokenCap)}`);
+        } else {
+          parts.push(
+            `tokens: ${tokensUsed.toLocaleString("en-US")} (no cap set)`,
+          );
+        }
+        ctx.ui.notify(`pi-budgets: ${parts.join(" | ")}`);
         return;
       }
 
