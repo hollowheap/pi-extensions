@@ -1,16 +1,19 @@
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
+import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
 
 export interface RunOptions {
   okExitCodes?: readonly number[];
   maxBuffer?: number;
   timeoutMs?: number;
+  sandbox?: boolean | SandboxOptions;
 }
 
 export interface CaptureOptions {
   input?: string;
   maxBuffer?: number;
   timeoutMs?: number;
+  sandbox?: boolean | SandboxOptions;
 }
 
 export interface CaptureResult {
@@ -39,9 +42,28 @@ export function runCapture(
   options: CaptureOptions = {},
 ): Promise<CaptureResult> {
   return new Promise((resolvePromise, reject) => {
+    let targetCommand = command;
+    let targetArgs = args;
+
+    if (options.sandbox) {
+      try {
+        const sandboxOpts: SandboxOptions =
+          typeof options.sandbox === "object" ? options.sandbox : {};
+        const wrapped = wrapSandboxCommand(command, args, {
+          cwd,
+          ...sandboxOpts,
+        });
+        targetCommand = wrapped.command;
+        targetArgs = wrapped.args;
+      } catch (err) {
+        reject(err);
+        return;
+      }
+    }
+
     const child = execFile(
-      command,
-      args,
+      targetCommand,
+      targetArgs,
       {
         cwd,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
