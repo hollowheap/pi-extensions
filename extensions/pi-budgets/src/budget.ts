@@ -1,4 +1,4 @@
-import { formatDollarCost } from "./pricing.js";
+import { formatDollarCost } from "@hollowheap/core";
 
 const usedTokens = new Map<unknown, number>();
 const tokenCaps = new Map<unknown, number>();

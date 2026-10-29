@@ -1,3 +1,8 @@
+import {
+  calculateDollarCost,
+  formatDollarCost,
+  resolveModelPricing,
+} from "@hollowheap/core";
 import { describe, expect, it } from "vitest";
 import {
   addBudgetUsage,
@@ -12,11 +17,6 @@ import {
   getDollarUsed,
   setDollarCap,
 } from "./budget.js";
-import {
-  calculateDollarCost,
-  formatDollarCost,
-  resolveModelPricing,
-} from "./pricing.js";
 
 describe("budget totals", () => {
   it("accumulates per session owner", () => {

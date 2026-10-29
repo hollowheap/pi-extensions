@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, renameSync, writeFileSync } from "node:fs";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 import { cancelProcessGroup, spawnDetachedProcess } from "@hollowheap/process";
 import { RUNNER_SHIM } from "./runner-shim.js";
@@ -169,7 +170,7 @@ export async function abortSubagent(
   // Check if process is dead
   if (
     (state.pid !== undefined && !isPidAlive(state.pid)) ||
-    (state.socket !== undefined && !isSocketAlive(state.socket))
+    (state.socket !== undefined && !(await isSocketConnectable(state.socket)))
   ) {
     store.update(id, { status: "cancelled", finishedAt: Date.now() });
     return;
@@ -214,6 +215,33 @@ function isPidAlive(pid: number | undefined): boolean {
 function isSocketAlive(socketPath: string | undefined): boolean {
   if (socketPath === undefined) return true; // unknown, assume alive
   return existsSync(socketPath);
+}
+
+async function isSocketConnectable(
+  socketPath: string | undefined,
+): Promise<boolean> {
+  if (socketPath === undefined) return true; // unknown, assume alive
+  if (!existsSync(socketPath)) return false;
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection(socketPath) as unknown as {
+      on: (e: string, cb: () => void) => void;
+      destroy: () => void;
+    };
+    let settled = false;
+    const done = (alive: boolean) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        // ignore
+      }
+      resolve(alive);
+    };
+    socket.on("connect", () => done(true));
+    socket.on("error", () => done(false));
+    setTimeout(() => done(false), 200);
+  });
 }
 
 export function reconcileSubagent(

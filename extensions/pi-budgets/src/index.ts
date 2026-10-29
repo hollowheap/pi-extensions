@@ -4,6 +4,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { registerModeGate } from "@hollowheap/core";
 import {
+  calculateDollarCost,
+  formatDollarCost,
+  resolveModelPricing,
+} from "@hollowheap/core";
+import {
   addBudgetUsage,
   addDollarUsage,
   clearBudget,
@@ -21,11 +26,6 @@ import {
   setDollarCap,
   setTokenCap,
 } from "./budget.js";
-import {
-  calculateDollarCost,
-  formatDollarCost,
-  resolveModelPricing,
-} from "./pricing.js";
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
