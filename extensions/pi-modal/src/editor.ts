@@ -17,9 +17,69 @@ import {
   resolveEffectiveKeymaps,
 } from "./keymap.js";
 
+interface BorderChars {
+  topLeft: string;
+  topRight: string;
+  bottomLeft: string;
+  bottomRight: string;
+  horizontal: string;
+  vertical: string;
+}
+
+function getBorderChars(style: string): BorderChars {
+  switch (style) {
+    case "double":
+      return {
+        topLeft: "╔",
+        topRight: "╗",
+        bottomLeft: "╚",
+        bottomRight: "╝",
+        horizontal: "═",
+        vertical: "║",
+      };
+    case "dashed":
+      return {
+        topLeft: "┌",
+        topRight: "┐",
+        bottomLeft: "└",
+        bottomRight: "┘",
+        horizontal: "┈",
+        vertical: "┊",
+      };
+    case "sharp":
+      return {
+        topLeft: "┌",
+        topRight: "┐",
+        bottomLeft: "└",
+        bottomRight: "┘",
+        horizontal: "─",
+        vertical: "│",
+      };
+    case "none":
+      return {
+        topLeft: "",
+        topRight: "",
+        bottomLeft: "",
+        bottomRight: "",
+        horizontal: "",
+        vertical: "",
+      };
+    default:
+      return {
+        topLeft: "╭",
+        topRight: "╮",
+        bottomLeft: "╰",
+        bottomRight: "╯",
+        horizontal: "─",
+        vertical: "│",
+      };
+  }
+}
+
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
+  private borderStyle = "rounded";
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -39,6 +99,9 @@ export class ModalEditor extends CustomEditor {
     this.keymaps = resolveEffectiveKeymaps(config);
     if (config?.promptChar && [...config.promptChar].length === 1) {
       this.promptChar = config.promptChar;
+    }
+    if (config?.borderStyle) {
+      this.borderStyle = config.borderStyle;
     }
 
     if (config?.initialMode) {
@@ -430,6 +493,10 @@ export class ModalEditor extends CustomEditor {
       }
     }
 
+    const borderEnabled = this.borderStyle !== "none" && lines.length >= 3;
+    const borderChars = borderEnabled ? getBorderChars(this.borderStyle) : null;
+    const contentWidth = borderEnabled ? Math.max(1, width - 1) : width;
+
     if (lines.length >= 3) {
       const firstContentIdx = 1;
       const lastContentIdx = lines.length - 2;
@@ -440,19 +507,30 @@ export class ModalEditor extends CustomEditor {
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
         const p = idx === firstContentIdx ? prefix : indent;
         const line = lines[idx] ?? "";
-        const decorated = truncateToWidth(p + line, width, "");
-        const diff = width - visibleWidth(decorated);
+        const decorated = truncateToWidth(p + line, contentWidth, "");
+        const diff = contentWidth - visibleWidth(decorated);
         lines[idx] = diff > 0 ? decorated + " ".repeat(diff) : decorated;
       }
     }
 
     const label = ` ${this.mode.toUpperCase()} `;
 
-    // No border: put label on last line (border rendering not yet applied to editor)
     const last = lines.length - 1;
     const lastLine = lines[last];
     if (lastLine !== undefined && visibleWidth(lastLine) >= label.length) {
-      lines[last] = truncateToWidth(lastLine, width - label.length, "") + label;
+      lines[last] =
+        truncateToWidth(lastLine, contentWidth - label.length, "") + label;
+    }
+
+    // Apply right-side border only.
+    if (borderEnabled && borderChars) {
+      const v = borderChars.vertical;
+      for (let idx = 0; idx < lines.length; idx++) {
+        const line = lines[idx] ?? "";
+        const diff = contentWidth - visibleWidth(line);
+        const padded = diff > 0 ? line + " ".repeat(diff) : line;
+        lines[idx] = padded + v;
+      }
     }
     return lines;
   }
