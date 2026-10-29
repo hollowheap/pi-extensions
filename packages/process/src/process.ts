@@ -168,3 +168,33 @@ export async function cancelProcessGroup(
   await waitForProcessExit(pid, startTime, { timeoutMs: 1_000 });
   return true;
 }
+
+export async function isSocketConnectable(
+  socketPath?: string,
+  timeoutMs = 200,
+): Promise<boolean> {
+  if (socketPath === undefined) return true;
+  const { existsSync } = await import("node:fs");
+  if (!existsSync(socketPath)) return false;
+  const { createConnection } = await import("node:net");
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection(socketPath) as unknown as {
+      on: (e: string, cb: () => void) => void;
+      destroy: () => void;
+    };
+    let settled = false;
+    const done = (alive: boolean) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        // ignore
+      }
+      resolve(alive);
+    };
+    socket.on("connect", () => done(true));
+    socket.on("error", () => done(false));
+    setTimeout(() => done(false), timeoutMs);
+  });
+}

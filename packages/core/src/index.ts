@@ -1,5 +1,6 @@
 export type * from "./types.js";
 export * from "./blocks.js";
+export * from "./border.js";
 export * from "./config.js";
 export * from "./exec.js";
 export * from "./format.js";

@@ -125,8 +125,9 @@ export default function (pi: ExtensionAPI) {
     }
     addBudgetUsage(ctx.sessionManager, usage.input + usage.output);
 
-    const modelForPricing =
-      ctx.model ?? { id: (event.message as { model?: string }).model };
+    const modelForPricing = ctx.model ?? {
+      id: (event.message as { model?: string }).model,
+    };
     const rates = resolveModelPricing(modelForPricing);
     if (rates !== undefined) {
       const u = usage as {

@@ -1,8 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, renameSync, writeFileSync } from "node:fs";
-import { createConnection } from "node:net";
 import { join } from "node:path";
-import { cancelProcessGroup, spawnDetachedProcess } from "@hollowheap/process";
+import {
+  cancelProcessGroup,
+  isProcessAlive,
+  isSocketConnectable,
+  spawnDetachedProcess,
+} from "@hollowheap/process";
 import { RUNNER_SHIM } from "./runner-shim.js";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
@@ -169,7 +173,7 @@ export async function abortSubagent(
   if (state.status !== "running") return;
   // Check if process is dead
   if (
-    (state.pid !== undefined && !isPidAlive(state.pid)) ||
+    (state.pid !== undefined && !isProcessAlive(state.pid)) ||
     (state.socket !== undefined && !(await isSocketConnectable(state.socket)))
   ) {
     store.update(id, { status: "cancelled", finishedAt: Date.now() });
@@ -202,46 +206,9 @@ export async function waitSubagent(
   }
 }
 
-function isPidAlive(pid: number | undefined): boolean {
-  if (pid === undefined) return true; // unknown, assume alive
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isSocketAlive(socketPath: string | undefined): boolean {
   if (socketPath === undefined) return true; // unknown, assume alive
   return existsSync(socketPath);
-}
-
-async function isSocketConnectable(
-  socketPath: string | undefined,
-): Promise<boolean> {
-  if (socketPath === undefined) return true; // unknown, assume alive
-  if (!existsSync(socketPath)) return false;
-  return new Promise<boolean>((resolve) => {
-    const socket = createConnection(socketPath) as unknown as {
-      on: (e: string, cb: () => void) => void;
-      destroy: () => void;
-    };
-    let settled = false;
-    const done = (alive: boolean) => {
-      if (settled) return;
-      settled = true;
-      try {
-        socket.destroy();
-      } catch {
-        // ignore
-      }
-      resolve(alive);
-    };
-    socket.on("connect", () => done(true));
-    socket.on("error", () => done(false));
-    setTimeout(() => done(false), 200);
-  });
 }
 
 export function reconcileSubagent(
@@ -250,7 +217,7 @@ export function reconcileSubagent(
 ): SubagentState {
   if (
     (state.status === "running" || state.status === "starting") &&
-    ((state.pid !== undefined && !isPidAlive(state.pid)) ||
+    ((state.pid !== undefined && !isProcessAlive(state.pid)) ||
       (state.socket !== undefined && !isSocketAlive(state.socket)))
   ) {
     const store = new SubagentStore(agentDir);
