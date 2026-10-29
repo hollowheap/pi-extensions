@@ -543,6 +543,15 @@ export class ModalEditor extends CustomEditor {
         const padded = diff > 0 ? top + " ".repeat(diff) : top;
         lines[0] = truncateToWidth(padded, Math.max(0, width - 1), "") + tr;
       }
+      // Style the bottom-right corner to match, after the mode label.
+      if (lines.length > 1) {
+        const br = this.editorTheme.borderColor(borderChars.bottomRight);
+        const lastIdx = lines.length - 1;
+        const lastLine = lines[lastIdx] ?? "";
+        const diff = Math.max(0, contentWidth - visibleWidth(lastLine));
+        const padded = diff > 0 ? lastLine + " ".repeat(diff) : lastLine;
+        lines[lastIdx] = truncateToWidth(padded, contentWidth, "") + br;
+      }
     }
     return lines;
   }
