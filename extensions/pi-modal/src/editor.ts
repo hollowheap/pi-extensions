@@ -80,6 +80,7 @@ export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
   private borderStyle = "rounded";
+  private editorTheme: EditorTheme;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -96,6 +97,7 @@ export class ModalEditor extends CustomEditor {
     options?: CustomEditorOptions,
   ) {
     super(tui, theme, keybindings, options);
+    this.editorTheme = theme;
     this.keymaps = resolveEffectiveKeymaps(config);
     if (config?.promptChar && [...config.promptChar].length === 1) {
       this.promptChar = config.promptChar;
@@ -522,10 +524,12 @@ export class ModalEditor extends CustomEditor {
         truncateToWidth(lastLine, contentWidth - label.length, "") + label;
     }
 
-    // Apply right-side border only.
+    // Apply right-side border only, colored to match the editor theme.
     if (borderEnabled && borderChars) {
-      const v = borderChars.vertical;
-      for (let idx = 0; idx < lines.length; idx++) {
+      const v = this.editorTheme.borderColor(borderChars.vertical);
+      const firstContentIdx = 1;
+      const lastContentIdx = lines.length - 2;
+      for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
         const line = lines[idx] ?? "";
         const diff = contentWidth - visibleWidth(line);
         const padded = diff > 0 ? line + " ".repeat(diff) : line;
