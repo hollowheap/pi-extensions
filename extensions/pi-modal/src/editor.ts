@@ -10,6 +10,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+
 import {
   type EditorMode,
   type ModalConfig,
@@ -39,6 +40,7 @@ export class ModalEditor extends CustomEditor {
     if (config?.promptChar && [...config.promptChar].length === 1) {
       this.promptChar = config.promptChar;
     }
+
     if (config?.initialMode) {
       this.mode = config.initialMode;
       if (config.initialMode === "visual") {
@@ -445,6 +447,8 @@ export class ModalEditor extends CustomEditor {
     }
 
     const label = ` ${this.mode.toUpperCase()} `;
+
+    // No border: put label on last line (border rendering not yet applied to editor)
     const last = lines.length - 1;
     const lastLine = lines[last];
     if (lastLine !== undefined && visibleWidth(lastLine) >= label.length) {

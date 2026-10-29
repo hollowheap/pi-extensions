@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cancelProcessGroup, spawnDetachedProcess } from "@hollowheap/process";
 import { RUNNER_SHIM } from "./runner-shim.js";
@@ -167,7 +167,10 @@ export async function abortSubagent(
   if (state === undefined) throw new Error(`subagent not found: ${id}`);
   if (state.status !== "running") return;
   // Check if process is dead
-  if (state.pid !== undefined && !isPidAlive(state.pid)) {
+  if (
+    (state.pid !== undefined && !isPidAlive(state.pid)) ||
+    (state.socket !== undefined && !isSocketAlive(state.socket))
+  ) {
     store.update(id, { status: "cancelled", finishedAt: Date.now() });
     return;
   }
@@ -208,14 +211,19 @@ function isPidAlive(pid: number | undefined): boolean {
   }
 }
 
+function isSocketAlive(socketPath: string | undefined): boolean {
+  if (socketPath === undefined) return true; // unknown, assume alive
+  return existsSync(socketPath);
+}
+
 export function reconcileSubagent(
   agentDir: string,
   state: SubagentState,
 ): SubagentState {
   if (
     (state.status === "running" || state.status === "starting") &&
-    state.pid !== undefined &&
-    !isPidAlive(state.pid)
+    ((state.pid !== undefined && !isPidAlive(state.pid)) ||
+      (state.socket !== undefined && !isSocketAlive(state.socket)))
   ) {
     const store = new SubagentStore(agentDir);
     const updated: SubagentState = {
