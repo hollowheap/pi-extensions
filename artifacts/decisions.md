@@ -346,104 +346,104 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
 
 ## Web tools
 
-- [ ] D76 [R01]: A new `extensions/pi-web` extension owns provider adapters, normalization, key/config loading, URL safety, and both tools; `pi-tools` stays local and stateless.
+- [x] D76 [R01]: A new `extensions/pi-web` extension owns provider adapters, normalization, key/config loading, URL safety, and both tools; `pi-tools` stays local and stateless.
   - Alternatives: extend `pi-tools`; split search and fetch packages.
   - Consequences: one more package in the suite and one more config surface.
   - Network providers and their failure modes need one lifecycle owner, while the local search package should not grow HTTP clients.
 
-- [ ] D77 [R01] [R02]: `web_search` and `web_fetch` are direct tools, not codemode tools.
+- [x] D77 [R01] [R02]: `web_search` and `web_fetch` are direct tools, not codemode tools.
   - Alternatives: one `web` action tool; codemode-only.
   - Consequences: two more direct tool schemas; better discoverability and fewer round trips.
   - Each is usually one call; hiding them behind a script repeats the `fd`/`rg` mistake.
 
-- [ ] D78 [R02] [R03]: Each provider has its own adapter, and all adapters normalize into one search shape and one fetch shape. V1 capabilities: Tavily search + extract, Exa search + contents, Firecrawl search only; Jina is excluded because its free tokens are non-commercial.
+- [x] D78 [R02] [R03]: Each provider has its own adapter, and all adapters normalize into one search shape and one fetch shape. V1 capabilities: Tavily search + extract, Exa search + contents, Firecrawl search only; Jina is excluded because its free tokens are non-commercial.
   - Alternatives: one generic JSON mapper; four separate tools; include Jina with a licensing caveat.
   - Consequences: three keyed adapters plus a raw fallback; adding a provider does not change the tool contract.
   - Provider payloads differ enough that a generic mapper would be fragile; capability flags keep fetch free of a browser dependency.
 
-- [ ] D79 [R02] [R03]: Search results normalize to `title`, `url`, `snippet`, `provider`; fetch results normalize to `url`, `finalUrl`, `provider`, `contentType`, `content`, `links`, `media`, `truncated`. `links` entries are `{url, text?}` and cap at 50; `media` entries are `{url, kind, alt?, mimeType?}` with `kind` one of `image`, `video`, `audio`, `pdf`, `other` and cap at 20. Search defaults to 5 results and caps at 10; fetch defaults to 20k characters and caps at 100k; provider requests time out at 15s.
+- [x] D79 [R02] [R03]: Search results normalize to `title`, `url`, `snippet`, `provider`; fetch results normalize to `url`, `finalUrl`, `provider`, `contentType`, `content`, `links`, `media`, `truncated`. `links` entries are `{url, text?}` and cap at 50; `media` entries are `{url, kind, alt?, mimeType?}` with `kind` one of `image`, `video`, `audio`, `pdf`, `other` and cap at 20. Search defaults to 5 results and caps at 10; fetch defaults to 20k characters and caps at 100k; provider requests time out at 15s.
   - Alternatives: per-provider result shapes; uncapped output; larger defaults; no media metadata.
   - Consequences: adapters may discard provider-specific fields in v1; media is metadata only.
   - Bounded output keeps context use predictable, and the same shape lets fallback stay invisible to the model.
 
-- [ ] D80 [R04]: Provider selection is automatic by key presence using a fixed cheapest-first order, with `web.json` able to override each order array; the first entry is the default. Default search order is Exa, Tavily, Firecrawl; default fetch order is Exa, Tavily, then raw HTTP. A provider failure falls through to the next entry.
+- [x] D80 [R04]: Provider selection is automatic by key presence using a fixed cheapest-first order, with `web.json` able to override each order array; the first entry is the default. Default search order is Exa, Tavily, Firecrawl; default fetch order is Exa, Tavily, then raw HTTP. A provider failure falls through to the next entry.
   - Alternatives: explicit provider only; config order only; Tavily-first order.
   - Consequences: a failing primary can add latency before fallback; order must be documented; credit math changes should be handled by config.
   - Zero-config when one key is set, deterministic when several are set, cheapest free-tier usage first, and still overridable.
 
-- [ ] D81 [R04]: Keys come only from environment variables: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`. `web.json` never stores keys; it only contains order arrays. Keys are never logged or included in errors.
+- [x] D81 [R04]: Keys come only from environment variables: `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`. `web.json` never stores keys; it only contains order arrays. Keys are never logged or included in errors.
   - Alternatives: keys in web.json; host settings namespace.
   - Consequences: standalone users must export keys; no key file to protect.
   - Env is supplied by the user's config layer and keeps secrets out of a JSON file.
 
-- [ ] D82 [R03]: V1 does not expose headless-browser or JavaScript rendering. Firecrawl is search-only; fetch uses Tavily Extract, Exa Contents, then a dependency-free raw HTTP and HTML-to-text fallback.
+- [x] D82 [R03]: V1 does not expose headless-browser or JavaScript rendering. Firecrawl is search-only; fetch uses Tavily Extract, Exa Contents, then a dependency-free raw HTTP and HTML-to-text fallback.
   - Alternatives: Firecrawl scrape; Browserless; Playwright; Jina Reader.
   - Consequences: JS-only pages may return empty or incomplete content; the limitation must be documented.
   - Rendering adds a browser stack, heavier failures, and a larger security surface; static extraction covers docs and most reference pages.
 
-- [ ] D83 [R05]: `web_fetch` accepts only `http`/`https`, rejects loopback, private, link-local, and metadata targets on every redirect hop, and caps redirects at 5. DNS-rebinding hardening is deferred.
+- [x] D83 [R05]: `web_fetch` accepts only `http`/`https`, rejects loopback, private, link-local, and metadata targets on every redirect hop, and caps redirects at 5. DNS-rebinding hardening is deferred.
   - Alternatives: no filtering; full DNS resolution and address pinning.
   - Consequences: hostnames resolving to private addresses may still pass; document the residual risk.
   - Basic SSRF protection is mandatory for a URL tool; full DNS pinning is more code than v1 needs.
 
-- [ ] D84 [R06]: `pi-guard` maps `web_search` to `search` and `web_fetch` to `read` in its built-in tag map; the user `tools` map cannot override built-ins.
+- [x] D84 [R06]: `pi-guard` maps `web_search` to `search` and `web_fetch` to `read` in its built-in tag map; the user `tools` map cannot override built-ins.
   - Alternatives: require every user to add tags; allow overrides.
   - Consequences: users who want a different tag need a guard code change, not config.
   - Web tools should work without extra config while still respecting path/search policy; built-in safety stays authoritative.
 
-- [ ] D85 [R07]: The package README, root README, and suite entry document the three keyed providers, the raw fallback, free-tier caveats, env key names, `web.json` order arrays, normalized shapes, caps, fallback order, media metadata, and the no-rendering limitation.
+- [x] D85 [R07]: The package README, root README, and suite entry document the three keyed providers, the raw fallback, free-tier caveats, env key names, `web.json` order arrays, normalized shapes, caps, fallback order, media metadata, and the no-rendering limitation.
   - Alternatives: provider docs only.
   - Consequences: README maintenance when free tiers change.
   - Provider terms and limits change; the user must be able to audit what leaves the machine.
 
-- [ ] D86 [R02] [R03]: V1 adds no separate response cache. The session transcript already exposes earlier tool results to the model; a tool-level cache is deferred until repeated identical calls prove common.
+- [x] D86 [R02] [R03]: V1 adds no separate response cache. The session transcript already exposes earlier tool results to the model; a tool-level cache is deferred until repeated identical calls prove common.
   - Alternatives: 5-minute in-memory cache; on-disk cache.
   - Consequences: repeated identical provider calls still cost quota.
   - An extra cache adds invalidation and privacy surface without changing what the model can already see.
 
-- [ ] D87 [R03]: `web_fetch` returns Markdown content plus extracted links and media metadata; it never returns binary payloads or image blocks.
+- [x] D87 [R03]: `web_fetch` returns Markdown content plus extracted links and media metadata; it never returns binary payloads or image blocks.
   - Alternatives: image blocks; download to temp files.
   - Consequences: the model cannot inspect image pixels or PDF bytes through this tool.
   - Metadata keeps the tool useful for media-heavy pages without blowing context or adding download cleanup.
 
 ## Classifier
 
-- [ ] D88 [R23]: `pi-classifier` exposes one direct `decide` tool with one question per call. `kind` is `choice`, `score`, or `bool`; `choice` takes 2–10 `{label, description}` options, `score` takes an ordered 2–10 scale, and `bool` takes `true`/`false` descriptions. The tool returns the label/score/probability, confidence, model, and usage; it returns no free-form rationale.
+- [x] D88 [R23]: `pi-classifier` exposes one direct `decide` tool with one question per call. `kind` is `choice`, `score`, or `bool`; `choice` takes 2–10 `{label, description}` options, `score` takes an ordered 2–10 scale, and `bool` takes `true`/`false` descriptions. The tool returns the label/score/probability, confidence, model, and usage; it returns no free-form rationale.
   - Alternatives: multiple questions per call; separate `decide` and `classify` tools; chat model with rationale.
   - Consequences: callers repeat calls for multiple questions; output stays structured and cheap.
   - The classifier primitives already provide choice, score, and bool; a rationale would require a different model path.
 
-- [ ] D89 [R24]: Model selection is explicit in `<agentDir>/classifier.json`; there is no fallback to the first available classifier. Config fields are `model` (`provider/model-id`), `timeoutMs` (default 5000), `maxInputChars` (default 20000), and `cacheTtlMs` (default 600000, 0 disables).
+- [x] D89 [R24]: Model selection is explicit in `<agentDir>/classifier.json`; there is no fallback to the first available classifier. Config fields are `model` (`provider/model-id`), `timeoutMs` (default 5000), `maxInputChars` (default 20000), and `cacheTtlMs` (default 600000, 0 disables).
   - Alternatives: first-available fallback; per-call model override; no config.
   - Consequences: missing or invalid config makes `decide` unavailable until fixed.
   - Explicit selection keeps cost, privacy, and behavior predictable.
 
-- [ ] D90 [R25]: `decide` caps input at the configured limit, times out on the configured deadline, and returns explanatory error text for invalid input, missing config, unavailable auth, classifier error, abort, or timeout. It never mutates session state or throws for capability failures.
+- [x] D90 [R25]: `decide` caps input at the configured limit, times out on the configured deadline, and returns explanatory error text for invalid input, missing config, unavailable auth, classifier error, abort, or timeout. It never mutates session state or throws for capability failures.
   - Alternatives: let provider errors throw; no input cap; no timeout.
   - Consequences: callers must handle an error-string result; very large text is rejected rather than truncated silently.
   - Classification is advisory and must not block the workflow.
 
-- [ ] D91 [R26]: Successful decisions are cached in memory per session and concurrent identical calls share one in-flight request. The key includes model, kind, question, criteria, and input; TTL comes from config; aborted or failed calls are not cached.
+- [x] D91 [R26]: Successful decisions are cached in memory per session and concurrent identical calls share one in-flight request. The key includes model, kind, question, criteria, and input; TTL comes from config; aborted or failed calls are not cached.
   - Alternatives: no cache; disk cache; cache without in-flight dedupe.
   - Consequences: identical calls after TTL or on a new session hit the classifier again.
   - This removes duplicate latency and quota use without persisting private input.
 
-- [ ] D92 [R27]: The package is a direct Pi tool only. It does not activate codemode, add a CLI, register a service, or depend on `pi-guard`. A direct tool is callable from codemode scripts as well.
+- [x] D92 [R27]: The package is a direct Pi tool only. It does not activate codemode, add a CLI, register a service, or depend on `pi-guard`. A direct tool is callable from codemode scripts as well.
   - Alternatives: CLI now; guard service now; core service registry.
   - Consequences: OpenCode and other harnesses cannot use it until a CLI exists; `pi-guard` keeps its own judge.
   - Start with the smallest useful surface and extract shared layers when a second consumer appears.
 
-- [ ] D93 [R28]: The classifier payload contains only the caller-supplied `input`, `question`, and criteria. It never adds cwd, mode, session history, file contents, or tool output, and v1 adds no automatic redaction; callers must omit secrets.
+- [x] D93 [R28]: The classifier payload contains only the caller-supplied `input`, `question`, and criteria. It never adds cwd, mode, session history, file contents, or tool output, and v1 adds no automatic redaction; callers must omit secrets.
   - Alternatives: automatic context enrichment; regex redaction; local-only enforcement.
   - Consequences: privacy depends on the caller and tool description; a remote classifier sees exactly what the model sends.
   - Classifier input may contain private text, so payload control must be explicit.
 
-- [ ] D94 [R29]: Use one process-wide FIFO prompt queue exported by core and shared across extension module roots; every blocking dialog or confirmation site opts in, while nested acquisition is forbidden.
+- [x] D94 [R29]: Use one process-wide FIFO prompt queue exported by core and shared across extension module roots; every blocking dialog or confirmation site opts in, while nested acquisition is forbidden.
   - Alternatives: per-session queue; extension-local queue; rely on the host UI; monkey-patch `ctx.ui`.
   - Consequences: a hung dialog blocks later prompts; consumers must call the helper explicitly; a reentrant prompt must bypass the lock or fail.
   - Cross-extension collisions need one owner; process-wide is the smallest scope that covers main-session prompts without new dependencies.
 
-- [ ] D95 [R30]: Run each subagent as a detached `pi --mode rpc` child supervised by a per-child runner built on `@hollowheap/process`; the runner owns stdio, exposes a Unix socket for live reattach/steer, and persists state, logs, and session files under `<agentDir>/subagents/`; no central daemon.
+- [x] D95 [R30]: Run each subagent as a detached `pi --mode rpc` child supervised by a per-child runner built on `@hollowheap/process`; the runner owns stdio, exposes a Unix socket for live reattach/steer, and persists state, logs, and session files under `<agentDir>/subagents/`; no central daemon.
   - Alternatives: in-process SDK sessions; central parent-hub daemon; session-scoped children.
   - Consequences: children outlive the parent; live reattach needs socket and state reconciliation; one runner and socket per child; supersedes D71's session-scoped parent-hub design.
   - Live steering plus durable children need a process that owns the child after the parent exits; a per-child runner avoids a daemon.
@@ -602,92 +602,92 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: `pi-modal`, `pi-todos`, `pi-agent` popup, and any future bordered widgets share rounded box framing; `modal.json` adds `promptChar: string`.
   - Unified rounded borders give cohesive visual identity across extensions while single-character prompt decoration prevents layout breakage.
 
-- [ ] D120 [R48]: Sandboxing uses `bwrap` (Bubblewrap) to isolate shell execution with read-only root and workspace-only writable bind mounts.
+- [x] D120 [R48]: Sandboxing uses `bwrap` (Bubblewrap) to isolate shell execution with read-only root and workspace-only writable bind mounts.
   - Alternatives: Podman rootless container exec, Docker container wrapper, Landlock/seccomp native Node bindings.
   - Consequences: Uses host `bwrap` binary without daemon requirements; maps workspace directory read-write; isolates `~/.ssh`, `~/.gnupg`, and host dotfiles.
   - Bubblewrap provides instant sub-10ms startup, unprivileged namespace isolation, and zero background daemon maintenance.
 
-- [ ] D121 [R49]: `pi-todos` introduces `delete_todos` block requiring all items to be marked complete before execution, and adds `/todo delete [id]` and `/todo complete <id>` user commands.
+- [x] D121 [R49]: `pi-todos` introduces `delete_todos` block requiring all items to be marked complete before execution, and adds `/todo delete [id]` and `/todo complete <id>` user commands.
   - Alternatives: allow agent to delete incomplete items, require user confirmation prompt on every deletion, allow only complete without delete.
   - Consequences: Parser enforces completion precondition for `delete_todos`; slash commands `/todo delete [id]` and `/todo complete <id>` give user full manual control.
   - Requiring all items to be complete before agent deletion ensures tasks are not lost mid-flight while users retain immediate manual override.
 
-- [ ] D122 [R50]: `pi-todos` implements a `^x p` (`Ctrl+X` then `p`) prefixed keybinding handler and `/panel toggle` command to collapse/expand sticky panels, and unifies task and subagent widget layouts.
+- [x] D122 [R50]: `pi-todos` implements a `^x p` (`Ctrl+X` then `p`) prefixed keybinding handler and `/panel toggle` command to collapse/expand sticky panels, and unifies task and subagent widget layouts.
   - Alternatives: single un-prefixed hotkey, slash command only, separate toggle keys per section.
   - Consequences: Prefix chord state machine intercepts `^x` then `p` in raw keyboard input; widget can collapse to zero lines; task and subagent rows share `@<id> <elapsed> (<task>) <status> · <action> <duration>` format.
   - Prefixed hotkeys avoid colliding with text input or standard editor keybindings while unified row formatting minimizes visual cognitive load.
 
-- [ ] D123 [R51]: `pi-todos` adds `/todo edit <id> <text>`, priority field, `/todo complete all`, and `/todos search <query>`.
+- [x] D123 [R51]: `pi-todos` adds `/todo edit <id> <text>`, priority field, `/todo complete all`, and `/todos search <query>`.
   - Alternatives: separate edit command, priority as tag, complete-by-filter.
   - Consequences: Todo interface gains optional `priority`; edit reuses existing ID; bulk complete iterates all open; search filters widget and list view.
   - Full CRUD makes todos a real task tracker instead of a simple checklist.
 
-- [ ] D124 [R52]: `pi-tasks` adds `/task logs <id>` for live output tailing and dependency declarations in task start.
+- [x] D124 [R52]: `pi-tasks` adds `/task logs <id>` for live output tailing and dependency declarations in task start.
   - Alternatives: auto-stream all output, external log files, task groups.
   - Consequences: Task registry stores log buffer per task; dependencies block start until prerequisite completes; circular deps rejected.
   - Observable output and ordering enable multi-step automation workflows.
 
-- [ ] D125 [R53]: `pi-modal` adds vim-style search (`/`), substitution (`:%s`), syntax highlighting via language detection, and visual selection background.
+- [x] D125 [R53]: `pi-modal` adds vim-style search (`/`), substitution (`:%s`), syntax highlighting via language detection, and visual selection background.
   - Alternatives: external search tool, no highlighting, selection via terminal native.
   - Consequences: Search state lives in editor; substitution operates on buffer lines; highlighting uses pi-tui theme tokens; visual mode sets selection background.
   - Search and highlighting are core vim features users expect from a modal editor.
 
-- [ ] D126 [R54]: `pi-usage` absorbs `pi-budgets`: per-model cost table, cache token tracking, subagent turn attribution, soft budget warnings.
+- [x] D126 [R54]: `pi-usage` absorbs `pi-budgets`: per-model cost table, cache token tracking, subagent turn attribution, soft budget warnings.
   - Alternatives: keep separate extensions, usage-only without budgets.
   - Consequences: Single extension owns all cost accounting; budgets config moves into usage config; soft warnings at 80% of cap.
   - Merging eliminates duplicate accounting and gives one place for all cost concerns.
 
-- [ ] D127 [R55]: `pi-subagents` adds `/subagent pause <id>`, `/subagent resume <id>`, and parent steering via follow-up message.
+- [x] D127 [R55]: `pi-subagents` adds `/subagent pause <id>`, `/subagent resume <id>`, and parent steering via follow-up message.
   - Alternatives: kill and restart, external control, no steering.
   - Consequences: Pause sends abort to child process; resume restarts with persisted session; steering queues a message for next turn.
   - Pause and steer let users course-correct without losing subagent context.
 
-- [ ] D128 [R56]: `pi-web` adds TTL-based response cache, request queue for rate limiting, and `Accept` header negotiation.
+- [x] D128 [R56]: `pi-web` adds TTL-based response cache, request queue for rate limiting, and `Accept` header negotiation.
   - Alternatives: no cache, external cache layer, fixed content type.
   - Consequences: Cache keyed by URL+headers with configurable TTL; queue limits concurrent requests; Accept header set from tool intent (JSON/HTML/text).
   - Caching and throttling reduce redundant fetches and avoid provider blocks.
 
-- [ ] D129 [R57]: `pi-dashboard` adds retry with backoff on section failure, key-triggered manual refresh, and pluggable render functions.
+- [x] D129 [R57]: `pi-dashboard` adds retry with backoff on section failure, key-triggered manual refresh, and pluggable render functions.
   - Alternatives: fail silently, auto-refresh only, built-in renderers only.
   - Consequences: Failed sections retry 3 times with exponential backoff; key binding triggers immediate refresh; render functions loaded from config TS path.
   - Resilience and extensibility make dashboard suitable for real monitoring.
 
-- [ ] D130 [R58]: `pi-code-intel` adds `hover` tool returning type/signature/docs, with optional TUI popup.
+- [x] D130 [R58]: `pi-code-intel` adds `hover` tool returning type/signature/docs, with optional TUI popup.
   - Alternatives: TUI-only hover, tool-only hover.
   - Consequences: Tool returns structured hover data to model; TUI popup shows same data when UI available; popup is dismissible.
   - Dual-purpose hover serves both model reasoning and user inspection.
 
-- [ ] D131 [R59]: `pi-statusline` adds configurable click actions per segment and loads custom components from TS files.
+- [x] D131 [R59]: `pi-statusline` adds configurable click actions per segment and loads custom components from TS files.
   - Alternatives: fixed click actions, built-in components only.
   - Consequences: Click config maps segment name to action command; custom components imported from configured path exporting ComponentFn.
   - Configurable clicks and custom components make statusline an extensible control surface.
 
-- [ ] D132 [R60]: `pi-agent` validates agent configs with schema and reports errors on load.
+- [x] D132 [R60]: `pi-agent` validates agent configs with schema and reports errors on load.
   - Alternatives: runtime validation only, silent skip.
   - Consequences: Invalid agents skipped with diagnostic; valid agents loaded normally; validation errors shown in notification.
   - Early validation prevents silent misconfiguration.
 
-- [ ] D133 [R61]: `pi-hooks` adds hook chaining, conditional execution, output formatting, and per-hook timeout.
+- [x] D133 [R61]: `pi-hooks` adds hook chaining, conditional execution, output formatting, and per-hook timeout.
   - Alternatives: single hook per event, unconditional, fixed timeout.
   - Consequences: Hooks run in sequence with output piped; conditions filter by tool/path; output format configurable; timeout per hook in config.
   - Chaining and conditions enable complex multi-step hook workflows.
 
-- [ ] D134 [R62]: `pi-question` supports multi-page questions with Next/Back and conditional branching.
+- [x] D134 [R62]: `pi-question` supports multi-page questions with Next/Back and conditional branching.
   - Alternatives: single page only, static question list.
   - Consequences: Page navigation state tracked; conditions evaluate prior answers; all state stays in context window.
   - Multi-page and branching handle complex decision trees cleanly.
 
-- [ ] D135 [R63]: `pi-guard` adds `/grant` for temporary permission grants with expiry.
+- [x] D135 [R63]: `pi-guard` adds `/grant` for temporary permission grants with expiry.
   - Alternatives: permanent rule changes only, manual config edit.
   - Consequences: Grants stored in session state; expiry checked on each permission evaluation; `/grants` lists active grants.
   - Temporary grants unblock one-off operations without weakening permanent policy.
 
-- [ ] D136 [R64]: Animated working indicator uses a spinner with elapsed timer, respecting reduced-motion and config toggle.
+- [x] D136 [R64]: Animated working indicator uses a spinner with elapsed timer, respecting reduced-motion and config toggle.
   - Alternatives: static text only, progress bar, no indicator.
   - Consequences: Spinner frames cycle at configurable interval; elapsed time shown in seconds; disabled via `animations: false` in config.
   - Animation provides liveness feedback without overwhelming the terminal.
 
-- [ ] D137 [R65]: `pi-modal` border style configurable via `modal.json` `borderStyle` field, defaulting to rounded, right-side only.
+- [x] D137 [R65]: `pi-modal` border style configurable via `modal.json` `borderStyle` field, defaulting to rounded, right-side only.
   - Alternatives: always rounded, no borders, full box.
   - Consequences: Border style enum (rounded/double/dashed/sharp/none); only right edge bordered; left edge stays clean for prompt char.
   - Configurable borders match user terminal aesthetic while keeping the clean left prompt edge.

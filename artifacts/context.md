@@ -11,9 +11,9 @@
 
 ## Commands
 
-- `npm test` — vitest, 805 passed / 85 files (verified 2026-10-28).
-- `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-28).
-- `npm run lint` — `biome check .`, 249 files clean (verified 2026-10-28).
+- `npm test` — vitest, 832 passed / 86 files (verified 2026-10-29).
+- `npm run typecheck` — `tsc --noEmit`, clean (verified 2026-10-29).
+- `npm run lint` — `biome check .`, 250 files clean (verified 2026-10-29).
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `dist/`.
 - `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.

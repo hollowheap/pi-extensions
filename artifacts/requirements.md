@@ -239,92 +239,92 @@ None.
   - Acceptance: Prompt character defaults to `❯` and can be customized to any single character; box borders use rounded Unicode box-drawing characters consistently across all UI elements.
   - Consistent rounded borders and a clean prompt indicator provide modern, polished terminal ergonomics.
 
-- [ ] R48: Bubblewrap OS-level command execution sandboxing.
+- [x] R48: Bubblewrap OS-level command execution sandboxing.
   - Verify: Commands executed via bash or background tasks run under `bwrap` restricting filesystem access outside the workspace; attempts to read or write sensitive directories (e.g. `~/.ssh`, `~/.gnupg`, `/etc`) are blocked; workspace reads and writes succeed cleanly.
   - Acceptance: Sandboxed execution uses system `bwrap`; workspace directory is read-write; system binaries and libraries are read-only; user secrets are isolated; failure or missing sandbox fails closed.
   - OS-level user namespace sandboxing protects host credentials and filesystems against untrusted shell commands without container daemon overhead.
 
-- [ ] R49: Guarded todo deletion for assistant and flexible todo management for users.
+- [x] R49: Guarded todo deletion for assistant and flexible todo management for users.
   - Verify: Assistant `delete_todos` block succeeds only when all todos are marked done, failing or rejecting if any todo remains open; `/todo complete <id>`, `/todo delete <id>`, and `/todo delete` commands let users complete or remove any todo at any time.
   - Acceptance: Incomplete todos block agent-triggered bulk deletion; user slash commands allow explicit deletion and completion; deleted todos are removed from the sticky widget immediately.
   - Guarding agent deletion prevents accidental premature task clearing while leaving full interactive control in user hands.
 
-- [ ] R50: Prefixed keybinding and command toggle for sticky panels with unified task and subagent formatting.
+- [x] R50: Prefixed keybinding and command toggle for sticky panels with unified task and subagent formatting.
   - Verify: Pressing `Ctrl+X` followed by `p` (`^x p`) or running `/panel toggle` toggles sticky panel visibility; tasks and subagents render with matching styling showing ID, elapsed time, status, and active command/tool.
   - Acceptance: `^x p` hides or reveals sticky widgets (todos, tasks, subagents); background tasks and subagents display consistent metadata fields; hidden state persists across prompt submissions in the session.
   - Hotkey toggle and consistent panel formatting preserve vertical screen space on demand while unifying execution state visualization.
 
-- [ ] R51: `pi-todos` supports editing todo text, priority levels, bulk completion, and search/filter.
+- [x] R51: `pi-todos` supports editing todo text, priority levels, bulk completion, and search/filter.
   - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
   - Acceptance: `/todo edit <id> <text>` renames a todo; priority (high/medium/low) displays and sorts; `/todo complete all` marks all done; `/todos search <query>` filters by text.
   - Todo management needs full CRUD beyond create/complete/delete to be useful for real task tracking.
 
-- [ ] R52: `pi-tasks` streams live output and supports task dependencies.
+- [x] R52: `pi-tasks` streams live output and supports task dependencies.
   - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-tasks/src/registry.test.ts`
   - Acceptance: Running task output is tail-able via `/task logs <id>`; task B can declare dependency on task A and waits for A to finish before starting.
   - Background tasks need observable output and ordering for multi-step workflows.
 
-- [ ] R53: `pi-modal` adds search/replace, syntax highlighting, and visual selection highlighting.
+- [x] R53: `pi-modal` adds search/replace, syntax highlighting, and visual selection highlighting.
   - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
   - Acceptance: `/` searches buffer with `n`/`N` navigation; `:%s/old/new/g` replaces; code blocks get language-aware highlighting; visual selection renders with distinct background.
   - Vim modal editing needs search and highlighting to be productive.
 
-- [ ] R54: `pi-usage` merges with `pi-budgets`, tracks per-model cost breakdown, cache tokens, and subagent usage.
+- [x] R54: `pi-usage` merges with `pi-budgets`, tracks per-model cost breakdown, cache tokens, and subagent usage.
   - Verify: `npx vitest run extensions/pi-usage/src/index.test.ts extensions/pi-budgets/src/budget.test.ts`
   - Acceptance: `/usage` shows per-model token and cost table; cache read/write tokens tracked; subagent turns included in totals; budget caps enforced with soft warnings before hard limits.
   - Unified usage and budget tracking prevents duplicate accounting and gives complete cost visibility.
 
-- [ ] R55: `pi-subagents` supports pause/resume and steering messages.
+- [x] R55: `pi-subagents` supports pause/resume and steering messages.
   - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts extensions/pi-subagents/src/runner.test.ts`
   - Acceptance: `/subagent pause <id>` suspends a running subagent; `/subagent resume <id>` continues it; the parent can send a steering message to a paused or completed subagent to redirect its next turn.
   - Pause and steer let the user course-correct long-running subagents without losing context.
 
-- [ ] R56: `pi-web` adds response caching, rate limiting, and content-type negotiation.
+- [x] R56: `pi-web` adds response caching, rate limiting, and content-type negotiation.
   - Verify: `npx vitest run extensions/pi-web/src/fetch.test.ts extensions/pi-web/src/tools.test.ts`
   - Acceptance: Repeated fetches of the same URL within TTL return cached response; requests exceeding rate limit are queued; `Accept` header negotiates JSON/HTML/text based on tool intent.
   - Caching and rate limiting reduce redundant network calls and avoid provider throttling.
 
-- [ ] R57: `pi-dashboard` adds error recovery, interactive refresh, and custom renderers.
+- [x] R57: `pi-dashboard` adds error recovery, interactive refresh, and custom renderers.
   - Verify: `npx vitest run extensions/pi-dashboard/src/index.test.ts extensions/pi-dashboard/src/render.test.ts`
   - Acceptance: Failed sections retry with backoff; pressing a key refreshes a section; custom TS render functions and inline images are supported in sections.
   - Dashboard needs resilience and extensibility for real monitoring use.
 
-- [ ] R58: `pi-code-intel` adds hover info as both tool result and optional TUI popup.
+- [x] R58: `pi-code-intel` adds hover info as both tool result and optional TUI popup.
   - Verify: `npx vitest run extensions/pi-code-intel/src/tool.test.ts extensions/pi-code-intel/src/index.test.ts`
   - Acceptance: `hover` tool returns type/signature/docs to the model; optional TUI popup shows the same info at cursor position when UI is available.
   - Hover info helps both the model and user understand code without leaving the editor.
 
-- [ ] R59: `pi-statusline` adds configurable click handlers and custom TS components.
+- [x] R59: `pi-statusline` adds configurable click handlers and custom TS components.
   - Verify: `npx vitest run extensions/pi-statusline/src/index.test.ts extensions/pi-statusline/src/components.test.ts`
   - Acceptance: Clicking a segment runs a configurable action (default: open relevant report); custom components are loadable from a TS file exporting a ComponentFn.
   - Clickable and extensible segments make the statusline an interactive control surface.
 
-- [ ] R60: `pi-agent` validates agent configs on load and reports errors.
+- [x] R60: `pi-agent` validates agent configs on load and reports errors.
   - Verify: `npx vitest run extensions/pi-agent/src/agents.test.ts extensions/pi-agent/src/index.test.ts`
   - Acceptance: Missing required fields, invalid model references, and unknown modes produce clear validation errors; invalid agents are skipped with a warning, not silently ignored.
   - Validation prevents silent misconfiguration of agent definitions.
 
-- [ ] R61: `pi-hooks` adds async hook chains, conditional hooks, output formatting, and timeout config.
+- [x] R61: `pi-hooks` adds async hook chains, conditional hooks, output formatting, and timeout config.
   - Verify: `npx vitest run extensions/pi-hooks/src/hooks.test.ts extensions/pi-hooks/src/index.test.ts`
   - Acceptance: Hooks can chain (output of one feeds next); hooks can be conditionally skipped based on tool name or path; hook output is formatted (markdown/plain); timeout is configurable per hook.
   - Hook extensibility needs chaining and conditional execution for complex workflows.
 
-- [ ] R62: `pi-question` supports multi-page questions and conditional branching.
+- [x] R62: `pi-question` supports multi-page questions and conditional branching.
   - Verify: `npx vitest run extensions/pi-question/src/questions.test.ts extensions/pi-question/src/index.test.ts`
   - Acceptance: Questions can span multiple pages with Next/Back navigation; answer to question A can conditionally show/hide question B; all questions remain in the context window only (no persisted history).
   - Multi-page and conditional questions handle complex decision trees without overwhelming the user.
 
-- [ ] R63: `pi-guard` supports temporary permission grants.
+- [x] R63: `pi-guard` supports temporary permission grants.
   - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts extensions/pi-guard/src/rules.test.ts`
   - Acceptance: `/grant <path-or-tool> <duration>` temporarily allows a denied action; grant expires after duration or session end; grants are visible via `/grants`.
   - Temporary grants let users unblock one-off operations without permanently weakening policy.
 
-- [ ] R64: Agent processing and background tasks show an animated working indicator.
+- [x] R64: Agent processing and background tasks show an animated working indicator.
   - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-statusline/src/index.test.ts`
   - Acceptance: During agent streaming, a spinner animation with elapsed timer is visible; background tasks show animated progress; animation respects `prefers-reduced-motion` and can be disabled via config.
   - Animated indicators prevent users from wondering if the agent is stuck or errored.
 
-- [ ] R65: `pi-modal` supports configurable border styles on the prompt window.
+- [x] R65: `pi-modal` supports configurable border styles on the prompt window.
   - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
   - Acceptance: `modal.json` accepts `borderStyle` (rounded, double, dashed, sharp, none); default is rounded; borders render on the right side only; left side stays clean.
   - Configurable borders let users match their terminal aesthetic without losing the clean left edge.
