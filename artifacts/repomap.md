@@ -7,6 +7,14 @@
   - [section] Conventions (L24)
   - [section] Architecture (L30)
 
+## BUG_REPORT_subagent_stale_status.md
+  - [chapter] Bug: stale subagent status after process death (L1)
+  - [section] Summary (L3)
+  - [section] Reproduction (L7)
+  - [section] Expected (L15)
+  - [section] Environment (L19)
+  - [section] Suggested fix (L25)
+
 ## README.md
   - [chapter] pi-extensions (L1)
   - [section] Packages (L14)
@@ -69,6 +77,7 @@
   - [section] Web tools (L347)
   - [section] Classifier (L409)
   - [section] Non-Goals (L506)
+  - [section] Open Questions (L695)
 
 ## artifacts/plan.md
   - [chapter] Plan (L1)
@@ -79,7 +88,7 @@
 ## artifacts/requirements.md
   - [chapter] Requirements (L1)
   - [section] Open Questions (L73)
-  - [section] Open Questions (L257)
+  - [section] Open Questions (L332)
 
 ## artifacts/retro.md
   - [chapter] Retrospective: Workspace Enhancements & Prompt Minimization (L1)
@@ -188,36 +197,5 @@
   - [object] formatter (L6)
   - [object] javascript (L6)
   - [string] quoteStyle (L6)
-
-## extensions/pi-agent/README.md
-  - [chapter] pi-agent (L1)
-  - [section] Try it (L5)
-  - [section] Features (L11)
-
-## extensions/pi-agent/package.json
-  - [string] name (L2)
-  - [string] version (L3)
-  - [string] type (L4)
-  - [string] description (L5)
-  - [string] license (L6)
-  - [object] engines (L7)
-  - [string] node (L8)
-  - [string] 0 (L10)
-  - [array] keywords (L10)
-  - [string] 0 (L11)
-  - [string] 1 (L11)
-  - [string] 2 (L11)
-  - [array] files (L11)
-  - [object] pi (L12)
-  - [string] 0 (L13)
-  - [array] extensions (L13)
-  - [object] dependencies (L15)
-  - [string] @hollowheap/core (L16)
-  - [object] peerDependencies (L18)
-  - [string] @earendil-works/pi-agent-core (L19)
-  - [string] @earendil-works/pi-ai (L20)
-  - [string] @earendil-works/pi-coding-agent (L21)
-  - [string] @earendil-works/pi-tui (L22)
-  - [string] typebox (L23)
 
 ... [Truncated at 200 lines. Use --max-lines to expand]

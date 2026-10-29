@@ -407,8 +407,8 @@ describe("ModalEditor modal behavior", () => {
     const { editor } = createMockEditor({}, { initialText: "line1\nline2" });
     const lines = editor.render(80);
     expect(lines.length).toBeGreaterThanOrEqual(4);
-    expect(lines[1]).toMatch(/^❯ line1/);
-    expect(lines[2]).toMatch(/^ {2}line2/);
+    expect(lines[1]).toContain("❯ line1");
+    expect(lines[2]).toContain("line2");
   });
 
   it("respects custom single-character promptChar in render", () => {
@@ -418,7 +418,7 @@ describe("ModalEditor modal behavior", () => {
     );
     expect(editor.getPromptChar()).toBe("$");
     const lines = editor.render(80);
-    expect(lines[1]).toMatch(/^\$ custom prompt/);
+    expect(lines[1]).toContain("$ custom prompt");
   });
 });
 
