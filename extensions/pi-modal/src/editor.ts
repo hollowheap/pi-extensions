@@ -527,6 +527,7 @@ export class ModalEditor extends CustomEditor {
     // Apply right-side border only, colored to match the editor theme.
     if (borderEnabled && borderChars) {
       const v = this.editorTheme.borderColor(borderChars.vertical);
+      const tr = this.editorTheme.borderColor(borderChars.topRight);
       const firstContentIdx = 1;
       const lastContentIdx = lines.length - 2;
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
@@ -534,6 +535,13 @@ export class ModalEditor extends CustomEditor {
         const diff = contentWidth - visibleWidth(line);
         const padded = diff > 0 ? line + " ".repeat(diff) : line;
         lines[idx] = padded + v;
+      }
+      // Style the top border's right corner to match.
+      if (lines.length > 0) {
+        const top = lines[0] ?? "";
+        const diff = Math.max(0, width - 1 - visibleWidth(top));
+        const padded = diff > 0 ? top + " ".repeat(diff) : top;
+        lines[0] = truncateToWidth(padded, Math.max(0, width - 1), "") + tr;
       }
     }
     return lines;
