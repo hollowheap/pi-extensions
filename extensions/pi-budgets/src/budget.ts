@@ -131,7 +131,7 @@ export function formatCompactBudget(
   if (dollarCap !== undefined) {
     return formatCompactDollarBudget(dollarsUsed ?? 0, dollarCap);
   }
-  if (dollarsUsed !== undefined && dollarsUsed > 0) {
+  if (used > 0 && dollarsUsed !== undefined) {
     return formatCompactDollarBudget(dollarsUsed, undefined);
   }
   if (cap !== undefined) {
