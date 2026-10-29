@@ -130,14 +130,16 @@ export async function attachSubagent(
   const store = new SubagentStore(agentDir);
   const state = store.read(id);
   if (state === undefined) return undefined;
-  if (state.status === "running" && state.socket !== undefined) {
+  const reconciled = reconcileSubagent(agentDir, state);
+  if (reconciled.status !== "running") return reconciled;
+  if (reconciled.socket !== undefined) {
     try {
-      await runnerRequest(state, "status", undefined, { timeoutMs: 500 });
+      await runnerRequest(reconciled, "status", undefined, { timeoutMs: 500 });
     } catch {
       // Return the persisted state; the caller can inspect/recover it.
     }
   }
-  return state;
+  return reconciled;
 }
 
 export async function sendSubagent(
@@ -164,7 +166,17 @@ export async function abortSubagent(
   const state = store.read(id);
   if (state === undefined) throw new Error(`subagent not found: ${id}`);
   if (state.status !== "running") return;
-  await runnerRequest(state, "abort", undefined, options);
+  // Check if process is dead
+  if (state.pid !== undefined && !isPidAlive(state.pid)) {
+    store.update(id, { status: "cancelled", finishedAt: Date.now() });
+    return;
+  }
+  try {
+    await runnerRequest(state, "abort", undefined, options);
+  } catch {
+    // Socket unreachable; update state directly
+    store.update(id, { status: "cancelled", finishedAt: Date.now() });
+  }
 }
 
 export async function waitSubagent(
@@ -178,14 +190,50 @@ export async function waitSubagent(
   while (true) {
     const state = store.read(id);
     if (state === undefined) return undefined;
-    if (state.status !== "running" && state.status !== "starting") return state;
+    const reconciled = reconcileSubagent(agentDir, state);
+    if (reconciled.status !== "running" && reconciled.status !== "starting")
+      return reconciled;
     if (signal?.aborted || Date.now() >= deadline) return state;
     await sleep(Math.min(50, Math.max(5, deadline - Date.now())), signal);
   }
 }
 
+function isPidAlive(pid: number | undefined): boolean {
+  if (pid === undefined) return true; // unknown, assume alive
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function reconcileSubagent(
+  agentDir: string,
+  state: SubagentState,
+): SubagentState {
+  if (
+    (state.status === "running" || state.status === "starting") &&
+    state.pid !== undefined &&
+    !isPidAlive(state.pid)
+  ) {
+    const store = new SubagentStore(agentDir);
+    const updated: SubagentState = {
+      ...state,
+      status: "failed",
+      finishedAt: Date.now(),
+      exitCode: null,
+    };
+    store.write(updated);
+    return updated;
+  }
+  return state;
+}
+
 export function listSubagents(agentDir: string): SubagentState[] {
-  return new SubagentStore(agentDir).list();
+  const store = new SubagentStore(agentDir);
+  const all = store.list();
+  return all.map((s) => reconcileSubagent(agentDir, s));
 }
 
 export function readSubagentLog(agentDir: string, id: string): string {
