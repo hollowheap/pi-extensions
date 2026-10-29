@@ -617,5 +617,81 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by alternativ
   - Consequences: Prefix chord state machine intercepts `^x` then `p` in raw keyboard input; widget can collapse to zero lines; task and subagent rows share `@<id> <elapsed> (<task>) <status> · <action> <duration>` format.
   - Prefixed hotkeys avoid colliding with text input or standard editor keybindings while unified row formatting minimizes visual cognitive load.
 
+- [ ] D123 [R51]: `pi-todos` adds `/todo edit <id> <text>`, priority field, `/todo complete all`, and `/todos search <query>`.
+  - Alternatives: separate edit command, priority as tag, complete-by-filter.
+  - Consequences: Todo interface gains optional `priority`; edit reuses existing ID; bulk complete iterates all open; search filters widget and list view.
+  - Full CRUD makes todos a real task tracker instead of a simple checklist.
 
+- [ ] D124 [R52]: `pi-tasks` adds `/task logs <id>` for live output tailing and dependency declarations in task start.
+  - Alternatives: auto-stream all output, external log files, task groups.
+  - Consequences: Task registry stores log buffer per task; dependencies block start until prerequisite completes; circular deps rejected.
+  - Observable output and ordering enable multi-step automation workflows.
 
+- [ ] D125 [R53]: `pi-modal` adds vim-style search (`/`), substitution (`:%s`), syntax highlighting via language detection, and visual selection background.
+  - Alternatives: external search tool, no highlighting, selection via terminal native.
+  - Consequences: Search state lives in editor; substitution operates on buffer lines; highlighting uses pi-tui theme tokens; visual mode sets selection background.
+  - Search and highlighting are core vim features users expect from a modal editor.
+
+- [ ] D126 [R54]: `pi-usage` absorbs `pi-budgets`: per-model cost table, cache token tracking, subagent turn attribution, soft budget warnings.
+  - Alternatives: keep separate extensions, usage-only without budgets.
+  - Consequences: Single extension owns all cost accounting; budgets config moves into usage config; soft warnings at 80% of cap.
+  - Merging eliminates duplicate accounting and gives one place for all cost concerns.
+
+- [ ] D127 [R55]: `pi-subagents` adds `/subagent pause <id>`, `/subagent resume <id>`, and parent steering via follow-up message.
+  - Alternatives: kill and restart, external control, no steering.
+  - Consequences: Pause sends abort to child process; resume restarts with persisted session; steering queues a message for next turn.
+  - Pause and steer let users course-correct without losing subagent context.
+
+- [ ] D128 [R56]: `pi-web` adds TTL-based response cache, request queue for rate limiting, and `Accept` header negotiation.
+  - Alternatives: no cache, external cache layer, fixed content type.
+  - Consequences: Cache keyed by URL+headers with configurable TTL; queue limits concurrent requests; Accept header set from tool intent (JSON/HTML/text).
+  - Caching and throttling reduce redundant fetches and avoid provider blocks.
+
+- [ ] D129 [R57]: `pi-dashboard` adds retry with backoff on section failure, key-triggered manual refresh, and pluggable render functions.
+  - Alternatives: fail silently, auto-refresh only, built-in renderers only.
+  - Consequences: Failed sections retry 3 times with exponential backoff; key binding triggers immediate refresh; render functions loaded from config TS path.
+  - Resilience and extensibility make dashboard suitable for real monitoring.
+
+- [ ] D130 [R58]: `pi-code-intel` adds `hover` tool returning type/signature/docs, with optional TUI popup.
+  - Alternatives: TUI-only hover, tool-only hover.
+  - Consequences: Tool returns structured hover data to model; TUI popup shows same data when UI available; popup is dismissible.
+  - Dual-purpose hover serves both model reasoning and user inspection.
+
+- [ ] D131 [R59]: `pi-statusline` adds configurable click actions per segment and loads custom components from TS files.
+  - Alternatives: fixed click actions, built-in components only.
+  - Consequences: Click config maps segment name to action command; custom components imported from configured path exporting ComponentFn.
+  - Configurable clicks and custom components make statusline an extensible control surface.
+
+- [ ] D132 [R60]: `pi-agent` validates agent configs with schema and reports errors on load.
+  - Alternatives: runtime validation only, silent skip.
+  - Consequences: Invalid agents skipped with diagnostic; valid agents loaded normally; validation errors shown in notification.
+  - Early validation prevents silent misconfiguration.
+
+- [ ] D133 [R61]: `pi-hooks` adds hook chaining, conditional execution, output formatting, and per-hook timeout.
+  - Alternatives: single hook per event, unconditional, fixed timeout.
+  - Consequences: Hooks run in sequence with output piped; conditions filter by tool/path; output format configurable; timeout per hook in config.
+  - Chaining and conditions enable complex multi-step hook workflows.
+
+- [ ] D134 [R62]: `pi-question` supports multi-page questions with Next/Back and conditional branching.
+  - Alternatives: single page only, static question list.
+  - Consequences: Page navigation state tracked; conditions evaluate prior answers; all state stays in context window.
+  - Multi-page and branching handle complex decision trees cleanly.
+
+- [ ] D135 [R63]: `pi-guard` adds `/grant` for temporary permission grants with expiry.
+  - Alternatives: permanent rule changes only, manual config edit.
+  - Consequences: Grants stored in session state; expiry checked on each permission evaluation; `/grants` lists active grants.
+  - Temporary grants unblock one-off operations without weakening permanent policy.
+
+- [ ] D136 [R64]: Animated working indicator uses a spinner with elapsed timer, respecting reduced-motion and config toggle.
+  - Alternatives: static text only, progress bar, no indicator.
+  - Consequences: Spinner frames cycle at configurable interval; elapsed time shown in seconds; disabled via `animations: false` in config.
+  - Animation provides liveness feedback without overwhelming the terminal.
+
+- [ ] D137 [R65]: `pi-modal` border style configurable via `modal.json` `borderStyle` field, defaulting to rounded, right-side only.
+  - Alternatives: always rounded, no borders, full box.
+  - Consequences: Border style enum (rounded/double/dashed/sharp/none); only right edge bordered; left edge stays clean for prompt char.
+  - Configurable borders match user terminal aesthetic while keeping the clean left prompt edge.
+
+## Open Questions
+
+None.

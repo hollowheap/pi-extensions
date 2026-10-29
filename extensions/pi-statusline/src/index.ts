@@ -21,7 +21,7 @@ import {
 import { type StatuslineConfig, defaultConfig, loadConfig } from "./config.js";
 import { renderStatusline } from "./render.js";
 
-function sumTokens(ctx: ExtensionContext): TokenTotals {
+function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
   const totals: TokenTotals = { input: 0, output: 0, cost: 0 };
   let customUsageCost: number | undefined;
 
@@ -55,7 +55,7 @@ function sumTokens(ctx: ExtensionContext): TokenTotals {
   }
 
   if (totals.cost === 0 && (totals.input > 0 || totals.output > 0)) {
-    const pricing = resolveModelPricing(ctx.model);
+    const pricing = resolveModelPricing(model ?? ctx.model);
     if (pricing) {
       totals.cost = calculateDollarCost(
         { input: totals.input, output: totals.output },
@@ -74,6 +74,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export default function (pi: ExtensionAPI) {
   let config: StatuslineConfig = defaultConfig();
   let busy = false;
+  let currentModel: unknown;
   let diffCache: GitDiffCache = createGitDiffCache(
     defaultGitRunner,
     () => {},
@@ -150,9 +151,9 @@ export default function (pi: ExtensionAPI) {
             {
               cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
               homeDir: homedir(),
-              modelId: ctx.model?.id,
+              modelId: (currentModel as { id?: string })?.id ?? ctx.model?.id,
               branch: footerData.getGitBranch(),
-              tokens: sumTokens(ctx),
+              tokens: sumTokens(ctx, currentModel),
               contextPercent: ctx.getContextUsage()?.percent ?? null,
               busy,
               thinkingLevel: ctx.thinkingLevel,
@@ -172,6 +173,7 @@ export default function (pi: ExtensionAPI) {
     const loaded = loadConfig(getAgentDir());
     config = loaded.config;
     busy = false;
+    currentModel = ctx.model;
     if (loaded.diagnostics.length > 0) {
       ctx.ui.notify(
         `pi-statusline: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
@@ -217,7 +219,29 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   });
 
-  pi.on("model_select", () => {
+  pi.on("model_select", (event) => {
+    currentModel = (event as { model?: unknown })?.model;
     requestRender?.();
+  });
+
+  pi.registerCommand("statusline", {
+    description: "Statusline actions: /statusline click <segment>",
+    handler: async (args, ctx) => {
+      const parts = args.trim().split(/\\s+/).filter(Boolean);
+      if (parts[0] === "click" && parts[1]) {
+        const segment = parts[1];
+        const action = config.clickActions?.[segment];
+        if (action) {
+          if (ctx.hasUI) ctx.ui.notify(`Running: ${action}`, "info");
+        } else {
+          if (ctx.hasUI)
+            ctx.ui.notify(`No click action for ${segment}`, "info");
+        }
+        return;
+      }
+      if (ctx.hasUI) {
+        ctx.ui.notify("Usage: /statusline click <segment>", "info");
+      }
+    },
   });
 }

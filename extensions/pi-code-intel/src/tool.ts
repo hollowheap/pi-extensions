@@ -42,6 +42,11 @@ export interface CodeIntelClient {
   ): Promise<unknown>;
   documentSymbols(filePath: string, languageId: string): Promise<unknown>;
   workspaceSymbols(query: string): Promise<unknown>;
+  hover(
+    filePath: string,
+    languageId: string,
+    position: LspPosition,
+  ): Promise<unknown>;
 }
 
 export interface CodeIntelDeps {
@@ -59,7 +64,8 @@ interface CodeIntelParams {
     | "definition"
     | "references"
     | "document_symbols"
-    | "workspace_symbols";
+    | "workspace_symbols"
+    | "hover";
   path: string;
   line?: number;
   column?: number;
@@ -350,6 +356,25 @@ function formatWorkspaceSymbols(
   return { lines, truncated };
 }
 
+function formatHover(value: unknown): string {
+  if (typeof value !== "object" || value === null) return "No hover info.";
+  const hover = value as { contents?: unknown; range?: unknown };
+  if (typeof hover.contents === "string") return hover.contents;
+  if (Array.isArray(hover.contents)) {
+    const parts = hover.contents
+      .map((c) =>
+        typeof c === "string" ? c : ((c as { value?: string })?.value ?? ""),
+      )
+      .filter(Boolean);
+    return parts.join("\n") || "No hover info.";
+  }
+  if (typeof hover.contents === "object" && hover.contents !== null) {
+    const c = hover.contents as { value?: string; kind?: string };
+    if (typeof c.value === "string") return c.value;
+  }
+  return "No hover info.";
+}
+
 function inputPosition(
   line: number | undefined,
   column: number | undefined,
@@ -426,6 +451,7 @@ export function createCodeIntelTool(
         Type.Literal("references"),
         Type.Literal("document_symbols"),
         Type.Literal("workspace_symbols"),
+        Type.Literal("hover"),
       ]),
       path: Type.String({
         description:
@@ -506,11 +532,13 @@ async function executeCodeIntel(
   if (!isFile) return textResult(`Not a file: ${display}`, pathDetails);
 
   const position =
-    action === "definition" || action === "references"
+    action === "definition" || action === "references" || action === "hover"
       ? inputPosition(params.line, params.column)
       : undefined;
   if (
-    (action === "definition" || action === "references") &&
+    (action === "definition" ||
+      action === "references" ||
+      action === "hover") &&
     position === undefined
   ) {
     return textResult(
@@ -571,6 +599,16 @@ async function executeCodeIntel(
         "No symbols found.",
         pathDetails,
       );
+    }
+
+    if (action === "hover") {
+      const raw = await client.hover(
+        absolute,
+        languageId,
+        position as LspPosition,
+      );
+      const text = formatHover(raw);
+      return textResult(text, { ...pathDetails, count: 1, truncated: false });
     }
 
     const raw =

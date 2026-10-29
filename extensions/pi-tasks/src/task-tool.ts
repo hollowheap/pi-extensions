@@ -27,6 +27,7 @@ export interface TaskToolParams {
   command?: string;
   id?: string;
   timeoutMs?: number;
+  dependsOn?: string[];
 }
 
 export interface TaskToolDeps {
@@ -135,6 +136,11 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
           description: "Maximum milliseconds to wait (for wait action)",
         }),
       ),
+      dependsOn: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Task IDs that must complete before this task starts",
+        }),
+      ),
     }),
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       const params = (rawParams ?? {}) as TaskToolParams;
@@ -207,11 +213,53 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
           );
         }
 
+        // Check dependencies
+        const deps = Array.isArray(params.dependsOn) ? params.dependsOn : [];
+        if (deps.length > 0) {
+          // Check for circular dependencies
+          const allTasks = reconcileAllTasks(agentDir);
+          const taskMap = new Map(allTasks.map((t) => [t.id, t]));
+          for (const dep of deps) {
+            if (!taskMap.has(dep)) {
+              const runningCount = refreshRunningCount();
+              return textResult(`Dependency not found: ${dep}`, {
+                action,
+                runningCount,
+              });
+            }
+          }
+          // Check if any dep is still running
+          const pendingDeps = deps.filter((dep) => {
+            const t = taskMap.get(dep);
+            return t && t.status === "running";
+          });
+          if (pendingDeps.length > 0) {
+            const runningCount = refreshRunningCount();
+            return textResult(
+              `Waiting for dependencies: ${pendingDeps.join(", ")}`,
+              { action, runningCount },
+            );
+          }
+          // Check if any dep failed
+          const failedDeps = deps.filter((dep) => {
+            const t = taskMap.get(dep);
+            return t && t.status === "failed";
+          });
+          if (failedDeps.length > 0) {
+            const runningCount = refreshRunningCount();
+            return textResult(`Dependencies failed: ${failedDeps.join(", ")}`, {
+              action,
+              runningCount,
+            });
+          }
+        }
+
         const cwd = effectiveCwd(ctx.cwd, ctx.sessionManager);
         const record = await spawnShellTask({
           agentDir,
           command,
           cwd,
+          dependsOn: deps.length > 0 ? deps : undefined,
         });
         const runningCount = refreshRunningCount();
         const log = taskLogPath(agentDir, record.id);

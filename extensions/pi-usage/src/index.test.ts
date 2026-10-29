@@ -76,8 +76,11 @@ describe("extractLatestUsage", () => {
     expect(extractLatestUsage([])).toEqual({
       inputTokens: 0,
       outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 0,
       totalCost: 0,
+      byModel: {},
     });
   });
 
@@ -109,8 +112,11 @@ describe("extractLatestUsage", () => {
     expect(extractLatestUsage(entries)).toEqual({
       inputTokens: 500,
       outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 700,
       totalCost: 0.25,
+      byModel: {},
     });
   });
 
@@ -123,8 +129,11 @@ describe("extractLatestUsage", () => {
     expect(extractLatestUsage(entries)).toEqual({
       inputTokens: 0,
       outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 0,
       totalCost: 0,
+      byModel: {},
     });
   });
 });
@@ -134,15 +143,30 @@ describe("recordTurnUsage", () => {
     const initial = {
       inputTokens: 100,
       outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 150,
       totalCost: 0.1,
+      byModel: {},
     };
     const next = recordTurnUsage(initial, { input: 40, output: 60 }, 0.05);
     expect(next).toEqual({
       inputTokens: 140,
       outputTokens: 110,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 250,
       totalCost: 0.15,
+      byModel: {
+        unknown: {
+          model: "unknown",
+          inputTokens: 40,
+          outputTokens: 60,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cost: 0.05,
+        },
+      },
     });
   });
 
@@ -150,8 +174,11 @@ describe("recordTurnUsage", () => {
     const initial = {
       inputTokens: 10,
       outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 20,
       totalCost: 0.05,
+      byModel: {},
     };
     const next = recordTurnUsage(initial, { input: -5, output: -10 }, -0.01);
     expect(next).toEqual(initial);
@@ -163,8 +190,11 @@ describe("formatUsageReport", () => {
     const text = formatUsageReport({
       inputTokens: 1200,
       outputTokens: 800,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalTokens: 2000,
       totalCost: 0.05,
+      byModel: {},
     });
     expect(text).toContain("2,000 tokens");
     expect(text).toContain("1,200 in, 800 out");

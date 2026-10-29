@@ -43,6 +43,17 @@ export function createAgentExtension(
         trusted,
       }).agents;
     };
+    const resolveAgentsWithDiagnostics = (
+      cwd: string,
+      trusted: boolean,
+    ): { agents: AgentConfig[]; diagnostics: string[] } => {
+      const result = discoverAgents({
+        cwd,
+        agentDir: resolveAgentDir(),
+        trusted,
+      });
+      return { agents: result.agents, diagnostics: result.diagnostics };
+    };
 
     const applyAgent = async (
       agent: AgentConfig,
@@ -219,8 +230,15 @@ export function createAgentExtension(
         }
       }
 
+      const discovery = resolveAgentsWithDiagnostics(
+        ctx.cwd,
+        ctx.isProjectTrusted(),
+      );
+      for (const d of discovery.diagnostics) {
+        ctx.ui?.notify?.(`pi-agent: ${d}`, "warning");
+      }
       if (persistedName) {
-        const agents = resolveAgents(ctx.cwd, ctx.isProjectTrusted());
+        const agents = discovery.agents;
         const matched = agents.find(
           (a) => a.name.toLowerCase() === persistedName?.toLowerCase(),
         );
@@ -288,7 +306,14 @@ export function createAgentExtension(
       handler: async (args: string, ctx: ExtensionCommandContext) => {
         lastCwd = ctx.cwd;
         lastTrusted = ctx.isProjectTrusted();
-        const agents = resolveAgents(ctx.cwd, ctx.isProjectTrusted());
+        const discovery = resolveAgentsWithDiagnostics(
+          ctx.cwd,
+          ctx.isProjectTrusted(),
+        );
+        for (const d of discovery.diagnostics) {
+          ctx.ui?.notify?.(`pi-agent: ${d}`, "warning");
+        }
+        const agents = discovery.agents;
         const raw = args.trim();
 
         if (raw !== "") {

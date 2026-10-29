@@ -2,7 +2,7 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { listSubagents } from "./runner.js";
+import { abortSubagent, listSubagents, sendSubagent } from "./runner.js";
 import { createSubagentTool } from "./tool.js";
 
 export interface SubagentStateEventItem {
@@ -78,6 +78,70 @@ export function createSubagentsExtension(
 
     pi.on("session_start", () => {
       emitSubagentsState();
+    });
+
+    pi.registerCommand("subagent", {
+      description:
+        "Manage subagents: /subagent pause|resume|steer <id> [message]",
+      handler: async (args, ctx) => {
+        const parts = args.trim().split(/\\s+/).filter(Boolean);
+        const action = parts[0];
+        const id = parts[1];
+        if (!action || !id) {
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              "Usage: /subagent pause|resume|steer <id> [message]",
+              "info",
+            );
+          }
+          return;
+        }
+        const agentDir = resolveAgentDir();
+        if (action === "pause") {
+          try {
+            await abortSubagent(agentDir, id);
+            if (ctx.hasUI) ctx.ui.notify(`Paused subagent ${id}`, "info");
+          } catch (e) {
+            if (ctx.hasUI)
+              ctx.ui.notify(
+                `Failed to pause: ${e instanceof Error ? e.message : String(e)}`,
+                "error",
+              );
+          }
+          emitSubagentsState();
+          return;
+        }
+        if (action === "resume") {
+          if (ctx.hasUI)
+            ctx.ui.notify(`Resume not yet implemented for ${id}`, "info");
+          return;
+        }
+        if (action === "steer") {
+          const message = parts.slice(2).join(" ").trim();
+          if (!message) {
+            if (ctx.hasUI)
+              ctx.ui.notify("Usage: /subagent steer <id> <message>", "error");
+            return;
+          }
+          try {
+            await sendSubagent(agentDir, id, { type: "steer", message });
+            if (ctx.hasUI) ctx.ui.notify(`Steered subagent ${id}`, "info");
+          } catch (e) {
+            if (ctx.hasUI)
+              ctx.ui.notify(
+                `Failed to steer: ${e instanceof Error ? e.message : String(e)}`,
+                "error",
+              );
+          }
+          return;
+        }
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            "Usage: /subagent pause|resume|steer <id> [message]",
+            "info",
+          );
+        }
+      },
     });
 
     pi.on("session_shutdown", () => {

@@ -83,10 +83,17 @@ export function shortenPath(
   return `${prefix}/…/${parts.slice(-depth).join("/")}`;
 }
 
-const mode: ComponentFn = (spec, ctx) =>
-  ctx.busy
-    ? optString(spec, "workingText", "WORKING")
-    : optString(spec, "idleText", "IDLE");
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+const mode: ComponentFn = (spec, ctx) => {
+  if (!ctx.busy) return optString(spec, "idleText", "IDLE");
+  const text = optString(spec, "workingText", "WORKING");
+  const animate = optBool(spec, "animate", true);
+  if (!animate) return text;
+  const frame =
+    SPINNER_FRAMES[Math.floor(Date.now() / 80) % SPINNER_FRAMES.length];
+  return `${frame} ${text}`;
+};
 
 const cwd: ComponentFn = (spec, ctx) =>
   shortenPath(

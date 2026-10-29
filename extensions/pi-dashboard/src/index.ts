@@ -62,6 +62,8 @@ function terminalSection(
   let running = false;
   let warned = false;
   let stopped = false;
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
   let requestRender: (() => void) | undefined;
   const controller = new AbortController();
 
@@ -71,6 +73,7 @@ function terminalSection(
     let aborted = false;
     try {
       lines = splitOutput(await deps.run(command, args, controller.signal));
+      retryCount = 0;
     } catch (error) {
       if (controller.signal.aborted) {
         aborted = true;
@@ -79,6 +82,14 @@ function terminalSection(
         if (!warned) {
           warned = true;
           deps.notify(lines[0]);
+        }
+        // Retry with backoff
+        if (retryCount < MAX_RETRIES && !stopped) {
+          retryCount++;
+          const delay = Math.min(1000 * 2 ** retryCount, 10000);
+          setTimeout(() => {
+            if (!stopped) void refresh();
+          }, delay);
         }
       }
     } finally {

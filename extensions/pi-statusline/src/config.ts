@@ -40,6 +40,8 @@ export interface StatuslineConfig {
   options: StatuslineOptions;
   sections: Record<string, StyledComponentSpec[]>;
   extensions: string[];
+  clickActions?: Record<string, string>;
+  customComponentsPath?: string;
 }
 
 export const DEFAULT_EXTENSIONS: readonly string[] = ["mode-guard", "budgets"];
@@ -64,6 +66,7 @@ export function defaultConfig(): StatuslineConfig {
       z: [{ type: "model" }, { type: "thinking" }, { type: "clock" }],
     },
     extensions: [...DEFAULT_EXTENSIONS],
+    clickActions: {},
   };
 }
 

@@ -142,6 +142,21 @@ export class LspClient {
     });
   }
 
+  hover(
+    filePath: string,
+    languageId: string,
+    position: LspPosition,
+  ): Promise<unknown> {
+    return this.enqueue(async () => {
+      await this.ensureInitialized();
+      const uri = this.syncDocument(filePath, languageId);
+      return this.request("textDocument/hover", {
+        textDocument: { uri },
+        position,
+      });
+    });
+  }
+
   async dispose(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

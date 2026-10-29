@@ -146,6 +146,7 @@ export interface SpawnShellTaskOptions {
   cwd: string;
   id?: string;
   shell?: string;
+  dependsOn?: string[];
 }
 
 export async function spawnShellTask(
@@ -161,6 +162,7 @@ export async function spawnShellTask(
     command: opts.command,
     cwd: opts.cwd,
     startedAt,
+    dependsOn: opts.dependsOn,
   };
   createTaskRecord(opts.agentDir, initialMeta, runnerOps);
 

@@ -14,6 +14,7 @@ import {
   type QuestionAnswer,
   WRITE_IN_LABEL,
   capAnswer,
+  evaluateCondition,
   formatAnswers,
   parseQuestionBlock,
 } from "./questions.js";
@@ -259,6 +260,7 @@ async function askQuestions(
 ): Promise<QuestionAnswer[] | undefined> {
   const answers: QuestionAnswer[] = [];
   for (const question of questions) {
+    if (!evaluateCondition(question.condition, answers)) continue;
     const answer = await askQuestion(question, ctx);
     if (answer === undefined) return undefined;
     answers.push(answer);

@@ -11,6 +11,7 @@ function createMockPi() {
     on: vi.fn(
       (_event: string, _fn: (event: never, ctx: never) => void) => () => {},
     ),
+    registerCommand: vi.fn(),
     events: {
       on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
       emit: vi.fn((_channel: string, _data: unknown) => {}),

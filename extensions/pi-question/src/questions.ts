@@ -9,6 +9,8 @@ export interface Question {
   prompt: string;
   mode: QuestionMode;
   options: string[];
+  page?: number;
+  condition?: string;
 }
 
 export type QuestionAnswer =
@@ -20,11 +22,36 @@ export function capAnswer(text: string): string {
   return text.slice(0, MAX_ANSWER);
 }
 
+function parseQuestionMeta(prompt: string): {
+  cleanPrompt: string;
+  page?: number;
+  condition?: string;
+} {
+  let cleanPrompt = prompt;
+  let page: number | undefined;
+  let condition: string | undefined;
+
+  const pageMatch = cleanPrompt.match(/\[page:\s*(\d+)\]/);
+  if (pageMatch) {
+    page = Number(pageMatch[1]);
+    cleanPrompt = cleanPrompt.replace(pageMatch[0], "").trim();
+  }
+
+  const condMatch = cleanPrompt.match(/\[if:\s*(.+?)\]/);
+  if (condMatch) {
+    condition = condMatch[1].trim();
+    cleanPrompt = cleanPrompt.replace(condMatch[0], "").trim();
+  }
+
+  return { cleanPrompt, page, condition };
+}
+
 function toQuestion(
   prompt: string,
   items: readonly ListItemNode[],
 ): Question | undefined {
-  if (prompt.length === 0 || items.length > 8) return undefined;
+  const { cleanPrompt, page, condition } = parseQuestionMeta(prompt);
+  if (cleanPrompt.length === 0 || items.length > 8) return undefined;
 
   const options = items.map((item) => item.text.trim());
   if (
@@ -37,13 +64,15 @@ function toQuestion(
   if (marked !== 0 && marked !== items.length) return undefined;
 
   if (items.length === 0) {
-    return { prompt, mode: "free", options: [] };
+    return { prompt: cleanPrompt, mode: "free", options: [], page, condition };
   }
 
   return {
-    prompt,
+    prompt: cleanPrompt,
     mode: marked === 0 ? "single" : "multi",
     options,
+    page,
+    condition,
   };
 }
 
@@ -99,6 +128,41 @@ function formatAnswer(answer: QuestionAnswer): string {
 
   if (answer.value.length === 0) return "no answer";
   return capAnswer(answer.value);
+}
+
+export function evaluateCondition(
+  condition: string | undefined,
+  answers: readonly QuestionAnswer[],
+): boolean {
+  if (!condition) return true;
+  // Simple: "answer1 == 'value'" or "answer1 != 'value'"
+  const match = condition.match(/^answer(\\d+)\\s*==\\s*['\"](.+)['\"]$/);
+  if (match) {
+    const idx = Number(match[1]) - 1;
+    const answer = answers[idx];
+    if (!answer) return false;
+    const value =
+      answer.mode === "single"
+        ? answer.value
+        : answer.mode === "multi"
+          ? answer.selected.join(",")
+          : answer.value;
+    return value === match[2];
+  }
+  const notMatch = condition.match(/^answer(\\d+)\\s*!=\\s*['\"](.+)['\"]$/);
+  if (notMatch) {
+    const idx = Number(notMatch[1]) - 1;
+    const answer = answers[idx];
+    if (!answer) return true;
+    const value =
+      answer.mode === "single"
+        ? answer.value
+        : answer.mode === "multi"
+          ? answer.selected.join(",")
+          : answer.value;
+    return value !== notMatch[2];
+  }
+  return true;
 }
 
 export function formatAnswers(answers: readonly QuestionAnswer[]): string {

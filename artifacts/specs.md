@@ -1331,8 +1331,92 @@
   - Behavior: typing `Ctrl+X` followed by `p` (`^x p`) or running `/panel toggle` toggles sticky widget visibility between full display and 0-line collapsed state; background tasks and subagents share consistent row schema `#<id> <elapsed> (<target>) <status>`.
   - Failures: chord state lockup, stuck key handling, collapsed widget returning whitespace lines, or inconsistent row formatting.
 
+- [ ] S123 [R51] [D123]: `pi-todos` supports editing todo text, priority levels, bulk completion, and search/filter
+  - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
+  - Seam: `extensions/pi-todos` block parser and slash-command handlers.
+  - Behavior: `/todo edit <id> <text>` renames a todo; priority (high/medium/low) displays and sorts; `/todo complete all` marks all done; `/todos search <query>` filters by text.
+  - Failures: edit not persisting, priority not sorting, bulk complete skipping items, search returning wrong results.
 
+- [ ] S124 [R52] [D124]: `pi-tasks` streams live output and supports task dependencies
+  - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-tasks/src/registry.test.ts`
+  - Seam: `extensions/pi-tasks` registry and runner.
+  - Behavior: `/task logs <id>` tails running task output; task B declares dependency on task A and waits for A to complete before starting; circular dependencies rejected.
+  - Failures: logs not updating, dependency deadlock, circular dep not detected.
 
+- [ ] S125 [R53] [D125]: `pi-modal` adds vim-style search, substitution, syntax highlighting, and visual selection background
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Seam: `extensions/pi-modal` editor component.
+  - Behavior: `/` searches buffer with n/N navigation; `:%s/old/new/g` replaces across lines; code blocks get language-aware highlighting; visual selection renders with distinct background.
+  - Failures: search not finding matches, substitution corrupting text, highlighting not applying, selection invisible.
 
+- [ ] S126 [R54] [D126]: `pi-usage` merges with `pi-budgets`, tracks per-model cost, cache tokens, and subagent usage
+  - Verify: `npx vitest run extensions/pi-usage/src/index.test.ts extensions/pi-budgets/src/budget.test.ts`
+  - Seam: `extensions/pi-usage` and `extensions/pi-budgets` (merged).
+  - Behavior: `/usage` shows per-model token and cost table; cache read/write tokens tracked; subagent turns included in totals; budget caps enforced with soft warnings at 80%.
+  - Failures: incorrect cost calculation, missing cache tokens, subagent usage not attributed, budget not enforcing.
 
+- [ ] S127 [R55] [D127]: `pi-subagents` supports pause/resume and steering messages
+  - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts extensions/pi-subagents/src/runner.test.ts`
+  - Seam: `extensions/pi-subagents` runner and state.
+  - Behavior: `/subagent pause <id>` suspends running subagent; `/subagent resume <id>` continues; parent can send steering message to redirect next turn.
+  - Failures: pause not suspending, resume losing context, steering not delivered.
 
+- [ ] S128 [R56] [D128]: `pi-web` adds response caching, rate limiting, and content-type negotiation
+  - Verify: `npx vitest run extensions/pi-web/src/fetch.test.ts extensions/pi-web/src/tools.test.ts`
+  - Seam: `extensions/pi-web` fetch and tools.
+  - Behavior: Repeated fetches within TTL return cached response; requests exceeding rate limit are queued; Accept header negotiates JSON/HTML/text.
+  - Failures: cache not hit, rate limit not enforced, wrong content type returned.
+
+- [ ] S129 [R57] [D129]: `pi-dashboard` adds error recovery, interactive refresh, and custom renderers
+  - Verify: `npx vitest run extensions/pi-dashboard/src/index.test.ts extensions/pi-dashboard/src/render.test.ts`
+  - Seam: `extensions/pi-dashboard` controller and render.
+  - Behavior: Failed sections retry with backoff; key press refreshes section; custom TS render functions and inline images supported.
+  - Failures: no retry on failure, refresh not triggering, custom renderer not loading.
+
+- [ ] S130 [R58] [D130]: `pi-code-intel` adds hover tool returning type/signature/docs with optional TUI popup
+  - Verify: `npx vitest run extensions/pi-code-intel/src/tool.test.ts extensions/pi-code-intel/src/index.test.ts`
+  - Seam: `extensions/pi-code-intel` tool and LSP client.
+  - Behavior: hover tool returns structured type/signature/docs to model; TUI popup shows same info when UI available; popup dismissible.
+  - Failures: hover returning empty, popup not showing, popup not dismissible.
+
+- [ ] S131 [R59] [D131]: `pi-statusline` adds configurable click actions and custom TS components
+  - Verify: `npx vitest run extensions/pi-statusline/src/index.test.ts extensions/pi-statusline/src/components.test.ts`
+  - Seam: `extensions/pi-statusline` components and config.
+  - Behavior: Clicking segment runs configurable action; custom components loaded from TS file exporting ComponentFn.
+  - Failures: click not triggering, custom component not loading.
+
+- [ ] S132 [R60] [D132]: `pi-agent` validates agent configs with schema and reports errors
+  - Verify: `npx vitest run extensions/pi-agent/src/agents.test.ts extensions/pi-agent/src/index.test.ts`
+  - Seam: `extensions/pi-agent` agents module.
+  - Behavior: Missing fields, invalid models, unknown modes produce clear errors; invalid agents skipped with warning.
+  - Failures: invalid config silently accepted, no warning shown.
+
+- [ ] S133 [R61] [D133]: `pi-hooks` adds hook chaining, conditional execution, output formatting, and per-hook timeout
+  - Verify: `npx vitest run extensions/pi-hooks/src/hooks.test.ts extensions/pi-hooks/src/index.test.ts`
+  - Seam: `extensions/pi-hooks` hooks module.
+  - Behavior: Hooks chain with output piped; conditions filter by tool/path; output format configurable; timeout per hook.
+  - Failures: chain not executing in order, conditions not filtering, timeout not enforced.
+
+- [ ] S134 [R62] [D134]: `pi-question` supports multi-page questions with Next/Back and conditional branching
+  - Verify: `npx vitest run extensions/pi-question/src/questions.test.ts extensions/pi-question/src/index.test.ts`
+  - Seam: `extensions/pi-question` questions module.
+  - Behavior: Multi-page with Next/Back navigation; answer to Q1 conditionally shows/hides Q2; state stays in context window only.
+  - Failures: navigation not working, conditions not evaluating, state persisted unexpectedly.
+
+- [ ] S135 [R63] [D135]: `pi-guard` supports temporary permission grants with expiry
+  - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts extensions/pi-guard/src/rules.test.ts`
+  - Seam: `extensions/pi-guard` rules and index.
+  - Behavior: `/grant <path-or-tool> <duration>` temporarily allows; grant expires after duration or session end; `/grants` lists active.
+  - Failures: grant not applying, expiry not enforced, grants not listed.
+
+- [ ] S136 [R64] [D136]: Animated working indicator with spinner and elapsed timer
+  - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-statusline/src/index.test.ts`
+  - Seam: `extensions/pi-tasks` and `extensions/pi-statusline` UI.
+  - Behavior: Spinner animation with elapsed timer during agent streaming; background tasks show animated progress; respects reduced-motion and config toggle.
+  - Failures: no animation, timer not updating, reduced-motion not respected.
+
+- [ ] S137 [R65] [D137]: `pi-modal` supports configurable border styles
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Seam: `extensions/pi-modal` editor component.
+  - Behavior: `modal.json` accepts `borderStyle` (rounded/double/dashed/sharp/none); default rounded; borders on right side only.
+  - Failures: border style not applied, wrong side bordered, default not rounded.

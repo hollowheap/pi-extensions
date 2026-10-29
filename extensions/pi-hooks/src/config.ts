@@ -7,6 +7,12 @@ export interface HookEntry {
   command: string;
   args: string[];
   timeoutMs: number;
+  /** Optional condition: skip hook if condition evaluates to false. Supports "tool == 'name'" or "path contains 'str'". */
+  condition?: string;
+  /** Output format for post hooks: "markdown" (default) or "plain". */
+  format?: "markdown" | "plain";
+  /** Whether to chain: pass previous hook output as input to next hook. */
+  chain?: boolean;
 }
 
 export interface HookConfig {
@@ -102,7 +108,22 @@ function parseEntry(
     );
     return undefined;
   }
-  return { matcher, command, args: args as string[], timeoutMs };
+  const condition =
+    typeof record.condition === "string" ? record.condition : undefined;
+  const format =
+    record.format === "markdown" || record.format === "plain"
+      ? record.format
+      : undefined;
+  const chain = record.chain === true ? true : undefined;
+  return {
+    matcher,
+    command,
+    args: args as string[],
+    timeoutMs,
+    ...(condition ? { condition } : {}),
+    ...(format ? { format } : {}),
+    ...(chain ? { chain } : {}),
+  };
 }
 
 function parseFile(

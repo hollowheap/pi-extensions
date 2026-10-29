@@ -16,6 +16,7 @@ export interface TaskMetadata {
   startedAt: number;
   finishedAt?: number;
   exitCode?: number | null;
+  dependsOn?: string[];
 }
 
 export interface TaskRecord extends TaskMetadata {

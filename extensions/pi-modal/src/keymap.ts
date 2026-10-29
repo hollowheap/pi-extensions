@@ -9,10 +9,13 @@ export interface ModalKeymapConfig {
   insert?: Record<string, string | null>;
 }
 
+export type BorderStyle = "rounded" | "double" | "dashed" | "sharp" | "none";
+
 export interface ModalConfig {
   enabled?: boolean;
   initialMode?: EditorMode;
   promptChar?: string;
+  borderStyle?: BorderStyle;
   keymaps?: ModalKeymapConfig;
 }
 
@@ -60,6 +63,7 @@ export function loadModalConfig(agentDir: string): ModalConfig {
       enabled: true,
       initialMode: "insert",
       promptChar: "❯",
+      borderStyle: "rounded",
       keymaps: {
         normal: {},
         visual: {},
@@ -75,10 +79,23 @@ export function loadModalConfig(agentDir: string): ModalConfig {
       typeof parsed.promptChar === "string" ? parsed.promptChar : undefined;
     const promptChar =
       rawPromptChar && [...rawPromptChar].length === 1 ? rawPromptChar : "❯";
+    const validStyles = new Set([
+      "rounded",
+      "double",
+      "dashed",
+      "sharp",
+      "none",
+    ]);
+    const borderStyle =
+      typeof parsed.borderStyle === "string" &&
+      validStyles.has(parsed.borderStyle)
+        ? (parsed.borderStyle as BorderStyle)
+        : "rounded";
     return {
       enabled: parsed.enabled ?? true,
       initialMode: parsed.initialMode ?? "insert",
       promptChar,
+      borderStyle,
       keymaps: {
         normal: parsed.keymaps?.normal ?? {},
         visual: parsed.keymaps?.visual ?? {},
@@ -90,6 +107,7 @@ export function loadModalConfig(agentDir: string): ModalConfig {
       enabled: true,
       initialMode: "insert",
       promptChar: "❯",
+      borderStyle: "rounded",
       keymaps: {
         normal: {},
         visual: {},

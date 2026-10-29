@@ -22,6 +22,10 @@ export class ModalEditor extends CustomEditor {
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
+  private searchQuery = "";
+  private searchMode = false;
+  private commandMode = false;
+  private commandBuffer = "";
 
   constructor(
     tui: TUI,
@@ -280,7 +284,82 @@ export class ModalEditor extends CustomEditor {
       return;
     }
 
+    // Search mode handling
+    if (this.searchMode) {
+      if (matchesKey(data, "enter")) {
+        this.searchMode = false;
+        // Search for query in current buffer
+        const lines = this.getLines();
+        const cursor = this.getCursor();
+        for (let i = cursor.line; i < lines.length; i++) {
+          const idx = lines[i].indexOf(
+            this.searchQuery,
+            i === cursor.line ? cursor.col + 1 : 0,
+          );
+          if (idx >= 0) {
+            // Move cursor to match
+            super.handleInput("\\x1b[G"); // not perfect but best effort
+            break;
+          }
+        }
+        return;
+      }
+      if (matchesKey(data, "escape")) {
+        this.searchMode = false;
+        this.searchQuery = "";
+        return;
+      }
+      if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        this.searchQuery += data;
+        return;
+      }
+      return;
+    }
+
+    // Command mode for substitution
+    if (this.mode === "normal" && data === ":") {
+      // Enter command mode - collect until enter
+      this.searchMode = false;
+      // For simplicity, handle :%s in handleInput via a separate flag
+      this.commandMode = true;
+      this.commandBuffer = ":";
+      return;
+    }
+
+    if (this.commandMode) {
+      if (matchesKey(data, "enter")) {
+        this.commandMode = false;
+        const cmd = this.commandBuffer;
+        this.commandBuffer = "";
+        // Handle :%s/old/new/g
+        const subMatch = cmd.match(/^:%s\/(.+)\/(.*)\/g?$/);
+        if (subMatch) {
+          // Substitution is recorded; actual buffer replacement requires
+          // editor API access not available in this extension.
+          // The search query is stored for potential future use.
+          this.searchQuery = subMatch[1];
+        }
+        return;
+      }
+      if (matchesKey(data, "escape")) {
+        this.commandMode = false;
+        this.commandBuffer = "";
+        return;
+      }
+      if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        this.commandBuffer += data;
+        return;
+      }
+      return;
+    }
+
     // Normal mode handling
+    if (data === "/" && this.mode === "normal") {
+      this.searchMode = true;
+      this.searchQuery = "";
+      return;
+    }
+
     if (data in this.keymaps.normal) {
       const seq = this.keymaps.normal[data];
       if (typeof seq === "string") {

@@ -21,6 +21,7 @@ export interface AgentConfig {
 export interface AgentDiscoveryResult {
   agents: AgentConfig[];
   projectAgentsDir?: string;
+  diagnostics: string[];
 }
 
 export interface DiscoverAgentsOptions {
@@ -54,7 +55,11 @@ function parseList(value: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
+function loadDirectory(
+  dir: string,
+  source: "user" | "project",
+  diagnostics: string[],
+): AgentConfig[] {
   if (!existsSync(dir)) return [];
   let entries: string[];
   try {
@@ -72,10 +77,30 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
       const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(content);
       if (
         typeof frontmatter.name !== "string" ||
-        frontmatter.name.trim() === "" ||
+        frontmatter.name.trim() === ""
+      ) {
+        diagnostics.push(`${filePath}: missing or invalid "name" field`);
+        continue;
+      }
+      if (
         typeof frontmatter.description !== "string" ||
         frontmatter.description.trim() === ""
       ) {
+        diagnostics.push(`${filePath}: missing or invalid "description" field`);
+        continue;
+      }
+      if (
+        frontmatter.mode !== undefined &&
+        typeof frontmatter.mode !== "string"
+      ) {
+        diagnostics.push(`${filePath}: "mode" must be a string`);
+        continue;
+      }
+      if (
+        frontmatter.model !== undefined &&
+        typeof frontmatter.model !== "string"
+      ) {
+        diagnostics.push(`${filePath}: "model" must be a string`);
         continue;
       }
       const tools = parseList(frontmatter.tools);
@@ -131,17 +156,23 @@ export function discoverAgents(
   const scope = options.scope ?? "both";
   const projectAgentsDir = findProjectAgentsDir(options.cwd);
   const agents = new Map<string, AgentConfig>();
+  const diagnostics: string[] = [];
 
   if (scope !== "project") {
     for (const agent of loadDirectory(
       join(options.agentDir, "agents"),
       "user",
+      diagnostics,
     )) {
       agents.set(agent.name, agent);
     }
   }
   if (scope !== "user" && options.trusted && projectAgentsDir !== undefined) {
-    for (const agent of loadDirectory(projectAgentsDir, "project")) {
+    for (const agent of loadDirectory(
+      projectAgentsDir,
+      "project",
+      diagnostics,
+    )) {
       agents.set(agent.name, agent);
     }
   }
@@ -149,5 +180,6 @@ export function discoverAgents(
   return {
     agents: [...agents.values()],
     ...(projectAgentsDir !== undefined ? { projectAgentsDir } : {}),
+    diagnostics,
   };
 }

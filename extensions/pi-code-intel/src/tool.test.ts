@@ -62,6 +62,7 @@ function fakeClient(overrides: Partial<CodeIntelClient> = {}): CodeIntelClient {
     references: vi.fn(async () => []),
     documentSymbols: vi.fn(async () => []),
     workspaceSymbols: vi.fn(async () => []),
+    hover: vi.fn(async () => ({})),
     ...overrides,
   };
 }

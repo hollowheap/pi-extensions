@@ -3,6 +3,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { readTaskLog } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
 
@@ -38,6 +39,23 @@ export default function (pi: ExtensionAPI) {
       },
     }),
   );
+
+  pi.registerCommand("task", {
+    description: "Task management: /task logs <id>",
+    handler: async (args, ctx) => {
+      const parts = args.trim().split(/\\s+/).filter(Boolean);
+      if (parts[0] === "logs" && parts[1]) {
+        const id = parts[1];
+        const log = readTaskLog(getAgentDir(), id);
+        const text = log.trim() === "" ? "(no output)" : log;
+        if (ctx.hasUI) ctx.ui.notify(text, "info");
+        return;
+      }
+      if (ctx.hasUI) {
+        ctx.ui.notify("Usage: /task logs <id>", "info");
+      }
+    },
+  });
 
   pi.on("session_start", (_event, ctx) => {
     const all = emitTasksState(getAgentDir());

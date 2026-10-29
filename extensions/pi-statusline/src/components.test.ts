@@ -28,12 +28,12 @@ function ctx(overrides: Partial<ComponentContext> = {}): ComponentContext {
 describe("mode", () => {
   it("shows idle and working text", () => {
     expect(BUILTINS.mode({ type: "mode" }, ctx())).toBe("IDLE");
-    expect(BUILTINS.mode({ type: "mode" }, ctx({ busy: true }))).toBe(
+    expect(BUILTINS.mode({ type: "mode" }, ctx({ busy: true }))).toContain(
       "WORKING",
     );
     expect(
       BUILTINS.mode(
-        { type: "mode", idleText: "ok", workingText: "run" },
+        { type: "mode", idleText: "ok", workingText: "run", animate: false },
         ctx({ busy: true }),
       ),
     ).toBe("run");

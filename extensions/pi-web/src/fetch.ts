@@ -15,6 +15,25 @@ export interface FetchOptions {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   providers?: readonly ProviderAdapter[];
+  cacheTtlMs?: number;
+  acceptType?: "json" | "html" | "text" | "auto";
+  rateLimitMs?: number;
+}
+
+const fetchCache = new Map<
+  string,
+  { result: NormalizedFetchResult; expiresAt: number }
+>();
+
+let lastRequestTime = 0;
+
+async function rateLimit(ms: number): Promise<void> {
+  const now = Date.now();
+  const wait = Math.max(0, lastRequestTime + ms - now);
+  if (wait > 0) {
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  lastRequestTime = Date.now();
 }
 
 function ensureResult(
@@ -38,11 +57,21 @@ export async function rawFetch(
   options: {
     fetchImpl?: typeof fetch;
     signal?: AbortSignal;
+    acceptType?: "json" | "html" | "text" | "auto";
   } = {},
 ): Promise<NormalizedFetchResult> {
   assertSafeUrl(url);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const signal = options.signal;
+  const acceptType = options.acceptType ?? "auto";
+  const acceptHeader =
+    acceptType === "json"
+      ? "application/json"
+      : acceptType === "html"
+        ? "text/html"
+        : acceptType === "text"
+          ? "text/plain"
+          : "text/html,application/json,text/plain;q=0.9,*/*;q=0.8";
   let currentUrl = url;
   let redirects = 0;
 
@@ -50,6 +79,7 @@ export async function rawFetch(
     const response = await fetchImpl(currentUrl, {
       signal,
       redirect: "manual",
+      headers: { Accept: acceptHeader },
     });
 
     if (
@@ -137,6 +167,19 @@ export async function fetchUrl(
   options: FetchOptions = {},
 ): Promise<NormalizedFetchResult> {
   assertSafeUrl(url);
+
+  // Check cache
+  const cacheKey = `${url}:${options.acceptType ?? "auto"}`;
+  const cached = fetchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
+  // Rate limiting
+  if (options.rateLimitMs && options.rateLimitMs > 0) {
+    await rateLimit(options.rateLimitMs);
+  }
+
   const signal = providerSignal(options.signal, options.timeoutMs);
   const fetchImpl = options.fetchImpl;
   const providers = options.providers ?? [
@@ -162,5 +205,17 @@ export async function fetchUrl(
     }
   }
 
-  return rawFetch(url, { fetchImpl, signal });
+  const result = await rawFetch(url, {
+    fetchImpl,
+    signal,
+    acceptType: options.acceptType,
+  });
+
+  // Cache result
+  const ttl = options.cacheTtlMs ?? 0;
+  if (ttl > 0) {
+    fetchCache.set(cacheKey, { result, expiresAt: Date.now() + ttl });
+  }
+
+  return result;
 }

@@ -1,10 +1,13 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
 
+export type TodoPriority = "high" | "medium" | "low";
+
 export interface Todo {
   id: number;
   text: string;
   done: boolean;
+  priority?: TodoPriority;
 }
 
 export interface TodoState {
@@ -14,7 +17,8 @@ export interface TodoState {
 
 export type TodoCommand =
   | { type: "create"; texts: string[] }
-  | { type: "complete"; ids: number[] };
+  | { type: "complete"; ids: number[] }
+  | { type: "delete" };
 
 export interface TodoUpdate {
   state: TodoState;
@@ -24,6 +28,7 @@ export interface TodoUpdate {
 
 const CREATE_TAG = "create_todos";
 const COMPLETE_TAG = "complete_todos";
+const DELETE_TAG = "delete_todos";
 const POSITIVE_ID = /^[1-9]\d*$/;
 
 export function emptyTodoState(): TodoState {
@@ -46,7 +51,14 @@ export function parseTodoBlock(
   tag: string,
   body: string,
 ): TodoCommand | undefined {
-  if (tag !== CREATE_TAG && tag !== COMPLETE_TAG) return undefined;
+  if (tag !== CREATE_TAG && tag !== COMPLETE_TAG && tag !== DELETE_TAG) {
+    return undefined;
+  }
+
+  if (tag === DELETE_TAG) {
+    if (body.trim() !== "") return undefined;
+    return { type: "delete" };
+  }
 
   const items = orderedItems(body);
   if (!items || items.some((item) => item.checked !== undefined)) {
@@ -89,6 +101,17 @@ export function applyTodoCommand(
     };
   }
 
+  if (command.type === "delete") {
+    if (state.todos.length === 0 || state.todos.some((todo) => !todo.done)) {
+      return { state, unknownIds: [], changed: false };
+    }
+    return {
+      state: { todos: [], nextId: state.nextId },
+      unknownIds: [],
+      changed: true,
+    };
+  }
+
   const existing = new Set(state.todos.map((todo) => todo.id));
   const requested = new Set(command.ids);
   const seenUnknown = new Set<number>();
@@ -114,14 +137,24 @@ export function applyTodoCommand(
   };
 }
 
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
 function byId(todos: readonly Todo[]): Todo[] {
-  return [...todos].sort((left, right) => left.id - right.id);
+  return [...todos].sort((left, right) => {
+    const lp = PRIORITY_ORDER[left.priority ?? "medium"] ?? 1;
+    const rp = PRIORITY_ORDER[right.priority ?? "medium"] ?? 1;
+    if (lp !== rp) return lp - rp;
+    return left.id - right.id;
+  });
 }
 
 export function formatTodoList(todos: readonly Todo[]): string {
   if (todos.length === 0) return "No todos";
   return byId(todos)
-    .map((todo) => `${todo.done ? "✓" : "•"} ${todo.id} ${todo.text}`)
+    .map((todo) => {
+      const prio = todo.priority ? `[${todo.priority}] ` : "";
+      return `${todo.done ? "✓" : "•"} ${todo.id} ${prio}${todo.text}`;
+    })
     .join("\n");
 }
 
@@ -148,6 +181,7 @@ export interface FormatTodoWidgetOptions {
   borderColor?: (text: string) => string;
   width?: number;
   now?: number;
+  collapsed?: boolean;
 }
 
 function stateIcon(state: string): string {
@@ -202,6 +236,8 @@ export function formatTodoWidget(
   } else {
     opts = options;
   }
+
+  if (opts?.collapsed) return undefined;
 
   const sections: WidgetSection[] = [];
   const strikethrough =

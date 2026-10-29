@@ -54,12 +54,29 @@ const PASSTHROUGH_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
 
 const sessionDecisions = new Map<unknown, Map<string, DecisionEffect>>();
 
+interface TempGrant {
+  target: string;
+  expiresAt: number;
+}
+const sessionGrants = new Map<unknown, TempGrant[]>();
+
 interface EventSink {
   emit(channel: string, data: unknown): void;
 }
 
 let eventSink: EventSink | undefined;
 let lastOwner: unknown;
+
+function parseDuration(str: string): number | null {
+  const match = str.match(/^(\\d+)(s|m|h)$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const unit = match[2];
+  if (unit === "s") return value * 1000;
+  if (unit === "m") return value * 60 * 1000;
+  if (unit === "h") return value * 60 * 60 * 1000;
+  return null;
+}
 
 function readPathArg(input: unknown): string | undefined {
   if (typeof input !== "object" || input === null) return undefined;
@@ -336,6 +353,16 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    // Check temporary grants
+    const grants = sessionGrants.get(ctx.sessionManager) ?? [];
+    const now = Date.now();
+    const activeGrant = grants.find(
+      (g) => g.target === target && g.expiresAt > now,
+    );
+    if (activeGrant) {
+      return undefined;
+    }
+
     const verdict = evaluate({
       owner: ctx.sessionManager,
       cwd: ctx.cwd,
@@ -380,6 +407,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("session_shutdown", (_event, ctx) => {
     sessionDecisions.delete(ctx.sessionManager);
+    sessionGrants.delete(ctx.sessionManager);
     dropSession(ctx.sessionManager);
   });
   pi.registerCommand("mode", {
@@ -405,6 +433,57 @@ export default function (pi: ExtensionAPI) {
     description: "Cycle plan/approval mode",
     handler: (ctx) =>
       switchMode(ctx, nextMode(session(ctx.sessionManager).mode)),
+  });
+
+  pi.registerCommand("grant", {
+    description: "Grant temporary permission: /grant <path-or-tool> <duration>",
+    handler: async (args, ctx) => {
+      const parts = args.trim().split(/\\s+/).filter(Boolean);
+      if (parts.length < 2) {
+        if (ctx.hasUI) {
+          ctx.ui.notify("Usage: /grant <path-or-tool> <duration>", "info");
+        }
+        return;
+      }
+      const target = parts[0];
+      const durationStr = parts[1];
+      const durationMs = parseDuration(durationStr);
+      if (durationMs === null) {
+        if (ctx.hasUI) {
+          ctx.ui.notify("Invalid duration. Use e.g. 5m, 1h, 30s", "error");
+        }
+        return;
+      }
+      let grants = sessionGrants.get(ctx.sessionManager);
+      if (!grants) {
+        grants = [];
+        sessionGrants.set(ctx.sessionManager, grants);
+      }
+      grants.push({ target, expiresAt: Date.now() + durationMs });
+      if (ctx.hasUI) {
+        ctx.ui.notify(`Granted ${target} for ${durationStr}`, "info");
+      }
+    },
+  });
+
+  pi.registerCommand("grants", {
+    description: "List active temporary permission grants",
+    handler: async (_args, ctx) => {
+      const grants = sessionGrants.get(ctx.sessionManager) ?? [];
+      const now = Date.now();
+      const active = grants.filter((g) => g.expiresAt > now);
+      if (active.length === 0) {
+        if (ctx.hasUI) ctx.ui.notify("No active grants", "info");
+        return;
+      }
+      const text = active
+        .map(
+          (g) =>
+            `${g.target} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
+        )
+        .join("\\n");
+      if (ctx.hasUI) ctx.ui.notify(text, "info");
+    },
   });
   pi.registerCommand("context", {
     description: "Show context window usage broken down by category",

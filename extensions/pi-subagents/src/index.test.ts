@@ -42,7 +42,10 @@ describe("pi-subagents extension", () => {
     };
     expect(tool.name).toBe("subagent");
     expect(tool.exposure).toBe("direct");
-    expect(pi.registerCommand).not.toHaveBeenCalled();
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "subagent",
+      expect.any(Object),
+    );
 
     // Verify session_start hook and subagents:state emission
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));

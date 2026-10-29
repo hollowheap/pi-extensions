@@ -34,6 +34,26 @@ export interface SessionHookResult {
   error?: string;
 }
 
+export function evaluateCondition(
+  entry: HookEntry,
+  payload: HookPayload,
+): boolean {
+  if (!entry.condition) return true;
+  const cond = entry.condition.trim().toLowerCase();
+  // Simple: "tool == 'name'" or "tool != 'name'"
+  const toolMatch = cond.match(/^tool\\s*==\\s*['\"](.+)['\"]$/);
+  if (toolMatch) return payload.toolName.toLowerCase() === toolMatch[1];
+  const toolNotMatch = cond.match(/^tool\\s*!=\\s*['\"](.+)['\"]$/);
+  if (toolNotMatch) return payload.toolName.toLowerCase() !== toolNotMatch[1];
+  // "path contains 'str'"
+  const pathContains = cond.match(/^path\\s+contains\\s+['\"](.+)['\"]$/);
+  if (pathContains) {
+    const target = String(payload.input?.path ?? payload.input?.command ?? "");
+    return target.toLowerCase().includes(pathContains[1].toLowerCase());
+  }
+  return true;
+}
+
 export function matchesTool(entry: HookEntry, toolName: string): boolean {
   const matcher = entry.matcher.toLowerCase();
   if (matcher === "") return true;
@@ -125,7 +145,11 @@ export async function runPostHook(
       };
     }
     const output = result.stdout.trim();
-    return output === "" ? {} : { output };
+    if (output === "") return {};
+    if (entry.format === "markdown") {
+      return { output: `\`\`\`\n${output}\n\`\`\`` };
+    }
+    return { output };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

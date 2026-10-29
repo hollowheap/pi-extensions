@@ -10,6 +10,7 @@ import { type HookConfig, loadHooks } from "./config.js";
 import {
   type HookPayload,
   type SessionHookPayload,
+  evaluateCondition,
   matchesTool,
   runPostHook,
   runPreHook,
@@ -87,11 +88,12 @@ export default function (pi: ExtensionAPI) {
     }
   });
   pi.on("tool_call", async (event, ctx) => {
-    const hooks = loadContextHooks(ctx).preTool.filter((hook) =>
-      matchesTool(hook, event.toolName),
+    const payload = payloadFor(ctx, event, "pre_tool");
+    const hooks = loadContextHooks(ctx).preTool.filter(
+      (hook) =>
+        matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
     );
     if (hooks.length === 0) return undefined;
-    const payload = payloadFor(ctx, event, "pre_tool");
     for (const hook of hooks) {
       const verdict = await runPreHook(hook, payload);
       if (verdict.block) {
@@ -102,14 +104,19 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", async (event, ctx) => {
-    const hooks = loadContextHooks(ctx).postTool.filter((hook) =>
-      matchesTool(hook, event.toolName),
+    const payload = payloadFor(ctx, event, "post_tool");
+    const hooks = loadContextHooks(ctx).postTool.filter(
+      (hook) =>
+        matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
     );
     if (hooks.length === 0) return undefined;
-    const payload = payloadFor(ctx, event, "post_tool");
     const notes: string[] = [];
+    let previousOutput = "";
     for (const hook of hooks) {
-      const result = await runPostHook(hook, payload);
+      const hookPayload = hook.chain
+        ? { ...payload, input: { ...payload.input, previousOutput } }
+        : payload;
+      const result = await runPostHook(hook, hookPayload);
       if (result.error !== undefined) {
         ctx.ui.notify(
           `pi-hooks: ${hook.command} failed: ${result.error}`,
@@ -118,6 +125,7 @@ export default function (pi: ExtensionAPI) {
         continue;
       }
       if (result.output !== undefined) {
+        previousOutput = result.output;
         notes.push(
           `[pi-hooks: ${hook.command}]\n${truncateText(result.output, "pi-hooks")}`,
         );

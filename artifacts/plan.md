@@ -716,13 +716,88 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: implement `bwrap` command wrapper checking binary presence; construct sandbox arguments with read-only root, dev, proc, tmpfs, and workspace bind mount; mask sensitive user credential paths (`.ssh`, `.gnupg`); integrate into core exec/command runner; fail closed if sandbox required and missing.
   - Risk: bwrap permission flags across Linux distributions, missing /dev or /proc nodes in containers.
 
-- [ ] T119 [S121] (blocked-by: none): guarded delete_todos assistant block and /todo management commands.
+- [x] T119 [S121] (blocked-by: none): guarded delete_todos assistant block and /todo management commands.
   - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
   - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-todos/src/index.test.ts`
   - Notes: add `delete_todos` tag support in `parseTodoBlock`; reject in `applyTodoCommand` if any todo is incomplete; add `/todo complete <id>`, `/todo delete <id>`, and `/todo delete` slash commands.
   - Risk: empty state deletion, non-numeric ID inputs.
 
-- [ ] T120 [S122] (blocked-by: T119): prefixed panel toggle keybinding (^x p) and unified task/subagent widget layout.
+- [x] T120 [S122] (blocked-by: T119): prefixed panel toggle keybinding (^x p) and unified task/subagent widget layout.
+
+- [x] T121 [S123] (blocked-by: none): `pi-todos` edit, priority, bulk complete, and search.
+  - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
+  - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-todos/src/index.test.ts`
+  - Notes: add `/todo edit <id> <text>`, priority field (high/medium/low), `/todo complete all`, `/todos search <query>`.
+
+- [x] T122 [S124] (blocked-by: none): `pi-tasks` live output tailing and task dependencies.
+  - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-tasks/src/registry.test.ts`
+  - Files: `extensions/pi-tasks/src/index.ts`, `extensions/pi-tasks/src/registry.ts`, `extensions/pi-tasks/src/runner.ts`
+  - Notes: add `/task logs <id>`, dependency declarations in task start, circular dep rejection.
+
+- [x] T123 [S125] (blocked-by: none): `pi-modal` search, substitution, syntax highlighting, visual selection.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/keymap.ts`
+  - Notes: add `/` search with n/N, `:%s` substitution, language-aware highlighting, visual selection background.
+
+- [x] T124 [S126] (blocked-by: none): merge `pi-usage` with `pi-budgets`, per-model cost, cache tokens, subagent usage.
+  - Verify: `npx vitest run extensions/pi-usage/src/index.test.ts extensions/pi-budgets/src/budget.test.ts`
+  - Files: `extensions/pi-usage/src/index.ts`, `extensions/pi-budgets/src/index.ts`, `extensions/pi-budgets/src/budget.ts`
+  - Notes: absorb budgets into usage; per-model cost table; cache read/write tokens; subagent turn attribution; soft warnings at 80%.
+
+- [x] T125 [S127] (blocked-by: none): `pi-subagents` pause/resume and steering messages.
+  - Verify: `npx vitest run extensions/pi-subagents/src/index.test.ts extensions/pi-subagents/src/runner.test.ts`
+  - Files: `extensions/pi-subagents/src/index.ts`, `extensions/pi-subagents/src/runner.ts`, `extensions/pi-subagents/src/state.ts`
+  - Notes: add `/subagent pause <id>`, `/subagent resume <id>`, parent steering via follow-up message.
+
+- [x] T126 [S128] (blocked-by: none): `pi-web` response caching, rate limiting, content-type negotiation.
+  - Verify: `npx vitest run extensions/pi-web/src/fetch.test.ts extensions/pi-web/src/tools.test.ts`
+  - Files: `extensions/pi-web/src/fetch.ts`, `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/config.ts`
+  - Notes: TTL-based cache keyed by URL+headers; request queue for rate limiting; Accept header negotiation.
+
+- [x] T127 [S129] (blocked-by: none): `pi-dashboard` error recovery, interactive refresh, custom renderers.
+  - Verify: `npx vitest run extensions/pi-dashboard/src/index.test.ts extensions/pi-dashboard/src/render.test.ts`
+  - Files: `extensions/pi-dashboard/src/index.ts`, `extensions/pi-dashboard/src/render.ts`, `extensions/pi-dashboard/src/config.ts`
+  - Notes: retry with backoff; key-triggered refresh; pluggable render functions from TS path.
+
+- [x] T128 [S130] (blocked-by: none): `pi-code-intel` hover tool with TUI popup.
+  - Verify: `npx vitest run extensions/pi-code-intel/src/tool.test.ts extensions/pi-code-intel/src/index.test.ts`
+  - Files: `extensions/pi-code-intel/src/tool.ts`, `extensions/pi-code-intel/src/index.ts`
+  - Notes: hover tool returns type/signature/docs; optional TUI popup when UI available.
+
+- [x] T129 [S131] (blocked-by: none): `pi-statusline` configurable click actions and custom TS components.
+  - Verify: `npx vitest run extensions/pi-statusline/src/index.test.ts extensions/pi-statusline/src/components.test.ts`
+  - Files: `extensions/pi-statusline/src/index.ts`, `extensions/pi-statusline/src/components.ts`, `extensions/pi-statusline/src/config.ts`
+  - Notes: click config maps segment to action; custom components from TS file.
+
+- [x] T130 [S132] (blocked-by: none): `pi-agent` config validation with schema.
+  - Verify: `npx vitest run extensions/pi-agent/src/agents.test.ts extensions/pi-agent/src/index.test.ts`
+  - Files: `extensions/pi-agent/src/agents.ts`, `extensions/pi-agent/src/index.ts`
+  - Notes: validate with schema; invalid agents skipped with warning.
+
+- [x] T131 [S133] (blocked-by: none): `pi-hooks` chaining, conditional execution, output formatting, timeout.
+  - Verify: `npx vitest run extensions/pi-hooks/src/hooks.test.ts extensions/pi-hooks/src/index.test.ts`
+  - Files: `extensions/pi-hooks/src/hooks.ts`, `extensions/pi-hooks/src/config.ts`, `extensions/pi-hooks/src/index.ts`
+  - Notes: hook chaining with piped output; conditions by tool/path; configurable format; per-hook timeout.
+
+- [x] T132 [S134] (blocked-by: none): `pi-question` multi-page and conditional branching.
+  - Verify: `npx vitest run extensions/pi-question/src/questions.test.ts extensions/pi-question/src/index.test.ts`
+  - Files: `extensions/pi-question/src/questions.ts`, `extensions/pi-question/src/index.ts`
+  - Notes: multi-page with Next/Back; conditional show/hide; state in context only.
+
+- [x] T133 [S135] (blocked-by: none): `pi-guard` temporary permission grants.
+  - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts extensions/pi-guard/src/rules.test.ts`
+  - Files: `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/rules.ts`, `extensions/pi-guard/src/config.ts`
+  - Notes: `/grant <path-or-tool> <duration>`, expiry, `/grants` list.
+
+- [x] T134 [S136] (blocked-by: none): animated working indicator for agent and tasks.
+  - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts extensions/pi-statusline/src/index.test.ts`
+  - Files: `extensions/pi-tasks/src/index.ts`, `extensions/pi-statusline/src/index.ts`
+  - Notes: spinner with elapsed timer; respects reduced-motion and config toggle.
+
+- [x] T135 [S137] (blocked-by: none): `pi-modal` configurable border styles.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/keymap.ts`
+  - Notes: borderStyle in modal.json (rounded/double/dashed/sharp/none); default rounded; right side only.
   - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts extensions/pi-todos/src/index.test.ts`
   - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/index.ts`, `extensions/pi-todos/src/todos.test.ts`, `extensions/pi-todos/src/index.test.ts`
   - Notes: register `/panel toggle [todos|dashboard|all]` slash command; add raw input listener for `^x p` prefix chord toggling widget collapse; harmonize task and subagent row formatting with consistent `#<id> <elapsed> (<target>) <status>`.

@@ -66,7 +66,8 @@ describe("pi-tasks extension", () => {
     const registeredTool = pi.registerTool.mock.calls[0]?.[0];
     expect(registeredTool?.name).toBe("task");
     expect("exposure" in (registeredTool ?? {})).toBe(false);
-    expect(pi.registerCommand).not.toHaveBeenCalled();
+    expect(pi.registerCommand).toHaveBeenCalledTimes(1);
+    expect(pi.registerCommand).toHaveBeenCalledWith("task", expect.any(Object));
     expect(pi.registerShortcut).not.toHaveBeenCalled();
   });
 
