@@ -1145,3 +1145,19 @@
   - Seam: pure mapper from upstream `asyncSnapshot.runs` to local state items.
   - Behavior: map run id to id, agent/label to agent, state to local active state, startedAt, and activity tool fields; omit terminal runs; task text is empty or label-derived.
   - Failures: terminal rows imported, missing active tool, wrong state mapping, or dependency on upstream package.
+
+### Media content
+
+#### Module Seams
+
+- [x] S168 [R77] [D168]: Direct PDF fetches extract bounded text locally and fail explainably.
+  - Verify: `npx vitest run extensions/pi-web/src/pdf.test.ts extensions/pi-web/src/fetch.test.ts`
+  - Seam: raw fetch content-type branch and local PDF extractor.
+  - Behavior: `application/pdf` bytes are parsed to capped text; malformed/oversized input returns explanatory text; no upstream call.
+  - Failures: empty PDF content, unbounded output, crash on parser failure, or browser/upstream fallback.
+
+- [x] S169 [R78] [D169]: Direct image fetches return one bounded image block with MIME type.
+  - Verify: `npx vitest run extensions/pi-web/src/image.test.ts extensions/pi-web/src/tools.test.ts`
+  - Seam: raw fetch image branch and tool result content.
+  - Behavior: supported PNG/JPEG/GIF/WebP bytes under the cap become an image block; unsupported/oversized images return text; metadata/previews remain.
+  - Failures: image bytes as text, oversized payload, wrong MIME, or upstream dependency.

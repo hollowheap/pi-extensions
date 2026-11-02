@@ -171,6 +171,38 @@ describe("web_fetch", () => {
     expect(textOf(result)).not.toContain("provider");
   });
 
+  it("returns a direct image block from web_fetch", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      url: "https://example.com/pic.png",
+      finalUrl: "https://example.com/pic.png",
+      provider: "raw",
+      contentType: "image/png",
+      content: "",
+      links: [],
+      media: [],
+      truncated: false,
+      image: { data: "aGVsbG8=", mimeType: "image/png" },
+    });
+    const tool = createWebFetchTool({ fetch });
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com/pic.png" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const blocks = result.content as unknown as Array<{
+      type: string;
+      data?: string;
+      mimeType?: string;
+    }>;
+    expect(blocks[1]).toEqual({
+      type: "image",
+      data: "aGVsbG8=",
+      mimeType: "image/png",
+    });
+  });
+
   it("caps max_chars at 100k", async () => {
     const fetch = vi.fn().mockResolvedValue({
       url: "https://example.com",

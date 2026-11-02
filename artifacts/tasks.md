@@ -956,3 +956,17 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: map id/agent/state/start/active tool; omit terminal runs; no upstream dependency.
   - Risk: terminal rows, missing tool fields, or package coupling.
 
+### Media content
+
+- [x] T155 [S168]: extract bounded text from direct PDF fetches with a local parser.
+  - Verify: `npx vitest run extensions/pi-web/src/pdf.test.ts extensions/pi-web/src/fetch.test.ts`
+  - Files: `extensions/pi-web/src/pdf.ts`, `extensions/pi-web/src/pdf.test.ts`, `extensions/pi-web/src/fetch.ts`, `extensions/pi-web/src/fetch.test.ts`
+  - Notes: use the local `pdftotext` path, cap output, and return explanatory text on failure.
+  - Risk: parser availability, malformed PDFs, unbounded output, or temp-file leaks.
+
+- [x] T156 [S169]: return bounded direct-image bytes as a model image block.
+  - Verify: `npx vitest run extensions/pi-web/src/image.test.ts extensions/pi-web/src/tools.test.ts`
+  - Files: `extensions/pi-web/src/image.ts`, `extensions/pi-web/src/image.test.ts`, `extensions/pi-web/src/fetch.ts`, `extensions/pi-web/src/providers/types.ts`, `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`
+  - Notes: allow PNG/JPEG/GIF/WebP under the byte cap; fall back to text for unsupported/oversized images.
+  - Risk: unbounded payload, wrong MIME, or breaking terminal previews.
+

@@ -112,8 +112,8 @@ Scope: `my-pi-agent` workspace.
 
 ## Evidence
 
-- Accepted decisions: `artifacts/decisions.md` D01-D167.
-- Behavioral specs: `artifacts/specs.md` (165 entries, S01-S167; S139-S140 absent).
+- Accepted decisions: `artifacts/decisions.md` D01-D169.
+- Behavioral specs: `artifacts/specs.md` (167 entries, S01-S169; S139-S140 absent).
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.

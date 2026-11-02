@@ -81,7 +81,7 @@ Output:
 }
 ```
 
-Links cap at 50; media caps at 20. Media metadata is `image`, `video`, `audio`, `pdf`, or `other`. `media` never contains image blocks, base64, or downloaded files; `data:` URLs are dropped from links and media.
+Links cap at 50; media caps at 20. Media metadata is `image`, `video`, `audio`, `pdf`, or `other`. `media` never contains image blocks, base64, or downloaded files; `data:` URLs are dropped from links and media. Direct PDF URLs are parsed to text locally with `pdftotext` (5 MB input cap, 100k character output cap). Direct PNG/JPEG/GIF/WebP URLs return one image block (2 MB cap); oversized or unsupported images return explanatory text. Videos and audio remain metadata-only.
 
 Expanded `web_search` and `web_fetch` results render as Markdown; collapsed results keep the compact text preview. URLs use OSC 8 hyperlinks when the terminal supports them, and expanded fetches list media metadata under `## Media`. On image-capable terminals, up to two image media entries (2 MB each) are fetched as bounded previews and rendered with the `Image` component; failures fall back to links.
 

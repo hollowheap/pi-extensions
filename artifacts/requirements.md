@@ -419,3 +419,17 @@
   - Acceptance: Active runs map to local IDs, agent/label, state, start time, and active tool; terminal runs are omitted.
   - Constraints: No runtime dependency on the other engine; no task text is required.
   - Non-goals: Bidirectional control, steering, or resume across engines.
+
+### Media content
+
+- [x] R77: A fetched PDF URL yields readable text, not an empty response.
+  - Verify: `npx vitest run extensions/pi-web/src/pdf.test.ts extensions/pi-web/src/fetch.test.ts`
+  - Acceptance: PDF text is extracted locally, capped, and returned as content; malformed or oversized PDFs return explanatory text; no browser or upstream engine.
+  - Constraints: No upstream web engine; extraction failure must not crash the tool.
+  - Non-goals: Scanned-image OCR, PDF rendering, or attachment downloads.
+
+- [x] R78: A fetched direct image URL yields bounded image content for the model.
+  - Verify: `npx vitest run extensions/pi-web/src/image.test.ts extensions/pi-web/src/tools.test.ts`
+  - Acceptance: Supported image bytes return one image block with MIME type and a size cap; unsupported or oversized images return explanatory text; terminal previews remain.
+  - Constraints: No upstream web engine; no SVG or unbounded payloads.
+  - Non-goals: Video/audio content or image OCR.

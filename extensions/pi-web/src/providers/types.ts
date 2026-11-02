@@ -23,6 +23,11 @@ export interface NormalizedMedia {
   mimeType?: string;
 }
 
+export interface NormalizedImage {
+  data: string;
+  mimeType: string;
+}
+
 export interface NormalizedFetchResult {
   url: string;
   finalUrl: string;
@@ -32,6 +37,7 @@ export interface NormalizedFetchResult {
   links: NormalizedLink[];
   media: NormalizedMedia[];
   truncated: boolean;
+  image?: NormalizedImage;
 }
 
 export interface SearchRequest {

@@ -627,6 +627,18 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: new `pi-notify` extension; extend `pi-statusline`/`pi-todos`; per-extension duplicate delivery.
   - Consequences: core exposes alert event and payload types plus deduplication and fallback; adapters deliver Linux native or terminal alerts; payloads remain IDs and status only.
 
+- [x] D168 [R77]: Extract PDF text locally with `pdftotext`, bounded output, and no browser or upstream engine.
+  - Context: Direct PDF URLs currently return empty content; a local system parser is available and avoids a new runtime package.
+  - Alternatives: PDF.js dependency; provider extraction; metadata-only.
+  - Consequences: raw PDF fetches write a temporary file, run `pdftotext`, cap output, and fail with explanatory text when unavailable.
+  - Supersedes: none
+
+- [x] D169 [R78]: Return bounded direct-image bytes as one model image block; keep media metadata and terminal previews.
+  - Context: Direct image URLs currently return empty content; Pi tool results support image blocks.
+  - Alternatives: metadata-only; upstream renderer; terminal-only preview.
+  - Consequences: allowed image MIME types under the byte cap become an image block; oversized or unsupported images fall back to text.
+  - Supersedes: none
+
 ### Framework & Library Choices
 
 - [x] D61 [R19]: A new `extensions/pi-language-tools` extension owns code intelligence and registers one `lang` tool with `exposure: "codemode"`; `pi-tools` stays stateless and core gains no host or process code

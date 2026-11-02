@@ -1,5 +1,7 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { extractHtml } from "./extract.js";
+import { MAX_PDF_BYTES, extractPdfText } from "./pdf.js";
 import { createExaAdapter } from "./providers/exa.js";
 import { providerSignal } from "./providers/selection.js";
 import { createTavilyAdapter } from "./providers/tavily.js";
@@ -16,6 +18,13 @@ import {
 } from "./url.js";
 
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 
 export interface FetchOptions {
   apiKey?: string;
@@ -80,14 +89,15 @@ function ensureResult(
     links: Array.isArray(result.links) ? result.links : [],
     media: Array.isArray(result.media) ? result.media : [],
     truncated: Boolean(result.truncated),
+    ...(result.image === undefined ? {} : { image: result.image }),
   };
 }
 
-async function readBoundedText(response: Response): Promise<{
-  text: string;
-  truncated: boolean;
-}> {
-  if (!response.body) return { text: "", truncated: false };
+async function readBoundedBytes(
+  response: Response,
+  maxBytes: number,
+): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+  if (!response.body) return { bytes: new Uint8Array(), truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -95,10 +105,10 @@ async function readBoundedText(response: Response): Promise<{
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (total + value.byteLength > MAX_RESPONSE_BYTES) {
-      const remaining = MAX_RESPONSE_BYTES - total;
+    if (total + value.byteLength > maxBytes) {
+      const remaining = maxBytes - total;
       if (remaining > 0) chunks.push(value.subarray(0, remaining));
-      total = MAX_RESPONSE_BYTES;
+      total = maxBytes;
       truncated = true;
       await reader.cancel();
       break;
@@ -112,9 +122,17 @@ async function readBoundedText(response: Response): Promise<{
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return { bytes, truncated };
+}
+
+async function readBoundedText(response: Response): Promise<{
+  text: string;
+  truncated: boolean;
+}> {
+  const body = await readBoundedBytes(response, MAX_RESPONSE_BYTES);
   return {
-    text: new TextDecoder().decode(bytes),
-    truncated,
+    text: new TextDecoder().decode(body.bytes),
+    truncated: body.truncated,
   };
 }
 
@@ -187,6 +205,76 @@ export async function rawFetch(
     }
 
     const lower = mediaType.toLowerCase();
+    if (lower === "application/pdf") {
+      const body = await readBoundedBytes(response, MAX_PDF_BYTES);
+      if (body.truncated) {
+        return {
+          url,
+          finalUrl,
+          provider: "raw",
+          contentType: mediaType,
+          content: "PDF exceeds the 5 MB extraction limit.",
+          links: [],
+          media: [],
+          truncated: true,
+        };
+      }
+      try {
+        const pdf = await extractPdfText(body.bytes, signal);
+        return {
+          url,
+          finalUrl,
+          provider: "raw",
+          contentType: mediaType,
+          content: pdf.text,
+          links: [],
+          media: [],
+          truncated: pdf.truncated,
+        };
+      } catch (error) {
+        return {
+          url,
+          finalUrl,
+          provider: "raw",
+          contentType: mediaType,
+          content: `PDF text extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+          links: [],
+          media: [],
+          truncated: false,
+        };
+      }
+    }
+
+    if (IMAGE_TYPES.has(lower)) {
+      const body = await readBoundedBytes(response, MAX_IMAGE_BYTES);
+      if (body.truncated || body.bytes.byteLength === 0) {
+        return {
+          url,
+          finalUrl,
+          provider: "raw",
+          contentType: mediaType,
+          content: "Image exceeds the 2 MB content limit or is empty.",
+          links: [],
+          media: [],
+          truncated: true,
+        };
+      }
+      return {
+        url,
+        finalUrl,
+        provider: "raw",
+        contentType: mediaType,
+        content: "",
+        links: [],
+        media: [],
+        truncated: false,
+        image: {
+          data: Buffer.from(body.bytes).toString("base64"),
+          mimeType: lower,
+        },
+      };
+    }
+
     if (lower.includes("html")) {
       const body = await readBoundedText(response);
       const page = extractHtml(body.text, finalUrl);

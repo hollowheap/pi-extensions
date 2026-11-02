@@ -307,6 +307,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
             query?: string;
             results?: WebSearchResultItem[];
             truncated?: boolean;
+            image?: { data: string; mimeType: string };
             error?: string;
           }
         | undefined;
@@ -444,6 +445,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
               mimeType?: string;
             }[];
             truncated?: boolean;
+            image?: { data: string; mimeType: string };
             error?: string;
           }
         | undefined;
@@ -476,9 +478,20 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
           .filter((item) => item.kind === "image")
           .map((item) => getMediaPreview(item.url))
           .filter((preview): preview is MediaPreview => preview !== undefined);
-        if (previews.length === 0) return markdown;
+        const directImage = details?.image;
+        if (previews.length === 0 && directImage === undefined) return markdown;
         const container = new Container();
         container.addChild(markdown);
+        if (directImage !== undefined) {
+          container.addChild(
+            new Image(
+              directImage.data,
+              directImage.mimeType,
+              { fallbackColor: (text) => theme.fg("muted", text) },
+              { maxWidthCells: 60 },
+            ),
+          );
+        }
         for (const preview of previews) {
           container.addChild(
             new Image(
@@ -581,8 +594,19 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
           isTruncated,
           media,
         );
+        const contentBlocks: Array<
+          | { type: "text"; text: string }
+          | { type: "image"; data: string; mimeType: string }
+        > = [{ type: "text", text }];
+        if (result.image !== undefined) {
+          contentBlocks.push({
+            type: "image",
+            data: result.image.data,
+            mimeType: result.image.mimeType,
+          });
+        }
         return {
-          content: [{ type: "text" as const, text }],
+          content: contentBlocks,
           details: {
             url: result.url,
             finalUrl: result.finalUrl,
@@ -591,6 +615,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
             links,
             media,
             truncated: isTruncated,
+            ...(result.image === undefined ? {} : { image: result.image }),
           },
         };
       } catch (error) {

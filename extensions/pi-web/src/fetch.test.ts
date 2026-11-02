@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_RESPONSE_BYTES, fetchUrl, rawFetch } from "./fetch.js";
 import type {
@@ -235,6 +236,41 @@ describe("fetchUrl", () => {
         resolveHost: publicResolver,
       }),
     ).rejects.toThrow(/not allowed/);
+  });
+
+  it("returns bounded image bytes for direct image URLs", async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const raw = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(bytes, { headers: { "content-type": "image/png" } }),
+      );
+
+    const result = await rawFetch("https://example.com/pic.png", {
+      fetchImpl: raw,
+      resolveHost: publicResolver,
+    });
+
+    expect(result.image?.mimeType).toBe("image/png");
+    expect(Buffer.from(result.image?.data ?? "", "base64")).toEqual(
+      Buffer.from(bytes),
+    );
+    expect(result.content).toBe("");
+  });
+
+  it("returns explanatory text when PDF extraction fails", async () => {
+    const raw = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "application/pdf" },
+      }),
+    );
+
+    const result = await rawFetch("https://example.com/bad.pdf", {
+      fetchImpl: raw,
+      resolveHost: publicResolver,
+    });
+
+    expect(result.content).toContain("PDF text extraction failed");
   });
 
   it("bounds response bodies", async () => {
