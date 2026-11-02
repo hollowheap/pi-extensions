@@ -222,22 +222,11 @@ interface WidgetSection {
 export function formatTodoWidget(
   todos: readonly Todo[],
   subagents: readonly SubagentStateItem[] = [],
-  tasksOrOptions?: readonly TaskStateItem[] | FormatTodoWidgetOptions,
-  options?: FormatTodoWidgetOptions,
+  tasks: readonly TaskStateItem[] = [],
+  options: FormatTodoWidgetOptions = {},
 ): string[] | undefined {
-  let tasks: readonly TaskStateItem[] = [];
-  let opts: FormatTodoWidgetOptions | undefined;
-
-  if (Array.isArray(tasksOrOptions)) {
-    tasks = tasksOrOptions;
-    opts = options;
-  } else if (tasksOrOptions) {
-    opts = tasksOrOptions as FormatTodoWidgetOptions;
-  } else {
-    opts = options;
-  }
-
-  if (opts?.collapsed) return undefined;
+  const opts = options;
+  if (opts.collapsed) return undefined;
 
   const sections: WidgetSection[] = [];
   const strikethrough =
@@ -245,8 +234,10 @@ export function formatTodoWidget(
 
   if (todos.length > 0) {
     const sorted = byId(todos);
-    const openCount = sorted.filter((todo) => !todo.done).length;
-    const doneCount = sorted.length - openCount;
+    const open = sorted.filter((todo) => !todo.done);
+    const done = sorted.filter((todo) => todo.done);
+    const openCount = open.length;
+    const doneCount = done.length;
 
     let header: string;
     if (openCount === 0) {
@@ -258,7 +249,7 @@ export function formatTodoWidget(
     }
 
     const items: string[] = [];
-    for (const todo of sorted.slice(0, WIDGET_LIMIT)) {
+    for (const todo of [...open, ...done].slice(0, WIDGET_LIMIT)) {
       if (todo.done) {
         items.push(`✓ ${todo.id} ${strikethrough(todo.text)}`);
       } else {
@@ -349,7 +340,7 @@ export function formatTodoWidget(
     const col2Inner = col2Width - 3;
 
     const leftRows: { text: string }[] = [];
-    for (const item of todoSections[0]?.items ?? []) {
+    for (const item of todoSections.flatMap((section) => section.items)) {
       const fit =
         visibleWidth(item) > col1Inner
           ? `${truncateToWidth(item, col1Inner - 1, "")}…`
@@ -374,7 +365,7 @@ export function formatTodoWidget(
       }
     });
 
-    const title1 = todoSections[0]?.title ?? "";
+    const title1 = todoSections.map((section) => section.title).join(" · ");
     const title2 = otherSections[0]?.title ?? "";
 
     const fill1 = "─".repeat(Math.max(0, col1Width - 4 - visibleWidth(title1)));
@@ -398,7 +389,7 @@ export function formatTodoWidget(
           Math.max(0, col2Width - 4 - visibleWidth(rightRow.title)),
         );
         lines.push(
-          `${leftCell}${b("├─ ")}${rightRow.title}${b(` ${fillDivider}┤`)}`,
+          `${leftCell}${b("┼─ ")}${rightRow.title}${b(` ${fillDivider}┤`)}`,
         );
       } else {
         const rightText = rightRow ? rightRow.text : "";
@@ -447,10 +438,4 @@ export function formatTodoConfirmation(
     lines.push(`Unknown IDs: ${unknown.join(", ")}`);
   }
   return lines.join("\n");
-}
-
-export function statusText(todos: readonly Todo[]): string | undefined {
-  if (todos.length === 0) return undefined;
-  const open = todos.filter((todo) => !todo.done).length;
-  return `${open}/${todos.length}`;
 }

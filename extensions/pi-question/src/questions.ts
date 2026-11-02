@@ -2,6 +2,7 @@ import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
 
 export const MAX_ANSWER = 500;
 export const WRITE_IN_LABEL = "Write-in answer";
+export const DONE_LABEL = "Done";
 
 export type QuestionMode = "single" | "multi" | "free";
 
@@ -54,10 +55,17 @@ function toQuestion(
   if (cleanPrompt.length === 0 || items.length > 8) return undefined;
 
   const options = items.map((item) => item.text.trim());
-  if (
-    options.some((option) => option.length === 0 || option === WRITE_IN_LABEL)
-  ) {
-    return undefined;
+  const seen = new Set<string>();
+  for (const option of options) {
+    if (
+      option.length === 0 ||
+      option === WRITE_IN_LABEL ||
+      option === DONE_LABEL ||
+      seen.has(option)
+    ) {
+      return undefined;
+    }
+    seen.add(option);
   }
 
   const marked = items.filter((item) => item.checked !== undefined).length;
@@ -104,7 +112,11 @@ export function parseQuestionBlock(body: string): Question[] | undefined {
 
     if (node.type !== "list") continue;
 
-    if (!node.ordered || !current) {
+    if (!node.ordered) {
+      if (current) invalid = true;
+      continue;
+    }
+    if (!current) {
       invalid = true;
       continue;
     }
@@ -132,11 +144,11 @@ function formatAnswer(answer: QuestionAnswer): string {
 
 export function evaluateCondition(
   condition: string | undefined,
-  answers: readonly QuestionAnswer[],
+  answers: readonly (QuestionAnswer | undefined)[],
 ): boolean {
   if (!condition) return true;
   // Simple: "answer1 == 'value'" or "answer1 != 'value'"
-  const match = condition.match(/^answer(\\d+)\\s*==\\s*['\"](.+)['\"]$/);
+  const match = condition.match(/^answer(\d+)\s*==\s*['"](.+)['"]$/);
   if (match) {
     const idx = Number(match[1]) - 1;
     const answer = answers[idx];
@@ -149,11 +161,11 @@ export function evaluateCondition(
           : answer.value;
     return value === match[2];
   }
-  const notMatch = condition.match(/^answer(\\d+)\\s*!=\\s*['\"](.+)['\"]$/);
+  const notMatch = condition.match(/^answer(\d+)\s*!=\s*['"](.+)['"]$/);
   if (notMatch) {
     const idx = Number(notMatch[1]) - 1;
     const answer = answers[idx];
-    if (!answer) return true;
+    if (!answer) return false;
     const value =
       answer.mode === "single"
         ? answer.value
@@ -162,7 +174,7 @@ export function evaluateCondition(
           : answer.value;
     return value !== notMatch[2];
   }
-  return true;
+  return false;
 }
 
 export function formatAnswers(answers: readonly QuestionAnswer[]): string {

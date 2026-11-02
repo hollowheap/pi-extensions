@@ -179,4 +179,24 @@ describe("loadHooks", () => {
     loadHooks(options);
     expect(diagnostics).toHaveLength(1);
   });
+
+  it("reports cached diagnostics to a different consumer", () => {
+    const dir = agentDir(
+      JSON.stringify({ hooks: { preTool: [{ command: "good" }, {}] } }),
+    );
+    const first: string[] = [];
+    const second: string[] = [];
+    const base = { agentDir: dir, workspaceRoot: dir, trusted: true };
+    loadHooks({
+      ...base,
+      onDiagnostic: (message) => first.push(message),
+    });
+    loadHooks({
+      ...base,
+      onDiagnostic: (message) => second.push(message),
+    });
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
+  });
 });

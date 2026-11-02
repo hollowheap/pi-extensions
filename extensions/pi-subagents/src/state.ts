@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { type ProcessState, ProcessStore, readLog } from "@hollowheap/process";
+import { TaskStore } from "@hollowheap/pi-tasks";
+import type { ProcessState } from "@hollowheap/process";
 
 export const SUBAGENTS_DIR = "subagents";
 
@@ -16,6 +17,11 @@ export interface SubagentState extends ProcessState {
   task: string;
   depth: number;
   attempt: number;
+  parentSession?: string;
+  runnerPid?: number;
+  runnerStartTime?: number;
+  harness?: string;
+  inputMode?: "jsonl" | "text";
   socket?: string;
   session?: string;
   model?: string;
@@ -42,8 +48,17 @@ function sanitize(state: SubagentState): ProcessState {
     task: state.task,
     depth: state.depth,
     attempt: state.attempt,
+    ...(state.parentSession !== undefined
+      ? { parentSession: state.parentSession }
+      : {}),
     ...(state.pid !== undefined ? { pid: state.pid } : {}),
     ...(state.startTime !== undefined ? { startTime: state.startTime } : {}),
+    ...(state.runnerPid !== undefined ? { runnerPid: state.runnerPid } : {}),
+    ...(state.runnerStartTime !== undefined
+      ? { runnerStartTime: state.runnerStartTime }
+      : {}),
+    ...(state.harness !== undefined ? { harness: state.harness } : {}),
+    ...(state.inputMode !== undefined ? { inputMode: state.inputMode } : {}),
     ...(state.finishedAt !== undefined ? { finishedAt: state.finishedAt } : {}),
     ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
     ...(state.socket !== undefined ? { socket: state.socket } : {}),
@@ -57,10 +72,12 @@ function sanitize(state: SubagentState): ProcessState {
 }
 
 export class SubagentStore {
-  readonly store: ProcessStore;
+  readonly store: TaskStore<SubagentState>;
 
   constructor(agentDir: string) {
-    this.store = new ProcessStore(subagentsDir(agentDir));
+    this.store = new TaskStore<SubagentState>(agentDir, SUBAGENTS_DIR, {
+      sanitize,
+    });
   }
 
   get dir(): string {
@@ -87,33 +104,33 @@ export class SubagentStore {
   }
 
   write(state: SubagentState): void {
-    this.store.write(sanitize(state));
+    this.store.write(state);
   }
 
   update(
     id: string,
     patch: Partial<Omit<SubagentState, "id">>,
   ): SubagentState | undefined {
-    const current = this.read(id);
-    if (current === undefined) return undefined;
-    const next: SubagentState = { ...current, ...patch, id: current.id };
-    this.write(next);
-    return next;
+    return this.store.update(id, patch);
+  }
+
+  updateIf(
+    id: string,
+    predicate: (current: SubagentState) => boolean,
+    patch: Partial<Omit<SubagentState, "id">>,
+  ): SubagentState | undefined {
+    return this.store.updateIf(id, predicate, patch);
   }
 
   read(id: string): SubagentState | undefined {
-    return this.store.read(id) as SubagentState | undefined;
+    return this.store.read(id);
   }
 
   list(): SubagentState[] {
-    return this.store.list() as unknown as SubagentState[];
+    return this.store.list();
   }
 
   log(id: string): string {
-    try {
-      return readLog(this.logPath(id));
-    } catch {
-      return "";
-    }
+    return this.store.log(id);
   }
 }

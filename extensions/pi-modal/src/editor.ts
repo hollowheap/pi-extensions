@@ -27,7 +27,9 @@ export class ModalEditor extends CustomEditor {
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
   private searchQuery = "";
+  private lastSearchQuery = "";
   private searchMode = false;
+  private clipboardError: string | undefined;
   private commandMode = false;
   private commandBuffer = "";
 
@@ -79,6 +81,10 @@ export class ModalEditor extends CustomEditor {
 
   getYankedText(): string {
     return this.yankedText;
+  }
+
+  getClipboardError(): string | undefined {
+    return this.clipboardError;
   }
 
   getSelection(): {
@@ -138,13 +144,19 @@ export class ModalEditor extends CustomEditor {
   private copyToClipboard(text: string): void {
     this.yankedText = text;
     if (!text) return;
+    const b64 = Buffer.from(text).toString("base64");
+    const sequence = `\x1b]52;c;${b64}\x07`;
     try {
-      if (typeof this.tui?.terminal?.write === "function") {
-        const b64 = Buffer.from(text).toString("base64");
-        this.tui.terminal.write(`\x1b]52;c;${b64}\x07`);
+      const write = this.tui?.terminal?.write;
+      if (typeof write === "function") {
+        write.call(this.tui.terminal, sequence);
+      } else {
+        process.stdout.write(sequence);
       }
-    } catch {
-      // ignore clipboard write errors in test or headless envs
+      this.clipboardError = undefined;
+    } catch (error) {
+      this.clipboardError =
+        error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -178,24 +190,65 @@ export class ModalEditor extends CustomEditor {
       ];
     }
 
-    const newText = newLines.join("\n");
-    this.setText(newText);
+    this.setText(newLines.join("\n"));
+    this.moveCursorTo(start.line, start.col);
+  }
 
-    const internalState = this as unknown as {
-      state?: { cursorLine: number; cursorCol: number };
-      preferredVisualCol?: number | null;
-    };
-    if (internalState.state) {
-      const currentLines = this.getLines();
-      const targetLine = Math.min(
-        start.line,
-        Math.max(0, currentLines.length - 1),
-      );
-      internalState.state.cursorLine = targetLine;
-      const targetLineLen = currentLines[targetLine]?.length ?? 0;
-      internalState.state.cursorCol = Math.min(start.col, targetLineLen);
-      internalState.preferredVisualCol = null;
+  private moveCursorTo(line: number, col: number): void {
+    const lines = this.getLines();
+    const targetLine = Math.max(0, Math.min(line, lines.length - 1));
+    const targetCol = Math.max(
+      0,
+      Math.min(col, (lines[targetLine] ?? "").length),
+    );
+    const current = this.getCursor();
+    const direction = targetLine > current.line ? "\x1b[B" : "\x1b[A";
+    for (let i = 0; i < Math.abs(targetLine - current.line); i++) {
+      super.handleInput(direction);
     }
+    super.handleInput("\x01");
+    for (let i = 0; i < targetCol; i++) {
+      super.handleInput("\x1b[C");
+    }
+  }
+
+  private findMatch(
+    query: string,
+    direction: 1 | -1,
+  ): { line: number; col: number } | null {
+    if (query === "") return null;
+    const lines = this.getLines();
+    if (lines.length === 0) return null;
+    const cursor = this.getCursor();
+    for (let step = 1; step <= lines.length; step++) {
+      const line =
+        (((cursor.line + direction * step) % lines.length) + lines.length) %
+        lines.length;
+      const text = lines[line] ?? "";
+      const startCol =
+        step === lines.length
+          ? direction > 0
+            ? 0
+            : text.length - 1
+          : line === cursor.line
+            ? direction > 0
+              ? cursor.col + 1
+              : cursor.col - 1
+            : direction > 0
+              ? 0
+              : text.length - 1;
+      const col =
+        direction > 0
+          ? text.indexOf(query, startCol)
+          : text.lastIndexOf(query, Math.max(0, startCol));
+      if (col >= 0) return { line, col };
+    }
+    return null;
+  }
+
+  private moveToMatch(query: string, direction: 1 | -1): void {
+    const match = this.findMatch(query, direction);
+    if (match) this.moveCursorTo(match.line, match.col);
   }
 
   override handleInput(data: string): void {
@@ -297,20 +350,8 @@ export class ModalEditor extends CustomEditor {
     if (this.searchMode) {
       if (matchesKey(data, "enter")) {
         this.searchMode = false;
-        // Search for query in current buffer
-        const lines = this.getLines();
-        const cursor = this.getCursor();
-        for (let i = cursor.line; i < lines.length; i++) {
-          const idx = lines[i].indexOf(
-            this.searchQuery,
-            i === cursor.line ? cursor.col + 1 : 0,
-          );
-          if (idx >= 0) {
-            // Move cursor to match
-            super.handleInput("\\x1b[G"); // not perfect but best effort
-            break;
-          }
-        }
+        this.lastSearchQuery = this.searchQuery;
+        this.moveToMatch(this.searchQuery, 1);
         return;
       }
       if (matchesKey(data, "escape")) {
@@ -341,12 +382,20 @@ export class ModalEditor extends CustomEditor {
         const cmd = this.commandBuffer;
         this.commandBuffer = "";
         // Handle :%s/old/new/g
-        const subMatch = cmd.match(/^:%s\/(.+)\/(.*)\/g?$/);
-        if (subMatch) {
-          // Substitution is recorded; actual buffer replacement requires
-          // editor API access not available in this extension.
-          // The search query is stored for potential future use.
-          this.searchQuery = subMatch[1];
+        const subMatch = cmd.match(/^:%s\/([^/]*)\/([^/]*)\/(g?)$/);
+        if (subMatch && subMatch[1] !== "") {
+          const from = subMatch[1];
+          const to = subMatch[2] ?? "";
+          const text = this.getText();
+          const next =
+            subMatch[3] === "g"
+              ? text.split(from).join(to)
+              : text.replace(from, to);
+          if (next !== text) {
+            const cursor = this.getCursor();
+            this.setText(next);
+            this.moveCursorTo(cursor.line, cursor.col);
+          }
         }
         return;
       }
@@ -366,6 +415,11 @@ export class ModalEditor extends CustomEditor {
     if (data === "/" && this.mode === "normal") {
       this.searchMode = true;
       this.searchQuery = "";
+      return;
+    }
+
+    if ((data === "n" || data === "N") && this.lastSearchQuery !== "") {
+      this.moveToMatch(this.lastSearchQuery, data === "n" ? 1 : -1);
       return;
     }
 
@@ -405,38 +459,6 @@ export class ModalEditor extends CustomEditor {
     const lines = super.render(width);
     if (lines.length === 0) return lines;
 
-    if (this.mode === "visual" && this.selectionAnchor) {
-      const sel = this.resolveSelection();
-      if (sel) {
-        const firstContentIdx = 1;
-        const lastContentIdx = lines.length - 2;
-        const scrollOffset =
-          (this as unknown as { scrollOffset?: number }).scrollOffset ?? 0;
-
-        for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
-          const logicalLineIdx = scrollOffset + (idx - firstContentIdx);
-          if (
-            logicalLineIdx >= sel.start.line &&
-            logicalLineIdx <= sel.end.line
-          ) {
-            const currentLineText = this.getLines()[logicalLineIdx] ?? "";
-            const selStartCol =
-              logicalLineIdx === sel.start.line ? sel.start.col : 0;
-            const selEndCol =
-              logicalLineIdx === sel.end.line
-                ? sel.end.col
-                : Math.max(0, currentLineText.length - 1);
-            const pad = this.getPaddingX();
-            lines[idx] = highlightLineSelection(
-              lines[idx] ?? "",
-              pad + selStartCol,
-              pad + selEndCol,
-            );
-          }
-        }
-      }
-    }
-
     const borderEnabled = this.borderStyle !== "none" && lines.length >= 3;
     const borderChars = borderEnabled ? getBorderChars(this.borderStyle) : null;
     const contentWidth = borderEnabled ? Math.max(1, width - 1) : width;
@@ -455,9 +477,46 @@ export class ModalEditor extends CustomEditor {
         const diff = contentWidth - visibleWidth(decorated);
         lines[idx] = diff > 0 ? decorated + " ".repeat(diff) : decorated;
       }
+
+      if (this.mode === "visual" && this.selectionAnchor) {
+        const sel = this.resolveSelection();
+        if (sel) {
+          const contentLines = lastContentIdx - firstContentIdx + 1;
+          const cursor = this.getCursor();
+          const scrollOffset = Math.max(0, cursor.line - (contentLines - 1));
+          const pad = this.getPaddingX();
+
+          for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
+            const logicalLineIdx = scrollOffset + (idx - firstContentIdx);
+            if (
+              logicalLineIdx < sel.start.line ||
+              logicalLineIdx > sel.end.line
+            ) {
+              continue;
+            }
+            const currentLineText = this.getLines()[logicalLineIdx] ?? "";
+            const selStartCol =
+              logicalLineIdx === sel.start.line ? sel.start.col : 0;
+            const selEndCol =
+              logicalLineIdx === sel.end.line
+                ? sel.end.col
+                : Math.max(0, currentLineText.length - 1);
+            const includePrompt =
+              idx === firstContentIdx &&
+              logicalLineIdx === sel.start.line &&
+              selStartCol === 0;
+            lines[idx] = highlightLineSelection(
+              lines[idx] ?? "",
+              includePrompt ? 0 : prefixWidth + pad + selStartCol,
+              prefixWidth + pad + selEndCol,
+            );
+          }
+        }
+      }
     }
 
-    const label = ` ${this.mode.toUpperCase()} `;
+    const shellMode = this.getText().trimStart().startsWith("!");
+    const label = ` ${shellMode ? "BASH" : this.mode.toUpperCase()} `;
 
     const last = lines.length - 1;
     const lastLine = lines[last];

@@ -37,22 +37,81 @@ Delete all completed todos with an empty block:
 \`\`\`delete_todos
 \`\`\`
 
-create_todos appends tasks and assigns stable numeric IDs; it never replaces the list. Do not use checkboxes or unordered lists. complete_todos marks the listed IDs done and reports unknown IDs. delete_todos clears all todos only when every todo is done. After a change, a follow-up message lists every todo with its ID and done marker so you can learn the assigned IDs. /todos shows the current list.`;
+create_todos appends tasks and assigns stable numeric IDs; it never replaces the list. Do not use checkboxes or unordered lists. complete_todos marks the listed IDs done and reports unknown IDs. delete_todos clears all todos only when every todo is done. After a change, a follow-up message lists every todo with its ID and done marker so you can learn the assigned IDs. /todos shows the current list. Priorities are managed with /todo priority <id> <high|medium|low>; todo blocks cannot set priority.`;
 
 interface TodoDetails {
   todos: Todo[];
   unknownIds: number[];
 }
 
-function contentText(
-  content: string | readonly { type: string; text?: string }[],
-): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function contentText(content: unknown): string {
   if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content
-    .flatMap((part) =>
-      part.type === "text" && typeof part.text === "string" ? [part.text] : [],
-    )
+    .flatMap((part) => {
+      if (!isRecord(part)) return [];
+      return part.type === "text" && typeof part.text === "string"
+        ? [part.text]
+        : [];
+    })
     .join("\n");
+}
+
+function readSubagentItems(value: unknown): SubagentStateItem[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: SubagentStateItem[] = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      entry.id === "" ||
+      typeof entry.state !== "string"
+    ) {
+      continue;
+    }
+    const item: SubagentStateItem = { id: entry.id, state: entry.state };
+    if (typeof entry.agent === "string") item.agent = entry.agent;
+    if (typeof entry.task === "string") item.task = entry.task;
+    if (
+      typeof entry.startedAt === "number" &&
+      Number.isFinite(entry.startedAt)
+    ) {
+      item.startedAt = entry.startedAt;
+    }
+    if (typeof entry.activeTool === "string")
+      item.activeTool = entry.activeTool;
+    if (
+      typeof entry.activeToolStartedAt === "number" &&
+      Number.isFinite(entry.activeToolStartedAt)
+    ) {
+      item.activeToolStartedAt = entry.activeToolStartedAt;
+    }
+    items.push(item);
+  }
+  return items;
+}
+
+function readTaskItems(value: unknown): TaskStateItem[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: TaskStateItem[] = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      entry.id === "" ||
+      typeof entry.status !== "string"
+    ) {
+      continue;
+    }
+    const item: TaskStateItem = { id: entry.id, status: entry.status };
+    if (typeof entry.command === "string") item.command = entry.command;
+    items.push(item);
+  }
+  return items;
 }
 
 function detailsText(details: unknown): string | undefined {
@@ -99,6 +158,7 @@ function readTodos(value: unknown): Todo[] | undefined {
   if (!Array.isArray(value)) return undefined;
 
   const todos: Todo[] = [];
+  const seen = new Set<number>();
   for (const item of value) {
     if (item === null || typeof item !== "object") return undefined;
     const todo = item as {
@@ -122,6 +182,8 @@ function readTodos(value: unknown): Todo[] | undefined {
       todo.priority === "low"
         ? todo.priority
         : undefined;
+    if (seen.has(todo.id)) return undefined;
+    seen.add(todo.id);
     todos.push({
       id: todo.id,
       text: todo.text,
@@ -160,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 
   const updateUI = (ctx: ExtensionContext) => {
     lastCtx = ctx;
-    if (!ctx.hasUI) return;
+    if (!ctx.hasUI || typeof ctx.ui.setWidget !== "function") return;
     const strikethrough =
       typeof ctx.ui.theme?.strikethrough === "function"
         ? (text: string) => ctx.ui.theme.strikethrough(text)
@@ -169,45 +231,51 @@ export default function (pi: ExtensionAPI) {
       typeof ctx.ui.theme?.fg === "function"
         ? (text: string) => ctx.ui.theme.fg("border", text)
         : undefined;
-    ctx.ui.setWidget(
-      "todos",
-      formatTodoWidget(
-        state.todos,
-        subagents,
-        tasks,
-        strikethrough
-          ? { strikethrough, borderColor, collapsed: panelCollapsed }
-          : borderColor
-            ? { borderColor, collapsed: panelCollapsed }
-            : { collapsed: panelCollapsed },
-      ),
-    );
+    const options = strikethrough
+      ? { strikethrough, borderColor, collapsed: panelCollapsed }
+      : borderColor
+        ? { borderColor, collapsed: panelCollapsed }
+        : { collapsed: panelCollapsed };
+    const preview = formatTodoWidget(state.todos, subagents, tasks, options);
+    if (preview === undefined) {
+      ctx.ui.setWidget("todos", undefined);
+      return;
+    }
+    ctx.ui.setWidget("todos", () => ({
+      render: (width: number) =>
+        formatTodoWidget(state.todos, subagents, tasks, {
+          ...options,
+          width: width >= 80 ? width : 0,
+        }) ?? [],
+      invalidate: () => {},
+    }));
   };
 
   pi.events.on("subagents:state", (data: unknown) => {
-    if (Array.isArray(data)) {
-      subagents = data as SubagentStateItem[];
-      if (lastCtx?.hasUI) {
-        updateUI(lastCtx);
-      }
-    }
+    const items = readSubagentItems(data);
+    if (items === undefined) return;
+    subagents = items;
+    if (lastCtx?.hasUI) updateUI(lastCtx);
   });
 
   pi.events.on("tasks:state", (data: unknown) => {
-    if (Array.isArray(data)) {
-      tasks = data as TaskStateItem[];
-      if (lastCtx?.hasUI) {
-        updateUI(lastCtx);
-      }
-    }
+    const items = readTaskItems(data);
+    if (items === undefined) return;
+    tasks = items;
+    if (lastCtx?.hasUI) updateUI(lastCtx);
   });
 
   const restore = (ctx: ExtensionContext) => {
     state = emptyTodoState();
-    for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type !== "custom" || entry.customType !== TODOS_TYPE) continue;
-      const restored = readState(entry.data);
-      if (restored) state = restored;
+    try {
+      for (const entry of ctx.sessionManager.getBranch()) {
+        if (entry.type !== "custom" || entry.customType !== TODOS_TYPE)
+          continue;
+        const restored = readState(entry.data);
+        if (restored) state = restored;
+      }
+    } catch {
+      // A broken branch should not prevent the session from starting.
     }
     updateUI(ctx);
   };
@@ -222,14 +290,14 @@ export default function (pi: ExtensionAPI) {
     return stripTodoBlocks(markdown, context.isStreaming);
   });
 
-  pi.on("before_agent_start", (event, ctx) => {
-    if (!ctx.hasUI) return;
+  pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections.todos_format = TODOS_FORMAT;
   });
 
   // Prefixed keybinding: Ctrl+X then p toggles panel collapse
   let chordPending = false;
   let chordTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposeTerminalInput: (() => void) | undefined;
   const resetChord = () => {
     chordPending = false;
     if (chordTimer !== undefined) {
@@ -239,8 +307,11 @@ export default function (pi: ExtensionAPI) {
   };
 
   const setupTerminalInput = (ctx: ExtensionContext) => {
+    disposeTerminalInput?.();
+    disposeTerminalInput = undefined;
+    resetChord();
     if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
-    ctx.ui.onTerminalInput((data: string) => {
+    disposeTerminalInput = ctx.ui.onTerminalInput((data: string) => {
       if (chordPending) {
         resetChord();
         if (data === "p" || data === "P") {
@@ -268,19 +339,39 @@ export default function (pi: ExtensionAPI) {
     setupTerminalInput(ctx);
   });
 
+  pi.on("session_shutdown", () => {
+    disposeTerminalInput?.();
+    disposeTerminalInput = undefined;
+    resetChord();
+  });
+
+  pi.on("session_compact", () => {
+    if (state.todos.length > 0 || state.nextId > 1) {
+      pi.appendEntry(TODOS_TYPE, state);
+    }
+  });
+
   pi.on("message_end", (event, ctx) => {
-    if (!ctx.hasUI || event.message.role !== "assistant") return;
+    const message = event.message;
+    if (
+      message === undefined ||
+      message === null ||
+      typeof message !== "object" ||
+      message.role !== "assistant"
+    ) {
+      return;
+    }
 
-    const commands = scanTaggedBlocks(
-      contentText(event.message.content),
-    ).flatMap((block) => {
-      if (!block.closed) return [];
-      const command = parseTodoBlock(block.tag, block.body);
-      return command ? [command] : [];
-    });
+    const commands = scanTaggedBlocks(contentText(message.content)).flatMap(
+      (block) => {
+        if (!block.closed) return [];
+        const command = parseTodoBlock(block.tag, block.body);
+        return command ? [command] : [];
+      },
+    );
 
-    if (commands.length === 0 || handled.has(event.message)) return;
-    handled.add(event.message);
+    if (commands.length === 0 || handled.has(message)) return;
+    handled.add(message);
 
     let next = state;
     let changed = false;

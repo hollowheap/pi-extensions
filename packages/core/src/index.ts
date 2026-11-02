@@ -1,13 +1,17 @@
 export type * from "./types.js";
+export * from "./alerts.js";
 export * from "./blocks.js";
 export * from "./border.js";
 export * from "./config.js";
 export * from "./exec.js";
 export * from "./format.js";
 export * from "./modes.js";
+export * from "./mtime-cache.js";
 export * from "./policy.js";
 export * from "./shell.js";
 export * from "./state.js";
 export * from "./prompt-lock.js";
 export * from "./pricing.js";
 export * from "./sandbox.js";
+export * from "./session-cache.js";
+export * from "./workspace.js";

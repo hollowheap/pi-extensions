@@ -59,6 +59,18 @@ describe("pi-tasks registry", () => {
     expect(await record.output()).toBe("hello\n");
   });
 
+  it("drops malformed task metadata instead of exposing partial records", () => {
+    writeFileSync(
+      taskMetaPath(agentDir, "task-malformed"),
+      JSON.stringify({ id: "task-malformed", status: "running", startedAt: 1 }),
+    );
+
+    expect(readTaskMetadata(agentDir, "task-malformed")).toBeUndefined();
+    expect(listTaskMetadata(agentDir).map((task) => task.id)).not.toContain(
+      "task-malformed",
+    );
+  });
+
   it("atomically updates metadata and reads/lists persisted records", () => {
     createTaskRecord(agentDir, {
       id: "task-a",

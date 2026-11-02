@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { VERSION } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { setCwd } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,8 @@ const state = vi.hoisted(() => ({
   agentDir: "/nonexistent-pi-agent-dir-for-tests",
 }));
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getAgentDir: () => state.agentDir,
 }));
 
@@ -29,6 +31,7 @@ function createMockPi() {
     on: vi.fn(
       (_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
     ),
+    registerCommand: vi.fn(),
   };
 }
 
@@ -137,6 +140,17 @@ describe("createDashboard", () => {
     controller.start(renderRequest);
     controller.stop();
     expect(deps.run).not.toHaveBeenCalled();
+  });
+
+  it("renders the running Pi version", () => {
+    const controller = createDashboard(
+      {
+        width: 20,
+        sections: [{ type: "version", gap: 0 }],
+      },
+      fakeDeps(""),
+    );
+    expect(controller.lines().join("")).toContain(`Pi v${VERSION}`);
   });
 
   it("re-centers the header when the render width changes", () => {
@@ -320,6 +334,35 @@ describe("createDashboard", () => {
     } finally {
       setSpy.mockRestore();
       clearSpy.mockRestore();
+    }
+  });
+
+  it("does not restart polling after stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = fakeDeps("x\n");
+      const controller = createDashboard(
+        {
+          width: 5,
+          sections: [
+            {
+              type: "terminal",
+              command: "x",
+              args: [],
+              intervalMs: 50,
+              gap: 0,
+            },
+          ],
+        },
+        deps,
+      );
+      controller.start(() => {});
+      controller.stop();
+      controller.start(() => {});
+      await vi.advanceTimersByTimeAsync(100);
+      expect(deps.run).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
     }
   });
 

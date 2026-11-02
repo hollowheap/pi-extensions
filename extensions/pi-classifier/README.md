@@ -43,7 +43,7 @@ Create `<agent-dir>/classifier.json`:
 Results:
 
 - `choice`: `value`, `probabilities`, `confidence`.
-- `score`: `value` (level index), `confidence`.
+- `score`: `value` (level index), `label`, `confidence`.
 - `bool`: `value`, `probability`.
 
 All results include `model` and `usage`. A classifier error returns explanatory text instead of throwing.
@@ -57,7 +57,9 @@ All results include `model` and `usage`. A classifier error returns explanatory 
 - Input defaults to 20,000 characters and caps at 100,000.
 - Requests time out after 5 seconds by default.
 - Repeated identical calls reuse a per-session result for 10 minutes by default.
+- The per-session cache holds at most 128 results and evicts the least-recently-used entry.
 - Concurrent identical calls share one request.
+- The shared request is aborted when its last waiting caller cancels.
 - Aborted or failed calls are not cached.
 
 ## Trust and policy

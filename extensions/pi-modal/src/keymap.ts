@@ -20,22 +20,22 @@ export interface ModalConfig {
 }
 
 export const DEFAULT_NORMAL_KEYS: Record<string, string | null> = {
-  h: "\x1b[D", // Left
-  j: "\x1b[B", // Down
-  k: "\x1b[A", // Up
-  l: "\x1b[C", // Right
-  w: "\x1bf", // Word forward
-  b: "\x1bb", // Word backward
-  "0": "\x01", // Start of line
-  $: "\x05", // End of line
-  x: "\x1b[3~", // Delete char
-  u: "\x1a", // Undo
-  i: null, // Switch to insert
-  a: null, // Append (insert + right)
-  I: null, // Insert at line start
-  A: null, // Append at line end
-  o: null, // Open line below
-  v: null, // Switch to visual
+  h: "\x1b[D",
+  j: "\x1b[B",
+  k: "\x1b[A",
+  l: "\x1b[C",
+  w: "\x1bf",
+  b: "\x1bb",
+  "0": "\x01",
+  $: "\x05",
+  x: "\x1b[3~",
+  u: "\x1a",
+  i: null,
+  a: null,
+  I: null,
+  A: null,
+  o: null,
+  v: null,
 };
 
 export const DEFAULT_VISUAL_KEYS: Record<string, string | null> = {
@@ -47,74 +47,137 @@ export const DEFAULT_VISUAL_KEYS: Record<string, string | null> = {
   b: "\x1bb",
   "0": "\x01",
   $: "\x05",
-  v: null, // Toggle back to normal
-  y: null, // Yank selection
-  d: null, // Delete selection
-  x: null, // Cut selection
-  c: null, // Cut selection and enter insert mode
+  v: null,
+  y: null,
+  d: null,
+  x: null,
+  c: null,
 };
 
 export const DEFAULT_INSERT_KEYS: Record<string, string | null> = {};
 
-export function loadModalConfig(agentDir: string): ModalConfig {
+const VALID_MODES = new Set<EditorMode>(["normal", "insert", "visual"]);
+const VALID_STYLES = new Set<BorderStyle>([
+  "rounded",
+  "double",
+  "dashed",
+  "sharp",
+  "none",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function defaults(): ModalConfig {
+  return {
+    enabled: true,
+    initialMode: "insert",
+    promptChar: "❯",
+    borderStyle: "rounded",
+    keymaps: { normal: {}, visual: {}, insert: {} },
+  };
+}
+
+function keymap(
+  value: unknown,
+  name: string,
+  onDiagnostic?: (message: string) => void,
+): Record<string, string | null> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    onDiagnostic?.(`keymaps.${name} must be an object; ignoring`);
+    return {};
+  }
+  const result: Record<string, string | null> = {};
+  for (const [key, sequence] of Object.entries(value)) {
+    if (key === "" || (typeof sequence !== "string" && sequence !== null)) {
+      onDiagnostic?.(
+        `keymaps.${name}.${key || "<empty>"} must be a string or null; ignoring`,
+      );
+      continue;
+    }
+    result[key] = sequence;
+  }
+  return result;
+}
+
+export function loadModalConfig(
+  agentDir: string,
+  onDiagnostic?: (message: string) => void,
+): ModalConfig {
   const configPath = join(agentDir, "modal.json");
-  if (!existsSync(configPath)) {
-    return {
-      enabled: true,
-      initialMode: "insert",
-      promptChar: "❯",
-      borderStyle: "rounded",
-      keymaps: {
-        normal: {},
-        visual: {},
-        insert: {},
-      },
-    };
+  if (!existsSync(configPath)) return defaults();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf-8"));
+  } catch (error) {
+    onDiagnostic?.(
+      `cannot read modal.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return defaults();
+  }
+  if (!isRecord(parsed)) {
+    onDiagnostic?.("modal.json must be an object; using defaults");
+    return defaults();
   }
 
-  try {
-    const raw = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(raw) as ModalConfig;
-    const rawPromptChar =
-      typeof parsed.promptChar === "string" ? parsed.promptChar : undefined;
-    const promptChar =
-      rawPromptChar && [...rawPromptChar].length === 1 ? rawPromptChar : "❯";
-    const validStyles = new Set([
-      "rounded",
-      "double",
-      "dashed",
-      "sharp",
-      "none",
-    ]);
-    const borderStyle =
-      typeof parsed.borderStyle === "string" &&
-      validStyles.has(parsed.borderStyle)
-        ? (parsed.borderStyle as BorderStyle)
-        : "rounded";
-    return {
-      enabled: parsed.enabled ?? true,
-      initialMode: parsed.initialMode ?? "insert",
-      promptChar,
-      borderStyle,
-      keymaps: {
-        normal: parsed.keymaps?.normal ?? {},
-        visual: parsed.keymaps?.visual ?? {},
-        insert: parsed.keymaps?.insert ?? {},
-      },
-    };
-  } catch {
-    return {
-      enabled: true,
-      initialMode: "insert",
-      promptChar: "❯",
-      borderStyle: "rounded",
-      keymaps: {
-        normal: {},
-        visual: {},
-        insert: {},
-      },
-    };
+  const config = defaults();
+  if (parsed.enabled !== undefined) {
+    if (typeof parsed.enabled === "boolean") config.enabled = parsed.enabled;
+    else onDiagnostic?.("enabled must be a boolean; using true");
   }
+
+  if (parsed.initialMode !== undefined) {
+    if (
+      typeof parsed.initialMode === "string" &&
+      VALID_MODES.has(parsed.initialMode as EditorMode)
+    ) {
+      config.initialMode = parsed.initialMode as EditorMode;
+    } else {
+      onDiagnostic?.(
+        'initialMode must be "normal", "insert", or "visual"; using insert',
+      );
+    }
+  }
+
+  if (parsed.promptChar !== undefined) {
+    if (
+      typeof parsed.promptChar === "string" &&
+      [...parsed.promptChar].length === 1
+    ) {
+      config.promptChar = parsed.promptChar;
+    } else {
+      onDiagnostic?.("promptChar must be one character; using ❯");
+    }
+  }
+
+  if (parsed.borderStyle !== undefined) {
+    if (
+      typeof parsed.borderStyle === "string" &&
+      VALID_STYLES.has(parsed.borderStyle as BorderStyle)
+    ) {
+      config.borderStyle = parsed.borderStyle as BorderStyle;
+    } else {
+      onDiagnostic?.(
+        'borderStyle must be "rounded", "double", "dashed", "sharp", or "none"; using rounded',
+      );
+    }
+  }
+
+  if (parsed.keymaps !== undefined) {
+    if (!isRecord(parsed.keymaps)) {
+      onDiagnostic?.("keymaps must be an object; ignoring");
+    } else {
+      config.keymaps = {
+        normal: keymap(parsed.keymaps.normal, "normal", onDiagnostic),
+        visual: keymap(parsed.keymaps.visual, "visual", onDiagnostic),
+        insert: keymap(parsed.keymaps.insert, "insert", onDiagnostic),
+      };
+    }
+  }
+  return config;
 }
 
 export function resolveEffectiveKeymaps(userConfig?: ModalConfig): {

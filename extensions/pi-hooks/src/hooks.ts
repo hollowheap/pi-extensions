@@ -41,17 +41,17 @@ export function evaluateCondition(
   if (!entry.condition) return true;
   const cond = entry.condition.trim().toLowerCase();
   // Simple: "tool == 'name'" or "tool != 'name'"
-  const toolMatch = cond.match(/^tool\\s*==\\s*['\"](.+)['\"]$/);
+  const toolMatch = cond.match(/^tool\s*==\s*['"](.+)['"]$/);
   if (toolMatch) return payload.toolName.toLowerCase() === toolMatch[1];
-  const toolNotMatch = cond.match(/^tool\\s*!=\\s*['\"](.+)['\"]$/);
+  const toolNotMatch = cond.match(/^tool\s*!=\s*['"](.+)['"]$/);
   if (toolNotMatch) return payload.toolName.toLowerCase() !== toolNotMatch[1];
   // "path contains 'str'"
-  const pathContains = cond.match(/^path\\s+contains\\s+['\"](.+)['\"]$/);
+  const pathContains = cond.match(/^path\s+contains\s+['"](.+)['"]$/);
   if (pathContains) {
     const target = String(payload.input?.path ?? payload.input?.command ?? "");
     return target.toLowerCase().includes(pathContains[1].toLowerCase());
   }
-  return true;
+  return false;
 }
 
 export function matchesTool(entry: HookEntry, toolName: string): boolean {

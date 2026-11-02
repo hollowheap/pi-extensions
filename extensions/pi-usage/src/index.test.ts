@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import extension, {
   USAGE_ENTRY_TYPE,
   extractLatestUsage,
@@ -6,13 +9,66 @@ import extension, {
   getSessionUsage,
   recordTurnUsage,
 } from "./index.js";
+import { combineUsage, scanSubagentUsage } from "./subagents.js";
+
+const mockState = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => mockState.agentDir,
+}));
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  mockState.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function createSubagentState(
+  dir: string,
+  id: string,
+  parentSession: string,
+  harness = "pi",
+): { statePath: string; sessionPath: string } {
+  const subagents = join(dir, "subagents");
+  mkdirSync(subagents, { recursive: true });
+  const sessionPath = join(subagents, `${id}.session.jsonl`);
+  writeFileSync(
+    join(subagents, `${id}.json`),
+    JSON.stringify({
+      id,
+      parentSession,
+      status: "completed",
+      agent: "scout",
+      model: "claude-3-5-sonnet",
+      harness,
+      session: sessionPath,
+      startedAt: 1,
+    }),
+  );
+  return { statePath: join(subagents, `${id}.json`), sessionPath };
+}
 
 function createMockPi() {
+  const eventHandlers: Record<string, (data: unknown) => void> = {};
   return {
     on: vi.fn(
       (_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
     ),
     registerCommand: vi.fn(),
+    events: {
+      on: vi.fn((event: string, fn: (data: unknown) => void) => {
+        eventHandlers[event] = fn;
+        return () => {};
+      }),
+      emit: vi.fn(),
+    },
+    eventHandlers,
   };
 }
 
@@ -22,6 +78,7 @@ function setupUsageExtension() {
 
   const customEntries: Array<{ customType: string; data?: unknown }> = [];
   const sessionManager = {
+    getSessionId: () => "session-1",
     getEntries: vi.fn(() => customEntries),
     appendCustomEntry: vi.fn((customType: string, data?: unknown) => {
       customEntries.push({ customType, data });
@@ -35,6 +92,7 @@ function setupUsageExtension() {
       id: "test-model",
       cost: { input: 2.0, output: 8.0 },
     },
+    abort: vi.fn(),
     ui: {
       notify: vi.fn(),
     },
@@ -54,20 +112,32 @@ function setupUsageExtension() {
     customEntries,
     handlers,
     commands,
+    eventHandlers: pi.eventHandlers,
     sessionStart: () => handlers.session_start({} as never, ctx as never),
     sessionTree: () => handlers.session_tree({} as never, ctx as never),
     sessionShutdown: () => handlers.session_shutdown({} as never, ctx as never),
-    messageEnd: (usage?: { input: number; output: number }) =>
+    beforeAgentStart: () =>
+      handlers.before_agent_start({} as never, ctx as never),
+    messageEnd: (
+      usage?: {
+        input: number;
+        output: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+      },
+      model?: string,
+    ) =>
       handlers.message_end(
         {
           message: {
             role: "assistant",
             usage,
+            ...(model !== undefined ? { model } : {}),
           },
         } as never,
         ctx as never,
       ),
-    runUsage: () => commands.usage.handler("", ctx as never),
+    runUsage: (args = "") => commands.usage.handler(args, ctx as never),
   };
 }
 
@@ -117,6 +187,62 @@ describe("extractLatestUsage", () => {
       totalTokens: 700,
       totalCost: 0.25,
       byModel: {},
+    });
+  });
+
+  it("restores budget warning and validates by-model data", () => {
+    const entries = [
+      {
+        customType: USAGE_ENTRY_TYPE,
+        data: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 10,
+          cacheWriteTokens: 5,
+          totalTokens: 999,
+          totalCost: 0.1,
+          budgetCap: 1,
+          budgetWarning: true,
+          byModel: {
+            good: {
+              model: "good",
+              inputTokens: 100,
+              outputTokens: 50,
+              cacheReadTokens: 10,
+              cacheWriteTokens: 5,
+              cost: 0.1,
+            },
+            bad: {
+              model: "bad",
+              inputTokens: -1,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              cost: 0,
+            },
+          },
+        },
+      },
+    ];
+    expect(extractLatestUsage(entries)).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 10,
+      cacheWriteTokens: 5,
+      totalTokens: 165,
+      totalCost: 0.1,
+      byModel: {
+        good: {
+          model: "good",
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 10,
+          cacheWriteTokens: 5,
+          cost: 0.1,
+        },
+      },
+      budgetCap: 1,
+      budgetWarning: true,
     });
   });
 
@@ -170,6 +296,33 @@ describe("recordTurnUsage", () => {
     });
   });
 
+  it("counts cache tokens in totals and does not round accumulated costs", () => {
+    const initial = {
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 20,
+      totalCost: 0.1,
+      byModel: {},
+    };
+    const next = recordTurnUsage(
+      initial,
+      { input: 100, output: 50, cacheRead: 20, cacheWrite: 10 },
+      0.0000001,
+      "model",
+    );
+    expect(next.totalTokens).toBe(200);
+    expect(next.totalCost).toBe(0.1000001);
+    expect(next.byModel.model).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 20,
+      cacheWriteTokens: 10,
+      cost: 0.0000001,
+    });
+  });
+
   it("guards against negative deltas", () => {
     const initial = {
       inputTokens: 10,
@@ -182,6 +335,122 @@ describe("recordTurnUsage", () => {
     };
     const next = recordTurnUsage(initial, { input: -5, output: -10 }, -0.01);
     expect(next).toEqual(initial);
+  });
+});
+
+describe("subagent usage", () => {
+  it("scans current-parent child sessions and rolls usable rows into totals", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-scan-"));
+    tempDirs.push(dir);
+    const first = createSubagentState(dir, "sub-1", "session-1");
+    writeFileSync(
+      first.sessionPath,
+      `${JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          model: "claude-3-5-sonnet",
+          usage: {
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { total: 18 },
+          },
+        },
+      })}\n`,
+    );
+    createSubagentState(dir, "sub-other-parent", "session-2");
+    createSubagentState(dir, "sub-generic", "session-1", "claude");
+    const custom = createSubagentState(dir, "sub-custom", "session-1");
+    writeFileSync(
+      custom.sessionPath,
+      `${JSON.stringify({
+        type: "custom",
+        customType: USAGE_ENTRY_TYPE,
+        data: {
+          inputTokens: 10,
+          outputTokens: 5,
+          totalCost: 0.5,
+          byModel: {},
+        },
+      })}\n${JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          usage: { input: 999, output: 999, cost: { total: 99 } },
+        },
+      })}\n`,
+    );
+    writeFileSync(join(dir, "subagents", "bad.json"), "{");
+
+    const rows = scanSubagentUsage(dir, "session-1");
+    expect(rows).toHaveLength(3);
+    const piRow = rows.find((row) => row.id === "sub-1");
+    expect(piRow).toMatchObject({
+      available: true,
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      totalTokens: 2_000_000,
+      cost: 18,
+    });
+    expect(rows.find((row) => row.id === "sub-generic")?.available).toBe(false);
+    expect(rows.find((row) => row.id === "sub-custom")).toMatchObject({
+      available: true,
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      cost: 0.5,
+    });
+
+    const combined = combineUsage(
+      {
+        inputTokens: 10,
+        outputTokens: 10,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 20,
+        totalCost: 0.1,
+        byModel: {},
+      },
+      rows,
+    );
+    expect(combined.totalTokens).toBe(2_000_035);
+    expect(combined.totalCost).toBe(18.6);
+    expect(combined.byModel["claude-3-5-sonnet"]?.cost).toBe(18.5);
+
+    const report = formatUsageReport(combined, rows);
+    expect(report).toContain("@sub-1 (scout)");
+    expect(report).toContain(
+      "@sub-generic (scout) [completed]: usage unavailable",
+    );
+  });
+
+  it("includes current-parent subagent usage in the /usage report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-report-"));
+    tempDirs.push(dir);
+    mockState.agentDir = dir;
+    const fixture = createSubagentState(dir, "sub-1", "session-1");
+    writeFileSync(
+      fixture.sessionPath,
+      `${JSON.stringify({
+        type: "usage",
+        model: "claude-3-5-sonnet",
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cost: { total: 0.01 },
+        },
+      })}\n`,
+    );
+    const env = setupUsageExtension();
+    env.sessionStart();
+    await env.runUsage();
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("@sub-1 (scout)"),
+    );
   });
 });
 
@@ -242,6 +511,186 @@ describe("pi-usage extension lifecycle", () => {
     // Another turn accumulates on top of compacted baseline
     env.messageEnd({ input: 100_000, output: 50_000 });
     expect(getSessionUsage(env.ctx.sessionManager).totalTokens).toBe(3_150_000);
+  });
+
+  it("uses the message model for pricing instead of a switched ctx model", () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+    env.ctx.model = {
+      id: "different-model",
+      cost: { input: 100, output: 100 },
+    } as never;
+    env.messageEnd(
+      { input: 1_000_000, output: 1_000_000 },
+      "claude-3-5-sonnet",
+    );
+    expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(18);
+  });
+
+  it("does not overwrite usage when the session manager lacks branch accessors", () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+    env.messageEnd({ input: 100, output: 100 });
+    const before = getSessionUsage(env.ctx.sessionManager);
+    Reflect.deleteProperty(env.sessionManager, "getEntries");
+    env.sessionStart();
+    expect(getSessionUsage(env.ctx.sessionManager)).toEqual(before);
+  });
+
+  it("sets and clears a dollar budget cap", async () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+    await env.runUsage("cap $5");
+    expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBe(5);
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      "pi-usage: budget cap $5.00",
+      "info",
+    );
+
+    await env.runUsage("cap off");
+    expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBeUndefined();
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      "pi-usage: budget cap cleared",
+    );
+  });
+
+  it("warns at the soft threshold and aborts at the cap", async () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+    await env.runUsage("cap $1");
+    env.messageEnd({ input: 500_000, output: 0 });
+    expect(getSessionUsage(env.ctx.sessionManager).budgetWarning).toBe(true);
+    expect(env.ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("budget warning (1.00 / 1.00)"),
+      "warning",
+    );
+
+    env.beforeAgentStart();
+    expect(env.ctx.abort).toHaveBeenCalledTimes(1);
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("budget cap reached"),
+      "error",
+    );
+  });
+
+  it("publishes the cap to the statusline provider", async () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+    expect(env.pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "usage",
+      text: "",
+    });
+
+    await env.runUsage("cap $5");
+    expect(env.pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "usage",
+      text: "$0.00/$5.00",
+    });
+
+    env.eventHandlers["statusline:request"]?.({ names: ["usage"] });
+    expect(env.pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "usage",
+      text: "$0.00/$5.00",
+    });
+
+    env.sessionShutdown();
+    expect(env.pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "usage",
+      text: "",
+    });
+  });
+
+  it("includes subagent spend in the cap check", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-cap-"));
+    tempDirs.push(dir);
+    mockState.agentDir = dir;
+    const fixture = createSubagentState(dir, "sub-1", "session-1");
+    writeFileSync(
+      fixture.sessionPath,
+      `${JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          model: "claude-3-5-sonnet",
+          usage: {
+            input: 1_000_000,
+            output: 1_000_000,
+            cost: { total: 18 },
+          },
+        },
+      })}\n`,
+    );
+    const env = setupUsageExtension();
+    env.sessionStart();
+    await env.runUsage("cap $10");
+    env.beforeAgentStart();
+    expect(env.ctx.abort).toHaveBeenCalledTimes(1);
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("budget cap reached (18.00 / 10.00)"),
+      "error",
+    );
+  });
+
+  it("refreshes statusline usage when a subagent leaves the active set", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-refresh-"));
+    tempDirs.push(dir);
+    mockState.agentDir = dir;
+    const env = setupUsageExtension();
+    env.sessionStart();
+    await env.runUsage("cap $10");
+
+    const fixture = createSubagentState(dir, "sub-1", "session-1");
+    writeFileSync(
+      fixture.sessionPath,
+      `${JSON.stringify({
+        type: "usage",
+        model: "claude-3-5-sonnet",
+        usage: {
+          input: 1_000_000,
+          output: 1_000_000,
+          cost: { total: 18 },
+        },
+      })}\n`,
+    );
+    env.eventHandlers["subagents:state"]?.([{ id: "sub-1" }]);
+    env.eventHandlers["subagents:state"]?.([]);
+    expect(env.pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "usage",
+      text: "$18.00/$10.00",
+    });
+  });
+
+  it("restores persisted subagent attribution when child files are gone", async () => {
+    const env = setupUsageExtension();
+    env.customEntries.push({
+      customType: USAGE_ENTRY_TYPE,
+      data: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalCost: 0,
+        subagents: [
+          {
+            id: "persisted-sub",
+            agent: "scout",
+            model: "claude-3-5-sonnet",
+            status: "completed",
+            available: true,
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 150,
+            cost: 0.01,
+            byModel: {},
+          },
+        ],
+      },
+    });
+    env.sessionStart();
+    await env.runUsage();
+    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("@persisted-sub (scout)"),
+    );
   });
 
   it("registers /usage command and outputs report", () => {

@@ -1,8 +1,8 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONFIG_FILE_NAME, loadWebConfig } from "./config.js";
+import { CONFIG_FILE_NAME, loadWebConfig, saveWebSettings } from "./config.js";
 
 function agentDir(): string {
   return mkdtempSync(join(tmpdir(), "pi-web-config-"));
@@ -78,6 +78,57 @@ describe("loadWebConfig", () => {
     const array = agentDir();
     write(array, "[]");
     expect(loadWebConfig(array).diagnostics[0]).toContain("must be an object");
+  });
+
+  it("reports unreadable config paths instead of treating them as missing", () => {
+    const dir = agentDir();
+    mkdirSync(join(dir, CONFIG_FILE_NAME));
+    const diagnostics: string[] = [];
+    const config = loadWebConfig(dir, (message) => diagnostics.push(message));
+
+    expect(config.diagnostics).toHaveLength(1);
+    expect(config.diagnostics[0]).toContain(CONFIG_FILE_NAME);
+    expect(diagnostics).toEqual(config.diagnostics);
+  });
+
+  it("saves provider order without discarding unrelated config", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({
+        search: { order: ["exa"], extra: true },
+        fetch: { order: ["tavily"] },
+        note: "keep me",
+      }),
+    );
+
+    saveWebSettings(dir, {
+      searchOrder: ["firecrawl", "exa"],
+      fetchOrder: ["raw"],
+    });
+
+    const saved = JSON.parse(
+      readFileSync(join(dir, CONFIG_FILE_NAME), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved.note).toBe("keep me");
+    expect(saved.search).toEqual({
+      order: ["firecrawl", "exa"],
+      extra: true,
+    });
+    expect(saved.fetch).toEqual({ order: ["raw"] });
+  });
+
+  it("removes the order override when reset to default", () => {
+    const dir = agentDir();
+    write(dir, JSON.stringify({ search: { order: ["exa"] } }));
+
+    saveWebSettings(dir, { searchOrder: undefined, fetchOrder: undefined });
+
+    const saved = JSON.parse(
+      readFileSync(join(dir, CONFIG_FILE_NAME), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved.search).toEqual({});
+    expect(saved.fetch).toEqual({});
   });
 
   it("reports non-array order values", () => {

@@ -78,17 +78,24 @@ export async function withProviderFallback<TProvider, TResult>(
   signal?: AbortSignal,
 ): Promise<TResult> {
   let lastError: unknown;
+  let emptyResult: TResult | undefined;
   for (const provider of order) {
     if (signal?.aborted) {
       throw new DOMException("provider request aborted", "AbortError");
     }
     try {
-      return await attempt(provider);
+      const result = await attempt(provider);
+      if (Array.isArray(result) && result.length === 0) {
+        emptyResult = result;
+        continue;
+      }
+      return result;
     } catch (error) {
       if (signal?.aborted) throw error;
       lastError = error;
     }
   }
+  if (emptyResult !== undefined) return emptyResult;
   throw lastError instanceof Error
     ? lastError
     : new Error("no provider available");

@@ -9,7 +9,9 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { scanTaggedBlocks, withPromptLock } from "@hollowheap/core";
+import { alertQuestion } from "./alerts.js";
 import {
+  DONE_LABEL,
   type Question,
   type QuestionAnswer,
   WRITE_IN_LABEL,
@@ -19,7 +21,7 @@ import {
   parseQuestionBlock,
 } from "./questions.js";
 
-const ANSWERS_TYPE = "hollowheap.question.answers";
+export const ANSWERS_TYPE = "hollowheap.question.answers";
 
 const QUESTION_FORMAT = `Question blocks are tool-free. Use one only when the code or request cannot decide a choice, then end the turn without calling a tool.
 
@@ -31,7 +33,7 @@ End the turn with a fenced block:
 2. Second option
 '''
 
-Use one H2 per question; multiple questions are asked in source order. Every option is an ordered-list item. For multi-select, put [ ] on every option; for single-select, omit checkboxes. A question has 0-8 options; zero options asks for free text. Do not add a write-in option: the UI always appends "Write-in answer". Answers arrive as a follow-up user message.`;
+Use one H2 per question; multiple questions are asked in source order. Every option is an ordered-list item. For multi-select, put [ ] on every option; for single-select, omit checkboxes. A question has 0-8 options; zero options asks for free text. Do not add a write-in option: the UI always appends "Write-in answer". Add [page: N] to group questions into pages with Next/Back navigation, and [if: answer1 == 'Yes'] to show a question only when an earlier answer matches. Answers arrive as a follow-up user message.`;
 
 interface AnswerDetails {
   questions: Question[];
@@ -177,6 +179,8 @@ async function askMulti(
     );
   }
 
+  if (typeof ctx.ui?.select !== "function") return undefined;
+
   const selected = new Set<number>();
   let writeIn: string | undefined;
 
@@ -186,14 +190,14 @@ async function askMulti(
         (option, index) => `${selected.has(index) ? "[x]" : "[ ]"} ${option}`,
       ),
       WRITE_IN_LABEL,
-      "Done",
+      DONE_LABEL,
     ];
     const picked = await withPromptLock(() =>
       ctx.ui.select(question.prompt, rows),
     );
     if (picked === undefined) return undefined;
 
-    if (picked === "Done") {
+    if (picked === DONE_LABEL) {
       return {
         selected: question.options.filter((_, index) => selected.has(index)),
         writeIn,
@@ -202,9 +206,7 @@ async function askMulti(
     }
 
     if (picked === WRITE_IN_LABEL) {
-      const answer = await withPromptLock(() =>
-        ctx.ui.input(question.prompt, "Custom answer"),
-      );
+      const answer = await askWriteIn(ctx, question.prompt, "Custom answer");
       if (answer === undefined) return undefined;
       writeIn = capAnswer(answer);
       continue;
@@ -217,12 +219,28 @@ async function askMulti(
   }
 }
 
+async function askWriteIn(
+  ctx: ExtensionContext,
+  title: string,
+  placeholder?: string,
+): Promise<string | undefined> {
+  if (ctx.mode === "tui" && typeof ctx.ui?.editor === "function") {
+    return withPromptLock(() => ctx.ui.editor(title));
+  }
+  if (typeof ctx.ui?.input !== "function") return undefined;
+  return withPromptLock(() =>
+    placeholder === undefined
+      ? ctx.ui.input(title)
+      : ctx.ui.input(title, placeholder),
+  );
+}
+
 async function askQuestion(
   question: Question,
   ctx: ExtensionContext,
 ): Promise<QuestionAnswer | undefined> {
   if (question.mode === "free") {
-    const answer = await withPromptLock(() => ctx.ui.input(question.prompt));
+    const answer = await askWriteIn(ctx, question.prompt);
     return answer === undefined
       ? undefined
       : { mode: "free", value: capAnswer(answer) };
@@ -238,6 +256,7 @@ async function askQuestion(
     };
   }
 
+  if (typeof ctx.ui?.select !== "function") return undefined;
   const picked = await withPromptLock(() =>
     ctx.ui.select(question.prompt, [...question.options, WRITE_IN_LABEL]),
   );
@@ -246,36 +265,81 @@ async function askQuestion(
     return { mode: "single", value: picked };
   }
 
-  const answer = await withPromptLock(() =>
-    ctx.ui.input(question.prompt, "Custom answer"),
-  );
+  const answer = await askWriteIn(ctx, question.prompt, "Custom answer");
   return answer === undefined
     ? undefined
     : { mode: "single", value: capAnswer(answer) };
 }
 
+const NEXT_PAGE_LABEL = "Next page";
+const BACK_LABEL = "Back";
+
 async function askQuestions(
   questions: readonly Question[],
   ctx: ExtensionContext,
 ): Promise<QuestionAnswer[] | undefined> {
-  const answers: QuestionAnswer[] = [];
-  for (const question of questions) {
-    if (!evaluateCondition(question.condition, answers)) continue;
-    const answer = await askQuestion(question, ctx);
-    if (answer === undefined) return undefined;
-    answers.push(answer);
+  const answers: (QuestionAnswer | undefined)[] = [];
+  const pages = [
+    ...new Set(questions.map((question) => question.page ?? 1)),
+  ].sort((a, b) => a - b);
+  let pageIndex = 0;
+
+  while (pageIndex < pages.length) {
+    const page = pages[pageIndex];
+    if (page === undefined) break;
+    const pageQuestions = questions
+      .map((question, index) => ({ question, index }))
+      .filter(({ question }) => (question.page ?? 1) === page);
+
+    for (const { question, index } of pageQuestions) {
+      if (!evaluateCondition(question.condition, answers)) continue;
+      const answer = await askQuestion(question, ctx);
+      if (answer === undefined) return undefined;
+      answers[index] = answer;
+    }
+
+    if (pageIndex === pages.length - 1) break;
+    if (typeof ctx.ui?.select !== "function") return undefined;
+    const choice = await withPromptLock(() =>
+      ctx.ui.select(`Question page ${page} complete`, [
+        NEXT_PAGE_LABEL,
+        BACK_LABEL,
+      ]),
+    );
+    if (choice === undefined) return undefined;
+    if (choice === BACK_LABEL) {
+      const previousPage = pages[pageIndex - 1];
+      for (let index = 0; index < questions.length; index += 1) {
+        const questionPage = questions[index]?.page ?? 1;
+        if (
+          questionPage === page ||
+          (previousPage !== undefined && questionPage === previousPage)
+        ) {
+          answers[index] = undefined;
+        }
+      }
+      pageIndex = Math.max(0, pageIndex - 1);
+    } else {
+      pageIndex += 1;
+    }
   }
-  return answers;
+
+  return answers.filter(
+    (answer): answer is QuestionAnswer => answer !== undefined,
+  );
 }
 
-function contentText(
-  content: string | readonly { type: string; text?: string }[],
-): string {
+function contentText(content: unknown): string {
   if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content
-    .flatMap((part) =>
-      part.type === "text" && typeof part.text === "string" ? [part.text] : [],
-    )
+    .flatMap((part) => {
+      if (typeof part !== "object" || part === null) return [];
+      const block = part as { type?: unknown; text?: unknown };
+      return block.type === "text" && typeof block.text === "string"
+        ? [block.text]
+        : [];
+    })
     .join("\n");
 }
 
@@ -333,32 +397,39 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     if (!ctx.hasUI || event.message.role !== "assistant") return;
+    if (handled.has(event.message)) return;
 
-    const markdown = event.message.content
-      .flatMap((block) => (block.type === "text" ? [block.text] : []))
-      .join("\n");
+    try {
+      const markdown = contentText(event.message.content);
+      const questions: Question[] = [];
+      for (const block of scanTaggedBlocks(markdown)) {
+        if (block.tag !== "question" || !block.closed) continue;
+        const parsed = parseQuestionBlock(block.body);
+        if (parsed) questions.push(...parsed);
+      }
 
-    const questions: Question[] = [];
-    for (const block of scanTaggedBlocks(markdown)) {
-      if (block.tag !== "question" || !block.closed) continue;
-      const parsed = parseQuestionBlock(block.body);
-      if (parsed) questions.push(...parsed);
+      if (questions.length === 0) return;
+      handled.add(event.message);
+      alertQuestion();
+
+      const answers = await askQuestions(questions, ctx);
+      if (answers === undefined || answers.length === 0) return;
+
+      pi.sendMessage(
+        {
+          customType: ANSWERS_TYPE,
+          content: formatAnswers(answers),
+          display: true,
+          details: { questions, answers },
+        },
+        { deliverAs: "followUp" },
+      );
+    } catch (error) {
+      handled.delete(event.message);
+      ctx.ui?.notify?.(
+        `pi-question: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
     }
-
-    if (questions.length === 0 || handled.has(event.message)) return;
-    handled.add(event.message);
-
-    const answers = await askQuestions(questions, ctx);
-    if (answers === undefined || answers.length === 0) return;
-
-    pi.sendMessage(
-      {
-        customType: ANSWERS_TYPE,
-        content: formatAnswers(answers),
-        display: true,
-        details: { questions, answers },
-      },
-      { deliverAs: "followUp" },
-    );
   });
 }

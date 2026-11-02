@@ -5,9 +5,24 @@ import {
   getAgentDir,
   keyHint,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import {
+  Container,
+  Image,
+  Markdown,
+  type MarkdownTheme,
+  Text,
+  getCapabilities,
+  hyperlink,
+} from "@earendil-works/pi-tui";
 import { loadWebConfig } from "./config.js";
 import { fetchUrl } from "./fetch.js";
+import { searchKeyless } from "./keyless.js";
+import {
+  type MediaPreview,
+  fetchMediaPreview,
+  getMediaPreview,
+  setMediaPreview,
+} from "./media.js";
 import { createExaAdapter } from "./providers/exa.js";
 import { createFirecrawlAdapter } from "./providers/firecrawl.js";
 import {
@@ -33,6 +48,56 @@ export const FETCH_DEFAULT_CHARS = 20_000;
 export const FETCH_MAX_CHARS = 100_000;
 export const FETCH_MAX_LINKS = 50;
 export const FETCH_MAX_MEDIA = 20;
+const FETCH_CACHE_TTL_MS = 5 * 60_000;
+const FETCH_RATE_LIMIT_MS = 1_000;
+let lastWebLinks: string[] = [];
+
+export function getLastWebLinks(): readonly string[] {
+  return lastWebLinks;
+}
+
+export function rememberWebLinks(links: readonly { url: string }[]): void {
+  const seen = new Set<string>();
+  lastWebLinks = links
+    .map((link) => link.url)
+    .filter((url) => {
+      if (!/^https?:\/\//i.test(url) || seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .slice(0, 20);
+}
+
+function markdownTheme(theme: Theme): MarkdownTheme {
+  return {
+    heading: (text) => theme.fg("accent", theme.bold(text)),
+    link: (text) => theme.fg("accent", text),
+    linkUrl: (text) => theme.fg("dim", text),
+    code: (text) => theme.fg("toolOutput", text),
+    codeBlock: (text) => theme.fg("toolOutput", text),
+    codeBlockBorder: (text) => theme.fg("border", text),
+    quote: (text) => theme.fg("muted", text),
+    quoteBorder: (text) => theme.fg("border", text),
+    hr: (text) => theme.fg("border", text),
+    listBullet: (text) => theme.fg("accent", text),
+    bold: (text) => theme.bold(text),
+    italic: (text) => theme.italic(text),
+    strikethrough: (text) => theme.strikethrough(text),
+    underline: (text) => theme.underline(text),
+  };
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function linkedUrl(value: string): string {
+  return isHttpUrl(value) ? hyperlink(value, value) : value;
+}
+
+function markdownUrl(value: string): string {
+  return isHttpUrl(value) ? `[${value}](${value})` : value;
+}
 
 function expandHint(theme: Theme, count: number, noun: string): string {
   let hint = "to expand";
@@ -50,6 +115,10 @@ export interface WebSearchDeps {
 
 export interface WebFetchDeps {
   fetch?: (request: FetchRequest) => Promise<NormalizedFetchResult>;
+  previewMedia?: (
+    url: string,
+    signal?: AbortSignal,
+  ) => Promise<MediaPreview | undefined>;
 }
 
 function adapterFor(provider: ProviderId): ProviderAdapter {
@@ -69,11 +138,19 @@ async function defaultSearch(
   const config = loadWebConfig(getAgentDir());
   const order = resolveSearchOrder(config.searchOrder);
   const signal = providerSignal(request.signal);
-  return withProviderFallback(
-    order,
-    (provider) => adapterFor(provider).search({ ...request, signal }),
-    signal,
-  );
+  if (order.length === 0) {
+    return searchKeyless({ ...request, signal });
+  }
+  try {
+    return await withProviderFallback(
+      order,
+      (provider) => adapterFor(provider).search({ ...request, signal }),
+      signal,
+    );
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return searchKeyless({ ...request, signal });
+  }
 }
 
 async function defaultFetch(
@@ -88,6 +165,8 @@ async function defaultFetch(
     apiKey: request.apiKey,
     signal: request.signal,
     providers,
+    cacheTtlMs: FETCH_CACHE_TTL_MS,
+    rateLimitMs: FETCH_RATE_LIMIT_MS,
   });
 }
 
@@ -133,10 +212,16 @@ function formatFetchMarkdown(
   content: string,
   links: readonly { title?: string; text?: string; url: string }[],
   isTruncated: boolean,
+  media: readonly {
+    url: string;
+    kind: string;
+    alt?: string;
+    mimeType?: string;
+  }[] = [],
 ): string {
   const parts: string[] = [];
   if (finalUrl && finalUrl !== url) {
-    parts.push(`*Redirected to: ${finalUrl}*\n`);
+    parts.push(`*Redirected to: ${markdownUrl(finalUrl)}*\n`);
   }
   parts.push(content.trim());
   if (isTruncated) {
@@ -147,6 +232,13 @@ function formatFetchMarkdown(
     for (const link of links) {
       const label = link.text || link.title || link.url;
       parts.push(`- [${label}](${link.url})`);
+    }
+  }
+  if (media.length > 0) {
+    parts.push("\n\n## Media");
+    for (const item of media) {
+      const label = item.alt || `${item.kind} media`;
+      parts.push(`- [${label}](${item.url})`);
     }
   }
   return parts.join("\n");
@@ -250,23 +342,16 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
         return text;
       }
 
-      const lines: string[] = [
-        `${theme.fg("success", "✓")} ${theme.fg("toolTitle", "Found")} ${theme.fg("accent", `${items.length} results:`)}`,
-      ];
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        lines.push(
-          `${theme.fg("dim", `${i + 1}.`)} ${theme.fg("accent", theme.bold(item.title))}`,
-        );
-        lines.push(`   ${theme.fg("muted", item.url)}`);
-        if (item.snippet) {
-          lines.push(`   ${theme.fg("toolOutput", item.snippet.trim())}`);
-        }
-      }
-
-      text.setText(lines.join("\n"));
-      return text;
+      return new Markdown(
+        formatSearchMarkdown(
+          details?.query ?? "",
+          items,
+          details?.truncated ?? false,
+        ),
+        0,
+        0,
+        markdownTheme(theme),
+      );
     },
     async execute(
       _toolCallId,
@@ -293,6 +378,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
           maxResults: limit,
         });
         const capped = results.slice(0, limit).map(normalizeSearch);
+        rememberWebLinks(capped);
         const text = formatSearchMarkdown(
           query,
           capped,
@@ -350,6 +436,13 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
             url?: string;
             finalUrl?: string;
             content?: string;
+            links?: { title?: string; text?: string; url: string }[];
+            media?: {
+              url: string;
+              kind: string;
+              alt?: string;
+              mimeType?: string;
+            }[];
             truncated?: boolean;
             error?: string;
           }
@@ -365,11 +458,44 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
 
       const content = details?.content ?? textOutput;
       const url = details?.finalUrl || details?.url || "web page";
+      if (options.expanded) {
+        const markdown = new Markdown(
+          `**Fetched** ${markdownUrl(url)}\n\n${formatFetchMarkdown(
+            details?.url ?? url,
+            details?.finalUrl ?? url,
+            content,
+            details?.links ?? [],
+            details?.truncated ?? false,
+            details?.media ?? [],
+          )}`,
+          0,
+          0,
+          markdownTheme(theme),
+        );
+        const previews = (details?.media ?? [])
+          .filter((item) => item.kind === "image")
+          .map((item) => getMediaPreview(item.url))
+          .filter((preview): preview is MediaPreview => preview !== undefined);
+        if (previews.length === 0) return markdown;
+        const container = new Container();
+        container.addChild(markdown);
+        for (const preview of previews) {
+          container.addChild(
+            new Image(
+              preview.data,
+              preview.mimeType,
+              { fallbackColor: (text) => theme.fg("muted", text) },
+              { maxWidthCells: 60 },
+            ),
+          );
+        }
+        return container;
+      }
+
       const rawLines = content
         .split("\n")
         .filter((l: string) => l.trim().length > 0);
-
-      const header = `${theme.fg("success", "✓")} ${theme.fg("toolTitle", "Fetched")} ${theme.fg("accent", url)} ${theme.fg("muted", `(${content.length} chars)`)}`;
+      const header = `${theme.fg("success", "✓")} ${theme.fg("toolTitle", "Fetched")} ${theme.fg("accent", linkedUrl(url))} ${theme.fg("muted", `(${content.length} chars)`)}`;
       const resLines: string[] = [header];
 
       if (
@@ -377,16 +503,16 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
         details.url &&
         details.finalUrl !== details.url
       ) {
-        resLines.push(theme.fg("dim", `  ↳ Redirected from ${details.url}`));
+        resLines.push(
+          theme.fg("dim", `  ↳ Redirected from ${linkedUrl(details.url)}`),
+        );
       }
 
-      const maxPreviewLines = options.expanded ? rawLines.length : 8;
-      const displayLines = rawLines.slice(0, maxPreviewLines);
-      const remaining = rawLines.length - maxPreviewLines;
+      const displayLines = rawLines.slice(0, 8);
+      const remaining = rawLines.length - displayLines.length;
 
       for (const l of displayLines) {
-        const snippet =
-          !options.expanded && l.length > 120 ? `${l.slice(0, 117)}...` : l;
+        const snippet = l.length > 120 ? `${l.slice(0, 117)}...` : l;
         resLines.push(`  ${theme.fg("toolOutput", snippet)}`);
       }
 
@@ -397,7 +523,11 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
       text.setText(resLines.join("\n"));
       return text;
     },
-    async execute(_toolCallId, params: { url: string; max_chars?: number }) {
+    async execute(
+      _toolCallId,
+      params: { url: string; max_chars?: number },
+      signal?: AbortSignal,
+    ) {
       const url = typeof params.url === "string" ? params.url.trim() : "";
       if (url === "") return errorResult("web_fetch", "url is required");
       if (
@@ -416,18 +546,40 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
         const safeLinks = result.links.filter((link) => !isDataUrl(link.url));
         const safeMedia = result.media.filter((item) => !isDataUrl(item.url));
         const links = safeLinks.slice(0, FETCH_MAX_LINKS);
+        rememberWebLinks(links);
         const media = safeMedia.slice(0, FETCH_MAX_MEDIA);
         const isTruncated =
           result.truncated ||
           result.content.length > limit ||
           safeLinks.length > FETCH_MAX_LINKS ||
           safeMedia.length > FETCH_MAX_MEDIA;
+        if (getCapabilities().images && !signal?.aborted) {
+          const preview = deps.previewMedia ?? fetchMediaPreview;
+          await Promise.all(
+            media
+              .filter(
+                (item) => item.kind === "image" && !getMediaPreview(item.url),
+              )
+              .slice(0, 2)
+              .map(async (item) => {
+                try {
+                  const result = await preview(item.url, signal);
+                  if (result !== undefined) {
+                    setMediaPreview(item.url, result);
+                  }
+                } catch {
+                  // Image previews are optional; keep the link fallback.
+                }
+              }),
+          );
+        }
         const text = formatFetchMarkdown(
           url,
           result.finalUrl,
           content,
           links,
           isTruncated,
+          media,
         );
         return {
           content: [{ type: "text" as const, text }],

@@ -11,6 +11,9 @@ import {
   loadPermissions,
   truncateText,
 } from "@hollowheap/core";
+import { taskAlertTracker } from "./alerts.js";
+import { withCancellableProgress } from "./progress.js";
+import { generateTaskId } from "./registry.js";
 import { type TaskRecord, taskLogPath } from "./registry.js";
 import {
   cancelTask,
@@ -19,6 +22,11 @@ import {
   spawnShellTask,
   waitForTask,
 } from "./runner.js";
+import {
+  allocateTaskWorkspace,
+  cleanupTaskWorkspace,
+  taskWorkspaceTracker,
+} from "./workspace.js";
 
 export type TaskAction = "start" | "list" | "status" | "wait" | "cancel";
 
@@ -28,6 +36,7 @@ export interface TaskToolParams {
   id?: string;
   timeoutMs?: number;
   dependsOn?: string[];
+  isolated?: boolean;
 }
 
 export interface TaskToolDeps {
@@ -58,6 +67,40 @@ function countRunning(tasks: readonly TaskRecord[]): number {
     if (t.status === "running") count++;
   }
   return count;
+}
+
+function findDependencyCycle(
+  deps: readonly string[],
+  taskMap: ReadonlyMap<string, TaskRecord>,
+): string[] | undefined {
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+
+  const visit = (id: string): string[] | undefined => {
+    const cycleStart = stack.indexOf(id);
+    if (visiting.has(id)) {
+      return cycleStart >= 0 ? [...stack.slice(cycleStart), id] : [id, id];
+    }
+    if (visited.has(id)) return undefined;
+    visiting.add(id);
+    stack.push(id);
+    for (const next of taskMap.get(id)?.dependsOn ?? []) {
+      if (!taskMap.has(next)) continue;
+      const cycle = visit(next);
+      if (cycle) return cycle;
+    }
+    stack.pop();
+    visiting.delete(id);
+    visited.add(id);
+    return undefined;
+  };
+
+  for (const dep of deps) {
+    const cycle = visit(dep);
+    if (cycle) return cycle;
+  }
+  return undefined;
 }
 
 function formatTaskDetail(
@@ -139,6 +182,11 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
       dependsOn: Type.Optional(
         Type.Array(Type.String(), {
           description: "Task IDs that must complete before this task starts",
+        }),
+      ),
+      isolated: Type.Optional(
+        Type.Boolean({
+          description: "Run in a dedicated isolated workspace",
         }),
       ),
     }),
@@ -228,6 +276,14 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
               });
             }
           }
+          const cycle = findDependencyCycle(deps, taskMap);
+          if (cycle) {
+            const runningCount = refreshRunningCount();
+            return textResult(`Dependency cycle: ${cycle.join(" -> ")}`, {
+              action,
+              runningCount,
+            });
+          }
           // Check if any dep is still running
           const pendingDeps = deps.filter((dep) => {
             const t = taskMap.get(dep);
@@ -240,27 +296,45 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
               { action, runningCount },
             );
           }
-          // Check if any dep failed
+          // Check if any dep failed or was cancelled
           const failedDeps = deps.filter((dep) => {
             const t = taskMap.get(dep);
-            return t && t.status === "failed";
+            return t && (t.status === "failed" || t.status === "cancelled");
           });
           if (failedDeps.length > 0) {
             const runningCount = refreshRunningCount();
-            return textResult(`Dependencies failed: ${failedDeps.join(", ")}`, {
-              action,
-              runningCount,
-            });
+            return textResult(
+              `Dependencies failed or cancelled: ${failedDeps.join(", ")}`,
+              {
+                action,
+                runningCount,
+              },
+            );
           }
         }
 
         const cwd = effectiveCwd(ctx.cwd, ctx.sessionManager);
-        const record = await spawnShellTask({
-          agentDir,
-          command,
-          cwd,
-          dependsOn: deps.length > 0 ? deps : undefined,
+        const taskId = generateTaskId();
+        const workspace = await allocateTaskWorkspace({
+          root: cwd,
+          id: taskId,
+          enabled: params.isolated === true,
         });
+        let record: TaskRecord;
+        try {
+          record = await spawnShellTask({
+            agentDir,
+            id: taskId,
+            command,
+            cwd: workspace.path,
+            dependsOn: deps.length > 0 ? deps : undefined,
+          });
+        } catch (error) {
+          await cleanupTaskWorkspace(workspace).catch(() => {});
+          throw error;
+        }
+        taskWorkspaceTracker.track(record.id, workspace);
+        taskAlertTracker.seed(record);
         const runningCount = refreshRunningCount();
         const log = taskLogPath(agentDir, record.id);
         return textResult(
@@ -278,6 +352,15 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
         const all = reconcileAllTasks(agentDir);
         const runningCount = countRunning(all);
         deps.onStatusChange?.(ctx, runningCount);
+        deps.onTasksChange?.(
+          all
+            .filter((task) => task.status === "running")
+            .map((task) => ({
+              id: task.id,
+              command: task.command,
+              status: task.status,
+            })),
+        );
         return textResult(formatTaskList(all), {
           action,
           runningCount,
@@ -318,8 +401,26 @@ export function createTaskTool(deps: TaskToolDeps = {}) {
           Number.isFinite(params.timeoutMs)
             ? params.timeoutMs
             : 30_000;
-        const record = await waitForTask(agentDir, id, timeoutMs, signal);
+        const waited = await withCancellableProgress(
+          ctx,
+          `Waiting for task ${id}`,
+          (waitSignal) => waitForTask(agentDir, id, timeoutMs, waitSignal),
+          signal,
+        );
         const runningCount = refreshRunningCount();
+        if (waited.status === "cancelled") {
+          const current = reconcileTask(agentDir, id);
+          return textResult(
+            `Stopped waiting for task ${id}; it is still ${current?.status ?? "unknown"}.`,
+            {
+              action,
+              id,
+              status: current?.status,
+              runningCount,
+            },
+          );
+        }
+        const record = waited.value;
         if (!record) {
           return textResult(`Task not found: ${id}`, {
             action,

@@ -35,8 +35,9 @@ function classifierResult(answer: Record<string, unknown>): unknown {
   };
 }
 
-function ctx(classify: ReturnType<typeof vi.fn>) {
+function ctx(classify: ReturnType<typeof vi.fn>, sessionManager: object = {}) {
   return {
+    sessionManager,
     modelRegistry: {
       classify: classify as DecideDeps["classify"],
       getModelOfType: vi.fn(() => ({ id: "jev-latest" })),
@@ -56,7 +57,6 @@ describe("decide", () => {
         diagnostics: [],
       }),
       classify: vi.fn() as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -95,7 +95,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -141,7 +140,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: scoreClassify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const scoreResult = await scoreTool.execute(
       "1",
@@ -159,6 +157,7 @@ describe("decide", () => {
       ctx(scoreClassify) as never,
     );
     expect(detailsOf(scoreResult).value).toBe(1);
+    expect(detailsOf(scoreResult).label).toBe("atomic");
 
     const boolClassify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.95 }),
@@ -171,7 +170,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: boolClassify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const boolResult = await boolTool.execute(
       "1",
@@ -200,7 +198,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: vi.fn() as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const ctxValue = ctx(vi.fn());
 
@@ -245,6 +242,84 @@ describe("decide", () => {
     expect(textOf(missingBool)).toContain("true and false descriptions");
   });
 
+  it("rejects answers outside the caller contract", async () => {
+    const dir = agentDir();
+    const toolFor = (classify: ReturnType<typeof vi.fn>) =>
+      createDecideTool({
+        loadConfig: () =>
+          ({
+            ...config(),
+            path: join(dir, CONFIG_FILE_NAME),
+            diagnostics: [],
+          }) as never,
+        classify: classify as DecideDeps["classify"],
+      });
+
+    const choiceResult = await toolFor(
+      vi.fn(async () =>
+        classifierResult({
+          type: "choice",
+          choice: "c",
+          probabilities: { c: 1 },
+          confidence: 1,
+        }),
+      ),
+    ).execute(
+      "1",
+      {
+        kind: "choice",
+        input: "x",
+        question: "q",
+        labels: [
+          { label: "a", description: "first" },
+          { label: "b", description: "second" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx(vi.fn()) as never,
+    );
+    expect(textOf(choiceResult)).toContain("unknown choice");
+
+    const scoreResult = await toolFor(
+      vi.fn(async () =>
+        classifierResult({ type: "score", score: 2, confidence: 0.8 }),
+      ),
+    ).execute(
+      "1",
+      {
+        kind: "score",
+        input: "x",
+        question: "q",
+        labels: [
+          { label: "a", description: "first" },
+          { label: "b", description: "second" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx(vi.fn()) as never,
+    );
+    expect(textOf(scoreResult)).toContain("out-of-range score");
+
+    const boolResult = await toolFor(
+      vi.fn(async () => classifierResult({ type: "bool", probability: 2 })),
+    ).execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(vi.fn()) as never,
+    );
+    expect(textOf(boolResult)).toContain("invalid probability");
+  });
+
   it("returns classifier errors", async () => {
     const dir = agentDir();
     const classify = vi.fn(async () => ({
@@ -264,7 +339,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -298,7 +372,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -337,7 +410,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const params = {
       kind: "bool" as const,
@@ -347,20 +419,21 @@ describe("decide", () => {
       falseDescription: "no",
     };
     const controller = new AbortController();
+    const context = ctx(classify);
 
     const aborted = tool.execute(
       "1",
       params,
       controller.signal,
       undefined,
-      ctx(classify) as never,
+      context as never,
     );
     const waiter = tool.execute(
       "2",
       params,
       undefined,
       undefined,
-      ctx(classify) as never,
+      context as never,
     );
     expect(classify).toHaveBeenCalledTimes(1);
     controller.abort();
@@ -371,6 +444,119 @@ describe("decide", () => {
     expect(detailsOf(waiterResult).error).toBeUndefined();
     expect(detailsOf(waiterResult).value).toBe(true);
     expect(classify).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts the shared request when the last waiter cancels", async () => {
+    const dir = agentDir();
+    let requestSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const classify = vi.fn(
+      async (_ctx, _model, _input, signal: AbortSignal | undefined) => {
+        requestSignal = signal;
+        markStarted();
+        await new Promise((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            {
+              once: true,
+            },
+          );
+        });
+        return classifierResult({ type: "bool", probability: 0.8 });
+      },
+    );
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+    });
+    const controller = new AbortController();
+
+    const pending = tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      controller.signal,
+      undefined,
+      ctx(classify) as never,
+    );
+    await started;
+    controller.abort();
+
+    const result = await pending;
+    expect(textOf(result)).toContain("aborted");
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("does not cache a result after the caller aborts", async () => {
+    const dir = agentDir();
+    let release!: (value: unknown) => void;
+    let markStarted!: () => void;
+    const gate = new Promise<unknown>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let calls = 0;
+    const classify = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        markStarted();
+        await gate;
+      }
+      return classifierResult({ type: "bool", probability: 0.8 });
+    });
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+    });
+    const context = ctx(classify);
+    const params = {
+      kind: "bool" as const,
+      input: "x",
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    };
+    const controller = new AbortController();
+
+    const pending = tool.execute(
+      "1",
+      params,
+      controller.signal,
+      undefined,
+      context as never,
+    );
+    await started;
+    controller.abort();
+    release(undefined);
+
+    expect(textOf(await pending)).toContain("aborted");
+    await tool.execute("2", params, undefined, undefined, context as never);
+    expect(classify).toHaveBeenCalledTimes(2);
   });
 
   it("uses a stable cache key across label order", async () => {
@@ -391,7 +577,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const base = {
       kind: "choice" as const,
@@ -403,13 +588,14 @@ describe("decide", () => {
       ],
     };
 
-    await tool.execute("1", base, undefined, undefined, ctx(classify) as never);
+    const context = ctx(classify);
+    await tool.execute("1", base, undefined, undefined, context as never);
     await tool.execute(
       "2",
       { ...base, labels: [...base.labels].reverse() },
       undefined,
       undefined,
-      ctx(classify) as never,
+      context as never,
     );
 
     expect(classify).toHaveBeenCalledTimes(1);
@@ -424,7 +610,6 @@ describe("decide", () => {
           path: join(dir, CONFIG_FILE_NAME),
           diagnostics: [],
         }) as never,
-      getAgentDir: () => dir,
     });
     const registry = {
       classify: vi.fn() as DecideDeps["classify"],
@@ -449,6 +634,34 @@ describe("decide", () => {
     expect(registry.classify).not.toHaveBeenCalled();
   });
 
+  it("reports an unavailable classifier model registry", async () => {
+    const dir = agentDir();
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+    });
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      { modelRegistry: {} } as never,
+    );
+
+    expect(textOf(result)).toContain("model registry unavailable");
+  });
+
   it("enforces the input cap", async () => {
     const dir = agentDir();
     const tool = createDecideTool({
@@ -461,7 +674,6 @@ describe("decide", () => {
         diagnostics: [],
       }),
       classify: vi.fn() as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -494,9 +706,9 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
+    const context = ctx(classify);
     const first = await tool.execute(
       "1",
       {
@@ -508,7 +720,7 @@ describe("decide", () => {
       },
       undefined,
       undefined,
-      ctx(classify) as never,
+      context as never,
     );
     const second = await tool.execute(
       "2",
@@ -521,7 +733,7 @@ describe("decide", () => {
       },
       undefined,
       undefined,
-      ctx(classify) as never,
+      context as never,
     );
 
     expect(textOf(first)).toBe(textOf(second));
@@ -539,7 +751,7 @@ describe("decide", () => {
         },
         undefined,
         undefined,
-        ctx(classify) as never,
+        context as never,
       ),
       tool.execute(
         "4",
@@ -552,11 +764,94 @@ describe("decide", () => {
         },
         undefined,
         undefined,
-        ctx(classify) as never,
+        context as never,
       ),
     ]);
     expect(textOf(a)).toBe(textOf(b));
     expect(classify).toHaveBeenCalledTimes(2);
+  });
+
+  it("isolates the cache per session", async () => {
+    const dir = agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 0.8 }),
+    );
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+    });
+    const params = {
+      kind: "bool" as const,
+      input: "x",
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    };
+
+    await tool.execute(
+      "1",
+      params,
+      undefined,
+      undefined,
+      ctx(classify, {}) as never,
+    );
+    await tool.execute(
+      "2",
+      params,
+      undefined,
+      undefined,
+      ctx(classify, {}) as never,
+    );
+
+    expect(classify).toHaveBeenCalledTimes(2);
+  });
+
+  it("evicts the oldest cached result after 128 entries", async () => {
+    const dir = agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 0.8 }),
+    );
+    const tool = createDecideTool({
+      loadConfig: () =>
+        ({
+          ...config(),
+          path: join(dir, CONFIG_FILE_NAME),
+          diagnostics: [],
+        }) as never,
+      classify: classify as DecideDeps["classify"],
+    });
+    const context = ctx(classify);
+    const params = (input: string) => ({
+      kind: "bool" as const,
+      input,
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    });
+
+    for (let index = 0; index < 129; index += 1) {
+      await tool.execute(
+        String(index),
+        params(`input-${index}`),
+        undefined,
+        undefined,
+        context as never,
+      );
+    }
+    await tool.execute(
+      "again",
+      params("input-0"),
+      undefined,
+      undefined,
+      context as never,
+    );
+
+    expect(classify).toHaveBeenCalledTimes(130);
   });
 
   it("does not cache when TTL is zero or a call is aborted", async () => {
@@ -574,7 +869,6 @@ describe("decide", () => {
         diagnostics: [],
       }),
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     await tool.execute(
@@ -616,7 +910,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: abortedClassify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
     const aborted = await abortTool.execute(
       "3",
@@ -675,7 +968,6 @@ describe("decide", () => {
         diagnostics: [],
       }),
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     const result = await tool.execute(
@@ -709,7 +1001,6 @@ describe("decide", () => {
           diagnostics: [],
         }) as never,
       classify: classify as DecideDeps["classify"],
-      getAgentDir: () => dir,
     });
 
     await tool.execute(

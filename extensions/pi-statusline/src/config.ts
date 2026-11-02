@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThemeBg, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Color } from "@earendil-works/pi-tui";
@@ -41,10 +41,9 @@ export interface StatuslineConfig {
   sections: Record<string, StyledComponentSpec[]>;
   extensions: string[];
   clickActions?: Record<string, string>;
-  customComponentsPath?: string;
 }
 
-export const DEFAULT_EXTENSIONS: readonly string[] = ["mode-guard", "budgets"];
+export const DEFAULT_EXTENSIONS: readonly string[] = ["mode-guard", "usage"];
 
 export const CONFIG_FILE_NAME = "statusline.json";
 
@@ -62,7 +61,7 @@ export function defaultConfig(): StatuslineConfig {
     sections: {
       a: [{ type: "mode-guard" }],
       b: [{ type: "git_branch" }, { type: "cwd" }],
-      y: [{ type: "tokens" }, { type: "cost" }, { type: "budgets" }],
+      y: [{ type: "tokens" }, { type: "cost" }, { type: "usage" }],
       z: [{ type: "model" }, { type: "thinking" }, { type: "clock" }],
     },
     extensions: [...DEFAULT_EXTENSIONS],
@@ -321,6 +320,23 @@ export function normalizeConfig(input: unknown): {
       }
     }
   }
+  if (input.clickActions !== undefined) {
+    if (!isRecord(input.clickActions)) {
+      diagnostics.push("clickActions must be an object; using none");
+    } else {
+      const actions: Record<string, string> = {};
+      for (const [segment, action] of Object.entries(input.clickActions)) {
+        if (typeof action !== "string" || action.trim() === "") {
+          diagnostics.push(
+            `ignoring clickActions.${segment}: must be a non-empty string`,
+          );
+        } else {
+          actions[segment] = action.trim();
+        }
+      }
+      config.clickActions = actions;
+    }
+  }
   const sections = input.sections;
   if (sections === undefined && input.extensions === undefined) {
     return { config, diagnostics };
@@ -417,4 +433,42 @@ export function loadConfig(agentDir: string): {
   }
   const { config, diagnostics } = normalizeConfig(parsed);
   return { config, diagnostics, path };
+}
+
+function readConfigRoot(path: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function mergeSeparatorText(value: unknown, text: string): unknown {
+  return isRecord(value) ? { ...value, text } : text;
+}
+
+/** Persist only statusline options, preserving the rest of the config file. */
+export function saveOptions(
+  agentDir: string,
+  options: StatuslineOptions,
+): string {
+  const path = join(agentDir, CONFIG_FILE_NAME);
+  const root = readConfigRoot(path);
+  const currentOptions = isRecord(root.options) ? root.options : {};
+  root.options = {
+    ...currentOptions,
+    componentSeparator: mergeSeparatorText(
+      currentOptions.componentSeparator,
+      options.componentSeparator.text,
+    ),
+    sectionSeparator: mergeSeparatorText(
+      currentOptions.sectionSeparator,
+      options.sectionSeparator.text,
+    ),
+    gitIntervalMs: options.gitIntervalMs,
+  };
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(path, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
+  return path;
 }

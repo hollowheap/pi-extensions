@@ -1,13 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnDetachedTask } from "@hollowheap/pi-tasks";
 import {
   cancelProcessGroup,
   isProcessAlive,
   isSocketConnectable,
-  spawnDetachedProcess,
+  waitForProcessExit,
 } from "@hollowheap/process";
-import { RUNNER_SHIM } from "./runner-shim.js";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
 
@@ -18,12 +19,16 @@ export interface StartSubagentOptions {
   task: string;
   depth: number;
   attempt?: number;
+  parentSession?: string;
   command: string;
   args?: readonly string[];
   cwd: string;
   env?: NodeJS.ProcessEnv;
   model?: string;
   sessionPath?: string;
+  harness?: string;
+  inputMode?: "jsonl" | "text";
+  initialInput?: string;
   timeoutMs?: number;
 }
 
@@ -36,7 +41,13 @@ interface RunnerConfig {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  inputMode: "jsonl" | "text";
+  initialInput?: string;
 }
+
+const RUNNER_SHIM = fileURLToPath(
+  new URL("../runner-shim.mjs", import.meta.url),
+);
 
 export function generateSubagentId(): string {
   return `subagent-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
@@ -84,48 +95,81 @@ export async function startSubagent(
     task: options.task,
     depth: options.depth,
     attempt: options.attempt ?? 1,
+    ...(options.parentSession !== undefined
+      ? { parentSession: options.parentSession }
+      : {}),
     startedAt: Date.now(),
     socket: socketPath,
+    harness: options.harness ?? "pi",
+    inputMode: options.inputMode ?? "jsonl",
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.sessionPath !== undefined
       ? { session: options.sessionPath }
       : {}),
   };
-  store.ensureLog(id);
-  store.write(state);
-
   const configPath = join(store.dir, `${id}.runner.json`);
   const runnerLogPath = join(store.dir, `${id}.runner.log`);
-  writeConfig(configPath, {
-    id,
-    statePath: store.statePath(id),
-    logPath: store.logPath(id),
-    socketPath,
-    command: options.command,
-    args: [...(options.args ?? [])],
-    cwd: options.cwd,
-    env: options.env ?? {},
-  });
-
-  const runner = spawnDetachedProcess({
-    command: process.execPath,
-    args: ["-e", RUNNER_SHIM, configPath],
-    cwd: options.cwd,
-    logPath: runnerLogPath,
-  });
+  let runner: ReturnType<typeof spawnDetachedTask> | undefined;
+  let runnerError: Error | undefined;
 
   try {
-    await waitForRunner(state, options.timeoutMs ?? 2_000);
-  } catch (error) {
-    await cancelProcessGroup(runner.pid, runner.startTime, 100);
-    store.update(id, {
-      status: "failed",
-      finishedAt: Date.now(),
-      exitCode: null,
+    store.ensureLog(id);
+    writeConfig(configPath, {
+      id,
+      statePath: store.statePath(id),
+      logPath: store.logPath(id),
+      socketPath,
+      command: options.command,
+      args: [...(options.args ?? [])],
+      cwd: options.cwd,
+      env: options.env ?? {},
+      inputMode: options.inputMode ?? "jsonl",
+      ...(options.initialInput !== undefined
+        ? { initialInput: options.initialInput }
+        : {}),
     });
+    runner = spawnDetachedTask({
+      store: store.store,
+      state,
+      command: process.execPath,
+      args: [RUNNER_SHIM, configPath],
+      cwd: options.cwd,
+      logPath: runnerLogPath,
+      patch: (spawned) => ({
+        runnerPid: spawned.pid,
+        runnerStartTime: spawned.startTime,
+      }),
+    });
+    runner.child.once("error", (error) => {
+      runnerError = error;
+    });
+    try {
+      await waitForRunner(state, options.timeoutMs ?? 5_000, runner);
+    } catch (error) {
+      throw runnerError ?? error;
+    }
+    return store.read(id) ?? state;
+  } catch (error) {
+    if (runner !== undefined) {
+      await cancelProcessGroup(runner.pid, runner.startTime, 150);
+    }
+    try {
+      store.updateIf(id, (current) => current.status !== "cancelled", {
+        status: "failed",
+        finishedAt: Date.now(),
+        exitCode: null,
+      });
+    } catch {
+      // Preserve the startup error if the state lock is also unavailable.
+    }
     throw error;
+  } finally {
+    try {
+      rmSync(configPath, { force: true });
+    } catch {
+      // Best-effort cleanup of the runner config (which contains child env).
+    }
   }
-  return store.read(id) ?? state;
 }
 
 export async function attachSubagent(
@@ -135,7 +179,7 @@ export async function attachSubagent(
   const store = new SubagentStore(agentDir);
   const state = store.read(id);
   if (state === undefined) return undefined;
-  const reconciled = reconcileSubagent(agentDir, state);
+  const reconciled = await reconcileSubagent(agentDir, state);
   if (reconciled.status !== "running") return reconciled;
   if (reconciled.socket !== undefined) {
     try {
@@ -159,7 +203,15 @@ export async function sendSubagent(
   if (state.status !== "running") {
     throw new Error(`subagent is not running: ${id}`);
   }
-  await runnerRequest(state, "send", payload, options);
+  const input =
+    state.inputMode === "text" &&
+    typeof payload === "object" &&
+    payload !== null &&
+    "message" in payload &&
+    typeof payload.message === "string"
+      ? payload.message
+      : payload;
+  await runnerRequest(state, "send", input, options);
 }
 
 export async function abortSubagent(
@@ -170,20 +222,32 @@ export async function abortSubagent(
   const store = new SubagentStore(agentDir);
   const state = store.read(id);
   if (state === undefined) throw new Error(`subagent not found: ${id}`);
-  if (state.status !== "running") return;
-  // Check if process is dead
-  if (
-    (state.pid !== undefined && !isProcessAlive(state.pid)) ||
-    (state.socket !== undefined && !(await isSocketConnectable(state.socket)))
-  ) {
-    store.update(id, { status: "cancelled", finishedAt: Date.now() });
-    return;
-  }
+  if (state.status !== "running" && state.status !== "starting") return;
+  const pid = state.pid;
+  const runnerPid = state.runnerPid;
   try {
     await runnerRequest(state, "abort", undefined, options);
   } catch {
-    // Socket unreachable; update state directly
-    store.update(id, { status: "cancelled", finishedAt: Date.now() });
+    // The socket may be gone while the process is alive; kill the group.
+    if (runnerPid !== undefined) {
+      await cancelProcessGroup(runnerPid, state.runnerStartTime, 250);
+    }
+    if (pid !== undefined && isProcessAlive(pid, state.startTime)) {
+      await cancelProcessGroup(pid, state.startTime, 250);
+    }
+  } finally {
+    if (runnerPid !== undefined) {
+      await waitForProcessExit(runnerPid, state.runnerStartTime, {
+        timeoutMs: 1_000,
+      });
+    }
+    if (pid !== undefined) {
+      await waitForProcessExit(pid, state.startTime, { timeoutMs: 1_000 });
+    }
+    store.updateIf(id, (current) => current.status !== "completed", {
+      status: "cancelled",
+      finishedAt: Date.now(),
+    });
   }
 }
 
@@ -198,7 +262,7 @@ export async function waitSubagent(
   while (true) {
     const state = store.read(id);
     if (state === undefined) return undefined;
-    const reconciled = reconcileSubagent(agentDir, state);
+    const reconciled = await reconcileSubagent(agentDir, state);
     if (reconciled.status !== "running" && reconciled.status !== "starting")
       return reconciled;
     if (signal?.aborted || Date.now() >= deadline) return state;
@@ -206,37 +270,43 @@ export async function waitSubagent(
   }
 }
 
-function isSocketAlive(socketPath: string | undefined): boolean {
-  if (socketPath === undefined) return true; // unknown, assume alive
-  return existsSync(socketPath);
-}
+const STARTUP_GRACE_MS = 5_000;
 
-export function reconcileSubagent(
+export async function reconcileSubagent(
   agentDir: string,
   state: SubagentState,
-): SubagentState {
-  if (
-    (state.status === "running" || state.status === "starting") &&
-    ((state.pid !== undefined && !isProcessAlive(state.pid)) ||
-      (state.socket !== undefined && !isSocketAlive(state.socket)))
-  ) {
-    const store = new SubagentStore(agentDir);
-    const updated: SubagentState = {
-      ...state,
-      status: "failed",
-      finishedAt: Date.now(),
-      exitCode: null,
-    };
-    store.write(updated);
-    return updated;
-  }
-  return state;
+): Promise<SubagentState> {
+  if (state.status !== "running" && state.status !== "starting") return state;
+  const childAlive =
+    state.pid !== undefined && isProcessAlive(state.pid, state.startTime);
+  const runnerAlive =
+    state.runnerPid !== undefined &&
+    isProcessAlive(state.runnerPid, state.runnerStartTime);
+  const withinStartupGrace = Date.now() - state.startedAt < STARTUP_GRACE_MS;
+  const deadProcess = state.pid !== undefined && !childAlive && !runnerAlive;
+  const missingProcess = state.pid === undefined && !withinStartupGrace;
+  const deadSocket =
+    !withinStartupGrace &&
+    state.socket !== undefined &&
+    !(await isSocketConnectable(state.socket));
+  if (!deadProcess && !missingProcess && !deadSocket) return state;
+  const store = new SubagentStore(agentDir);
+  return (
+    store.updateIf(
+      state.id,
+      (current) =>
+        current.status === "running" || current.status === "starting",
+      { status: "failed", finishedAt: Date.now(), exitCode: null },
+    ) ?? state
+  );
 }
 
-export function listSubagents(agentDir: string): SubagentState[] {
+export async function listSubagents(
+  agentDir: string,
+): Promise<SubagentState[]> {
   const store = new SubagentStore(agentDir);
   const all = store.list();
-  return all.map((s) => reconcileSubagent(agentDir, s));
+  return Promise.all(all.map((s) => reconcileSubagent(agentDir, s)));
 }
 
 export function readSubagentLog(agentDir: string, id: string): string {

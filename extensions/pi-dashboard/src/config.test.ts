@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -8,6 +8,7 @@ import {
   defaultConfig,
   loadConfig,
   normalizeConfig,
+  saveDashboardSettings,
 } from "./config.js";
 
 describe("default banner", () => {
@@ -51,6 +52,14 @@ describe("normalizeConfig", () => {
     ]) {
       expect(normalizeConfig(bad).diagnostics).toHaveLength(1);
     }
+  });
+
+  it("accepts a version section", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: [{ type: "version", gap: 1 }],
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.sections).toEqual([{ type: "version", gap: 1 }]);
   });
 
   it("accepts header and terminal sections", () => {
@@ -143,6 +152,37 @@ describe("normalizeConfig", () => {
     expect(diagnostics).toHaveLength(4);
   });
 
+  it("saves a header preset while preserving terminal sections", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
+    writeFileSync(
+      join(dir, "dashboard.json"),
+      JSON.stringify({
+        width: 80,
+        sections: [
+          { type: "header", ascii: ["custom"], gap: 0 },
+          { type: "terminal", command: "echo hi", intervalMs: 5000 },
+        ],
+      }),
+    );
+
+    saveDashboardSettings(dir, { header: "version", gap: 1 });
+    const saved = JSON.parse(
+      readFileSync(join(dir, "dashboard.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved.sections).toEqual([
+      { type: "version", gap: 1 },
+      { type: "terminal", command: "echo hi", intervalMs: 5000 },
+    ]);
+
+    saveDashboardSettings(dir, { header: "none", gap: 0 });
+    const hidden = JSON.parse(
+      readFileSync(join(dir, "dashboard.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(hidden.sections).toEqual([
+      { type: "terminal", command: "echo hi", intervalMs: 5000 },
+    ]);
+  });
+
   it("flags stale top-level source keys", () => {
     const { diagnostics } = normalizeConfig({
       source: { ascii: ["hi"] },
@@ -166,5 +206,13 @@ describe("loadConfig", () => {
     writeFileSync(join(dir, "dashboard.json"), "{oops");
     const { diagnostics } = loadConfig(dir);
     expect(diagnostics).toHaveLength(1);
+  });
+
+  it("reports non-missing read failures", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
+    mkdirSync(join(dir, "dashboard.json"));
+    const { diagnostics } = loadConfig(dir);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("dashboard.json");
   });
 });

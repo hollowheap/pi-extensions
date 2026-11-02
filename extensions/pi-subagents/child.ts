@@ -55,16 +55,24 @@ export function createChildLockExtension(
       if (!WRITE_TOOLS.has(event.toolName)) return;
       const agentDir = resolveAgentDir();
       const config = loadSubagentsConfig(agentDir);
-      const releaseLock = await acquireWriteLock(agentDir, {
-        timeoutMs: config.writeLockTimeoutMs,
-      });
-      releases.set(event.toolCallId, releaseLock);
-      const timer = setTimeout(() => release(event.toolCallId), holdTimeoutMs);
-      timer.unref?.();
-      timers.set(event.toolCallId, timer);
+      try {
+        const releaseLock = await acquireWriteLock(agentDir, {
+          timeoutMs: config.writeLockTimeoutMs,
+        });
+        releases.set(event.toolCallId, releaseLock);
+        const timer = setTimeout(
+          () => release(event.toolCallId),
+          holdTimeoutMs,
+        );
+        timer.unref?.();
+        timers.set(event.toolCallId, timer);
+      } catch (error) {
+        release(event.toolCallId);
+        throw error;
+      }
     });
 
-    pi.on("tool_result", (event) => {
+    const finishTool = (toolCallId: string): void => {
       const subagentId = process.env.PI_SUBAGENT_ID;
       if (subagentId) {
         try {
@@ -77,7 +85,15 @@ export function createChildLockExtension(
           // Best-effort
         }
       }
-      release(event.toolCallId);
+      release(toolCallId);
+    };
+
+    pi.on("tool_result", (event) => {
+      finishTool(event.toolCallId);
+    });
+
+    pi.on("tool_execution_end", (event) => {
+      finishTool(event.toolCallId);
     });
 
     pi.on("session_shutdown", () => {

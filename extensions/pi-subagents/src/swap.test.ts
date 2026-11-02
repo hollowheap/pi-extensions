@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import {
   formatModelId,
@@ -6,7 +6,46 @@ import {
   isModelAvailable,
   resolveSubagentModel,
 } from "./swap.js";
-import { type SubagentToolDeps, createSubagentTool } from "./tool.js";
+import { createSubagentTool } from "./tool.js";
+
+const mocks = vi.hoisted(() => ({
+  getAgentDir: vi.fn(),
+  listSubagents: vi.fn(),
+  readSubagentLog: vi.fn(),
+  discoverAgents: vi.fn(),
+  loadSubagentsConfig: vi.fn(),
+  startSubagent: vi.fn(),
+  sendSubagent: vi.fn(),
+  attachSubagent: vi.fn(),
+  abortSubagent: vi.fn(),
+  waitSubagent: vi.fn(),
+  generateSubagentId: vi.fn(),
+}));
+
+vi.mock("./runner.js", () => ({
+  startSubagent: mocks.startSubagent,
+  attachSubagent: mocks.attachSubagent,
+  sendSubagent: mocks.sendSubagent,
+  abortSubagent: mocks.abortSubagent,
+  waitSubagent: mocks.waitSubagent,
+  listSubagents: mocks.listSubagents,
+  readSubagentLog: mocks.readSubagentLog,
+  generateSubagentId: mocks.generateSubagentId,
+}));
+
+vi.mock("./agents.js", () => ({
+  discoverAgents: mocks.discoverAgents,
+}));
+
+vi.mock("./config.js", () => ({
+  loadSubagentsConfig: mocks.loadSubagentsConfig,
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+  return { ...actual, getAgentDir: mocks.getAgentDir };
+});
 
 const baseAgent: AgentConfig = {
   name: "scout",
@@ -15,6 +54,42 @@ const baseAgent: AgentConfig = {
   source: "user",
   filePath: "/tmp/scout.md",
 };
+
+function started(params: { model?: string }) {
+  return {
+    id: "sub-1",
+    status: "running" as const,
+    agent: "scout",
+    task: "test",
+    depth: 1,
+    attempt: 1,
+    startedAt: 1,
+    socket: "/tmp/sub.sock",
+    ...(params.model !== undefined ? { model: params.model } : {}),
+  };
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.getAgentDir.mockReturnValue("/tmp/pi-subagents-test");
+  mocks.listSubagents.mockResolvedValue([]);
+  mocks.readSubagentLog.mockReturnValue("");
+  mocks.discoverAgents.mockReturnValue({ agents: [baseAgent] });
+  mocks.loadSubagentsConfig.mockReturnValue({
+    maxConcurrent: 4,
+    maxDepth: 1,
+    defaultTimeoutMs: 30 * 60 * 1_000,
+    writeLockTimeoutMs: 30_000,
+    path: "/tmp/subagents.json",
+    diagnostics: [],
+  });
+  mocks.startSubagent.mockImplementation(async (params) => started(params));
+  mocks.sendSubagent.mockResolvedValue(undefined);
+  mocks.attachSubagent.mockResolvedValue(undefined);
+  mocks.abortSubagent.mockResolvedValue(undefined);
+  mocks.waitSubagent.mockResolvedValue(undefined);
+  mocks.generateSubagentId.mockReturnValue("sub-1");
+});
 
 describe("swap helper unit tests", () => {
   it("formats model ids from string or object", () => {
@@ -139,37 +214,19 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ...baseAgent,
       model: "anthropic/claude-3-5-sonnet",
     };
-    const start = vi.fn(async (params) => ({
-      id: "sub-1",
-      status: "running" as const,
-      agent: "scout",
-      task: "test",
-      depth: 1,
-      attempt: 1,
-      startedAt: 1,
-      socket: "/tmp/sub.sock",
-      model: params.model,
-    }));
+    mocks.discoverAgents.mockReturnValue({ agents: [agentWithModel] });
 
-    const deps: Partial<SubagentToolDeps> = {
-      getAgentDir: () => "/tmp/pi-subagents-test",
-      list: (() => []) as never,
-      log: (() => "") as never,
-      agents: (() => ({ agents: [agentWithModel] })) as never,
-      childSpec: ((a: AgentConfig) => ({
-        command: "pi",
-        args: a.model ? ["--model", a.model] : [],
-      })) as never,
-      start: start as never,
-      send: vi.fn(async () => undefined) as never,
-      resolveModel: vi.fn(async (a: AgentConfig) => a.model),
-    };
-
-    const tool = createSubagentTool(deps);
+    const tool = createSubagentTool();
     const ctx = {
       cwd: "/repo",
       isProjectTrusted: () => true,
       model: "openai/gpt-4o",
+      modelRegistry: {
+        getAvailable: async () => [
+          "openai/gpt-4o",
+          "anthropic/claude-3-5-sonnet",
+        ],
+      },
     };
 
     // Caller attempts to inject { model: "malicious/override-model" }
@@ -186,7 +243,7 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ctx as never,
     );
 
-    expect(start).toHaveBeenCalledWith(
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "anthropic/claude-3-5-sonnet",
       }),
@@ -198,37 +255,20 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ...baseAgent,
       model: "opencode-go/beam-free",
     };
-    const start = vi.fn(async (params) => ({
-      id: "sub-1",
-      status: "running" as const,
-      agent: "scout",
-      task: "test",
-      depth: 1,
-      attempt: 1,
-      startedAt: 1,
-      socket: "/tmp/sub.sock",
-      model: params.model,
-    }));
+    mocks.discoverAgents.mockReturnValue({ agents: [agentWithBadModel] });
 
-    const deps: Partial<SubagentToolDeps> = {
-      getAgentDir: () => "/tmp/pi-subagents-test",
-      list: (() => []) as never,
-      log: (() => "") as never,
-      agents: (() => ({ agents: [agentWithBadModel] })) as never,
-      childSpec: ((a: AgentConfig) => ({
-        command: "pi",
-        args: a.model ? ["--model", a.model] : [],
-      })) as never,
-      start: start as never,
-      send: vi.fn(async () => undefined) as never,
-      resolveModel: vi.fn(async () => "openai/gpt-4o"),
-    };
-
-    const tool = createSubagentTool(deps);
+    const tool = createSubagentTool();
     const ctx = {
       cwd: "/repo",
       isProjectTrusted: () => true,
       model: "openai/gpt-4o",
+      hasUI: true,
+      modelRegistry: {
+        getAvailable: async () => ["openai/gpt-4o"],
+      },
+      ui: {
+        select: vi.fn(async () => "openai/gpt-4o"),
+      },
     };
 
     await tool.execute(
@@ -239,8 +279,8 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ctx as never,
     );
 
-    expect(deps.resolveModel).toHaveBeenCalledWith(agentWithBadModel, ctx);
-    expect(start).toHaveBeenCalledWith(
+    expect(ctx.ui.select).toHaveBeenCalled();
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "openai/gpt-4o",
       }),
@@ -252,47 +292,26 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ...baseAgent,
       model: "opencode-go/beam-free",
     };
-    const start = vi.fn(async (params) => ({
+    mocks.discoverAgents.mockReturnValue({ agents: [agent] });
+    mocks.attachSubagent.mockResolvedValue({
       id: "sub-1",
-      status: "running" as const,
+      status: "failed",
       agent: "scout",
       task: "resumed task",
       depth: 1,
-      attempt: 2,
+      attempt: 1,
       startedAt: 1,
-      socket: "/tmp/sub.sock",
-      model: params.model,
-    }));
+      model: "swapped/active-model",
+    });
 
-    const deps: Partial<SubagentToolDeps> = {
-      getAgentDir: () => "/tmp/pi-subagents-test",
-      list: (() => []) as never,
-      log: (() => "") as never,
-      agents: (() => ({ agents: [agent] })) as never,
-      attach: (async () => ({
-        id: "sub-1",
-        status: "failed" as const,
-        agent: "scout",
-        task: "resumed task",
-        depth: 1,
-        attempt: 1,
-        startedAt: 1,
-        model: "swapped/active-model",
-      })) as never,
-      childSpec: ((a: AgentConfig) => ({
-        command: "pi",
-        args: a.model ? ["--model", a.model] : [],
-      })) as never,
-      start: start as never,
-      send: vi.fn(async () => undefined) as never,
-      resolveModel: vi.fn(async (a: AgentConfig) => a.model),
-    };
-
-    const tool = createSubagentTool(deps);
+    const tool = createSubagentTool();
     const ctx = {
       cwd: "/repo",
       isProjectTrusted: () => true,
       model: "openai/gpt-4o",
+      modelRegistry: {
+        getAvailable: async () => ["openai/gpt-4o", "swapped/active-model"],
+      },
     };
 
     await tool.execute(
@@ -303,7 +322,7 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       ctx as never,
     );
 
-    expect(start).toHaveBeenCalledWith(
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "swapped/active-model",
       }),

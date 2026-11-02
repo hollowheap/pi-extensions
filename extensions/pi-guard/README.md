@@ -119,8 +119,14 @@ Defaults per mode:
 
 `plan` additionally asks for edits to `artifacts/plan.md` and `artifacts/specs.md` (resolved against the effective working directory) and denies other edits. A `deny` rule still wins over the mode.
 
-The active mode is persisted in the session file as the custom entry `hollowheap.core.mode`, so `session resume` and `session fork` keep it. A restored mode that no longer exists falls back to `ask` with a diagnostic, and restoring re-runs the entry gates — entering `autopilot` without a token cap is refused and falls back to `ask`.
+The active mode is persisted in the session file as the custom entry `hollowheap.core.mode`, so `session resume` and `session fork` keep it. A restored mode that no longer exists falls back to `ask` with a diagnostic, and restoring re-runs the entry gates. Entering `autopilot` has no mandatory budget cap; `/usage cap` is optional.
+
+## Temporary grants
+
+`/grant <path-or-tool> <duration>` temporarily allows one exact target in the current session. Durations accept `s`, `m`, or `h` (for example `30s`, `5m`, `1h`). Targets may contain spaces, so `/grant git status 5m` grants the exact shell target `git status`.
+
+In TUI mode, `/grant` without arguments opens a fuzzy picker over recently checked permission targets, then asks for a duration. `/grant <target>` asks only for the duration. Tab completion offers recent targets and duration presets. `/grants` lists active grants and their remaining time. Grants expire at their deadline or when the session ends.
 
 ## Statusline values
 
-This package publishes `mode-guard` (the current mode) for statusline extensions over pi's shared event bus, following the protocol in `pi-statusline`'s README. (`pi-budgets` publishes `budgets` the same way.) No imports cross between the packages in either direction.
+This package publishes `mode-guard` (the current mode) for statusline extensions over pi's shared event bus, following the protocol in `pi-statusline`'s README. (`pi-usage` publishes `usage` the same way.) No imports cross between the packages in either direction.

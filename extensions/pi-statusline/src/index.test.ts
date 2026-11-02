@@ -1,10 +1,21 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setCwd } from "@hollowheap/core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+const state = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
 }));
+
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+  getAgentDir: () => state.agentDir,
+}));
+
+afterEach(() => {
+  state.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+});
 
 function createMockPi() {
   return {
@@ -12,6 +23,13 @@ function createMockPi() {
       (_event: string, _fn: (event: never, ctx: never) => void) => () => {},
     ),
     registerCommand: vi.fn(),
+    exec: vi.fn().mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      code: 1,
+      killed: false,
+    }),
+    sendUserMessage: vi.fn(),
     events: {
       on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
       emit: vi.fn((_channel: string, _data: unknown) => {}),
@@ -28,6 +46,7 @@ function handlers(
 function createMockCtx(overrides: Record<string, unknown> = {}) {
   return {
     mode: "tui",
+    hasUI: true,
     cwd: "/home/u/app",
     model: { id: "anthropic/claude-opus-4-6" },
     sessionManager: { getBranch: () => [] },
@@ -36,7 +55,13 @@ function createMockCtx(overrides: Record<string, unknown> = {}) {
       contextWindow: 200000,
       percent: 0.5,
     }),
-    ui: { setFooter: vi.fn(), notify: vi.fn(), setStatus: vi.fn() },
+    ui: {
+      setFooter: vi.fn(),
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      setWorkingIndicator: vi.fn(),
+      setHiddenThinkingLabel: vi.fn(),
+    },
     ...overrides,
   };
 }
@@ -86,7 +111,7 @@ describe("pi-statusline extension", () => {
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     const { component } = installFooter(pi, createMockCtx());
     expect(pi.events.emit).toHaveBeenCalledWith("statusline:request", {
-      names: ["mode-guard", "budgets"],
+      names: ["mode-guard", "usage"],
     });
     publish(pi, "mode-guard", "PLAN");
     const lines = component.render(80);
@@ -131,6 +156,117 @@ describe("pi-statusline extension", () => {
     installFooter(pi, ctx);
     handlers(pi).session_shutdown(undefined as never, ctx as never);
     expect(ctx.ui.setFooter).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("renders values that arrive before the footer factory runs", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx();
+    const setFooter = vi.fn();
+    ctx.ui.setFooter = setFooter;
+    handlers(pi).session_start(undefined as never, ctx as never);
+    publish(pi, "mode-guard", "PLAN");
+
+    const factory = setFooter.mock.calls[0][0];
+    const component = factory(
+      { requestRender: vi.fn() },
+      {},
+      { getGitBranch: () => "main", onBranchChange: vi.fn(() => () => {}) },
+    );
+    expect(component.render(80)[0]).toContain("PLAN");
+  });
+
+  it("clears provider values on session_start", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    publish(pi, "mode-guard", "OLD");
+    const { component } = installFooter(pi, createMockCtx());
+    expect(component.render(80)[0]).not.toContain("OLD");
+  });
+
+  it("runs configured click actions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    writeFileSync(
+      join(dir, "statusline.json"),
+      JSON.stringify({ clickActions: { model: "echo clicked" } }),
+    );
+    state.agentDir = dir;
+    const pi = createMockPi();
+    pi.exec.mockResolvedValue({
+      stdout: "done\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+    extension(pi as never);
+    handlers(pi).session_start(undefined as never, createMockCtx() as never);
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "statusline",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const ctx = createMockCtx();
+
+    await command.handler("click model", ctx);
+
+    expect(pi.exec).toHaveBeenCalledWith("echo", ["clicked"]);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Running: echo clicked", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("done", "info");
+  });
+
+  it("customizes the working indicator and hidden-thinking label", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "statusline",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const ctx = createMockCtx();
+
+    await command.handler("working pulse", ctx);
+    expect(ctx.ui.setWorkingIndicator).toHaveBeenLastCalledWith({
+      frames: ["●", "○"],
+      intervalMs: 400,
+    });
+
+    await command.handler("thinking reasoning", ctx);
+    expect(ctx.ui.setHiddenThinkingLabel).toHaveBeenCalledWith("reasoning");
+  });
+
+  it("maps default slash actions", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    handlers(pi).session_start(undefined as never, createMockCtx() as never);
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "statusline",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const ctx = createMockCtx();
+
+    await command.handler("click mode", ctx);
+
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("/mode", {
+      expandPromptTemplates: true,
+    });
+  });
+
+  it("ignores model updates from another session", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx();
+    const { component } = installFooter(pi, ctx);
+
+    handlers(pi).model_select(
+      { model: { id: "other/model" } } as never,
+      {
+        ...ctx,
+        sessionManager: {},
+      } as never,
+    );
+
+    expect(component.render(80)[0]).toContain("claude-opus-4-6");
   });
 
   it("falls back to hollowheap.usage custom entry when message cost is 0", () => {

@@ -1,6 +1,6 @@
 # pi-web
 
-Direct `web_search` and `web_fetch` tools for the Pi coding agent. Both are plain direct tools: no browser, no JavaScript rendering, and no codemode-only surface.
+`web_search` and `web_fetch` codemode tools for the Pi coding agent. No browser and no JavaScript rendering.
 
 ## Try it
 
@@ -44,7 +44,9 @@ export FIRECRAWL_API_KEY=...
 }
 ```
 
-Unkeyed providers are skipped. Unknown names and `keys` fields are ignored with a diagnostic; keys must stay in the environment. Invalid JSON or non-object roots fall back to defaults.
+Unkeyed providers are skipped. When no search provider has a key, or all configured providers fail, `web_search` falls back to keyless DuckDuckGo HTML search. Unknown names and `keys` fields are ignored with a diagnostic; keys must stay in the environment. Invalid JSON or non-object roots fall back to defaults.
+
+In TUI mode, `/web` opens a settings list for the preferred search and fetch provider. Saving rewrites only the chosen order arrays and preserves unrelated `web.json` fields. `/web insert <n>` pastes a recent search/fetch result URL into the editor; `/web insert` lists the stored links.
 
 ## Tools
 
@@ -81,13 +83,16 @@ Output:
 
 Links cap at 50; media caps at 20. Media metadata is `image`, `video`, `audio`, `pdf`, or `other`. `media` never contains image blocks, base64, or downloaded files; `data:` URLs are dropped from links and media.
 
+Expanded `web_search` and `web_fetch` results render as Markdown; collapsed results keep the compact text preview. URLs use OSC 8 hyperlinks when the terminal supports them, and expanded fetches list media metadata under `## Media`. On image-capable terminals, up to two image media entries (2 MB each) are fetched as bounded previews and rendered with the `Image` component; failures fall back to links.
+
 ## Safety and limits
 
 - Only `http` and `https`; credentialed URLs are rejected.
 - Loopback, private, link-local, unspecified, and metadata targets are rejected.
 - Raw HTTP redirects are revalidated on every hop and capped at 5.
-- DNS rebinding is not hardened: a hostname that resolves to a private address may still pass.
+- Hostnames are resolved before raw fetches and rejected if any address is private; DNS rebinding between lookup and connect is not hardened.
+- Raw response bodies are capped at 5 MB and report `truncated: true` when cut.
 - No browser or JavaScript rendering. JS-only pages may be empty or incomplete.
 - Provider requests time out after 15 seconds.
-- No response cache: identical calls invoke the provider again.
+- Raw fetches use a 5-minute bounded cache and a serialized 1-second request interval.
 - `web_search` sends the query to the selected search provider. `web_fetch` sends the URL to the selected fetch provider, or fetches it directly for the raw fallback. Do not send secrets in queries or URLs.

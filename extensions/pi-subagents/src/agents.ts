@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
@@ -12,6 +12,7 @@ export interface AgentConfig {
   thinking?: string;
   mode?: string;
   effort?: string;
+  harness?: string;
   systemPrompt: string;
   source: "user" | "project";
   filePath: string;
@@ -37,6 +38,7 @@ type AgentFrontmatter = {
   thinking?: unknown;
   mode?: unknown;
   effort?: unknown;
+  harness?: unknown;
 };
 
 function parseTools(value: unknown): string[] | undefined {
@@ -97,6 +99,10 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
         frontmatter.effort.trim() !== ""
           ? { effort: frontmatter.effort.trim() }
           : {}),
+        ...(typeof frontmatter.harness === "string" &&
+        frontmatter.harness.trim() !== ""
+          ? { harness: frontmatter.harness.trim() }
+          : {}),
         systemPrompt: body.trim(),
         source,
         filePath,
@@ -109,13 +115,15 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
 }
 
 function findProjectAgentsDir(cwd: string): string | undefined {
-  let current = cwd;
+  let current = resolve(cwd);
   while (true) {
     const candidate = join(current, ".pi", "agents");
-    if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-      return candidate;
+    try {
+      if (statSync(candidate).isDirectory()) return candidate;
+    } catch {
+      // Ignore inaccessible candidates and keep walking up.
     }
-    const parent = join(current, "..");
+    const parent = resolve(current, "..");
     if (parent === current) return undefined;
     current = parent;
   }

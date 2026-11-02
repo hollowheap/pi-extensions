@@ -21,17 +21,16 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.2.0` | Policy enforcement, approvals, shell safety gates, and modes |
 | [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.2.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
 | [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.2.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-budgets`](./extensions/pi-budgets) | `0.2.0` | Token usage tracking, `/budget` controls, and hard-cap gates |
 | [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.2.0` | Hands-free autopilot mode for autonomous workflow loops |
-| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.2.0` | High-speed ripgrep/fd search tools and `/cd` navigation |
-| [`@hollowheap/pi-code-intel`](./extensions/pi-code-intel) | `0.2.0` | Read-only LSP code intelligence via a direct `code_intel` tool |
+| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.2.0` | Workspace `/cd` control |
+| [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.2.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
 | [`@hollowheap/pi-question`](./extensions/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
 | [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
-| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks via a direct `task` tool |
-| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, and explicit resume |
+| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks and shared task lifecycle primitives |
+| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, explicit resume, and generic CLI harnesses |
 | [`@hollowheap/pi-classifier`](./extensions/pi-classifier) | `0.2.0` | Advisory classifier tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
-| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Session custom entry persistence (`hollowheap.usage`) and compaction-safe cumulative tracking |
+| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Compaction-safe usage tracking, optional `/usage cap`, and statusline usage |
 | [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---

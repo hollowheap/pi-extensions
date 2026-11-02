@@ -52,9 +52,13 @@ export function resolveCanonicalPath(
 /**
  * Checks whether targetPath is within root, strictly blocking ../ traversal and symlink escapes.
  */
-export function isSubpath(root: string, targetPath: string): boolean {
+export function isSubpath(
+  root: string,
+  targetPath: string,
+  baseRoot = process.cwd(),
+): boolean {
   try {
-    const canonicalRoot = resolveCanonicalPath(process.cwd(), root);
+    const canonicalRoot = resolveCanonicalPath(baseRoot, root);
     const canonicalTarget = resolveCanonicalPath(canonicalRoot, targetPath);
     const rel = relative(canonicalRoot, canonicalTarget);
     return (
@@ -64,6 +68,29 @@ export function isSubpath(root: string, targetPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function mostSpecificDecision(
+  entries: Iterable<[string, DecisionEffect]>,
+  target: string,
+  baseRoot: string,
+): DecisionEffect | undefined {
+  let bestPath: string | undefined;
+  let best: DecisionEffect | undefined;
+  for (const [decidedPath, effect] of entries) {
+    if (!isSubpath(decidedPath, target, baseRoot)) continue;
+    if (bestPath === undefined || decidedPath.length > bestPath.length) {
+      bestPath = decidedPath;
+      best = effect;
+    } else if (
+      decidedPath.length === bestPath.length &&
+      effect !== "allow" &&
+      best === "allow"
+    ) {
+      best = effect;
+    }
+  }
+  return best;
 }
 
 export interface PathTrustVerdict {
@@ -96,7 +123,7 @@ export function checkPathTrust(
 
   // Check if inside any configured trusted root
   for (const root of trustedRoots) {
-    if (isSubpath(root, canonicalTarget)) {
+    if (isSubpath(root, canonicalTarget, workspaceRoot)) {
       return {
         isOutsideWorkspace: true,
         isTrusted: true,
@@ -105,30 +132,25 @@ export function checkPathTrust(
     }
   }
 
-  // Check cached decisions: exact match first
+  // Check cached decisions: exact match first, then the most specific subpath.
   let cachedDecision: DecisionEffect | undefined =
     sessionDecisions?.get(canonicalTarget);
-  if (cachedDecision === undefined && persistentDecisions) {
-    cachedDecision = persistentDecisions[canonicalTarget];
+  if (cachedDecision === undefined) {
+    cachedDecision = persistentDecisions?.[canonicalTarget];
   }
-
-  // Subpath match on cached decisions (e.g. whole directory was allowed/denied)
   if (cachedDecision === undefined && sessionDecisions) {
-    for (const [decidedPath, effect] of sessionDecisions.entries()) {
-      if (isSubpath(decidedPath, canonicalTarget)) {
-        cachedDecision = effect;
-        break;
-      }
-    }
+    cachedDecision = mostSpecificDecision(
+      sessionDecisions.entries(),
+      canonicalTarget,
+      workspaceRoot,
+    );
   }
-
   if (cachedDecision === undefined && persistentDecisions) {
-    for (const [decidedPath, effect] of Object.entries(persistentDecisions)) {
-      if (isSubpath(decidedPath, canonicalTarget)) {
-        cachedDecision = effect;
-        break;
-      }
-    }
+    cachedDecision = mostSpecificDecision(
+      Object.entries(persistentDecisions),
+      canonicalTarget,
+      workspaceRoot,
+    );
   }
 
   return {

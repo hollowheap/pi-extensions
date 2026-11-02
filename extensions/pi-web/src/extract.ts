@@ -16,7 +16,21 @@ export function decodeEntities(value: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/&#x27;/gi, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+    .replace(/&#(x?[0-9a-f]+);/gi, (_, raw: string) => {
+      const code =
+        raw[0]?.toLowerCase() === "x"
+          ? Number.parseInt(raw.slice(1), 16)
+          : Number(raw);
+      if (
+        !Number.isInteger(code) ||
+        code < 0 ||
+        code > 0x10ffff ||
+        (code >= 0xd800 && code <= 0xdfff)
+      ) {
+        return "\uFFFD";
+      }
+      return String.fromCodePoint(code);
+    });
 }
 
 export function stripTags(value: string): string {
@@ -81,7 +95,12 @@ export function extractLinks(html: string, base?: string): NormalizedLink[] {
 }
 
 function mimeFromUrl(url: string): string | undefined {
-  const path = new URL(url, "https://example.invalid").pathname;
+  let path: string;
+  try {
+    path = new URL(url, "https://example.invalid").pathname;
+  } catch {
+    return undefined;
+  }
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const mime: Record<string, string> = {
     png: "image/png",

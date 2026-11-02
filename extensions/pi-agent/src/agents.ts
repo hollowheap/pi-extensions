@@ -1,8 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-
-export type AgentScope = "user" | "project" | "both";
 
 export interface AgentConfig {
   name: string;
@@ -28,7 +26,6 @@ export interface DiscoverAgentsOptions {
   cwd: string;
   agentDir: string;
   trusted: boolean;
-  scope?: AgentScope;
 }
 
 type AgentFrontmatter = {
@@ -130,19 +127,25 @@ function loadDirectory(
         source,
         filePath,
       });
-    } catch {
-      // One malformed agent must not hide the rest.
+    } catch (error) {
+      diagnostics.push(
+        `${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   return agents;
 }
 
 function findProjectAgentsDir(cwd: string): string | undefined {
-  let current = cwd;
+  let current = resolve(cwd);
   while (true) {
     const candidate = join(current, ".pi", "agents");
-    if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-      return candidate;
+    try {
+      if (statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    } catch {
+      // Ignore inaccessible candidate paths and keep walking up.
     }
     const parent = join(current, "..");
     if (parent === current) return undefined;
@@ -153,21 +156,18 @@ function findProjectAgentsDir(cwd: string): string | undefined {
 export function discoverAgents(
   options: DiscoverAgentsOptions,
 ): AgentDiscoveryResult {
-  const scope = options.scope ?? "both";
   const projectAgentsDir = findProjectAgentsDir(options.cwd);
   const agents = new Map<string, AgentConfig>();
   const diagnostics: string[] = [];
 
-  if (scope !== "project") {
-    for (const agent of loadDirectory(
-      join(options.agentDir, "agents"),
-      "user",
-      diagnostics,
-    )) {
-      agents.set(agent.name, agent);
-    }
+  for (const agent of loadDirectory(
+    join(options.agentDir, "agents"),
+    "user",
+    diagnostics,
+  )) {
+    agents.set(agent.name, agent);
   }
-  if (scope !== "user" && options.trusted && projectAgentsDir !== undefined) {
+  if (options.trusted && projectAgentsDir !== undefined) {
     for (const agent of loadDirectory(
       projectAgentsDir,
       "project",

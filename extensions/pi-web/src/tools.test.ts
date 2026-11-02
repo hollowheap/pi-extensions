@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import {
   FETCH_DEFAULT_CHARS,
@@ -164,7 +166,7 @@ describe("web_fetch", () => {
     expect(details.finalUrl).toBe("https://example.com/final");
     expect(details.provider).toBeUndefined();
     expect(textOf(result)).toContain(
-      "*Redirected to: https://example.com/final*",
+      "*Redirected to: [https://example.com/final](https://example.com/final)*",
     );
     expect(textOf(result)).not.toContain("provider");
   });
@@ -363,6 +365,106 @@ describe("tool renderers", () => {
     expect(expanded).toContain("Doc snippet");
   });
 
+  it("links fetch URLs and renders media metadata", async () => {
+    const tool = createWebFetchTool({
+      fetch: vi.fn().mockResolvedValue({
+        url: "https://example.com",
+        finalUrl: "https://example.com",
+        contentType: "text/html",
+        content: "hello",
+        links: [],
+        media: [
+          {
+            url: "https://example.com/pic.png",
+            kind: "image" as const,
+            alt: "Pic",
+          },
+        ],
+        truncated: false,
+      }),
+    });
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+
+    const expandedComp = tool.renderResult?.(
+      result as never,
+      { expanded: true, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const expanded = expandedComp?.render(80).join("\n") ?? "";
+    expect(expanded).toContain("Media");
+    expect(expanded).toContain("Pic");
+    expect(expanded).toContain("https://example.com/pic.png");
+
+    const collapsedComp = tool.renderResult?.(
+      result as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const collapsed = collapsedComp?.render(80).join("\n") ?? "";
+    expect(collapsed).toContain("\x1b]8;;https://example.com\x1b\\");
+  });
+
+  it("renders inline image previews when the terminal supports them", async () => {
+    const previous = getCapabilities();
+    setCapabilities({
+      images: "kitty",
+      trueColor: true,
+      hyperlinks: true,
+    });
+    try {
+      const previewMedia = vi.fn(async () => ({
+        data: Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64"),
+        mimeType: "image/png",
+      }));
+      const tool = createWebFetchTool({
+        fetch: vi.fn().mockResolvedValue({
+          url: "https://example.com",
+          finalUrl: "https://example.com",
+          contentType: "text/html",
+          content: "hello",
+          links: [],
+          media: [
+            {
+              url: "https://example.com/pic.png",
+              kind: "image" as const,
+            },
+          ],
+          truncated: false,
+        }),
+        previewMedia,
+      });
+      const result = await tool.execute(
+        "1",
+        { url: "https://example.com" },
+        undefined,
+        undefined,
+        {} as never,
+      );
+      expect(previewMedia).toHaveBeenCalledWith(
+        "https://example.com/pic.png",
+        undefined,
+      );
+
+      const expandedComp = tool.renderResult?.(
+        result as never,
+        { expanded: true, isPartial: false },
+        mockTheme,
+        {} as never,
+      );
+      expect(expandedComp?.render(80).join("\n")).toContain("\x1b_G");
+    } finally {
+      setCapabilities(previous);
+    }
+  });
+
   it("renders web_fetch call and result", async () => {
     const tool = createWebFetchTool({
       fetch: vi.fn().mockResolvedValue({
@@ -399,5 +501,16 @@ describe("tool renderers", () => {
     const rendered = resComp?.render(80).join("\n") ?? "";
     expect(rendered).toContain("Fetched");
     expect(rendered).toContain("hello world");
+
+    const expandedComp = tool.renderResult?.(
+      result as never,
+      { expanded: true, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const expanded = expandedComp?.render(80).join("\n") ?? "";
+    expect(expanded).toContain("Fetched");
+    expect(expanded).toContain("hello world");
+    expect(expanded).toContain("line two");
   });
 });

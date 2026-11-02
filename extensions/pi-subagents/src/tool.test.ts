@@ -1,7 +1,51 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import type { SubagentState } from "./state.js";
-import { type SubagentToolDeps, createSubagentTool } from "./tool.js";
+import { createSubagentTool } from "./tool.js";
+
+const mocks = vi.hoisted(() => ({
+  getAgentDir: vi.fn(),
+  listSubagents: vi.fn(),
+  readSubagentLog: vi.fn(),
+  discoverAgents: vi.fn(),
+  loadSubagentsConfig: vi.fn(),
+  startSubagent: vi.fn(),
+  sendSubagent: vi.fn(),
+  attachSubagent: vi.fn(),
+  abortSubagent: vi.fn(),
+  waitSubagent: vi.fn(),
+  generateSubagentId: vi.fn(),
+  resolveSubagentModel: vi.fn(),
+}));
+
+vi.mock("./runner.js", () => ({
+  startSubagent: mocks.startSubagent,
+  attachSubagent: mocks.attachSubagent,
+  sendSubagent: mocks.sendSubagent,
+  abortSubagent: mocks.abortSubagent,
+  waitSubagent: mocks.waitSubagent,
+  listSubagents: mocks.listSubagents,
+  readSubagentLog: mocks.readSubagentLog,
+  generateSubagentId: mocks.generateSubagentId,
+}));
+
+vi.mock("./agents.js", () => ({
+  discoverAgents: mocks.discoverAgents,
+}));
+
+vi.mock("./config.js", () => ({
+  loadSubagentsConfig: mocks.loadSubagentsConfig,
+}));
+
+vi.mock("./swap.js", () => ({
+  resolveSubagentModel: mocks.resolveSubagentModel,
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+  return { ...actual, getAgentDir: mocks.getAgentDir };
+});
 
 const agent: AgentConfig = {
   name: "scout",
@@ -30,39 +74,100 @@ function detailsOf(result: { details: unknown }): Record<string, unknown> {
   return result.details as Record<string, unknown>;
 }
 
-function createTool(overrides: Partial<SubagentToolDeps> = {}) {
-  return createSubagentTool({
-    getAgentDir: () => "/tmp/pi-subagents-tool",
-    list: (() => []) as never,
-    log: (() => "") as never,
-    agents: (() => ({ agents: [agent] })) as never,
-    childSpec: (() => ({ command: "pi", args: ["--mode", "rpc"] })) as never,
-    start: (async () => running) as never,
-    send: vi.fn(async () => undefined) as never,
-    attach: (async () => running) as never,
-    abort: vi.fn(async () => undefined) as never,
-    wait: (async () => running) as never,
-    ...overrides,
-  });
+function createTool() {
+  return createSubagentTool();
 }
 
 const ctx = {
   cwd: "/repo",
+  sessionManager: { getSessionId: () => "session-1" },
   isProjectTrusted: () => true,
 };
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.getAgentDir.mockReturnValue("/tmp/pi-subagents-tool");
+  mocks.listSubagents.mockResolvedValue([]);
+  mocks.readSubagentLog.mockReturnValue("");
+  mocks.discoverAgents.mockReturnValue({ agents: [agent] });
+  mocks.loadSubagentsConfig.mockReturnValue({
+    maxConcurrent: 4,
+    maxDepth: 1,
+    defaultTimeoutMs: 30 * 60 * 1_000,
+    writeLockTimeoutMs: 30_000,
+    harnesses: {},
+    path: "/tmp/subagents.json",
+    diagnostics: [],
+  });
+  mocks.startSubagent.mockResolvedValue(running);
+  mocks.sendSubagent.mockResolvedValue(undefined);
+  mocks.attachSubagent.mockResolvedValue(running);
+  mocks.abortSubagent.mockResolvedValue(undefined);
+  mocks.waitSubagent.mockResolvedValue(running);
+  mocks.generateSubagentId.mockReturnValue("sub-1");
+  mocks.resolveSubagentModel.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   Reflect.deleteProperty(process.env, "PI_SUBAGENT_DEPTH");
 });
 
 describe("subagent tool", () => {
+  it("stops a TUI wait without cancelling the child", async () => {
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const uiCtx = {
+      ...ctx,
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        notify: vi.fn(),
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: (result: unknown) => void,
+            ) => {
+              handleInput(data: string): void;
+              render(width: number): string[];
+            },
+          ) =>
+            new Promise((resolve) => {
+              component = factory(
+                { requestRender: vi.fn() },
+                { fg: (_token: string, text: string) => text },
+                {},
+                resolve,
+              );
+            }),
+        ),
+      },
+    };
+    mocks.waitSubagent
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce(running);
+    const tool = createTool();
+
+    const pending = tool.execute(
+      "1",
+      { action: "wait", id: "sub-1", timeoutMs: 10_000 },
+      undefined,
+      undefined,
+      uiCtx as never,
+    );
+    await vi.waitFor(() => expect(component).toBeDefined());
+    component?.handleInput("\x1b");
+    const result = await pending;
+
+    expect(textOf(result)).toContain('"waitCancelled":true');
+    expect(detailsOf(result).status).toBe("running");
+  });
+
   it("starts a trusted agent and sends the task prompt", async () => {
-    const start = vi.fn(async () => running);
-    const send = vi.fn(async () => undefined);
-    const tool = createTool({
-      start: start as never,
-      send: send as never,
-    });
+    const tool = createTool();
     const result = await tool.execute(
       "1",
       { action: "start", agent: "scout", task: "find" },
@@ -70,18 +175,19 @@ describe("subagent tool", () => {
       undefined,
       ctx as never,
     );
-    expect(start).toHaveBeenCalledWith(
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: "scout",
         task: "find",
         depth: 1,
+        parentSession: "session-1",
         env: expect.objectContaining({
           PI_SUBAGENT_DEPTH: "1",
           PI_SUBAGENT_MODE: "ask",
         }),
       }),
     );
-    expect(send).toHaveBeenCalledWith(
+    expect(mocks.sendSubagent).toHaveBeenCalledWith(
       "/tmp/pi-subagents-tool",
       "sub-1",
       expect.objectContaining({ type: "prompt", message: "find" }),
@@ -90,25 +196,20 @@ describe("subagent tool", () => {
   });
 
   it("prioritizes parent mode over frontmatter mode, falling back to frontmatter", async () => {
-    const start = vi.fn().mockResolvedValue({ id: "sub-1", status: "running" });
-    const send = vi.fn().mockResolvedValue(undefined);
-    const tool = createTool({
-      start,
-      send,
-      agents: () => ({
-        agents: [
-          {
-            name: "scout",
-            description: "",
-            systemPrompt: "",
-            source: "user",
-            mode: "plan",
-            filePath: "/tmp/scout.md",
-          },
-        ],
-        diagnostics: [],
-      }),
+    mocks.discoverAgents.mockReturnValue({
+      agents: [
+        {
+          name: "scout",
+          description: "",
+          systemPrompt: "",
+          source: "user",
+          mode: "plan",
+          filePath: "/tmp/scout.md",
+        },
+      ],
+      diagnostics: [],
     });
+    const tool = createTool();
 
     // 1. Parent in edit mode overrides agent mode "plan"
     const editOwner = {};
@@ -121,7 +222,7 @@ describe("subagent tool", () => {
       undefined,
       { ...ctx, sessionManager: editOwner } as never,
     );
-    expect(start).toHaveBeenLastCalledWith(
+    expect(mocks.startSubagent).toHaveBeenLastCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({ PI_SUBAGENT_MODE: "edit" }),
       }),
@@ -137,7 +238,7 @@ describe("subagent tool", () => {
       undefined,
       { ...ctx, sessionManager: askOwner } as never,
     );
-    expect(start).toHaveBeenLastCalledWith(
+    expect(mocks.startSubagent).toHaveBeenLastCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({ PI_SUBAGENT_MODE: "plan" }),
       }),
@@ -166,22 +267,160 @@ describe("subagent tool", () => {
     expect(textOf(deep)).toContain("exceeds maxDepth");
   });
 
-  it("lists, reports status, sends, waits, and cancels", async () => {
-    const list = vi.fn(() => [running]);
-    const log = vi.fn(() => "line");
-    const send = vi.fn(async () => undefined);
-    const abort = vi.fn(async () => undefined);
-    const wait = vi.fn(async () => ({
-      ...running,
-      status: "completed" as const,
-    }));
-    const tool = createTool({
-      list: list as never,
-      log: log as never,
-      send: send as never,
-      abort: abort as never,
-      wait: wait as never,
+  it("runs a generic harness with stdin input and raw steering", async () => {
+    const harnessAgent: AgentConfig = {
+      ...agent,
+      harness: "claude",
+      systemPrompt: "You are Claude.",
+    };
+    mocks.discoverAgents.mockReturnValue({ agents: [harnessAgent] });
+    mocks.loadSubagentsConfig.mockReturnValue({
+      maxConcurrent: 4,
+      maxDepth: 1,
+      defaultTimeoutMs: 30 * 60 * 1_000,
+      writeLockTimeoutMs: 30_000,
+      harnesses: {
+        claude: { command: "claude", args: ["-p"], input: "stdin" },
+      },
+      path: "/tmp/subagents.json",
+      diagnostics: [],
     });
+    const tool = createTool();
+    const result = await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "claude",
+        args: ["-p"],
+        harness: "claude",
+        inputMode: "text",
+        initialInput: "You are Claude.\n\nfind",
+      }),
+    );
+    expect(mocks.sendSubagent).not.toHaveBeenCalled();
+    expect(detailsOf(result).status).toBe("running");
+
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      harness: "claude",
+      inputMode: "text",
+    });
+    await tool.execute(
+      "1",
+      { action: "send", id: "sub-1", message: "keep going" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.sendSubagent).toHaveBeenCalledWith(
+      "/tmp/pi-subagents-tool",
+      "sub-1",
+      "keep going",
+    );
+  });
+
+  it("passes generic harness prompts as a final argument", async () => {
+    mocks.discoverAgents.mockReturnValue({
+      agents: [{ ...agent, harness: "codex" }],
+    });
+    mocks.loadSubagentsConfig.mockReturnValue({
+      maxConcurrent: 4,
+      maxDepth: 1,
+      defaultTimeoutMs: 30 * 60 * 1_000,
+      writeLockTimeoutMs: 30_000,
+      harnesses: {
+        codex: {
+          command: "codex",
+          args: ["exec", "--prompt={prompt}"],
+          input: "arg",
+        },
+      },
+      path: "/tmp/subagents.json",
+      diagnostics: [],
+    });
+    await createTool().execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "codex",
+        args: ["exec", "--prompt=You are a scout.\n\nfind"],
+        harness: "codex",
+        inputMode: "text",
+      }),
+    );
+  });
+
+  it("resumes a generic harness with its saved harness and text input", async () => {
+    mocks.discoverAgents.mockReturnValue({
+      agents: [{ ...agent, harness: "claude" }],
+    });
+    mocks.loadSubagentsConfig.mockReturnValue({
+      maxConcurrent: 4,
+      maxDepth: 1,
+      defaultTimeoutMs: 30 * 60 * 1_000,
+      writeLockTimeoutMs: 30_000,
+      harnesses: {
+        claude: { command: "claude", args: ["-p"], input: "stdin" },
+      },
+      path: "/tmp/subagents.json",
+      diagnostics: [],
+    });
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      status: "failed",
+      harness: "claude",
+      inputMode: "text",
+    });
+    await createTool().execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "claude",
+        harness: "claude",
+        inputMode: "text",
+        initialInput: "You are a scout.\n\nfind",
+      }),
+    );
+    expect(mocks.sendSubagent).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown generic harness", async () => {
+    mocks.discoverAgents.mockReturnValue({
+      agents: [{ ...agent, harness: "missing" }],
+    });
+    const result = await createTool().execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(result)).toContain("unknown harness");
+  });
+
+  it("lists, reports status, sends, waits, and cancels", async () => {
+    mocks.listSubagents.mockResolvedValue([running]);
+    mocks.readSubagentLog.mockReturnValue("line");
+    mocks.waitSubagent.mockResolvedValue({
+      ...running,
+      status: "completed",
+    });
+    const tool = createTool();
     const exec = (params: Record<string, unknown>) =>
       tool.execute("1", params, undefined, undefined, ctx as never);
 
@@ -190,7 +429,7 @@ describe("subagent tool", () => {
       "line",
     );
     await exec({ action: "send", id: "sub-1", message: "go", mode: "steer" });
-    expect(send).toHaveBeenCalledWith(
+    expect(mocks.sendSubagent).toHaveBeenCalledWith(
       "/tmp/pi-subagents-tool",
       "sub-1",
       expect.objectContaining({ type: "steer", message: "go" }),
@@ -202,7 +441,7 @@ describe("subagent tool", () => {
     expect(
       detailsOf(await exec({ action: "cancel", id: "sub-1" })).status,
     ).toBe("completed");
-    expect(abort).toHaveBeenCalled();
+    expect(mocks.abortSubagent).toHaveBeenCalled();
   });
 
   it("resumes a failed child with the same id and an incremented attempt", async () => {
@@ -210,15 +449,11 @@ describe("subagent tool", () => {
       ...running,
       status: "failed",
       attempt: 1,
+      parentSession: "session-1",
       session: "/tmp/sub-1.session.jsonl",
     };
-    const start = vi.fn(async () => running);
-    const send = vi.fn(async () => undefined);
-    const tool = createTool({
-      attach: (async () => failed) as never,
-      start: start as never,
-      send: send as never,
-    });
+    mocks.attachSubagent.mockResolvedValue(failed);
+    const tool = createTool();
     const result = await tool.execute(
       "1",
       { action: "resume", id: "sub-1" },
@@ -226,24 +461,25 @@ describe("subagent tool", () => {
       undefined,
       ctx as never,
     );
-    expect(start).toHaveBeenCalledWith(
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "sub-1",
         attempt: 2,
         agent: "scout",
         task: "find",
+        parentSession: "session-1",
         sessionPath: "/tmp/sub-1.session.jsonl",
       }),
     );
-    expect(send).toHaveBeenCalledWith(
+    expect(mocks.sendSubagent).toHaveBeenCalledWith(
       "/tmp/pi-subagents-tool",
       "sub-1",
       expect.objectContaining({ type: "prompt", message: "find" }),
     );
     expect(detailsOf(result).status).toBe("running");
 
-    const runningTool = createTool();
-    const notFailed = await runningTool.execute(
+    mocks.attachSubagent.mockResolvedValue(running);
+    const notFailed = await createTool().execute(
       "1",
       { action: "resume", id: "sub-1" },
       undefined,
@@ -293,10 +529,9 @@ describe("subagent tool", () => {
       dim: (text: string) => text,
     } as never;
 
-    const tool = createTool({
-      list: (() => [running]) as never,
-      log: (() => "line 1\nline 2") as never,
-    });
+    mocks.listSubagents.mockResolvedValue([running]);
+    mocks.readSubagentLog.mockReturnValue("line 1\nline 2");
+    const tool = createTool();
 
     const callComp = tool.renderCall?.(
       { action: "start", agent: "scout", task: "find facts" },

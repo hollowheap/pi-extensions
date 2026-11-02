@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isFetchProvider, isProviderId } from "./providers/selection.js";
 import type { FetchProvider, ProviderId } from "./providers/types.js";
@@ -64,8 +64,14 @@ export function loadWebConfig(
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
-  } catch {
-    return { path, diagnostics: [] };
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== "ENOENT") {
+      diagnostics.push(
+        `${path}: ${error instanceof Error ? error.message : String(error)}; using defaults`,
+      );
+      for (const message of diagnostics) onDiagnostic?.(message);
+    }
+    return { path, diagnostics };
   }
 
   let parsed: unknown;
@@ -107,4 +113,51 @@ export function loadWebConfig(
     for (const message of config.diagnostics) onDiagnostic(message);
   }
   return config;
+}
+
+export interface WebSettings {
+  searchOrder?: readonly ProviderId[];
+  fetchOrder?: readonly FetchProvider[];
+}
+
+function readRoot(path: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setOrder(
+  root: Record<string, unknown>,
+  key: "search" | "fetch",
+  order: readonly string[] | undefined,
+): void {
+  const section = isRecord(root[key]) ? { ...root[key] } : {};
+  if (order === undefined) {
+    Reflect.deleteProperty(section, "order");
+  } else {
+    section.order = [...order];
+  }
+  root[key] = section;
+}
+
+/** Persist provider order while preserving unrelated config fields. */
+export function saveWebSettings(
+  agentDir: string,
+  settings: WebSettings,
+): string {
+  const path = join(agentDir, CONFIG_FILE_NAME);
+  const root = readRoot(path);
+  setOrder(root, "search", settings.searchOrder);
+  setOrder(root, "fetch", settings.fetchOrder);
+  mkdirSync(agentDir, { recursive: true });
+  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(root, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  renameSync(temporary, path);
+  return path;
 }

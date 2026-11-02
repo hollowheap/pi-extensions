@@ -49,6 +49,17 @@ describe("child write lock", () => {
     expect(existsSync(lockPath(dir))).toBe(false);
   });
 
+  it("releases on tool execution end", async () => {
+    const { dir, handlers } = setup();
+    await handlers.tool_call(
+      { toolName: "edit", toolCallId: "call-1" } as never,
+      {} as never,
+    );
+    expect(existsSync(lockPath(dir))).toBe(true);
+    handlers.tool_execution_end({ toolCallId: "call-1" } as never);
+    expect(existsSync(lockPath(dir))).toBe(false);
+  });
+
   it("ignores read-only tools", async () => {
     const { dir, handlers } = setup();
     await handlers.tool_call(

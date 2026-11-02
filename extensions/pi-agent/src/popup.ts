@@ -52,7 +52,13 @@ export async function showAgentSwitchPopup(
             const accentFn = (s: string) =>
               typeof theme?.fg === "function" ? theme.fg("accent", s) : s;
 
-            const maxLen = Math.max(...contentLines.map((l) => l.length)) + 2;
+            const maxLen =
+              (contentLines.length === 0
+                ? 0
+                : contentLines.reduce(
+                    (max, line) => Math.max(max, line.length),
+                    0,
+                  )) + 2;
             const top = borderFn(`╭${"─".repeat(maxLen)}╮`);
             const bot = borderFn(`╰${"─".repeat(maxLen)}╯`);
 

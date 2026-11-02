@@ -141,6 +141,109 @@ describe("pi-question extension", () => {
     }
   });
 
+  it("accepts assistant content supplied as a string", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi.fn(async () => "Alpha");
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      {
+        role: "assistant",
+        content: "'''question\n## Pick\n1. Alpha\n'''",
+      },
+      ctx,
+    );
+
+    expect(select).toHaveBeenCalledWith("Pick", ["Alpha", "Write-in answer"]);
+  });
+
+  it("does not throw when UI selectors are unavailable", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context(vi.fn(), vi.fn(), { ui: {} });
+
+    await expect(
+      emit(
+        handlers.message_end,
+        assistant("'''question\n## Pick\n1. Alpha\n'''"),
+        ctx,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reports dialog failures and allows a retry", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("dialog exploded"))
+      .mockResolvedValueOnce("Yes");
+    const notify = vi.fn();
+    const ctx = context(select, vi.fn(), {
+      ui: { select, input: vi.fn(), custom: vi.fn(), notify },
+    });
+    const message = assistant("'''question\n## Pick\n1. Yes\n'''");
+
+    await expect(
+      emit(handlers.message_end, message, ctx),
+    ).resolves.toBeUndefined();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("dialog exploded"),
+      "error",
+    );
+
+    await emit(handlers.message_end, message, ctx);
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "1. Yes" }),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("skips questions whose conditions are false", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("No")
+      .mockResolvedValueOnce("Never");
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      assistant(
+        "'''question\n## First\n1. Yes\n2. No\n## Second [if: answer1 == 'Yes']\n1. Never\n'''",
+      ),
+      ctx,
+    );
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledWith("First", [
+      "Yes",
+      "No",
+      "Write-in answer",
+    ]);
+  });
+
+  it("evaluates conditions against source question indexes after skips", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi.fn(async () => "Yes");
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      assistant(
+        "'''question\n## First [if: answer1 == 'No']\n1. Never\n## Second\n1. Yes\n## Third [if: answer1 == 'Yes']\n1. Should not\n'''",
+      ),
+      ctx,
+    );
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledWith("Second", ["Yes", "Write-in answer"]);
+  });
+
   it("uses select and input for a single-select question in RPC mode", async () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
@@ -215,6 +318,66 @@ describe("pi-question extension", () => {
 
     expect(input).toHaveBeenCalledWith("Why?");
     expect(select).not.toHaveBeenCalled();
+  });
+
+  it("uses the multi-line editor for TUI free-text answers", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const editor = vi.fn(async () => "a longer answer");
+    const ctx = context(vi.fn(), vi.fn(), {
+      ui: { select: vi.fn(), input: vi.fn(), custom: vi.fn(), editor },
+    });
+
+    await emit(
+      handlers.message_end,
+      assistant("'''question\n## Why?\n'''"),
+      ctx,
+    );
+
+    expect(editor).toHaveBeenCalledWith("Why?");
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "1. a longer answer" }),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("navigates question pages forward and backward", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("Yes")
+      .mockResolvedValueOnce("Back")
+      .mockResolvedValueOnce("No")
+      .mockResolvedValueOnce("Next page")
+      .mockResolvedValueOnce("Blue");
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      assistant(
+        "'''question\n## First [page: 1]\n1. Yes\n2. No\n## Second [page: 2]\n1. Red\n2. Blue\n'''",
+      ),
+      ctx,
+    );
+
+    expect(select).toHaveBeenNthCalledWith(2, "Question page 1 complete", [
+      "Next page",
+      "Back",
+    ]);
+    expect(select).toHaveBeenNthCalledWith(3, "First", [
+      "Yes",
+      "No",
+      "Write-in answer",
+    ]);
+    expect(select).toHaveBeenNthCalledWith(4, "Question page 1 complete", [
+      "Next page",
+      "Back",
+    ]);
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "1. No\n2. Blue" }),
+      { deliverAs: "followUp" },
+    );
   });
 
   it("asks multiple questions in source order", async () => {

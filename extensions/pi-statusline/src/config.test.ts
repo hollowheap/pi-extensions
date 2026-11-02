@@ -1,8 +1,13 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultConfig, loadConfig, normalizeConfig } from "./config.js";
+import {
+  defaultConfig,
+  loadConfig,
+  normalizeConfig,
+  saveOptions,
+} from "./config.js";
 
 describe("normalizeConfig", () => {
   it("returns defaults for undefined input without diagnostics", () => {
@@ -66,6 +71,14 @@ describe("normalizeConfig", () => {
     const empty = normalizeConfig({ sections: {} });
     expect(empty.config).toEqual(defaultConfig());
     expect(empty.diagnostics).toHaveLength(1);
+  });
+
+  it("normalizes click actions", () => {
+    const { config, diagnostics } = normalizeConfig({
+      clickActions: { model: "  echo model  ", bad: "" },
+    });
+    expect(config.clickActions).toEqual({ model: "echo model" });
+    expect(diagnostics).toHaveLength(1);
   });
 
   it("replaces default sections when sections are configured", () => {
@@ -145,7 +158,7 @@ describe("normalizeConfig", () => {
 
   it("rejects a non-array extensions field", () => {
     const { config, diagnostics } = normalizeConfig({ extensions: "nope" });
-    expect(config.extensions).toEqual(["mode-guard", "budgets"]);
+    expect(config.extensions).toEqual(["mode-guard", "usage"]);
     expect(diagnostics).toHaveLength(1);
   });
 
@@ -245,5 +258,37 @@ describe("loadConfig", () => {
     const { config, diagnostics } = loadConfig(dir);
     expect(config).toEqual(defaultConfig());
     expect(diagnostics).toHaveLength(1);
+  });
+
+  it("saves options without discarding unrelated config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    const path = join(dir, "statusline.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        options: {
+          componentSeparator: { text: "|", fg: "accent" },
+          sectionSeparator: "  ",
+        },
+        clickActions: { model: "echo clicked" },
+        sections: { a: [{ type: "mode" }] },
+      }),
+    );
+    const { config } = loadConfig(dir);
+    config.options.sectionSeparator = { text: " · " };
+    config.options.gitIntervalMs = 10000;
+    saveOptions(dir, config.options);
+
+    const saved = JSON.parse(readFileSync(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(saved.clickActions).toEqual({ model: "echo clicked" });
+    expect(saved.sections).toEqual({ a: [{ type: "mode" }] });
+    expect(saved.options).toMatchObject({
+      componentSeparator: { text: "|", fg: "accent" },
+      sectionSeparator: " · ",
+      gitIntervalMs: 10000,
+    });
   });
 });

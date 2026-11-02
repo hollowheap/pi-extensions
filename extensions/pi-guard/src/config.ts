@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface GuardConfig {
@@ -51,5 +51,7 @@ export function saveGuardConfig(agentDir: string, config: GuardConfig): void {
     null,
     2,
   );
-  writeFileSync(path, data, "utf-8");
+  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(temporary, data, { encoding: "utf-8", mode: 0o600 });
+  renameSync(temporary, path);
 }

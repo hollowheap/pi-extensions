@@ -76,6 +76,7 @@ function createMockContext(overrides: Record<string, unknown> = {}) {
   const ui = {
     notify: vi.fn(),
     setStatus: vi.fn(),
+    setTitle: vi.fn(),
     select: vi.fn(),
     confirm: vi.fn(),
     custom: vi.fn().mockResolvedValue(undefined),
@@ -107,11 +108,13 @@ function createMockContext(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 let testDir: string;
 let agentsDir: string;
 
 beforeEach(() => {
   testDir = mkdtempSync(join(tmpdir(), "pi-agent-ext-"));
+  process.env.PI_CODING_AGENT_DIR = testDir;
   agentsDir = join(testDir, "agents");
   writeAgent(
     agentsDir,
@@ -128,6 +131,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (originalAgentDir === undefined) {
+    Reflect.deleteProperty(process.env, "PI_CODING_AGENT_DIR");
+  } else {
+    process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  }
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {}
@@ -155,7 +163,7 @@ describe("pi-agent extension", () => {
 
   it("provides argument completions for discovered agents and default", () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const cmd = pi.getCommand("agent");
@@ -169,9 +177,38 @@ describe("pi-agent extension", () => {
     expect(filtered.map((c) => c.value)).toEqual(["scout"]);
   });
 
+  it("hides project agents from completions while project trust is pending", async () => {
+    const projectDir = join(testDir, "project");
+    writeAgent(
+      join(projectDir, ".pi", "agents"),
+      "project-agent",
+      "name: project-agent\ndescription: Project agent",
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext({
+      cwd: projectDir,
+      isProjectTrusted: () => true,
+    });
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    const cmd = pi.getCommand("agent");
+    expect(cmd.getArgumentCompletions("").map((c) => c.value)).toContain(
+      "project-agent",
+    );
+
+    pi.emit("project_trust", { type: "project_trust", cwd: projectDir });
+
+    expect(cmd.getArgumentCompletions("").map((c) => c.value)).not.toContain(
+      "project-agent",
+    );
+  });
+
   it("forks session and sets branch label when switching agent in active chat", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext();
@@ -192,6 +229,7 @@ describe("pi-agent extension", () => {
     expect(pi.setLabel).toHaveBeenCalledWith("msg-1", "agent: scout");
     expect(pi.setSessionName).toHaveBeenCalledWith("[scout] session-1");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
     expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
       name: "scout",
     });
@@ -204,9 +242,64 @@ describe("pi-agent extension", () => {
     expect(ctx.ui.custom).toHaveBeenCalled();
   });
 
+  it("does not fall back to an in-place switch when the fork callback fails", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "msg-1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    });
+    const failingUi = {
+      ...ctx.ui,
+      custom: vi.fn().mockRejectedValue(new Error("popup failed")),
+    };
+    const forkCtx = createMockContext({ branch: ctx.branch, ui: failingUi });
+    ctx.fork = vi.fn(async (_id, opts) => {
+      await opts?.withSession?.(forkCtx);
+      return { cancelled: false };
+    }) as never;
+
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx);
+
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Agent switch failed after fork"),
+      "error",
+    );
+  });
+
+  it("treats a missing fork result as success once the fork callback ran", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "msg-1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    });
+    const forkCtx = createMockContext({ branch: ctx.branch });
+    ctx.fork = vi.fn(async (_id, opts) => {
+      await opts?.withSession?.(forkCtx);
+      return undefined as never;
+    }) as never;
+
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx);
+
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(forkCtx.ui.custom).toHaveBeenCalled();
+  });
+
   it("switches in-place without forking when session has no history", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext(); // empty branch
@@ -225,7 +318,7 @@ describe("pi-agent extension", () => {
 
   it("filters skills and injects agent instructions in before_agent_start", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext();
@@ -256,7 +349,7 @@ describe("pi-agent extension", () => {
 
   it("resets to default agent via /agent default", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext();
@@ -266,9 +359,10 @@ describe("pi-agent extension", () => {
     await cmd.handler("default", ctx);
 
     expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
-      name: undefined,
+      name: null,
     });
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi");
     expect(pi.setActiveTools).toHaveBeenCalledWith([
       "read",
       "edit",
@@ -289,7 +383,7 @@ describe("pi-agent extension", () => {
 
   it("restores active agent on session_start from custom entry", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext();
@@ -315,9 +409,61 @@ describe("pi-agent extension", () => {
     );
   });
 
+  it("ignores malformed persisted agent entries", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "custom-2",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: {},
+      },
+    );
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
+  });
+
+  it("restores default from an explicit null reset entry", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "custom-2",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: null },
+      },
+    );
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
+  });
+
   it("does not overwrite session mode on session_start when no agent is active", async () => {
     const pi = createMockPi();
-    const ext = createAgentExtension({ getAgentDir: () => testDir });
+    const ext = createAgentExtension();
     ext(pi as never);
 
     const ctx = createMockContext();

@@ -55,7 +55,11 @@ export function effectiveCwd(cwd: string, owner: unknown): string {
 }
 
 export function dropSession(owner: unknown): void {
-  getState().sessions.delete(owner);
+  const state = getState();
+  state.sessions.delete(owner);
+  if (typeof owner === "object" && owner !== null) {
+    state.caches.delete(owner);
+  }
 }
 
 export function readPersistedMode(owner: unknown): string | undefined {

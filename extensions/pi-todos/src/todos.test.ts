@@ -7,7 +7,6 @@ import {
   formatTodoList,
   formatTodoWidget,
   parseTodoBlock,
-  statusText,
 } from "./todos.js";
 
 describe("parseTodoBlock", () => {
@@ -126,12 +125,6 @@ describe("todo formatting", () => {
     expect(formatTodoList([])).toBe("No todos");
   });
 
-  it("reports open/total status and clears when empty", () => {
-    expect(statusText([])).toBeUndefined();
-    expect(statusText(todos)).toBe("1/2");
-    expect(statusText([{ id: 1, text: "Done", done: true }])).toBe("0/1");
-  });
-
   it("formats one confirmation with the full list and unknown IDs", () => {
     expect(formatTodoConfirmation(todos, [9, 9])).toBe(
       "Todos:\n• 1 First\n✓ 2 Second\nUnknown IDs: 9",
@@ -152,7 +145,7 @@ describe("todo formatting", () => {
       "╰──────────────╯",
     ]);
     expect(
-      formatTodoWidget([{ id: 1, text: "Done", done: true }], [], {
+      formatTodoWidget([{ id: 1, text: "Done", done: true }], [], [], {
         strikethrough: (s) => `~~${s}~~`,
       }),
     ).toEqual(["╭─ Todos (1 ✓) ╮", "│ ✓ 1 ~~Done~~ │", "╰──────────────╯"]);
@@ -162,6 +155,19 @@ describe("todo formatting", () => {
       "│ ✓ 2 \x1b[9mSecond\x1b[29m           │",
       "╰──────────────────────╯",
     ]);
+
+    const completed = Array.from({ length: 10 }, (_, index) => ({
+      id: index + 1,
+      text: `Done ${index + 1}`,
+      done: true,
+      priority: "high" as const,
+    }));
+    const withOpen = formatTodoWidget([
+      ...completed,
+      { id: 11, text: "Open low", done: false, priority: "low" },
+    ]);
+    expect(withOpen?.some((line) => line.includes("• 11 Open low"))).toBe(true);
+    expect(withOpen?.some((line) => line.includes("+1 more"))).toBe(true);
 
     const open = Array.from({ length: 12 }, (_, index) => ({
       id: index + 1,
@@ -252,6 +258,12 @@ describe("todo formatting", () => {
     ]);
   });
 
+  it("returns no lines when the panel is collapsed", () => {
+    expect(
+      formatTodoWidget(todos, [], [], { collapsed: true }),
+    ).toBeUndefined();
+  });
+
   it("formats side-by-side sections when width is at least 80 and both todos and agents exist", () => {
     const wideLines = formatTodoWidget(
       todos,
@@ -265,7 +277,7 @@ describe("todo formatting", () => {
     expect(wideLines).toEqual([
       "╭─ Todos (1 open, 1 ✓) ────────────────┬─ Tasks (1 running) ───────────────────╮",
       "│ • 1 First                            │ task-1 ● (npm test)                   │",
-      "│ ✓ 2 \x1b[9mSecond\x1b[29m                           ├─ Subagents (2 active) ────────────────┤",
+      "│ ✓ 2 \x1b[9mSecond\x1b[29m                           ┼─ Subagents (2 active) ────────────────┤",
       "│                                      │ @sub-1 ● (worker)                     │",
       "│                                      │ @sub-2 ⏸                              │",
       "╰──────────────────────────────────────┴───────────────────────────────────────╯",

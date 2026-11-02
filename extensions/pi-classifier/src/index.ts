@@ -11,7 +11,6 @@ export default function (pi: ExtensionAPI): void {
   pi.registerTool(
     createDecideTool({
       loadConfig: () => config,
-      getAgentDir,
       classify: defaultClassify,
     }),
   );
@@ -21,7 +20,7 @@ export default function (pi: ExtensionAPI): void {
     if (reported || diagnostics.length === 0) return;
     reported = true;
     for (const message of diagnostics) {
-      ctx.ui.notify(`pi-classifier: ${message}`, "warning");
+      ctx.ui?.notify?.(`pi-classifier: ${message}`, "warning");
     }
   });
 }

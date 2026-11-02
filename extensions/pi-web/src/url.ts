@@ -1,4 +1,17 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+
 const MAX_REDIRECTS = 5;
+
+export type HostResolver = (
+  hostname: string,
+) => Promise<Array<{ address: string; family: number }>>;
+
+async function resolveHostname(
+  hostname: string,
+): Promise<Array<{ address: string; family: number }>> {
+  return lookup(hostname, { all: true });
+}
 
 const METADATA_HOSTS = new Set([
   "metadata",
@@ -10,6 +23,7 @@ const METADATA_HOSTS = new Set([
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split(".");
   if (parts.length !== 4) return false;
+  if (parts.some((part) => !/^(0|[1-9]\d{0,2})$/.test(part))) return true;
   const octets = parts.map((part) => Number(part));
   if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
     return false;
@@ -109,6 +123,33 @@ export function isSafeUrl(input: string | URL): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Reject public-looking hostnames that resolve to private or loopback IPs. */
+export async function assertSafeResolvedUrl(
+  input: string | URL,
+  resolve: HostResolver = resolveHostname,
+): Promise<void> {
+  assertSafeUrl(input);
+  const url = new URL(input);
+  const hostname =
+    url.hostname.startsWith("[") && url.hostname.endsWith("]")
+      ? url.hostname.slice(1, -1)
+      : url.hostname;
+  if (isIP(hostname) !== 0) return;
+
+  let addresses: Array<{ address: string; family: number }>;
+  try {
+    addresses = await resolve(hostname);
+  } catch {
+    throw new Error("URL target could not be resolved");
+  }
+  if (
+    addresses.length === 0 ||
+    addresses.some((entry) => isUnsafeHost(entry.address))
+  ) {
+    throw new Error("URL target is not allowed");
   }
 }
 

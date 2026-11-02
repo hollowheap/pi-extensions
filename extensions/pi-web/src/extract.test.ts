@@ -12,6 +12,8 @@ import {
 describe("HTML extraction", () => {
   it("decodes entities and resolves safe URLs", () => {
     expect(decodeEntities("A &amp; B &#39;ok&#39;")).toBe("A & B 'ok'");
+    expect(decodeEntities("&#128512; &#x1F600;")).toBe("😀 😀");
+    expect(decodeEntities("&#xD800; &#x110000;")).toBe("\uFFFD \uFFFD");
     expect(resolveUrl("/next", "https://example.com/docs/")).toBe(
       "https://example.com/next",
     );
@@ -101,6 +103,12 @@ describe("HTML extraction", () => {
         mimeType: "application/octet-stream",
       },
     ]);
+  });
+
+  it("does not throw on malformed media URLs", () => {
+    expect(() =>
+      extractMedia('<img src="http://[" alt="Bad">', "https://example.com"),
+    ).not.toThrow();
   });
 
   it("returns title, content, links, and media together", () => {

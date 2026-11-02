@@ -50,6 +50,7 @@ function context(overrides: Record<string, unknown> = {}) {
       setStatus: vi.fn(),
       setWidget: vi.fn(),
       custom: vi.fn(),
+      onTerminalInput: vi.fn(() => vi.fn()),
     },
     sessionManager,
     ...overrides,
@@ -62,6 +63,23 @@ function emit(
   ctx: ReturnType<typeof context>,
 ) {
   return handler({ type: "message_end", message }, ctx);
+}
+
+function widgetLines(
+  ctx: ReturnType<typeof context>,
+  width = 60,
+): string[] | undefined {
+  const value = ctx.ui.setWidget.mock.calls.at(-1)?.[1];
+  if (typeof value === "function") {
+    const component = (
+      value as (
+        tui: unknown,
+        theme: unknown,
+      ) => { render: (width: number) => string[] }
+    )({}, {});
+    return component.render(width);
+  }
+  return value as string[] | undefined;
 }
 
 function customEntry(data: unknown) {
@@ -119,6 +137,11 @@ describe("pi-todos extension", () => {
     expect(pi.on).toHaveBeenCalledWith("message_end", expect.any(Function));
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     expect(pi.on).toHaveBeenCalledWith("session_tree", expect.any(Function));
+    expect(pi.on).toHaveBeenCalledWith("session_compact", expect.any(Function));
+    expect(pi.on).toHaveBeenCalledWith(
+      "session_shutdown",
+      expect.any(Function),
+    );
     expect(pi.registerMessageRenderer).toHaveBeenCalledWith(
       "hollowheap.todos.updated",
       expect.any(Function),
@@ -404,7 +427,7 @@ describe("pi-todos extension", () => {
     expect(pi.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("is inert without a UI", async () => {
+  it("processes blocks without a UI", async () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const ctx = context({ hasUI: false });
@@ -415,8 +438,143 @@ describe("pi-todos extension", () => {
       ctx,
     );
 
+    expect(pi.appendEntry).toHaveBeenCalledWith("hollowheap.todos", {
+      todos: [{ id: 1, text: "A", done: false }],
+      nextId: 2,
+    });
+    expect(pi.sendMessage).toHaveBeenCalled();
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+  });
+
+  it("ignores malformed message payloads", () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+
+    for (const event of [
+      { message: undefined },
+      { message: null },
+      { message: { role: "assistant" } },
+      { message: { role: "assistant", content: undefined } },
+      { message: { role: "assistant", content: [null, { type: "text" }] } },
+    ]) {
+      expect(() => handlers.message_end(event, ctx)).not.toThrow();
+    }
     expect(pi.appendEntry).not.toHaveBeenCalled();
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("survives branch read failures and a missing widget API", () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    ctx.sessionManager.getBranch.mockImplementation(() => {
+      throw new Error("broken branch");
+    });
+    ctx.ui.setWidget = undefined as never;
+
+    expect(() =>
+      handlers.session_start({ type: "session_start", reason: "startup" }, ctx),
+    ).not.toThrow();
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("disposes the previous terminal input listener", () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+
+    handlers.session_start({ type: "session_start", reason: "startup" }, ctx);
+    const firstDispose = ctx.ui.onTerminalInput.mock.results[0]?.value as
+      | (() => void)
+      | undefined;
+    handlers.session_start({ type: "session_start", reason: "startup" }, ctx);
+    expect(firstDispose).toHaveBeenCalledTimes(1);
+
+    const secondDispose = ctx.ui.onTerminalInput.mock.results[1]?.value as
+      | (() => void)
+      | undefined;
+    handlers.session_shutdown({}, ctx);
+    expect(secondDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists the current state after compaction", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+
+    await emit(
+      handlers.message_end,
+      assistant("'''create_todos\n1. First\n'''"),
+      ctx,
+    );
+    pi.appendEntry.mockClear();
+    handlers.session_compact({}, ctx);
+
+    expect(pi.appendEntry).toHaveBeenCalledWith("hollowheap.todos", {
+      todos: [{ id: 1, text: "First", done: false }],
+      nextId: 2,
+    });
+  });
+
+  it("rejects duplicate IDs in restored state", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    ctx.sessionManager.getBranch.mockReturnValue([
+      customEntry({
+        todos: [
+          { id: 1, text: "First", done: false },
+          { id: 1, text: "Duplicate", done: false },
+        ],
+        nextId: 3,
+      }),
+    ]);
+
+    handlers.session_start({ type: "session_start", reason: "startup" }, ctx);
+    await emit(
+      handlers.message_end,
+      assistant("'''create_todos\n1. Fresh\n'''"),
+      ctx,
+    );
+
+    expect(pi.appendEntry).toHaveBeenCalledWith("hollowheap.todos", {
+      todos: [{ id: 1, text: "Fresh", done: false }],
+      nextId: 2,
+    });
+  });
+
+  it("filters malformed task and subagent event payloads", () => {
+    const { pi, handlers, eventHandlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    handlers.session_start({ type: "session_start", reason: "startup" }, ctx);
+
+    expect(() =>
+      eventHandlers["subagents:state"]?.([
+        null,
+        { id: 1, state: "running" },
+        { id: "sub-1", state: "running" },
+      ]),
+    ).not.toThrow();
+    expect(widgetLines(ctx)).toEqual([
+      "╭─ Subagents (1 active) ╮",
+      "│ @sub-1 ●              │",
+      "╰───────────────────────╯",
+    ]);
+
+    expect(() =>
+      eventHandlers["tasks:state"]?.([
+        null,
+        { id: "task-1", status: "running", command: 1 },
+      ]),
+    ).not.toThrow();
+    expect(widgetLines(ctx)).toEqual([
+      "╭─ Tasks (1 running) ───╮",
+      "│ task-1 ●              │",
+      "├─ Subagents (1 active) ┤",
+      "│ @sub-1 ●              │",
+      "╰───────────────────────╯",
+    ]);
   });
 
   it("does not reapply the same message object", async () => {
@@ -457,7 +615,7 @@ describe("pi-todos extension", () => {
     });
   });
 
-  it("adds a stable todo format section only when a UI is available", () => {
+  it("adds a stable todo format section in every mode", () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const sections: Record<string, string> = { keep: "yes" };
@@ -478,14 +636,15 @@ describe("pi-todos extension", () => {
     expect(format).toContain("follow-up");
     expect(format).toContain("/todos");
     expect(format).toContain("Do not call a todo tool");
+    expect(format).toContain("/todo priority");
 
     for (const mode of ["print", "json"]) {
-      const gated: Record<string, string> = {};
+      const sectionsForMode: Record<string, string> = {};
       handlers.before_agent_start(
-        { systemPromptOptions: { sections: gated } },
+        { systemPromptOptions: { sections: sectionsForMode } },
         context({ hasUI: false, mode }),
       );
-      expect(gated.todos_format).toBeUndefined();
+      expect(sectionsForMode.todos_format).toBe(format);
     }
   });
 
@@ -548,7 +707,7 @@ describe("pi-todos extension", () => {
       ctx,
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (2 open) ╮",
       "│ • 1 First       │",
       "│ • 2 Second      │",
@@ -561,10 +720,10 @@ describe("pi-todos extension", () => {
       ctx,
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (1 open, 1 ✓) ╮",
-      "│ ✓ 1 \x1b[9mFirst\x1b[29m            │",
       "│ • 2 Second           │",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m            │",
       "╰──────────────────────╯",
     ]);
 
@@ -572,23 +731,24 @@ describe("pi-todos extension", () => {
     eventHandlers["subagents:state"]?.([
       { id: "sub-1", agent: "worker", state: "running" },
     ]);
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (1 open, 1 ✓) ─╮",
-      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
       "│ • 2 Second            │",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
       "├─ Subagents (1 active) ┤",
       "│ @sub-1 ● (worker)     │",
       "╰───────────────────────╯",
     ]);
+    expect((widgetLines(ctx, 120) ?? []).join("\n")).toContain("┬");
 
     // Running tasks arrive and are rendered alongside todos and subagents
     eventHandlers["tasks:state"]?.([
       { id: "task-1", command: "npm test", status: "running" },
     ]);
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (1 open, 1 ✓) ─╮",
-      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
       "│ • 2 Second            │",
+      "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
       "├─ Tasks (1 running) ───┤",
       "│ task-1 ● (npm test)   │",
       "├─ Subagents (1 active) ┤",
@@ -605,7 +765,7 @@ describe("pi-todos extension", () => {
       ctx,
     );
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (2 ✓) ─────────╮",
       "│ ✓ 1 \x1b[9mFirst\x1b[29m             │",
       "│ ✓ 2 \x1b[9mSecond\x1b[29m            │",
@@ -616,7 +776,7 @@ describe("pi-todos extension", () => {
 
     // Subagents finished, todos still displayed as 2 done
     eventHandlers["subagents:state"]?.([]);
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("todos", [
+    expect(widgetLines(ctx)).toEqual([
       "╭─ Todos (2 ✓) ╮",
       "│ ✓ 1 \x1b[9mFirst\x1b[29m    │",
       "│ ✓ 2 \x1b[9mSecond\x1b[29m   │",

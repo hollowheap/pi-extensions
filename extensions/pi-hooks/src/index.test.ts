@@ -139,6 +139,25 @@ describe("pi-hooks extension", () => {
     expect(result.reason).toContain("not on main");
   });
 
+  it("blocks and warns when pre-tool setup fails", async () => {
+    const { handlers, ctx, notify } = setup();
+    ctx.isProjectTrusted = () => {
+      throw new Error("trust exploded");
+    };
+
+    const result = (await handlers.tool_call(
+      toolCall("bash", { command: "ls" }),
+      ctx,
+    )) as { block: boolean; reason: string };
+
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("trust exploded");
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("pre-tool hooks failed"),
+      "warning",
+    );
+  });
+
   it("passes a call no hook refuses", async () => {
     writeHooks({
       preTool: [
@@ -158,6 +177,28 @@ describe("pi-hooks extension", () => {
       ctx,
     );
     expect(result).toBeUndefined();
+  });
+
+  it("passes non-object tool input as a value field", async () => {
+    const log = join(agentDir, "input.json");
+    writeHooks({
+      preTool: [
+        {
+          command: process.execPath,
+          args: [
+            "-e",
+            `let d='';process.stdin.on('data',(c)=>{d+=c});process.stdin.on('end',()=>require('fs').writeFileSync(${JSON.stringify(log)},d))`,
+          ],
+        },
+      ],
+    });
+    const { handlers, ctx } = setup();
+
+    await handlers.tool_call(toolCall("bash", "raw-input"), ctx);
+
+    expect(JSON.parse(readFileSync(log, "utf8")).input).toEqual({
+      value: "raw-input",
+    });
   });
 
   it("ignores hooks that do not match the tool", async () => {
@@ -191,6 +232,10 @@ describe("pi-hooks extension", () => {
     };
     extension(pi as never);
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
+    expect(pi.on).toHaveBeenCalledWith(
+      "session_shutdown",
+      expect.any(Function),
+    );
   });
 
   it("runs session hooks sequentially and ignores stdout", async () => {
@@ -331,6 +376,52 @@ describe("pi-hooks extension", () => {
       ctx,
     )) as { structuredContent?: unknown };
     expect(result.structuredContent).toEqual({ ok: true });
+  });
+
+  it("warns and leaves the result unchanged when post-tool setup fails", async () => {
+    const { handlers, ctx, notify } = setup();
+    ctx.isProjectTrusted = () => {
+      throw new Error("trust exploded");
+    };
+
+    await expect(
+      handlers.tool_result(toolResult("bash", []), ctx),
+    ).resolves.toBeUndefined();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("post-tool hooks failed"),
+      "warning",
+    );
+  });
+
+  it("clears chained previous output after a failed hook", async () => {
+    const log = join(agentDir, "chain.json");
+    writeHooks({
+      postTool: [
+        {
+          command: process.execPath,
+          args: ["-e", "process.stdout.write('first')"],
+          chain: true,
+        },
+        {
+          command: process.execPath,
+          args: ["-e", "process.exit(1)"],
+          chain: true,
+        },
+        {
+          command: process.execPath,
+          args: [
+            "-e",
+            `let d='';process.stdin.on('data',(c)=>{d+=c});process.stdin.on('end',()=>{const p=JSON.parse(d);require('fs').writeFileSync(${JSON.stringify(log)},p.input.previousOutput)})`,
+          ],
+          chain: true,
+        },
+      ],
+    });
+    const { handlers, ctx } = setup();
+
+    await handlers.tool_result(toolResult("bash", []), ctx);
+
+    expect(readFileSync(log, "utf8")).toBe("");
   });
 
   it("reports a failing post-hook without changing the result", async () => {

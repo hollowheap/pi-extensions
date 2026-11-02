@@ -10,7 +10,7 @@ Durable background shell tasks for the Pi coding agent.
   - `start`: Spawns a shell command in the background via a detached Node runner shim (`detached: true`, `stdio: "ignore"`, `unref()`) in its own process group. Returns the assigned task `id`, `pid`, and log path immediately.
   - `list`: Reconciles liveness and lists all persisted tasks in `<agentDir>/tasks/`.
   - `status`: Returns reconciled metadata and current log output bounded by `@hollowheap/core` `truncateText`.
-  - `wait`: Blocks until the task exits, `timeoutMs` elapses (default `30000` ms, max `600000` ms), or the call is aborted — including across Pi restarts by watching/polling `<id>.json`. Background task completion never triggers an unsolicited model turn.
+  - `wait`: Blocks until the task exits, `timeoutMs` elapses (default `30000` ms, max `600000` ms), or the call is aborted — including across Pi restarts by watching/polling `<id>.json`. In TUI mode it shows a cancellable loader; Escape stops waiting while leaving the task running. Background task completion never triggers an unsolicited model turn.
   - `cancel`: Verifies process liveness, sends `SIGTERM` followed by a `SIGKILL` grace period to the process group, and records `status: "cancelled"`.
 - **Built-in `bash` stays untouched**: Foreground commands continue to use Pi's native `bash` tool. Commands intended to run in the background are started explicitly with `task({ action: "start", command })`.
 - **`pi-guard` and `pi-hooks` enforcement**:
@@ -22,8 +22,10 @@ Durable background shell tasks for the Pi coding agent.
   - `session_shutdown` leaves durable shell tasks running; cleanup of `<agentDir>/tasks/` is manual in v1.
 - **Project trust gate**: `task({ action: "start", ... })` requires `ctx.isProjectTrusted() === true` before spawning.
 - **Statusline integration**: Publishes `ctx.ui.setStatus("tasks", "<n> running")` when tasks are running and clears it (`undefined`) when `0`.
+- **Scrollable logs**: `/task` opens a fuzzy task picker, then the selected task log in a keyboard-scrollable Markdown overlay; `/task logs <id>` opens a log directly. Task IDs and the `logs` action support tab completion. Non-TUI modes fall back to a notification.
 - **ACP inactivity**: Inactive under ACP (`-ne` omits user extensions, and `PI_ACP` leaves `pi-tasks` inert so `acp_bash` remains the sole terminal path).
 - **Generic v1 task layer**: `TaskRecord` (`id`, `kind`, `status`, `command`, `cwd`, `pid`, `startTime`, `startedAt`, `finishedAt`, `exitCode`, `output`, `wait`, `cancel`) is generic (`kind: "shell" | "subagent"`, with `"shell"` implemented in v1).
+- **Shared lifecycle primitives**: `TaskStore` provides the atomic state store, log access, and conditional updates; `spawnDetachedTask` provides detached spawn plus PID/start-time persistence. `pi-subagents` consumes both for subagent state and runners.
 
 ## Tool Schema
 

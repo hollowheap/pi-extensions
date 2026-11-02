@@ -10,8 +10,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { session, truncateText } from "@hollowheap/core";
+import { withCancellableProgress } from "@hollowheap/pi-tasks";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import { loadSubagentsConfig } from "./config.js";
+import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
 import {
   abortSubagent,
   attachSubagent,
@@ -24,43 +25,26 @@ import {
 } from "./runner.js";
 import type { SubagentState } from "./state.js";
 import { resolveSubagentModel } from "./swap.js";
+import {
+  allocateSubagentWorkspace,
+  cleanupSubagentWorkspace,
+  subagentWorkspaceTracker,
+} from "./workspace.js";
 
-export interface SubagentToolDeps {
-  start: typeof startSubagent;
-  attach: typeof attachSubagent;
-  send: typeof sendSubagent;
-  abort: typeof abortSubagent;
-  wait: typeof waitSubagent;
-  list: typeof listSubagents;
-  log: typeof readSubagentLog;
-  agents: typeof discoverAgents;
-  getAgentDir: () => string;
-  childSpec: (
-    agent: AgentConfig,
-    sessionPath: string,
-  ) => { command: string; args: string[] };
-  resolveModel?: typeof resolveSubagentModel;
+export interface SubagentToolOptions {
   onSubagentsChange?: () => void;
 }
 
-const defaultDeps: SubagentToolDeps = {
-  start: startSubagent,
-  attach: attachSubagent,
-  send: sendSubagent,
-  abort: abortSubagent,
-  wait: waitSubagent,
-  list: listSubagents,
-  log: readSubagentLog,
-  agents: discoverAgents,
-  getAgentDir,
-  childSpec,
-  resolveModel: resolveSubagentModel,
-};
+interface ChildSpec {
+  command: string;
+  args: string[];
+  harness: string;
+  inputMode: "jsonl" | "text";
+  initialInput?: string;
+  env?: NodeJS.ProcessEnv;
+}
 
-function childSpec(
-  agent: AgentConfig,
-  sessionPath: string,
-): { command: string; args: string[] } {
+function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
   const require = createRequire(import.meta.url);
   let guardDir: string;
   try {
@@ -85,7 +69,49 @@ function childSpec(
   if (agent.model !== undefined) args.push("--model", agent.model);
   if (agent.thinking !== undefined) args.push("--thinking", agent.thinking);
   if (agent.tools !== undefined) args.push("--tools", agent.tools.join(","));
-  return { command: process.env.PI_BIN ?? "pi", args };
+  return {
+    command: process.env.PI_BIN ?? "pi",
+    args,
+    harness: "pi",
+    inputMode: "jsonl",
+  };
+}
+
+function childSpec(
+  agent: AgentConfig,
+  task: string,
+  sessionPath: string,
+  config: SubagentsConfig,
+): ChildSpec {
+  if (agent.harness === undefined || agent.harness === "pi") {
+    return piChildSpec(agent, sessionPath);
+  }
+  const harness = config.harnesses[agent.harness];
+  if (harness === undefined) {
+    throw new Error(`unknown harness "${agent.harness}"`);
+  }
+  const systemPrompt = agent.systemPrompt.trim();
+  const prompt = systemPrompt === "" ? task : `${systemPrompt}\n\n${task}`;
+  const args = [...harness.args];
+  let initialInput: string | undefined;
+  if (harness.input === "arg") {
+    const index = args.findIndex((arg) => arg.includes("{prompt}"));
+    if (index >= 0) {
+      args[index] = args[index].replaceAll("{prompt}", prompt);
+    } else {
+      args.push(prompt);
+    }
+  } else {
+    initialInput = prompt;
+  }
+  return {
+    command: harness.command,
+    args,
+    harness: agent.harness,
+    inputMode: "text",
+    ...(initialInput !== undefined ? { initialInput } : {}),
+    ...(harness.env !== undefined ? { env: { ...harness.env } } : {}),
+  };
 }
 
 function errorResult(message: string) {
@@ -115,15 +141,15 @@ function summary(state: SubagentState): Record<string, unknown> {
     startedAt: state.startedAt,
     ...(state.finishedAt !== undefined ? { finishedAt: state.finishedAt } : {}),
     ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
+    ...(state.harness !== undefined ? { harness: state.harness } : {}),
   };
 }
 
 function stateWithLog(
-  deps: SubagentToolDeps,
   agentDir: string,
   state: SubagentState,
 ): Record<string, unknown> {
-  const log = deps.log(agentDir, state.id);
+  const log = readSubagentLog(agentDir, state.id);
   return {
     ...summary(state),
     ...(state.socket !== undefined ? { socket: state.socket } : {}),
@@ -149,8 +175,7 @@ function firstText(result: { content?: readonly unknown[] }): string {
   return item && typeof item.text === "string" ? item.text : "";
 }
 
-export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
-  const deps: SubagentToolDeps = { ...defaultDeps, ...overrides };
+export function createSubagentTool(options: SubagentToolOptions = {}) {
   return defineTool({
     name: "subagent",
     label: "subagent",
@@ -185,6 +210,11 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
         ]),
       ),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      isolated: Type.Optional(
+        Type.Boolean({
+          description: "Run in a dedicated isolated workspace",
+        }),
+      ),
     }),
     renderCall(args, theme, context) {
       const text =
@@ -296,7 +326,7 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
       text.setText(lines.join("\n"));
       return text;
     },
-    async execute(_toolCallId, raw, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, raw, signal, _onUpdate, ctx) {
       const params = (raw ?? {}) as {
         action?: string;
         agent?: string;
@@ -305,14 +335,14 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
         message?: string;
         mode?: "steer" | "prompt" | "follow_up";
         timeoutMs?: number;
+        isolated?: boolean;
       };
-      const agentDir = deps.getAgentDir();
+      const agentDir = getAgentDir();
       const action = params.action;
       try {
         if (action === "list") {
-          return textResult({
-            agents: deps.list(agentDir).map(summary),
-          });
+          const agents = await listSubagents(agentDir);
+          return textResult({ agents: agents.map(summary) });
         }
 
         if (action === "start") {
@@ -335,16 +365,14 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
               `subagent depth ${depth} exceeds maxDepth ${config.maxDepth}`,
             );
           }
-          const running = deps
-            .list(agentDir)
-            .filter(
-              (state) =>
-                state.status === "running" || state.status === "starting",
-            ).length;
+          const running = (await listSubagents(agentDir)).filter(
+            (state) =>
+              state.status === "running" || state.status === "starting",
+          ).length;
           if (running >= config.maxConcurrent) {
             return errorResult(`maxConcurrent ${config.maxConcurrent} reached`);
           }
-          const discovery = deps.agents({
+          const discovery = discoverAgents({
             cwd: ctx.cwd,
             agentDir,
             trusted: true,
@@ -357,20 +385,27 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
               }`,
             );
           }
-          const resolvedModel = await (
-            deps.resolveModel ?? resolveSubagentModel
-          )(agent, ctx);
+          const usesPiHarness =
+            agent.harness === undefined || agent.harness === "pi";
+          const resolvedModel = usesPiHarness
+            ? await resolveSubagentModel(agent, ctx)
+            : undefined;
           const effectiveAgent =
             resolvedModel !== undefined
               ? { ...agent, model: resolvedModel }
               : agent;
           const id = generateSubagentId();
+          const workspace = await allocateSubagentWorkspace({
+            root: ctx.cwd,
+            id,
+            enabled: params.isolated === true,
+          });
           const sessionPath = join(
             agentDir,
             "subagents",
             `${id}.session.jsonl`,
           );
-          const spec = deps.childSpec(effectiveAgent, sessionPath);
+          const spec = childSpec(effectiveAgent, task, sessionPath, config);
           const parentMode = ctx.sessionManager
             ? session(ctx.sessionManager).mode
             : undefined;
@@ -378,79 +413,118 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             parentMode && parentMode !== "ask"
               ? parentMode
               : (effectiveAgent.mode ?? "ask");
-          const state = await deps.start({
-            agentDir,
-            id,
-            agent: effectiveAgent.name,
-            task,
-            depth,
-            command: spec.command,
-            args: spec.args,
-            cwd: ctx.cwd,
-            env: {
-              PI_SUBAGENT_DEPTH: String(depth),
-              PI_SUBAGENT_ID: id,
-              PI_SUBAGENT_MODE: effectiveMode,
-            },
-            ...(effectiveAgent.model !== undefined
-              ? { model: effectiveAgent.model }
-              : {}),
-            sessionPath,
-          });
-          deps.onSubagentsChange?.();
+          const parentSession = ctx.sessionManager?.getSessionId?.();
+          let state: SubagentState;
           try {
-            await deps.send(agentDir, state.id, {
-              id: Math.floor(Math.random() * 1_000_000_000),
-              type: "prompt",
-              message: task,
+            state = await startSubagent({
+              agentDir,
+              id,
+              agent: effectiveAgent.name,
+              task,
+              depth,
+              ...(parentSession !== undefined ? { parentSession } : {}),
+              command: spec.command,
+              args: spec.args,
+              cwd: workspace.path,
+              harness: spec.harness,
+              inputMode: spec.inputMode,
+              ...(spec.initialInput !== undefined
+                ? { initialInput: spec.initialInput }
+                : {}),
+              env: {
+                ...(spec.env ?? {}),
+                PI_SUBAGENT_DEPTH: String(depth),
+                PI_SUBAGENT_ID: id,
+                PI_SUBAGENT_MODE: effectiveMode,
+              },
+              ...(effectiveAgent.model !== undefined
+                ? { model: effectiveAgent.model }
+                : {}),
+              ...(spec.harness === "pi" ? { sessionPath } : {}),
             });
           } catch (error) {
-            await deps.abort(agentDir, state.id).catch(() => {});
-            deps.onSubagentsChange?.();
+            await cleanupSubagentWorkspace(workspace).catch(() => {});
             throw error;
           }
-          deps.onSubagentsChange?.();
-          return textResult(stateWithLog(deps, agentDir, state));
+          subagentWorkspaceTracker.track(state.id, workspace);
+          options.onSubagentsChange?.();
+          if (spec.inputMode === "jsonl") {
+            try {
+              await sendSubagent(agentDir, state.id, {
+                id: Math.floor(Math.random() * 1_000_000_000),
+                type: "prompt",
+                message: task,
+              });
+            } catch (error) {
+              await abortSubagent(agentDir, state.id).catch(() => {});
+              options.onSubagentsChange?.();
+              throw error;
+            }
+          }
+          options.onSubagentsChange?.();
+          return textResult(stateWithLog(agentDir, state));
         }
 
         const id = params.id?.trim() ?? "";
         if (id === "") return errorResult(`${String(action)} requires id`);
         if (action === "status") {
-          const state = await deps.attach(agentDir, id);
+          const state = await attachSubagent(agentDir, id);
           if (state === undefined) return errorResult(`unknown id: ${id}`);
-          return textResult(stateWithLog(deps, agentDir, state));
+          return textResult(stateWithLog(agentDir, state));
         }
         if (action === "send") {
           const message = params.message?.trim() ?? "";
           if (message === "") return errorResult("send requires message");
           const mode = params.mode ?? "steer";
-          await deps.send(agentDir, id, {
-            id: Math.floor(Math.random() * 1_000_000_000),
-            type: mode,
-            message,
-          });
-          deps.onSubagentsChange?.();
+          const state = await attachSubagent(agentDir, id);
+          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          await sendSubagent(
+            agentDir,
+            id,
+            state.inputMode === "text"
+              ? message
+              : {
+                  id: Math.floor(Math.random() * 1_000_000_000),
+                  type: mode,
+                  message,
+                },
+          );
+          options.onSubagentsChange?.();
           return textResult({ id, mode });
         }
         if (action === "wait") {
           const timeoutMs = Math.min(params.timeoutMs ?? 30_000, 600_000);
-          const state = await deps.wait(agentDir, id, timeoutMs);
-          deps.onSubagentsChange?.();
+          const waited = await withCancellableProgress(
+            ctx,
+            `Waiting for subagent ${id}`,
+            (waitSignal) => waitSubagent(agentDir, id, timeoutMs, waitSignal),
+            signal,
+          );
+          options.onSubagentsChange?.();
+          if (waited.status === "cancelled") {
+            const current = await waitSubagent(agentDir, id, 0);
+            if (current === undefined) return errorResult(`unknown id: ${id}`);
+            return textResult({
+              ...stateWithLog(agentDir, current),
+              waitCancelled: true,
+            });
+          }
+          const state = waited.value;
           if (state === undefined) return errorResult(`unknown id: ${id}`);
-          return textResult(stateWithLog(deps, agentDir, state));
+          return textResult(stateWithLog(agentDir, state));
         }
         if (action === "cancel") {
-          await deps.abort(agentDir, id);
-          const state = await deps.wait(agentDir, id, 1_000);
-          deps.onSubagentsChange?.();
+          await abortSubagent(agentDir, id);
+          const state = await waitSubagent(agentDir, id, 1_000);
+          options.onSubagentsChange?.();
           if (state === undefined) return errorResult(`unknown id: ${id}`);
-          return textResult(stateWithLog(deps, agentDir, state));
+          return textResult(stateWithLog(agentDir, state));
         }
         if (action === "resume") {
           if (!ctx.isProjectTrusted()) {
             return errorResult("resume requires a trusted project");
           }
-          const state = await deps.attach(agentDir, id);
+          const state = await attachSubagent(agentDir, id);
           if (state === undefined) return errorResult(`unknown id: ${id}`);
           if (state.status !== "failed") {
             return errorResult(
@@ -463,15 +537,13 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
               `subagent depth ${state.depth} exceeds maxDepth ${config.maxDepth}`,
             );
           }
-          const running = deps
-            .list(agentDir)
-            .filter(
-              (item) => item.status === "running" || item.status === "starting",
-            ).length;
+          const running = (await listSubagents(agentDir)).filter(
+            (item) => item.status === "running" || item.status === "starting",
+          ).length;
           if (running >= config.maxConcurrent) {
             return errorResult(`maxConcurrent ${config.maxConcurrent} reached`);
           }
-          const discovery = deps.agents({
+          const discovery = discoverAgents({
             cwd: ctx.cwd,
             agentDir,
             trusted: true,
@@ -488,15 +560,29 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
           }
           const sessionPath =
             state.session ?? join(agentDir, "subagents", `${id}.session.jsonl`);
-          const modelToUse = state.model ?? agent.model;
-          const resolvedModel = await (
-            deps.resolveModel ?? resolveSubagentModel
-          )({ ...agent, model: modelToUse }, ctx);
+          const resumeAgent =
+            state.harness !== undefined
+              ? { ...agent, harness: state.harness }
+              : agent;
+          const usesPiHarness =
+            resumeAgent.harness === undefined || resumeAgent.harness === "pi";
+          const modelToUse = state.model ?? resumeAgent.model;
+          const resolvedModel = usesPiHarness
+            ? await resolveSubagentModel(
+                { ...resumeAgent, model: modelToUse },
+                ctx,
+              )
+            : undefined;
           const effectiveAgent =
             resolvedModel !== undefined
-              ? { ...agent, model: resolvedModel }
-              : agent;
-          const spec = deps.childSpec(effectiveAgent, sessionPath);
+              ? { ...resumeAgent, model: resolvedModel }
+              : resumeAgent;
+          const spec = childSpec(
+            effectiveAgent,
+            state.task,
+            sessionPath,
+            config,
+          );
           const parentMode = ctx.sessionManager
             ? session(ctx.sessionManager).mode
             : undefined;
@@ -504,17 +590,26 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             parentMode && parentMode !== "ask"
               ? parentMode
               : (effectiveAgent.mode ?? "ask");
-          const resumed = await deps.start({
+          const resumed = await startSubagent({
             agentDir,
             id,
             agent: effectiveAgent.name,
             task: state.task,
             depth: state.depth,
             attempt: state.attempt + 1,
+            ...(state.parentSession !== undefined
+              ? { parentSession: state.parentSession }
+              : {}),
             command: spec.command,
             args: spec.args,
             cwd: ctx.cwd,
+            harness: spec.harness,
+            inputMode: spec.inputMode,
+            ...(spec.initialInput !== undefined
+              ? { initialInput: spec.initialInput }
+              : {}),
             env: {
+              ...(spec.env ?? {}),
               PI_SUBAGENT_DEPTH: String(state.depth),
               PI_SUBAGENT_ID: id,
               PI_SUBAGENT_MODE: effectiveMode,
@@ -522,20 +617,22 @@ export function createSubagentTool(overrides: Partial<SubagentToolDeps> = {}) {
             ...(effectiveAgent.model !== undefined
               ? { model: effectiveAgent.model }
               : {}),
-            sessionPath,
+            ...(spec.harness === "pi" ? { sessionPath } : {}),
           });
-          deps.onSubagentsChange?.();
-          try {
-            await deps.send(agentDir, id, {
-              id: Math.floor(Math.random() * 1_000_000_000),
-              type: "prompt",
-              message: state.task,
-            });
-          } catch (error) {
-            await deps.abort(agentDir, id).catch(() => {});
-            throw error;
+          options.onSubagentsChange?.();
+          if (spec.inputMode === "jsonl") {
+            try {
+              await sendSubagent(agentDir, id, {
+                id: Math.floor(Math.random() * 1_000_000_000),
+                type: "prompt",
+                message: state.task,
+              });
+            } catch (error) {
+              await abortSubagent(agentDir, id).catch(() => {});
+              throw error;
+            }
           }
-          return textResult(stateWithLog(deps, agentDir, resumed));
+          return textResult(stateWithLog(agentDir, resumed));
         }
         return errorResult(`invalid action: ${String(action)}`);
       } catch (error) {

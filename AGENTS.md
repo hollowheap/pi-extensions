@@ -10,7 +10,7 @@ Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, Ty
 - `npm run lint` — `biome check .` (`npm run lint:fix` writes fixes).
 - `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
 - `npx tsc -p packages/pi-acp` — rebuild gitignored `packages/pi-acp/dist`.
-- `scripts/artifacts.sh status|next-tasks|verify-links` — inspect the R/D/S/T artifacts.
+- `scripts/artifacts.sh status|check|verify-links|frontier` — inspect the R/D/S/T artifacts.
 
 ## Repository Layout
 
@@ -29,4 +29,4 @@ Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, Ty
 
 ## Architecture
 
-See `artifacts/context.md` for entrypoints, commands, and module seams.
+See `artifacts/context.md` for entrypoints and `artifacts/architecture.md` for module seams.

@@ -1,6 +1,8 @@
 ---
 name: hooks-init
-description: Set up pi lifecycle hooks - session-start commands, pre-tool commands that can block a tool call, and post-tool commands whose output is appended to the result. Use when the user asks for hooks, a startup command, a pre-tool check, a command to run after an edit, or to change or remove existing hooks.
+description: Set up Pi lifecycle hooks in `hooks.json`.
+agents: engineer
+disable-model-invocation: true
 ---
 
 # Lifecycle hooks
@@ -92,3 +94,7 @@ Use the write tool to create or update the file. If the file already exists, rea
 ## A note on trust
 
 A hook runs a command at session start or on every matching tool call, and the project file is honoured in trusted projects. Say plainly which command you are adding, and never add a hook the user did not ask for.
+
+## Verify
+
+`jq . <agent-dir>/hooks.json >/dev/null` passes, and the requested hook command exits 0 when run directly with its configured arguments.

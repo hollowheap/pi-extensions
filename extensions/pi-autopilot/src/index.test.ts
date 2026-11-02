@@ -18,6 +18,11 @@ describe("pi-autopilot extension", () => {
     });
   });
 
+  it("freezes the exported layer and its defaults", () => {
+    expect(Object.isFrozen(AUTOPILOT_MODE)).toBe(true);
+    expect(Object.isFrozen(AUTOPILOT_MODE.defaults)).toBe(true);
+  });
+
   it("keeps the first registration when a layer name repeats", () => {
     setup();
     expect(

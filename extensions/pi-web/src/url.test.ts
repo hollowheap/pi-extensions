@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_REDIRECTS, assertSafeUrl, isSafeUrl } from "./url.js";
+import {
+  MAX_REDIRECTS,
+  assertSafeResolvedUrl,
+  assertSafeUrl,
+  isSafeUrl,
+  isUnsafeHost,
+} from "./url.js";
 
 describe("URL safety", () => {
   it("allows public http(s) URLs", () => {
@@ -15,6 +21,43 @@ describe("URL safety", () => {
 
   it("rejects credentials", () => {
     expect(isSafeUrl("https://user:pass@example.com")).toBe(false);
+  });
+
+  it("rejects hostnames that resolve to private addresses", async () => {
+    const privateResolver = async () => [{ address: "127.0.0.1", family: 4 }];
+    await expect(
+      assertSafeResolvedUrl("https://localtest.me", privateResolver),
+    ).rejects.toThrow(/not allowed/);
+    const mixedResolver = async () => [
+      { address: "93.184.216.34", family: 4 },
+      { address: "10.0.0.1", family: 4 },
+    ];
+    await expect(
+      assertSafeResolvedUrl("https://example.com", mixedResolver),
+    ).rejects.toThrow(/not allowed/);
+  });
+
+  it("allows hostnames that resolve to public addresses", async () => {
+    const publicResolver = async () => [
+      { address: "93.184.216.34", family: 4 },
+    ];
+    await expect(
+      assertSafeResolvedUrl("https://example.com", publicResolver),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects resolution failures", async () => {
+    await expect(
+      assertSafeResolvedUrl("https://example.com", async () => {
+        throw new Error("dns failed");
+      }),
+    ).rejects.toThrow(/could not be resolved/);
+  });
+
+  it("rejects non-canonical IPv4 forms", () => {
+    expect(isUnsafeHost("010.0.0.1")).toBe(true);
+    expect(isUnsafeHost("8.08.8.8")).toBe(true);
+    expect(isUnsafeHost("8.8.8.8")).toBe(false);
   });
 
   it("rejects loopback/private/link-local/metadata", () => {

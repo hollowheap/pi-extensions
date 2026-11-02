@@ -54,6 +54,7 @@ function setupProject(
 ): {
   ctx: ReturnType<typeof createContext>;
   call: (toolName: string, input: unknown) => Promise<unknown>;
+  pi: ReturnType<typeof createMockPi>;
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -64,6 +65,7 @@ function setupProject(
   const ctx = createContext(dir, approved);
   return {
     ctx,
+    pi,
     call: (toolName: string, input: unknown) =>
       handler(
         {
@@ -75,6 +77,15 @@ function setupProject(
         ctx as never,
       ) as Promise<unknown>,
   };
+}
+
+function commandHandler(
+  pi: ReturnType<typeof createMockPi>,
+  name: string,
+): (args: string, ctx: unknown) => Promise<void> {
+  const call = pi.registerCommand.mock.calls.find(([n]) => n === name);
+  expect(call).toBeDefined();
+  return call?.[1].handler as (args: string, ctx: unknown) => Promise<void>;
 }
 
 const EXAMPLE_RULES = JSON.stringify({
@@ -103,6 +114,147 @@ describe("pi-guard extension", () => {
       "alt+m",
       expect.objectContaining({ description: "Cycle plan/approval mode" }),
     );
+  });
+
+  it("keeps grant state isolated between extension instances", async () => {
+    const first = createMockPi();
+    const second = createMockPi();
+    extension(first as never);
+    extension(second as never);
+    const firstCtx = createContext(process.cwd());
+    const secondCtx = createContext(process.cwd());
+
+    await commandHandler(first, "grant")("src/x.ts 5m", firstCtx);
+    await commandHandler(second, "grants")("", secondCtx);
+
+    expect(secondCtx.ui.notify).toHaveBeenCalledWith(
+      "No active grants",
+      "info",
+    );
+  });
+
+  it("grants temporary permission and lists active grants", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext(process.cwd());
+    const grant = commandHandler(pi, "grant");
+    const grants = commandHandler(pi, "grants");
+
+    await grant("src/x.ts 5m", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Granted src/x.ts for 5m",
+      "info",
+    );
+
+    await grants("", ctx);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("src/x.ts (expires in 300s)"),
+      "info",
+    );
+  });
+
+  it("offers recent targets through the TUI grant picker", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    await call("write", { path: "src/x.ts" });
+
+    let picker:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: (value: string | undefined) => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise((resolve) => {
+          picker = factory(
+            { requestRender: vi.fn() },
+            {
+              fg: (_token: string, text: string) => text,
+              bold: (text: string) => text,
+            },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const uiCtx = {
+      ...ctx,
+      mode: "tui",
+      ui: {
+        ...ctx.ui,
+        custom,
+        select: vi.fn(async () => "5m"),
+      },
+    };
+    const grant = commandHandler(pi, "grant");
+
+    const pending = grant("", uiCtx);
+    await vi.waitFor(() => expect(picker).toBeDefined());
+    picker?.handleInput("\r");
+    await pending;
+
+    expect(uiCtx.ui.notify).toHaveBeenLastCalledWith(
+      "Granted src/x.ts for 5m",
+      "info",
+    );
+  });
+
+  it("completes recent grant targets and durations", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    handlers.session_start(undefined as never, ctx as never);
+    await call("write", { path: "src/x.ts" });
+    const grant = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "grant",
+    )?.[1] as {
+      getArgumentCompletions: (prefix: string) => Array<{ value: string }>;
+    };
+
+    expect(
+      grant.getArgumentCompletions("").map((item) => item.value),
+    ).toContain("src/x.ts");
+    expect(
+      grant.getArgumentCompletions("src/x.ts ").map((item) => item.value),
+    ).toEqual(["30s", "5m", "15m", "1h"]);
+  });
+
+  it("accepts multi-token shell targets and rejects invalid durations", async () => {
+    const { ctx, call, pi } = setupProject(
+      JSON.stringify({ rules: ["deny shell git status"] }),
+    );
+    const grant = commandHandler(pi, "grant");
+
+    await grant("git status 5m", ctx);
+    await expect(
+      call("bash", { command: "git status" }),
+    ).resolves.toBeUndefined();
+
+    await grant("src/x.ts 5x", ctx);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      "Invalid duration. Use e.g. 5m, 1h, 30s",
+      "error",
+    );
+  });
+
+  it("blocks and reports unexpected tool-call check failures", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    ctx.isProjectTrusted = () => {
+      throw new Error("trust exploded");
+    };
+
+    await expect(call("write", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("tool call check failed"),
+    });
   });
 
   it("blocks src writes but allows spec and plan writes", async () => {

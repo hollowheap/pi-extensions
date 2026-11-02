@@ -1,62 +1,72 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { checkPath, effectiveCwd, setCwd } from "@hollowheap/core";
-import { loadToolsConfig } from "./config.js";
-import { createFdTool } from "./fd.js";
 import { loadContextPermissions } from "./permissions.js";
-import { createRgTool } from "./rg.js";
 
-function completeCd(prefix: string) {
+function isWithinRoot(root: string, path: string): boolean {
+  const rel = relative(resolve(root), resolve(path));
+  return (
+    rel === "" ||
+    (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`))
+  );
+}
+
+function completeCd(prefix: string, ctx?: ExtensionContext) {
+  const root = ctx?.cwd ?? process.cwd();
+  const base = ctx ? effectiveCwd(ctx.cwd, ctx.sessionManager) : root;
   const trimmed = prefix.trim();
   const dir =
     trimmed === "" || trimmed.endsWith("/") ? trimmed || "." : dirname(trimmed);
   const start =
     trimmed === "" || trimmed.endsWith("/") ? "" : basename(trimmed);
+  const absDir = resolve(base, dir);
   let entries: Dirent[];
   try {
-    entries = readdirSync(dir, { withFileTypes: true });
+    entries = readdirSync(absDir, { withFileTypes: true });
   } catch {
     return null;
   }
+  const rules = ctx ? loadContextPermissions(ctx) : undefined;
   return entries
     .filter((entry) => entry.isDirectory() && entry.name.startsWith(start))
-    .map((entry) => entry.name)
-    .sort()
-    .map((name) => ({ value: `${join(dir, name)}/`, label: `${name}/` }));
+    .filter((entry) => {
+      if (rules === undefined) return true;
+      const abs = join(absDir, entry.name);
+      return (
+        isWithinRoot(root, abs) &&
+        checkPath(rules, abs, "read", root) !== "deny"
+      );
+    })
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => {
+      const abs = join(absDir, entry.name);
+      const rel = relative(base, abs).split(sep).join("/");
+      return { value: `${rel}/`, label: `${entry.name}/` };
+    });
 }
 
 export default function (pi: ExtensionAPI) {
-  const diagnostics: string[] = [];
-  const config = loadToolsConfig(getAgentDir(), (message) =>
-    diagnostics.push(message),
-  );
-  if (config.fd !== "hidden") {
-    pi.registerTool(createFdTool(undefined, config.fd));
-  }
-  if (config.rg !== "hidden") {
-    pi.registerTool(createRgTool(undefined, config.rg));
-  }
-  const needsCodemode = config.fd === "codemode" || config.rg === "codemode";
-  let reported = false;
+  let completionCtx: ExtensionContext | undefined;
   pi.on("session_start", (_event, ctx) => {
-    if (!reported && diagnostics.length > 0) {
-      reported = true;
-      for (const message of diagnostics) {
-        ctx.ui.notify(`pi-tools: ${message}`, "warning");
-      }
-    }
-    if (!needsCodemode) return;
-    if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
-    const active = pi.getActiveTools();
-    if (active.includes("codemode")) return;
-    pi.setActiveTools([...active, "codemode"]);
+    completionCtx = ctx;
   });
   pi.registerCommand("cd", {
     description:
       "Change the working directory for file tools (stays inside the project root)",
-    getArgumentCompletions: (prefix: string) => completeCd(prefix),
+    getArgumentCompletions: (prefix: string) =>
+      completeCd(prefix, completionCtx),
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (raw === "") {
@@ -77,7 +87,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       const rel = relative(ctx.cwd, abs);
-      if (rel === ".." || rel.startsWith(`..${sep}`)) {
+      if (!isWithinRoot(ctx.cwd, abs)) {
         ctx.ui.notify(`pi-tools: outside project root: ${raw}`, "error");
         return;
       }

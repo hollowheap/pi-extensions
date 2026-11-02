@@ -27,11 +27,11 @@ Create `<agentDir>/statusline.json` (`~/.pi/agent/statusline.json`). Missing fil
     "sectionSeparator": "  ",
     "gitIntervalMs": 5000
   },
-  "extensions": ["mode-guard", "budgets"],
+  "extensions": ["mode-guard", "usage"],
   "sections": {
     "a": [{ "type": "mode-guard" }],
     "b": [{ "type": "git_branch" }, { "type": "cwd" }],
-    "y": [{ "type": "tokens" }, { "type": "context" }, { "type": "budgets" }],
+    "y": [{ "type": "tokens" }, { "type": "cost" }, { "type": "usage" }],
     "z": [{ "type": "model" }, { "type": "clock" }]
   }
 }
@@ -81,7 +81,7 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 | type | shows | options |
 |---|---|---|
 | `mode` | `WORKING` while the agent runs, else `IDLE` | `idleText`, `workingText` |
-| `cwd` | working directory | `depth` (last N segments), `homeAsTilde` (default `true`) |
+| `cwd` | working directory, shortened to the repository name plus relative path when inside a git repo | `depth` (last N segments), `homeAsTilde` (default `true`) |
 | `git_branch` | current branch, hidden outside a repo | `icon` |
 | `git_diff` | `+a ~m -r ?u` file counts, refreshed in background | `addedIcon`, `modifiedIcon`, `removedIcon`, `untrackedIcon` |
 | `model` | active model id | `shorten` (strip `provider/` prefix, default `true`) |
@@ -112,6 +112,35 @@ When `accent` is set, components without output (e.g. `git_branch` outside a rep
 
 Empty output (e.g. `git_branch` outside a repo) is removed before joining, so separators never dangle.
 
+## Click actions
+
+Map a segment name to a command in `statusline.json`:
+
+```json
+{
+  "clickActions": {
+    "model": "echo model",
+    "git_branch": "git log -1 --oneline"
+  }
+}
+```
+
+Use `/statusline click <segment>` to run the mapped command. Actions beginning with `/` are sent as Pi slash commands; other actions are split into an executable and arguments and run without a shell. Output and failures are shown as notifications.
+
+Defaults: `mode` → `/mode`, `model` → `/model`, `usage` → `/usage`. Configure `clickActions` to override them.
+
+Mouse input is owned by Pi's main-screen renderer, so this package exposes click actions through the `/statusline click` command rather than raw footer mouse events.
+
+## Settings panel
+
+`/statusline settings` opens a TUI settings list for the component separator, section separator, and git refresh interval. Changes apply immediately and are saved to `statusline.json`; unrelated sections, colors, and click actions are preserved. Non-TUI modes should edit `statusline.json` directly.
+
+`/statusline working default|pulse|compact|hidden` sets the streaming indicator for the current session. `/statusline thinking <label>` overrides the hidden-thinking label; use `default` to restore it.
+
+## Theme picker
+
+`/theme` lists built-in and discovered themes. It previews the highlighted theme immediately; Enter keeps it, and Escape restores the previous theme.
+
 ## Extension layer
 
 Other extensions can contribute named components without this package importing them. A section references one by `type`, and the top-level `extensions` array enables it — names missing from the array render nothing:
@@ -131,4 +160,4 @@ The protocol runs over pi's shared event bus, so neither side imports the other:
 - This package emits `pi.events.emit("statusline:request", { names })` whenever it (re)installs the footer; providers answer by re-emitting their current values.
 - Payloads are `{ name: string, text: string }`; unknown shapes are ignored. Updates re-render the footer.
 
-`pi-guard` provides `mode-guard` (current policy mode, uppercased) and `budgets` (`12,500 used, 87,500 remaining`, empty without a cap).
+`pi-guard` provides `mode-guard` (current policy mode, uppercased) and `pi-usage` provides `usage` (`$0.05/$5.00`, empty without a cap).

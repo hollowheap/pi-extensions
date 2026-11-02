@@ -9,7 +9,9 @@ export * from "./keymap.js";
 export default function (pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI || typeof ctx.ui.setEditorComponent !== "function") return;
-    const config = loadModalConfig(getAgentDir());
+    const config = loadModalConfig(getAgentDir(), (message) =>
+      ctx.ui.notify(`pi-modal: ${message}`, "warning"),
+    );
     if (config.enabled === false) return;
     ctx.ui.setEditorComponent(
       (tui, theme, kb) => new ModalEditor(tui, theme, kb, config),

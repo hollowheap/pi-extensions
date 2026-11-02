@@ -2,6 +2,8 @@
 
 Replaces the startup header with a dashboard: built-in ASCII art by default, custom art, or the output of a command re-run on an interval. Every line is padded or truncated to one fixed character width; art lines are centered, command output defaults to left-aligned and can be centered per section.
 
+The dashboard owns the custom header, so Pi's built-in startup header is replaced. Version text, key hints, loaded-resource details, and the built-in logo interaction are not available unless a terminal section prints equivalent information.
+
 ## Try it
 
 ```bash
@@ -37,6 +39,9 @@ Create `<agentDir>/dashboard.json` (`~/.pi/agent/dashboard.json`). Missing file 
 
 - `width`: fixed line width, an integer from 10 to 500 (default `60`).
 - `header`: static art lines, centered. Omitting `ascii` shows the built-in banner.
+- `version`: centered `Pi v<version>` line using the running Pi version.
+
+In TUI mode, `/dashboard` opens a settings list for the startup header preset (`banner`, `version`, or `none`) and its gap. Saving preserves terminal sections.
 - `terminal`: runs `command` with `args` (executable path plus argument array — no shell) and shows its output, re-run every `intervalMs` (positive number, default `30000`). Output is left-aligned unless `align` is `"center"`. Failures render as one error line and warn once.
 - `gap`: blank lines after the section (default `0`). Unknown section types are skipped with a warning.
 

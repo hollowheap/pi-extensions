@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { type ProcessState, ProcessStore, readLog } from "@hollowheap/process";
+import type { ProcessState } from "@hollowheap/process";
+import { TaskStore } from "./store.js";
 
 export type TaskKind = "shell" | "subagent";
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
 
-export interface TaskMetadata {
+export interface TaskMetadata extends ProcessState {
   id: string;
   kind: TaskKind;
   status: TaskStatus;
@@ -35,8 +36,8 @@ export interface TaskOperations {
   cancel?: (agentDir: string, id: string) => Promise<TaskRecord>;
 }
 
-function store(agentDir: string): ProcessStore {
-  return new ProcessStore(tasksDir(agentDir));
+function store(agentDir: string): TaskStore<TaskMetadata> {
+  return new TaskStore<TaskMetadata>(agentDir);
 }
 
 export function tasksDir(agentDir: string): string {
@@ -60,26 +61,41 @@ export function taskLogPath(agentDir: string, id: string): string {
 }
 
 export function writeTaskMetadata(agentDir: string, meta: TaskMetadata): void {
-  store(agentDir).write(meta as unknown as ProcessState);
+  store(agentDir).write(meta);
+}
+
+function isTaskMetadata(value: unknown): value is TaskMetadata {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    (record.kind === "shell" || record.kind === "subagent") &&
+    (record.status === "running" ||
+      record.status === "completed" ||
+      record.status === "failed" ||
+      record.status === "cancelled") &&
+    typeof record.cwd === "string" &&
+    typeof record.startedAt === "number" &&
+    Number.isFinite(record.startedAt)
+  );
 }
 
 export function readTaskMetadata(
   agentDir: string,
   id: string,
 ): TaskMetadata | undefined {
-  return store(agentDir).read(id) as TaskMetadata | undefined;
+  const metadata = store(agentDir).read(id);
+  return isTaskMetadata(metadata) ? metadata : undefined;
 }
 
 export function readTaskLog(agentDir: string, id: string): string {
-  try {
-    return readLog(taskLogPath(agentDir, id));
-  } catch {
-    return "";
-  }
+  return store(agentDir).log(id);
 }
 
 export function listTaskMetadata(agentDir: string): TaskMetadata[] {
-  return store(agentDir).list() as unknown as TaskMetadata[];
+  return store(agentDir).list().filter(isTaskMetadata);
 }
 
 export function toTaskRecord(
@@ -116,6 +132,6 @@ export function createTaskRecord(
 ): TaskRecord {
   const processStore = store(agentDir);
   processStore.ensureLog(meta.id);
-  processStore.write(meta as unknown as ProcessState);
+  processStore.write(meta);
   return toTaskRecord(agentDir, meta, ops);
 }

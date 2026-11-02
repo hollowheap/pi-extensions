@@ -1,22 +1,18 @@
-import {
-  cancelProcessGroup,
-  isProcessAlive,
-  spawnDetachedProcess,
-} from "@hollowheap/process";
+import { cancelProcessGroup, isProcessAlive } from "@hollowheap/process";
 export { readProcStartTime } from "@hollowheap/process";
+import { spawnDetachedTask } from "./lifecycle.js";
 import {
   type TaskMetadata,
   type TaskOperations,
   type TaskRecord,
-  createTaskRecord,
   generateTaskId,
   listTaskMetadata,
   readTaskMetadata,
   taskLogPath,
   taskMetaPath,
   toTaskRecord,
-  writeTaskMetadata,
 } from "./registry.js";
+import { TaskStore } from "./store.js";
 
 const SHIM_SCRIPT = `
 const { spawn } = require("node:child_process");
@@ -105,26 +101,25 @@ const runnerOps: TaskOperations = {
   },
 };
 
+const STARTUP_GRACE_MS = 5_000;
+
 export function reconcileTask(
   agentDir: string,
   id: string,
 ): TaskRecord | undefined {
-  const meta = readTaskMetadata(agentDir, id);
+  const store = new TaskStore<TaskMetadata>(agentDir);
+  const meta = store.read(id);
   if (!meta) return undefined;
   if (meta.status === "running") {
-    if (!isProcessAlive(meta.pid, meta.startTime)) {
-      const latest = readTaskMetadata(agentDir, id);
-      if (latest && latest.status !== "running") {
-        return toTaskRecord(agentDir, latest, runnerOps);
-      }
-      const updated: TaskMetadata = {
-        ...meta,
-        status: "failed",
-        exitCode: null,
-        finishedAt: Date.now(),
-      };
-      writeTaskMetadata(agentDir, updated);
-      return toTaskRecord(agentDir, updated, runnerOps);
+    const withinStartupGrace =
+      meta.pid === undefined && Date.now() - meta.startedAt < STARTUP_GRACE_MS;
+    if (!withinStartupGrace && !isProcessAlive(meta.pid, meta.startTime)) {
+      const updated = store.updateIf(
+        id,
+        (current) => current.status === "running",
+        { status: "failed", exitCode: null, finishedAt: Date.now() },
+      );
+      return toTaskRecord(agentDir, updated ?? meta, runnerOps);
     }
   }
   return toTaskRecord(agentDir, meta, runnerOps);
@@ -164,38 +159,37 @@ export async function spawnShellTask(
     startedAt,
     dependsOn: opts.dependsOn,
   };
-  createTaskRecord(opts.agentDir, initialMeta, runnerOps);
-
+  const store = new TaskStore<TaskMetadata>(opts.agentDir);
   const metaPath = taskMetaPath(opts.agentDir, id);
   const logPath = taskLogPath(opts.agentDir, id);
 
-  const spawned = spawnDetachedProcess({
-    command: process.execPath,
-    args: [
-      "-e",
-      SHIM_SCRIPT,
-      metaPath,
+  try {
+    spawnDetachedTask({
+      store,
+      state: initialMeta,
+      command: process.execPath,
+      args: [
+        "-e",
+        SHIM_SCRIPT,
+        metaPath,
+        logPath,
+        opts.cwd,
+        shellBin,
+        opts.command,
+      ],
+      cwd: opts.cwd,
       logPath,
-      opts.cwd,
-      shellBin,
-      opts.command,
-    ],
-    cwd: opts.cwd,
-    logPath,
-  });
-
-  const pid = spawned.pid;
-  const startTime = spawned.startTime;
-  const current = readTaskMetadata(opts.agentDir, id) ?? initialMeta;
-  if (current.status === "running") {
-    const updated: TaskMetadata = {
-      ...current,
-      pid,
-      ...(startTime !== undefined ? { startTime } : {}),
-    };
-    writeTaskMetadata(opts.agentDir, updated);
-    return toTaskRecord(opts.agentDir, updated, runnerOps);
+    });
+  } catch (error) {
+    store.updateIf(id, (current) => current.status === "running", {
+      status: "failed",
+      exitCode: null,
+      finishedAt: Date.now(),
+    });
+    throw error;
   }
+
+  const current = store.read(id) ?? initialMeta;
   return toTaskRecord(opts.agentDir, current, runnerOps);
 }
 
@@ -249,13 +243,16 @@ export async function cancelTask(
 
   if (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) {
     await cancelProcessGroup(meta.pid, meta.startTime, graceMs);
+    if (isProcessAlive(meta.pid, meta.startTime)) {
+      return toTaskRecord(agentDir, meta, runnerOps);
+    }
   }
 
-  const cancelled: TaskMetadata = {
-    ...meta,
-    status: "cancelled",
-    finishedAt: Date.now(),
-  };
-  writeTaskMetadata(agentDir, cancelled);
-  return toTaskRecord(agentDir, cancelled, runnerOps);
+  const store = new TaskStore<TaskMetadata>(agentDir);
+  const cancelled = store.updateIf(
+    id,
+    (current) => current.status === "running",
+    { status: "cancelled", finishedAt: Date.now() },
+  );
+  return toTaskRecord(agentDir, cancelled ?? meta, runnerOps);
 }

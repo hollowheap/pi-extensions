@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,6 +22,21 @@ describe("loadClassifierConfig", () => {
     expect(config.cacheTtlMs).toBe(600000);
     expect(config.path).toBe(join(dir, CONFIG_FILE_NAME));
     expect(config.diagnostics).toEqual([]);
+  });
+
+  it("reports non-missing read failures", () => {
+    const dir = agentDir();
+    mkdirSync(join(dir, CONFIG_FILE_NAME));
+    const diagnostics: string[] = [];
+
+    const config = loadClassifierConfig(dir, (message) =>
+      diagnostics.push(message),
+    );
+
+    expect(config.model).toBeUndefined();
+    expect(config.diagnostics).toHaveLength(1);
+    expect(config.diagnostics[0]).toContain(CONFIG_FILE_NAME);
+    expect(diagnostics).toEqual(config.diagnostics);
   });
 
   it("accepts a valid config", () => {

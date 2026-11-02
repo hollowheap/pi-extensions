@@ -10,6 +10,21 @@ import {
   resolveEffectiveKeymaps,
 } from "./keymap.js";
 
+function stripCursorMarkers(line: string): string {
+  let result = "";
+  for (let index = 0; index < line.length; index++) {
+    if (line.startsWith("\x1b_pi:", index)) {
+      const end = line.indexOf("\x07", index);
+      if (end !== -1) {
+        index = end;
+        continue;
+      }
+    }
+    result += line[index];
+  }
+  return result;
+}
+
 const tmpDirs: string[] = [];
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "pi-modal-test-"));
@@ -117,9 +132,27 @@ describe("keymap config loading and resolution", () => {
   it("handles malformed modal.json gracefully", () => {
     const dir = createTempDir();
     writeFileSync(join(dir, "modal.json"), "invalid json content {{{");
-    const config = loadModalConfig(dir);
+    const diagnostics: string[] = [];
+    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
     expect(config.enabled).toBe(true);
     expect(config.initialMode).toBe("insert");
+    expect(diagnostics[0]).toContain("cannot read modal.json");
+  });
+
+  it("reports invalid initialMode and keymap values", () => {
+    const dir = createTempDir();
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({
+        initialMode: "visualx",
+        keymaps: { normal: { bad: 42 } },
+      }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
+    expect(config.initialMode).toBe("insert");
+    expect(config.keymaps?.normal).toEqual({});
+    expect(diagnostics).toHaveLength(2);
   });
 
   it("merges custom keymaps on top of Vim defaults", () => {
@@ -215,12 +248,15 @@ describe("ModalEditor modal behavior", () => {
     expect(selection).not.toBeNull();
     expect(selection?.text).toBe("hello");
 
-    const lines = editor.render(80);
+    const rendered = editor.render(80);
+    const lines = rendered.map(stripCursorMarkers);
     expect(lines.length).toBeGreaterThan(2);
-    // The rendered text content line should contain the highlighted text
+    // The rendered text content line should contain the highlighted text,
+    // including the prompt when the selection starts at column zero.
     expect(
       lines.some((l) => l.includes("\x1b[7m") && l.includes("hello")),
     ).toBe(true);
+    expect(lines[1]).toContain("\x1b[7m❯ hello");
   });
 
   it("yank (y) copies selection to clipboard without mutating buffer and returns to normal mode", () => {
@@ -388,6 +424,50 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("normal");
   });
 
+  it("moves to the next search match and repeats with n/N", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one\ntwo\nthree" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("/");
+    editor.handleInput("t");
+    editor.handleInput("\r");
+    expect(editor.getCursor()).toEqual({ line: 1, col: 0 });
+
+    editor.handleInput("n");
+    expect(editor.getCursor()).toEqual({ line: 2, col: 0 });
+
+    editor.handleInput("N");
+    expect(editor.getCursor()).toEqual({ line: 1, col: 0 });
+  });
+
+  it("performs :%s/old/new/g substitution", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "foo foo\nfoo" },
+    );
+    for (const key of ":%s/foo/bar/g") editor.handleInput(key);
+    editor.handleInput("\r");
+    expect(editor.getText()).toBe("bar bar\nbar");
+  });
+
+  it("reports clipboard write failures", () => {
+    const { editor, tui } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "abc" },
+    );
+    tui.terminal.write.mockImplementationOnce(() => {
+      throw new Error("clipboard unavailable");
+    });
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("y");
+    expect(editor.getYankedText()).toBe("ab");
+    expect(editor.getClipboardError()).toContain("clipboard unavailable");
+  });
+
   it("renders the current mode badge on the bottom border", () => {
     const { editor } = createMockEditor({ initialMode: "normal" });
     let lines = editor.render(80);
@@ -401,6 +481,16 @@ describe("ModalEditor modal behavior", () => {
     editor.setMode("visual");
     lines = editor.render(80);
     expect(lines[lines.length - 1]).toContain("VISUAL");
+  });
+
+  it("shows BASH instead of the editor mode when the prompt is a shell command", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "!ls" },
+    );
+    const lines = editor.render(80);
+    expect(lines[lines.length - 1]).toContain("BASH");
+    expect(lines[lines.length - 1]).not.toContain("NORMAL");
   });
 
   it("decorates input with default promptChar ❯ and indents continuation lines", () => {

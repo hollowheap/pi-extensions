@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { basename, relative } from "node:path";
 import type { ComponentSpec } from "./config.js";
 
 export interface GitDiffSummary {
@@ -17,6 +18,7 @@ export interface TokenTotals {
 export interface ComponentContext {
   cwd: string;
   homeDir: string;
+  repoRoot?: string;
   modelId: string | undefined;
   branch: string | null;
   tokens: TokenTotals;
@@ -95,12 +97,28 @@ const mode: ComponentFn = (spec, ctx) => {
   return `${frame} ${text}`;
 };
 
-const cwd: ComponentFn = (spec, ctx) =>
-  shortenPath(
+const cwd: ComponentFn = (spec, ctx) => {
+  const depth = optNumber(spec, "depth");
+  const root = ctx.repoRoot;
+  if (root !== undefined) {
+    const inside =
+      ctx.cwd === root ||
+      (ctx.cwd.startsWith(root) && ctx.cwd[root.length] === "/");
+    if (inside) {
+      const rel = relative(root, ctx.cwd).split("\\").join("/");
+      const parts = [basename(root), ...rel.split("/").filter(Boolean)];
+      if (depth !== undefined && depth > 0 && parts.length > depth) {
+        return `…/${parts.slice(-depth).join("/")}`;
+      }
+      return parts.join("/");
+    }
+  }
+  return shortenPath(
     ctx.cwd,
     optBool(spec, "homeAsTilde", true) ? ctx.homeDir : "",
-    optNumber(spec, "depth"),
+    depth,
   );
+};
 
 const gitBranch: ComponentFn = (spec, ctx) =>
   ctx.branch === null
@@ -250,25 +268,39 @@ export function createGitDiffCache(
     string,
     { at: number; summary: GitDiffSummary | undefined }
   >();
-  const inflight = new Set<string>();
-  function store(cwd: string, summary: GitDiffSummary | undefined): void {
+  const controllers = new Map<string, AbortController>();
+  let generation = 0;
+  function store(
+    cwd: string,
+    summary: GitDiffSummary | undefined,
+    expectedGeneration: number,
+  ): void {
+    if (expectedGeneration !== generation) return;
     cache.set(cwd, { at: Date.now(), summary });
     onUpdate();
   }
   function refresh(cwd: string): void {
-    if (inflight.has(cwd)) return;
-    inflight.add(cwd);
+    if (controllers.has(cwd)) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-    runner(cwd, controller.signal)
-      .then(
-        (stdout) => store(cwd, parseGitPorcelain(stdout)),
-        () => store(cwd, undefined),
-      )
-      .finally(() => {
-        clearTimeout(timer);
-        inflight.delete(cwd);
-      });
+    const expectedGeneration = generation;
+    controllers.set(cwd, controller);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("git status timed out"));
+      }, 6000);
+    });
+    const run = Promise.resolve().then(() => runner(cwd, controller.signal));
+    const finish = (summary: GitDiffSummary | undefined): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      controllers.delete(cwd);
+      store(cwd, summary, expectedGeneration);
+    };
+    Promise.race([run, timeout]).then(
+      (stdout) => finish(parseGitPorcelain(stdout)),
+      () => finish(undefined),
+    );
   }
   return {
     get(cwd: string): GitDiffSummary | undefined {
@@ -278,7 +310,10 @@ export function createGitDiffCache(
     },
     refresh,
     clear(): void {
+      generation += 1;
       cache.clear();
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
     },
   };
 }

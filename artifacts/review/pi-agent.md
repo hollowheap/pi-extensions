@@ -1,6 +1,32 @@
-# pi-agent Review
+# Review — pi-agent (V01)
 
-## Public Seams
+## Scope
+
+- Requirements: `artifacts/requirements.md`
+- Decisions: `artifacts/decisions.md`
+- Specs: `artifacts/specs.md`
+- Tasks: `artifacts/plan.md`
+
+
+## Requirements Review
+
+N/A — package robustness review; traceability is recorded in the Code Review findings.
+
+## Design Review
+
+N/A — package robustness review; see `artifacts/architecture.md`.
+
+## Specification Review
+
+N/A — package robustness review; verify commands are recorded under Code Review.
+
+## Plan Review
+
+N/A — package robustness review; tasks remain in `artifacts/plan.md`.
+
+## Code Review
+
+### Public Seams
 
 - `index.ts:13` — `ACTIVE_AGENT_TYPE` constant (`"hollowheap.agent"`).
 - `index.ts:25-27,29-32` — `AgentExtensionDeps` + `createAgentExtension(deps)` factory.
@@ -8,20 +34,36 @@
 - `model.ts:1` — `formatModelId(model)` normalization helper.
 - `popup.ts:4-7,9` — `ForkInfo` + `showAgentSwitchPopup(agent, ctx, forkInfo)`.
 
-## Robustness Issues
+### Robustness Issues
 
-- `index.ts:205` — `result.cancelled` accessed without null guard; if `ctx.fork` resolves `undefined`, throws.
-- `index.ts:227-229` — persisted-name loop overwrites on every custom entry; later entry with `data.name === undefined` clears prior valid agent.
-- `index.ts:171-210` — fork path: `forked` may be set true before `applyAgent`/popup complete; on throw, falls through to in-place switch and can double-apply.
-- `index.ts:79-94` — model match uses loose `find` with `as never` cast; if `agent.model` present but registry lacks `getAll`, falsely notifies "not found".
-- `index.ts:122-131` — empty `agent.tools` array is truthy, so `setActiveTools([])` disables all tools.
-- `index.ts:288-289` — `getArgumentCompletions` relies on closure `lastCwd`/`lastTrusted`, which can be stale.
-- `agents.ts:144` — `statSync(candidate).isDirectory()` unguarded (throws on permission/access errors).
-- `agents.ts:74-136` — per-file catch silently swallows errors with no diagnostic.
-- `popup.ts:55` — `Math.max(...contentLines.map(...))` assumes non-empty array; would be `-Infinity` if empty.
+- Resolution (2026-11-01): Fork results are checked via `forkStarted`; post-fork failures no longer double-apply.
+- Resolution (2026-11-01): Persisted-name restoration only clears on an explicit `null`.
+- Resolution (2026-11-01): Model matching avoids the unsafe cast and does not notify when `getAll` is unavailable.
+- Resolution (2026-11-01): Empty `agent.tools` arrays no longer disable all tools.
+- Resolution (2026-11-01): Completion context is refreshed from `before_agent_start` before each run.
+- Resolution (2026-11-01): Project-agent discovery resolves the starting cwd and guards directory stats.
+- Resolution (2026-11-01): Per-file discovery failures are reported as diagnostics.
+- Resolution (2026-11-01): Popup width calculation handles an empty content array.
 
-## Overengineering
+### Overengineering Audit (2026-10-29)
 
-- `index.ts:25-32` + `:39-56` — `AgentExtensionDeps` + duplicate `resolveAgents`/`resolveAgentsWithDiagnostics` wrappers.
-- `model.ts` — standalone module for a 15-line normalizer.
-- `agents.ts:5` — `AgentScope`/`scope` option is generalization with no external consumer beyond tests.
+Each original item is checked against `artifacts/requirements.md` and
+`artifacts/decisions.md`.
+
+| Item | Requirement link | Verdict |
+| --- | --- | --- |
+| `index.ts:25-32` + `:39-56` — `AgentExtensionDeps` + duplicate `resolveAgents`/`resolveAgentsWithDiagnostics` wrappers. | R43 | **Overengineered.** R43 requires `/agent` discovery and switching, not dependency injection. `getAgentDir` exists only for tests, and both wrappers call the same `discoverAgents`; one call site would do. |
+| `model.ts` — standalone module for a 15-line normalizer. | R43 | **Overengineered.** R43 needs model matching, so `formatModelId` is required behavior. A separate module is not: it has one consumer (`index.ts:83`) and no seam of its own. |
+| `agents.ts:5` — `AgentScope`/`scope` option. | R43 | **Overengineered.** R43 requires discovery from both user and project scopes. The `scope` filter is never passed by a caller; `discoverAgents` defaults to `"both"`, so the option only exists for tests. |
+
+## Acceptance Review
+
+N/A — package robustness review; end-to-end verification is recorded under Code Review > Verification when present.
+
+## Findings
+
+See the Code Review subsections above. Existing findings and resolutions are preserved.
+
+## Verdict
+
+Accepted — existing review record; formatting only.

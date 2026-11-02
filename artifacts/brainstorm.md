@@ -1,137 +1,661 @@
-# Architectural Brainstorm: Web Search & Sandbox Execution
+# Architectural Exploration: Stop Reinventing Web, Subagents, and Todos
 
-Status: Draft for Review  
-Date: 2026-10-27  
-Scope: Keyless Web Search Architecture (`pi-web`) & Execution Sandboxing (`pi-sandbox` / Podman)
+Status: Draft for decision. Date: 2026-10-29.
+Scope: `extensions/pi-web`, `extensions/pi-subagents`, `extensions/pi-todos`.
+
+## Destination
+
+One of these is true for each capability:
+
+1. A maintained upstream Pi extension is the engine, and this workspace keeps
+   only the adapter needed for its own event/UI contracts.
+2. The local implementation remains, with a written reason why upstream cannot
+   serve the integration, plus probes proving the critical paths.
+
+The user-visible outcome: web search works without API keys, a dead subagent
+never shows as running, cancelling actually stops the child, and open todos are
+never hidden behind completed rows.
+
+## References
+
+- `artifacts/research/pi-extension-landscape.md` — versions, feature matrix,
+  source citations, and upstream defects.
+- `artifacts/review/pi-web.md`, `pi-subagents.md`, `pi-todos.md` — verified
+  local defects and probe output.
+- `artifacts/scripts/probe-web-ssrf.ts` — `localtest.me` and `nip.io` allowed.
+- `artifacts/scripts/probe-web-fallbacks.ts` — empty search stops fallback;
+  non-OK body not canceled.
+- `artifacts/scripts/probe-subagents-lifecycle.ts` — starting child marked
+  failed; abort leaves a live process alive.
+- `artifacts/scripts/probe-todos-overflow.ts` — ten completed rows hide both
+  open rows.
+- npm: `pi-web-access@0.46.0`, `pi-subagents@0.84.0`, `rpiv-todo@1.1.0`.
+
+## Archetypes
+
+### A. Adopt upstream wholesale
+
+Remove the local engines and enable `pi-web-access`, `pi-subagents`, and
+`rpiv-todo` as packages.
+
+- Web: immediate zero-config search, DNS-aware SSRF, PDF/YouTube/GitHub
+  handling, and many providers.
+- Subagents: foreground/background runs, fleet UI, workflows, RPC, and cost.
+- Todos: a real `todo` tool with `blockedBy` and a native overlay.
+
+Failure modes: duplicate tool registration (`web_search`, `subagent`, `todo`)
+if the old packages stay enabled; our `subagents:state` event disappears and
+the combined panel goes empty; the text-block todo prompt conflicts with the
+`todo` tool; `rpiv-todo` targets the `@mariozechner` host scope, not
+`@earendil-works`; three new dependency trees and config files enter the
+workspace.
+
+Blast radius: high. Coupling: low code, high host/API coupling. YAGNI: strong,
+because none of the three should be maintained here.
+
+### B. Keep the local shells, replace the engines
+
+Keep the tool names, event contracts, config paths, and panel, but move the
+dangerous or mature internals behind adapters.
+
+- `pi-web`: keep `web_search`/`web_fetch` params and codemode exposure; delegate
+  transport to `pi-web-access` if it exposes a library seam, or port its
+  `ssrf-protection.ts` and keyless provider under MIT attribution.
+- `pi-subagents`: keep the `subagent` tool and `subagents:state`, but replace
+  the runner state machine with upstream's lifecycle/event API. If upstream has
+  no programmatic launch seam, keep our runner and port only the lifecycle
+  invariants.
+- `pi-todos`: keep text blocks and the combined panel; port `blockedBy`, cycle
+  detection, and drop-completed-first overflow from `rpiv-todo`; fix the
+  upstream branch-cache bug before reusing its replay logic.
+
+Failure modes: adapter drift when upstream changes; two sources of truth for
+config and state; upstream internals may not be a supported library; wrapper
+tests must pin both sides.
+
+Blast radius: medium. Coupling: medium. YAGNI: mixed; adapters are justified
+only where our event contract has a real consumer.
+
+### C. Harden in place and borrow patterns only
+
+Keep all three engines. Fix the verified defects and copy the smallest proven
+patterns from upstream.
+
+- Web: DNS resolution plus CIDR checks on every redirect, bounded body reads,
+  body cancellation on every exit, empty-result fallback, keyless provider.
+- Subagents: connectability not `existsSync`, no reconciliation during the
+  startup grace window, kill the process group before marking cancelled,
+  atomic state writes, start-time PID checks.
+- Todos: process blocks without UI, handle `session_compact`, dispose terminal
+  listeners, drop completed rows before open rows, add `blockedBy`.
+
+Failure modes: we still own three security- and lifecycle-sensitive wheels;
+upstream will keep moving; the next bug is ours to find.
+
+Blast radius: low per patch. Coupling: low. YAGNI: weak; duplicates continue.
+
+## Trade-offs
+
+| Criterion | A. Adopt | B. Shell + engine | C. Harden |
+| --- | --- | --- | --- |
+| Time to robust web | days | days | weeks |
+| Time to robust subagents | days | weeks | weeks |
+| Preserve `subagents:state` panel | no, needs adapter | yes | yes |
+| Preserve text-block todos | no | yes | yes |
+| New dependency weight | high | medium | none |
+| Security ownership | upstream | split | local |
+| Blast radius | high | medium | low |
+| Drift risk | low | medium | high |
+| Fits this monorepo's integration | weak | strong | strong |
+
+## Recommendation
+
+Use B, sequenced by coupling:
+
+1. **Web: adopt.** It has no local consumers besides its own tools, and
+   upstream is strictly stronger on SSRF, keyless search, and extraction. If a
+   library seam is unavailable, run `pi-web-access` as the only web extension
+   and delete local `pi-web` rather than wrapping it.
+2. **Subagents: adapter or harden, not wholesale yet.** Our panel and statusline
+   consume `subagents:state`; upstream publishes a different event/RPC surface.
+   First probe whether its RPC can feed our event. If not, keep our runner and
+   fix the four lifecycle bugs before adding features.
+3. **Todos: keep and fix.** `rpiv-todo` has real replay defects, a conflicting
+   tool/prompt model, and a mismatched peer scope. Port only the dependency
+   graph and overflow policy. Do not adopt it as the engine.
+
+Do not start with a rewrite of all three. The verified probes in
+`artifacts/scripts/` are the acceptance gate for whichever direction is chosen.
+
+## Not yet specified
+
+- Whether `pi-web-access` exposes a supported library entrypoint for embedding,
+  or only a Pi extension default export.
+- Whether upstream `pi-subagents` RPC can emit a state shape compatible with
+  `pi-todos`/`pi-statusline` without forking it.
+- Whether text-block todos are a product requirement or an accident of the
+  current prompt contract.
+- Whether the workspace accepts third-party runtime dependencies by default.
+
+## Out of scope
+
+- Rewriting `pi-statusline`, `pi-guard`, or `pi-budgets`.
+- Migrating existing session history or todo entries.
+- Upstream contributions or patches to the three packages.
+- Any release, migration guide, or backwards-compatibility layer.
 
 ---
 
-## 1. Problem Space & Context
+# Architectural Exploration: Classifier Decision Contract
 
-### 1.1 Web Search (`pi-web`)
-- **Current State**: [`extensions/pi-web`](file:///home/hollowheap/repos/my-pi-agent/extensions/pi-web) provides `web_search` and `web_fetch`.
-  - `web_fetch` already supports keyless operation via the `raw HTTP` fallback using Node's `fetch()`.
-  - `web_search` currently mandates at least one commercial provider key (`EXA_API_KEY`, `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`). Without keys, `resolveSearchOrder()` returns an empty list, immediately throwing `web_search error: no configured search provider has an API key`.
-- **Mode Permissions**: In [`packages/core/src/modes.ts:32-36`](file:///home/hollowheap/repos/my-pi-agent/packages/core/src/modes.ts#L32-L36), `ask` mode defaults are `{ read: "allow", search: "allow", edit: "ask", shell: "ask" }`. `web_search` is tagged `search` and `web_fetch` is tagged `read`. The tools are already allowed by policy; the failure is strictly a lack of a keyless provider adapter.
+Status: Draft for decision. Date: 2026-10-30.
+Scope: `extensions/pi-classifier`. Prior web/subagents/todos exploration above is preserved.
 
-### 1.2 Execution Sandboxing
-- **Current State**: The agent executes bash commands ([`bash`](file:///home/hollowheap/repos/my-pi-agent/packages/core/src/shell.ts)) and durable background tasks ([`extensions/pi-tasks`](file:///home/hollowheap/repos/my-pi-agent/extensions/pi-tasks)) directly on the host system with the current user's privileges.
-- **Environment Facts**:
-  - Host OS: Linux (NixOS).
-  - Podman is installed (`/run/current-system/sw/bin/podman`) and verified running in **rootless** mode (`podman info --format '{{.Host.Security.Rootless}}'` -> `true`).
-  - Docker is also installed (`/run/current-system/sw/bin/docker`).
-  - Bubblewrap (`bwrap`) is not installed on the system PATH.
+## Destination
+
+`decide` becomes a bounded, session-scoped advisory classifier with predictable
+failure and testable production seams.
+
+User-visible outcomes:
+
+1. Cached results never cross session boundaries.
+2. Repeated calls in one session stay cheap; aborted calls do not poison other
+   waiters.
+3. Malformed classifier answers become explanatory text, not impossible values.
+4. `score` returns the selected level label required by R23.
+5. No fake agent directory or test-only dependency path remains in production.
+
+## References
+
+- `artifacts/review/pi-classifier.md` — verified robustness and overengineering
+  findings.
+- `artifacts/requirements.md` — R23-R28.
+- `artifacts/decisions.md` — D88-D93.
+- `artifacts/specs.md` — S88-S93.
+- `extensions/pi-classifier/src/decide.ts` — tool, cache, timeout, normalize.
+- `extensions/pi-classifier/src/config.ts` — explicit model config and input
+  bounds.
+- `node_modules/@earendil-works/pi-ai/dist/types.d.ts:465-510` — classifier
+  answers contain `score`, not a score label.
+- `node_modules/@earendil-works/pi-coding-agent/dist/core/session-manager.d.ts:178`
+  — `ReadonlySessionManager` exposes `getSessionId()`.
+- `extensions/pi-web/src/providers/selection.ts:71-72` — existing
+  `AbortSignal.any` pattern in this workspace.
+
+No external research was needed; the contested choices are repository contract
+questions, not provider documentation questions.
+
+## Current Gaps That Are Not Open Questions
+
+- R23 requires `score` to return `index`, `label`, and `confidence`.
+  `normalize` returns only `value` and `confidence`. This is a contract bug, not
+  a design preference.
+- R26/D91 say "per session"; the cache is currently per `createDecideTool`
+  instance, which spans sessions.
+- D90/R25 says aborted calls fail cleanly; the caller signal is not forwarded,
+  so a cancelled caller can leave the request running.
+- The review's `DecideDeps` finding is real: `defaultDeps.getAgentDir` returns a
+  fake path, and the exported `decideTool` singleton is unused.
+- Unbounded cache growth and full-input cache keys are robustness issues even
+  though the cache itself is required.
+
+## Design Questions
+
+1. **Session identity:** key cache state by `ReadonlySessionManager` object,
+   `getSessionId()`, or clear the cache on `session_start`?
+2. **Abort sharing:** should one caller aborting cancel the shared request when
+   other callers are still waiting? Only when no waiter remains?
+3. **Cache bounds:** fixed entry cap, byte cap, or configurable? TTL alone does
+   not bound memory.
+4. **Config lifecycle:** load `classifier.json` once at extension load (current)
+   or re-read per session/per call? Diagnostics depend on this choice.
+5. **Output trust:** reject invalid `choice`/`score`/probability answers, or
+   clamp/repair them? R25 says fail with text.
+6. **Test seam:** keep dependency injection for `classify`, or test through
+   `ctx.modelRegistry` and a real config file?
+
+## Archetypes
+
+### A. Session-scoped tool state, minimal evolution
+
+Keep one `decide.ts` tool factory; move state from module/instance scope to a
+session-scoped container.
+
+- `createDecideTool(config)` takes the loaded config and uses
+  `ctx.modelRegistry` for classification.
+- `WeakMap<ReadonlySessionManager, SessionState>` owns the TTL cache and
+  in-flight map; entries are bounded and keys are hashes of the canonical
+  request.
+- Each caller races the shared task against its own abort signal. The shared
+  request is aborted only when its last waiter aborts.
+- `normalize` validates the answer against caller labels, score range, and
+  probability bounds; score output maps the index back to `labels[index].label`.
+- Remove `DecideDeps`, `defaultDeps`, `getAgentDir` from the tool deps, and the
+  unused `decideTool` singleton.
+- Tests write `classifier.json` through `PI_CODING_AGENT_DIR` or pass a config
+  object; fake `ctx.modelRegistry` supplies classifier results.
+
+Failure modes: `WeakMap` cache is lost on resume or fork; watcher/refcount bugs
+can abort a shared request too early; one file grows.
+
+### B. Pure decision core plus session-state adapter
+
+Split the contract from the state machine.
+
+- `decide-core.ts`: validate params, build classifier payload, normalize and
+  validate answers. No cache, no timers, no session access.
+- `session-cache.ts`: session-scoped TTL cache, bounded eviction, in-flight
+  sharing, caller-abort subscriptions.
+- `decide.ts`: thin Pi tool adapter that resolves config, calls the cache, and
+  formats tool results.
+- `index.ts`: loads config and registers the adapter.
+
+Failure modes: three modules for one tool; the cache module still has the hard
+abort semantics; tests must pin both core and adapter.
+
+### C. Process-wide bounded cache with hashed keys
+
+Keep one cache across sessions; fix only bounds, abort, and output validation.
+
+- One LRU with hashed keys; TTL; caller abort races.
+- No session key; identical requests in different sessions share a result.
+
+Failure modes: violates R26/D91 and weakens the "private input does not persist
+across sessions" expectation. A bounded cache makes the leak smaller, not
+correct.
+
+## Trade-offs
+
+| Criterion | A. Session tool state | B. Pure core + adapter | C. Process cache |
+| --- | --- | --- | --- |
+| R26 per-session semantics | Correct if keyed by manager | Correct | Violates |
+| Memory bounded | Yes | Yes | Yes, but cross-session |
+| Abort correctness | Refcount complexity | Isolated, testable | Simpler, still wrong scope |
+| Testability | Medium; fake ctx/config | High; pure core | Low; hidden global state |
+| Module count | 1-2 | 3 | 1 |
+| Blast radius | Low | Medium | Low code, high contract risk |
+| YAGNI | Strong for one tool | Weak until cache grows | Strong but wrong |
+
+## Recommendation
+
+Choose **A now**. It fixes the actual contract and robustness gaps without
+inventing a service layer for one tool.
+
+Concrete decisions:
+
+1. Remove `DecideDeps`, `defaultDeps`, the fake agent-dir path, and the unused
+   `decideTool` singleton. `createDecideTool(config)` uses `ctx.modelRegistry`.
+2. Key cache/in-flight state by `ctx.sessionManager` in a `WeakMap`; cap entries
+   per session and hash the canonical key. Loss on resume is acceptable and
+   matches "new session hits classifier again."
+3. Combine the configured timeout with caller abort. A caller abort returns
+   `aborted` immediately; the shared request is aborted when no waiter remains.
+   Never cache an aborted call.
+4. Validate `choice` labels, `score` integer range, and probability bounds.
+   Return `decide unavailable: ...` for malformed answers. Add the R23 score
+   label mapping.
+5. Keep explicit model selection, direct-only exposure, and payload privacy
+   unchanged.
+6. If the cache/abort logic grows beyond a compact helper, promote only that
+   helper to `session-cache.ts`; do not split the validation core until a second
+   consumer exists.
+
+## Not yet specified
+
+- Whether `classifier.json` should hot-reload per session or remain load-once.
+- Whether the per-session cache cap is fixed (for example 100 entries) or
+  configurable.
+- Whether the shared request should abort immediately when its last waiter
+  aborts, or run to the configured timeout.
+- Whether a completed result should be cached if every waiter had already
+  aborted.
+- Whether `choice` probabilities must include every caller label exactly, or
+  only be a subset with valid numbers.
+- Whether the exported `decideTool` singleton is a supported public seam or
+  should be deleted.
+
+## Out of scope
+
+- New classifier providers, model routing, or fallback models.
+- Automatic redaction or local-only enforcement.
+- Disk cache or persistent decision history.
+- Multiple questions per tool call or free-form rationales.
+- CLI, service registry, codemode activation, or `pi-guard` integration.
+- Changing D88-D93 without a separate decision record.
 
 ---
 
-## 2. Keyless Web Search: Architectural Archetypes
+# Architectural Exploration: fd/rg Duplication and Prompt Leanness
 
-### Archetype S1: Built-in DuckDuckGo HTML Fallback in `pi-web`
-- **Mechanism**: Implement a lightweight DuckDuckGo HTML parser adapter (`extensions/pi-web/src/providers/duckduckgo.ts`) using standard Node.js `fetch()` querying `https://html.duckduckgo.com/html/?q=...`.
-- **Integration**: Append `"duckduckgo"` (or `"ddg"`) to the default `SEARCH_ORDER = ["exa", "tavily", "firecrawl", "duckduckgo"]`. It requires no API key (`hasProviderKey("duckduckgo") === true`).
-- **Feasibility Verification**: Verified via [`artifacts/scripts/probe-ddg.mjs`](file:///home/hollowheap/repos/my-pi-agent/artifacts/scripts/probe-ddg.mjs) (returns 200 OK with parsed search results in under 400ms without API tokens).
-- **Pros**:
-  - Zero external dependencies; zero config required out-of-the-box.
-  - Seamless fallback: uses commercial providers if keys exist; gracefully drops to DuckDuckGo when keys are omitted.
-  - Consistent normalized output schema (`title`, `url`, `snippet`, `provider: "duckduckgo"`).
-- **Cons & Failure Modes**:
-  - HTML structure changes could break parsing if not resilient.
-  - Aggressive automated scraping can trigger rate limits or CAPTCHA challenges from DuckDuckGo.
+Status: Draft for decision. Date: 2026-10-30.
+Scope: `extensions/pi-tools`, Pi system prompt size, and search-tool schema.
 
-### Archetype S2: Configurable Metasearch Engine / SearXNG Endpoint
-- **Mechanism**: Introduce an open-standard JSON metasearch adapter querying a user-specified SearXNG or Whoogle instance (`https://searx.example.com/search?format=json&q=...`).
-- **Configuration**: Configured via `SEARXNG_URL` or `<agentDir>/web.json`.
-- **Pros**:
-  - Clean, stable JSON API schema designed for machine queries.
-  - Avoids HTML scraping fragility.
-  - Self-hostable for strict privacy.
-- **Cons & Failure Modes**:
-  - Not zero-config: requires the user to either host an instance or select a public SearXNG instance (many public instances disable JSON format or apply Cloudflare blocks).
-  - High friction for typical users who just want `web_search` to work out-of-the-box.
+## Destination
 
-### Archetype S3: Search CLI Subprocess Delegation (e.g. `ddgr` / `w3m`)
-- **Mechanism**: Spawn an external host binary (e.g., `ddgr -n 5 --json`) to retrieve results.
-- **Pros**:
-  - Offloads parsing and anti-bot mitigation to dedicated upstream CLI tools.
-- **Cons & Failure Modes**:
-  - Violates repo dependency and portability conventions (requires external package installation).
-  - Introduces subprocess overhead and shell injection attack surfaces.
-  - Inconsistent cross-platform availability.
+The model gets one clear search surface. Since built-in `grep`/`find` are
+already excluded and `bash` is sufficient, `fd`/`rg` are the remaining direct
+search schemas. The outcome is a smaller active tool schema without losing a
+capability the user actually uses.
 
-### Trade-Off Matrix: Web Search
+The user-visible outcome:
 
-| Criterion | S1: DuckDuckGo HTML Fallback | S2: SearXNG JSON Adapter | S3: CLI Subprocess (`ddgr`) |
-|---|---|---|---|
-| **Zero-Config Usability** | **High** (works immediately) | Low (requires URL setup) | Medium (requires binary) |
-| **Coupling & Portability** | **High** (pure Node `fetch`) | High (pure Node `fetch`) | Low (external host CLI) |
-| **Schema Stability** | Medium (HTML structure) | **High** (standard JSON API) | Medium (CLI output format) |
-| **Blast Radius** | **Minimal** (internal `pi-web` adapter) | Minimal (internal adapter) | Medium (spawns child process) |
-| **YAGNI Compliance** | **High** (satisfies keyless need) | Medium (speculative hosting) | Low (unnecessary indirection) |
+1. Search and file discovery remain available through `bash` (`rg`, `fd`, `ls`).
+2. The direct tool schema no longer pays for `fd`/`rg` unless their structured
+   behavior is worth the bytes.
+3. `/cd` keeps a purpose only if built-in file tools and guard rewrites still
+   use the effective working directory.
+
+## References
+
+- `artifacts/research/pi-system-prompt-2026-10-30.md` — full live Pi 1.4.0
+  system prompt captured from the RPC `message_start` system message. Date:
+  2026-10-30. Configuration excludes built-in `grep`/`find`.
+- `artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
+  baseline: 15 active tools, 10,032-byte prompt, 5,990-byte schemas, 5,223-byte
+  descriptions.
+- `artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — removing
+  `fd`/`rg` leaves `bash` as the search path: 13 tools, 20,200 total bytes.
+- `extensions/pi-tools/src/fd.ts` and `rg.ts` — per-result deny filtering and
+  root containment.
+- `extensions/pi-guard/src/index.ts:40-43` — `fd`/`rg` map to the `search` tag;
+  `bash` maps to `shell`.
+- User confirmation, 2026-10-30: built-in `grep`/`find` are not included;
+  `bash` is enough.
+
+## Prompt dissection
+
+The current live prompt is 10,032 bytes. Active schemas add 5,990 bytes and
+tool descriptions add 5,223 bytes: 21,245 bytes, about 5,311 tokens at four
+bytes per token.
+
+| Section | Bytes | Share of prompt |
+| --- | ---: | ---: |
+| `project_context` | 3,086 | 31% |
+| `addendum` | 2,515 | 25% |
+| `docs` | 1,424 | 14% |
+| `rules` | 927 | 9% |
+| `todos_format` | 749 | 7% |
+| `question_format` | 638 | 6% |
+| `tools` | 461 | 5% |
+| `preamble` | 169 | 2% |
+| `cwd` | 47 | <1% |
+
+`fd` and `rg` have no prompt snippets, so removing them leaves the prompt text
+unchanged. Their direct definitions cost 1,045 bytes:
+
+| Tool | Schema | Description | Total |
+| --- | ---: | ---: | ---: |
+| `rg` | 421 | 148 | 569 |
+| `fd` | 336 | 140 | 476 |
+| **Both** | **757** | **288** | **1,045** |
+
+The prompt is dominated by `project_context` and `addendum` (5,601 bytes
+combined), not the search tools. Removing `fd`/`rg` is a 4.9% reduction of the
+whole input surface.
+
+## Archetypes
+
+### A. Bash-only search (remove fd/rg)
+
+Remove both direct tools. Use `bash` with `rg`, `fd`, and `ls` for search and
+discovery. Keep `/cd` only if built-in file tools still need the effective
+working-directory override.
+
+- Structure: remove `fd`/`rg` registration from `pi-tools`; no schema change to
+  `bash`; no built-in `grep`/`find` reactivation.
+- Savings: 1,045 bytes (~261 tokens); prompt text unchanged.
+- Failure modes: every search becomes a shell call, so `pi-guard` uses the
+  `shell` tag and may prompt; output is unstructured and truncated by the bash
+  tool; per-result deny filtering is lost; the model must know `rg`/`fd` flags.
+- Coupling: low code, higher behavioral coupling to shell policy. Blast radius:
+  medium. YAGNI: strong if `bash` is already the intended search path.
+
+### B. Keep fd/rg as the structured search surface
+
+Keep both direct tools and accept 1,045 bytes. Use `/cd` and the per-result
+filtering they provide.
+
+- Structure: current `pi-tools` registration; optionally document that
+  `fd`/`rg` replace built-in search.
+- Savings: none.
+- Failure modes: duplicate intent with `bash`; external `fd`/`rg` binaries;
+  schema and description cost every request; model may still choose bash.
+- Coupling: low. Blast radius: low. YAGNI: weak on prompt budget, strong on
+  policy filtering.
+
+### C. Reintroduce built-in grep/find
+
+Remove `fd`/`rg` and reactivate Pi's built-in `grep`/`find`.
+
+- Structure: keep `pi-tools` for `/cd`; change default tool selection to include
+  built-in search.
+- Savings: negative. Built-in definitions are larger: `grep` is 1,014 bytes and
+  `find` is 591 bytes; the tool section also grows by 121 bytes. Net change is
+  roughly +681 bytes versus the current setup.
+- Failure modes: built-ins do not provide the per-result deny filter; users
+  intentionally disabled them; schema grows rather than shrinks.
+- Coupling: low. Blast radius: low. YAGNI: weak.
+
+### D. Keep both search paths and trim elsewhere
+
+Keep `fd`/`rg`; reduce `project_context` or `addendum` instead.
+
+- Structure: no tool change; edit global/project instructions.
+- Savings: potentially larger than 1KB, but changes user-facing guidance and
+  may remove repository-specific rules.
+- Failure modes: loses operational constraints; not a tool-surface decision.
+- Coupling: low. Blast radius: high for instructions. YAGNI: mixed.
+
+## Trade-offs
+
+| Criterion | A. Bash-only | B. Keep fd/rg | C. Built-ins | D. Trim prompts |
+| --- | --- | --- | --- | --- |
+| Bytes saved | 1,045 | 0 | -681 | prompt-dependent |
+| Rough token saved | 261 | 0 | -170 | prompt-dependent |
+| Direct search schema | none | fd/rg | grep/find | fd/rg |
+| Per-result deny filter | lost | retained | lost | retained |
+| Shell approval noise | higher | lower | lower | lower |
+| Binary dependencies | bash + rg/fd | fd/rg | native | fd/rg |
+| Prompt text change | 0 | 0 | +121 B | user edits |
+| Fit with user statement | strongest | weak | contrary | orthogonal |
+
+## Recommendation
+
+Use **A, bash-only search**, because built-in `grep`/`find` are already excluded
+and `bash` is the stated search path. Remove `fd`/`rg` registration. Keep
+`pi-tools` only if `/cd` still earns its place for built-in file tools and
+`pi-guard` path rewriting; otherwise retire the package's tool surface.
+
+Accept one trade-off explicitly: `bash` does not provide the per-result deny
+filter that `fd`/`rg` added. If that filter is a hard requirement, use **B**
+instead and document that `fd`/`rg` are the canonical direct search tools.
+
+The larger lean opportunity remains `project_context` (3,086) and `addendum`
+(2,515), not the 1,045-byte search pair.
+
+## Open Questions
+
+See `artifacts/questions.md#brainstorm--fdrg-duplication`.
+
+## Out of scope
+
+- Editing production source or git state.
+- Reintroducing built-in `grep`/`find` without a policy decision.
+- Trimming `AGENTS.md`, global addendum, docs, or question/todo prompt sections.
+- Implementing a merged `search` tool or codemode migration.
+- Changing model/provider defaults or release packaging.
 
 ---
 
-## 3. Sandboxing Architecture: Architectural Archetypes
+# Architectural Exploration: pi-tools After Search Removal
 
-### Archetype K1: Whole-Process Containerization (`Dockerfile.pi` + Podman Run)
-- **Mechanism**: The user starts the Pi agent inside an isolated rootless container. A `Dockerfile.pi` builds a container image containing Node 22/24 and `@earendil-works/pi-coding-agent`, with a CLI launcher script (`bin/pi-container`).
-  ```bash
-  podman run --rm -it \
-    -v "$PWD:/workspace:z" \
-    -v pi-agent-home:/root/.pi/agent:z \
-    -e ANTHROPIC_API_KEY \
-    localhost/pi-sandbox
-  ```
-- **Seams**: Zero changes to Pi core packages or extensions. All tools run natively inside the container.
-- **Pros**:
-  - Complete hermetic security boundary: host filesystem, SSH keys, dotfiles, and system services are completely isolated.
-  - Upstream official pattern documented in Pi’s containerization guide.
-  - Zero code maintenance in `@hollowheap/*` packages.
-- **Cons & Failure Modes**:
-  - TUI limitations: Host clipboard, notification daemons, or hardware cursor protocols require specialized container pass-through.
-  - Workspace file permission mismatches if UID mapping is misconfigured.
-  - Cannot access host developer tools (e.g., system Git credentials, host language servers) without bind-mounting them into the container.
+Status: Draft for decision. Date: 2026-10-30.
+Scope: `extensions/pi-tools`, notifications, sandbox wiring, and workspace utilities after removing `fd`/`rg`.
 
-### Archetype K2: Selective Tool Sandboxing Extension (`pi-sandbox` with Podman Exec)
-- **Mechanism**: Pi runs natively on the host machine (preserving native TUI, host terminal ergonomics, Git signing, and editor integration). A new extension (`extensions/pi-sandbox`) registers an execution interceptor for `bash` and `task` tool calls, spawning commands inside a background rootless Podman container:
-  `podman exec -i <session-container-id> bash -c "<command>"`
-- **Seams**: Intercepts `tool_call` before execution or provides an alternative sandboxed execution runner implementing Pi's `BashOperations`.
-- **Pros**:
-  - Native user experience: Full access to host clipboard, native TUI styling, host model credentials, and local extension configurations.
-  - Strong command containment: Potentially destructive model actions (`rm -rf`, curl pipelines, untrusted dependencies) execute strictly inside the container.
-  - Seamless project mounting: Project directory is mounted into the container at `/workspace`.
-- **Cons & Failure Modes**:
-  - Partial boundary: Only covers tools handled by the interceptor; host-level filesystem tools (`read`, `write`) remain on host unless also gated or proxied.
-  - Container lifecycle management: Needs automatic container spawning, health checking, and cleanup on session termination.
+## Destination
 
-### Archetype K3: Bubblewrap (`bwrap`) OS-Level Sandbox
-- **Mechanism**: Intercept bash commands and prepend `bwrap --ro-bind / / --bind $PWD $PWD --dev /dev --proc /proc ... bash -c ...`.
-- **Pros**:
-  - Extremely fast startup (<10ms) without container image overhead.
-- **Cons & Failure Modes**:
-  - `bwrap` is **not installed** on the host system (`which: no bwrap in PATH`).
-  - Requires Linux kernel unprivileged user namespaces and distribution package installation.
+`pi-tools` stops carrying a duplicate search schema and becomes either a small
+workspace command package or is retired. The suite gains a real completion
+notification path and a truthful sandbox story instead of an unused primitive.
 
-### Trade-Off Matrix: Sandboxing
+The user-visible outcome:
 
-| Criterion | K1: Whole-Process Container (Podman) | K2: Tool Sandboxing Extension (Podman) | K3: Bubblewrap (`bwrap`) |
-|---|---|---|---|
-| **Security Boundary** | **Maximum** (entire agent contained) | High (commands isolated) | High (OS namespaces) |
-| **Host TUI / UX Ergonomics** | Medium (terminal pass-through) | **Maximum** (host native TUI) | High (host native TUI) |
-| **Host System Availability** | **Ready** (`podman` rootless available) | **Ready** (`podman` rootless available) | **Blocked** (`bwrap` missing) |
-| **Implementation Complexity** | **Low** (`Dockerfile` + launcher script) | Medium (extension lifecycle & exec) | Medium (bwrap CLI args) |
-| **YAGNI Compliance** | **High** (uses built-in upstream pattern) | Medium (custom container manager) | Low (requires package install) |
+1. `fs`/`rg` are removed; `bash` is the search path.
+2. Long-running tasks, subagents, questions, and errors can notify the OS when
+   the user is not focused on Pi.
+3. Sandboxing has an explicit boundary: either the whole Pi process runs in a
+   container/`bwrap`, or specific spawned commands run under the core sandbox.
+4. `/cd` remains only if it still changes behavior for built-in file tools and
+   guard path rewriting.
 
----
+## References
 
-## 4. Recommended Directions & Decisions to Frame
+- `artifacts/research/pi-system-prompt-2026-10-30.md` — current 15-tool Pi 1.4.0
+  prompt; `fd`/`rg` cost 1,045 definition bytes and no prompt text.
+- `artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
+  no-built-in-grep/find baseline.
+- `artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — bash-only
+  variant after `fd`/`rg` removal.
+- `packages/core/src/sandbox.ts:5,69,108` — Bubblewrap options, argument builder,
+  and fail-closed wrapper.
+- `packages/core/src/exec.ts:9,16,48` — `sandbox` is opt-in on `runCapture` and
+  `runBinary`; no production extension passes it.
+- `extensions/pi-tasks/src/runner.ts` — background tasks use
+  `spawnDetachedProcess`, not the core sandbox wrapper.
+- Pi docs: `security.md:39,99` says tools run with process permissions and Pi has
+  no built-in sandbox; `terminal-setup.md:223` documents OSC 7501 program
+  status; `rpc-extension-ui.md:97` documents fire-and-forget `notify`.
+- OpenCode notifier plugin (`mohak34/opencode-notifier`): native notifications,
+  sound/bell, permission/complete/error/question events, focus suppression,
+  duration threshold, and command hooks.
+- OMP README (`can1357/oh-my-pi`): IDE/ACP integration, LSP operations, native
+  search/shell, persistent Python/JS kernels, workspace isolation, subagent
+  fan-out, debugger, memory, and collaboration. It is a broader product, not a
+  drop-in for this package.
 
-### Recommendation 1: Web Search
-Adopt **Archetype S1 (DuckDuckGo HTML Fallback)** for `pi-web`:
-1. Add `extensions/pi-web/src/providers/duckduckgo.ts` as a keyless fallback adapter.
-2. Update `SEARCH_ORDER = ["exa", "tavily", "firecrawl", "duckduckgo"]`.
-3. If no commercial API keys are present, search seamlessly falls through to DuckDuckGo, giving immediate out-of-the-box search in `ask` mode without throwing configuration errors.
+## Current state
 
-### Recommendation 2: Sandboxing
-Adopt a two-tier strategy:
-1. **Immediate / Standard (Archetype K1)**: Provide a standardized, reproducible `Dockerfile.pi` and rootless `bin/pi-podman` runner script adhering to Pi containerization specifications.
-2. **Advanced Extension (Archetype K2)**: If in-process host TUI preservation is preferred over whole-process isolation, define a dedicated `pi-sandbox` package in a future milestone.
+- Notifications: `ctx.ui.notify` is in-process only; RPC forwards a
+  fire-and-forget notification frame; Pi reports program status via OSC 7501 and
+  optional OSC 9;4 progress. There is no OS desktop notification extension in
+  this repository.
+- Sandbox: a working core primitive exists (`bwrap` with read-only root,
+  workspace writable bind, tmpfs `/tmp`, masked `~/.ssh`/`~/.gnupg`, optional
+  network isolation, fail-closed when `bwrap` is absent). It is not wired to any
+  tool, task, or subagent, and built-in `bash` cannot be wrapped by an extension
+  hook.
+- `pi-tools` after `fd`/`rg`: only `/cd` remains, which changes effective cwd
+  and causes `pi-guard` to rewrite relative path arguments. It does not change
+  the process cwd.
+
+## Archetypes
+
+### A. Retire pi-tools, keep only core workspace state
+
+Remove `fd`/`rg` and either move `/cd` into `pi-guard` or drop the command.
+No new package surface.
+
+- Structure: delete `pi-tools` registration; `pi-guard` already owns path
+  rewriting and could own the cwd command.
+- Savings: 1,045 definition bytes; zero new prompt/tool cost.
+- Failure modes: users lose the `/cd` command; moving it couples workspace
+  state to policy; completion and statusline cwd displays change.
+- Coupling: low. Blast radius: low. YAGNI: strongest.
+
+### B. Keep pi-tools as a command-only workspace package
+
+Remove `fd`/`rg`; keep `/cd` and add a small `/open` or workspace command if
+it has a concrete use.
+
+- Structure: no tool schemas; `pi-tools` becomes commands and status only.
+- Savings: 1,045 definition bytes; command surface remains.
+- Failure modes: command-only packages are hard to justify; `/cd` already has a
+  policy coupling; adding commands without a user request is speculative.
+- Coupling: low. Blast radius: low. YAGNI: mixed.
+
+### C. Repurpose pi-tools for sandbox control
+
+Remove `fd`/`rg`; add `sandbox.json` and a `/sandbox` command; wire the core
+Bubblewrap wrapper into background tasks and any extension-run command, not
+built-in `bash`.
+
+- Structure: `extensions/pi-tools/src/sandbox-config.ts`, command registration,
+  `runCapture`/`runBinary` callers pass `sandbox: true`; `pi-tasks` runner gets a
+  sandbox option; document that built-in `bash` still needs a container or
+  outer wrapper.
+- Savings: 1,045 bytes; no new tool schema.
+- Failure modes: false sense of security if users think `bash` is sandboxed;
+  bwrap unavailable on macOS/Windows; task sandboxes need writable workspace and
+  dependency/network allowances; masked paths must not break builds.
+- Coupling: medium/high to process and task lifecycle. Blast radius: high.
+
+### D. Add pi-notify, leave pi-tools command-only
+
+Remove `fd`/`rg`; create a notification extension that listens to completion,
+error, question, task, and subagent events; use OS-native notification commands
+or terminal bell/OSC with configurable events.
+
+- Structure: `extensions/pi-notify`; no model tool; config `notify.json`;
+  platform adapters (`notify-send`, `osascript`, `terminal-notifier`, bell/OSC);
+  suppress when focused, minimum duration, dedupe, and no secrets in messages.
+- Savings: 1,045 bytes from search; notification extension adds no tool schema.
+- Failure modes: shelling out to `notify-send`/`osascript` can hang or leak
+  titles; duplicate notifications from multiple events; focus suppression needs
+  a reliable signal; Windows support needs a separate adapter.
+- Coupling: low to tool execution, medium to event contracts. Blast radius: low.
+
+### E. OMP-style workspace isolation for tasks/subagents
+
+Remove `fd`/`rg`; add per-task worktrees or overlay isolation, inspired by OMP's
+`pi-iso` and subagent fan-out, rather than a command package.
+
+- Structure: workspace allocator around `pi-tasks`/`pi-subagents`; worktree
+  lifecycle, cleanup, merge policy, and path scoping.
+- Savings: search schema only; adds significant new state and prompt/UI.
+- Failure modes: merge conflicts, orphaned worktrees, repo size, subagent
+  write-lock conflicts, and cleanup on crash.
+- Coupling: high. Blast radius: broad. YAGNI: weak for the current suite.
+
+## Trade-offs
+
+| Criterion | A. Retire | B. Command-only | C. Sandbox | D. Notify | E. Worktrees |
+| --- | --- | --- | --- | --- | --- |
+| Removes 1,045 B | yes | yes | yes | yes | yes |
+| New tool schema | none | none | none | none | none |
+| New prompt text | none | none | small | none | medium |
+| OS notification | no | no | no | yes | no |
+| Sandbox enforcement | no | no | partial | no | no |
+| Built-in bash covered | no | no | no | no | no |
+| Security value | none | none | high if wired | none | medium |
+| Blast radius | low | low | high | low | high |
+| Fit with current suite | high | medium | medium | high | low |
+
+## Recommendation
+
+Sequence after the `fd`/`rg` removal:
+
+1. **Decision: remove `fd`/`rg`.** Keep `/cd` only if it still changes built-in
+   file behavior and guard rewrites. Do not add a command-only package without
+   a concrete use.
+2. **Add D (`pi-notify`) before C.** Notifications are low-risk, no-schema, and
+   directly useful for tasks/subagents/questions. Mirror only the useful
+   OpenCode notifier ideas: completion, error, question, task/subagent done,
+   focus suppression, and a minimum duration.
+3. **Treat C as a separate security project.** Use the existing `bwrap`
+   primitive for spawned commands, but state clearly that built-in `bash` is
+   not sandboxed; the only real whole-agent boundary is running Pi in a
+   container or under an outer sandbox. Do not advertise C as covering bash.
+4. **Defer E.** Worktree isolation is a large feature with merge/lifecycle
+   costs; it is not justified until tasks/subagents regularly collide.
+
+## Open Questions
+
+See `artifacts/questions.md#brainstorm--pi-tools-after-search-removal`.
+
+## Out of scope
+
+- Editing production source or git state.
+- Whole-agent containerization.
+- Implementing notifications, sandbox config, or worktrees.
+- Adding OpenCode/OMP feature parity wholesale.
+- Changing `pi-guard`, `pi-tasks`, or `pi-subagents` contracts.

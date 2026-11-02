@@ -85,6 +85,20 @@ describe("provider selection", () => {
     ).rejects.toThrow(/abort/i);
   });
 
+  it("falls through empty array results and returns empty if all are empty", async () => {
+    const seen: string[] = [];
+    const result = await withProviderFallback(["a", "b"], async (provider) => {
+      seen.push(provider);
+      return provider === "a" ? [] : ["hit"];
+    });
+    expect(result).toEqual(["hit"]);
+    expect(seen).toEqual(["a", "b"]);
+
+    await expect(
+      withProviderFallback(["a", "b"], async () => []),
+    ).resolves.toEqual([]);
+  });
+
   it("combines caller abort with the provider timeout", () => {
     expect(providerSignal(AbortSignal.abort()).aborted).toBe(true);
     expect(providerSignal()).toBeInstanceOf(AbortSignal);

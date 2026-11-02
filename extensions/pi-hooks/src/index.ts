@@ -6,7 +6,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { effectiveCwd, session, truncateText } from "@hollowheap/core";
-import { type HookConfig, loadHooks } from "./config.js";
+import { type HookConfig, clearHooksCache, loadHooks } from "./config.js";
 import {
   type HookPayload,
   type SessionHookPayload,
@@ -26,13 +26,28 @@ const SKILL_PATH = join(
   "SKILL.md",
 );
 
+const diagnosticCallbacks = new WeakMap<object, (message: string) => void>();
+
 function loadContextHooks(ctx: ExtensionContext): HookConfig {
+  const owner: object = ctx.sessionManager ?? ctx;
+  let onDiagnostic = diagnosticCallbacks.get(owner);
+  if (onDiagnostic === undefined) {
+    onDiagnostic = (message) => notifyWarning(ctx, `pi-hooks: ${message}`);
+    diagnosticCallbacks.set(owner, onDiagnostic);
+  }
   return loadHooks({
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
-    onDiagnostic: (message) => ctx.ui.notify(`pi-hooks: ${message}`, "warning"),
+    onDiagnostic,
   });
+}
+
+function inputRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return value === undefined ? {} : { value };
 }
 
 function payloadFor(
@@ -44,17 +59,17 @@ function payloadFor(
     event: kind,
     toolName: event.toolName,
     toolCallId: event.toolCallId,
-    input: event.input as Record<string, unknown>,
+    input: inputRecord(event.input),
     cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
     mode: session(ctx.sessionManager).mode,
   };
 }
 
-function notifySessionWarning(ctx: ExtensionContext, message: string): void {
+function notifyWarning(ctx: ExtensionContext, message: string): void {
   try {
     ctx.ui.notify(message, "warning");
   } catch {
-    // Startup must continue even when the UI is unavailable.
+    // Hooks must continue even when the UI is unavailable.
   }
 }
 
@@ -74,72 +89,93 @@ export default function (pi: ExtensionAPI) {
       for (const hook of hooks) {
         const result = await runSessionHook(hook, payload);
         if (result.error !== undefined) {
-          notifySessionWarning(
+          notifyWarning(
             ctx,
             `pi-hooks: ${hook.command} failed: ${result.error}`,
           );
         }
       }
     } catch (error) {
-      notifySessionWarning(
+      notifyWarning(
         ctx,
         `pi-hooks: session hooks failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   });
   pi.on("tool_call", async (event, ctx) => {
-    const payload = payloadFor(ctx, event, "pre_tool");
-    const hooks = loadContextHooks(ctx).preTool.filter(
-      (hook) =>
-        matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
-    );
-    if (hooks.length === 0) return undefined;
-    for (const hook of hooks) {
-      const verdict = await runPreHook(hook, payload);
-      if (verdict.block) {
-        return { block: true, reason: `pi-hooks: ${verdict.reason}` };
+    try {
+      const payload = payloadFor(ctx, event, "pre_tool");
+      const hooks = loadContextHooks(ctx).preTool.filter(
+        (hook) =>
+          matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
+      );
+      if (hooks.length === 0) return undefined;
+      for (const hook of hooks) {
+        const verdict = await runPreHook(hook, payload);
+        if (verdict.block) {
+          return { block: true, reason: `pi-hooks: ${verdict.reason}` };
+        }
       }
+      return undefined;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notifyWarning(ctx, `pi-hooks: pre-tool hooks failed: ${message}`);
+      return {
+        block: true,
+        reason: `pi-hooks: pre-tool hooks failed: ${message}`,
+      };
     }
-    return undefined;
   });
 
   pi.on("tool_result", async (event, ctx) => {
-    const payload = payloadFor(ctx, event, "post_tool");
-    const hooks = loadContextHooks(ctx).postTool.filter(
-      (hook) =>
-        matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
-    );
-    if (hooks.length === 0) return undefined;
-    const notes: string[] = [];
-    let previousOutput = "";
-    for (const hook of hooks) {
-      const hookPayload = hook.chain
-        ? { ...payload, input: { ...payload.input, previousOutput } }
-        : payload;
-      const result = await runPostHook(hook, hookPayload);
-      if (result.error !== undefined) {
-        ctx.ui.notify(
-          `pi-hooks: ${hook.command} failed: ${result.error}`,
-          "warning",
-        );
-        continue;
+    try {
+      const payload = payloadFor(ctx, event, "post_tool");
+      const hooks = loadContextHooks(ctx).postTool.filter(
+        (hook) =>
+          matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
+      );
+      if (hooks.length === 0) return undefined;
+      const notes: string[] = [];
+      let previousOutput = "";
+      for (const hook of hooks) {
+        const hookPayload = hook.chain
+          ? { ...payload, input: { ...payload.input, previousOutput } }
+          : payload;
+        const result = await runPostHook(hook, hookPayload);
+        if (result.error !== undefined) {
+          notifyWarning(
+            ctx,
+            `pi-hooks: ${hook.command} failed: ${result.error}`,
+          );
+          previousOutput = "";
+          continue;
+        }
+        previousOutput = result.output ?? "";
+        if (result.output !== undefined) {
+          notes.push(
+            `[pi-hooks: ${hook.command}]\n${truncateText(result.output, "pi-hooks")}`,
+          );
+        }
       }
-      if (result.output !== undefined) {
-        previousOutput = result.output;
-        notes.push(
-          `[pi-hooks: ${hook.command}]\n${truncateText(result.output, "pi-hooks")}`,
-        );
-      }
+      if (notes.length === 0) return undefined;
+      return {
+        content: [
+          ...event.content,
+          ...notes.map((text) => ({ type: "text" as const, text })),
+        ],
+        ...(event.structuredContent === undefined
+          ? {}
+          : { structuredContent: event.structuredContent }),
+      };
+    } catch (error) {
+      notifyWarning(
+        ctx,
+        `pi-hooks: post-tool hooks failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
     }
-    if (notes.length === 0) return undefined;
-    return {
-      content: [
-        ...event.content,
-        ...notes.map((text) => ({ type: "text" as const, text })),
-      ],
-      ...(event.structuredContent === undefined
-        ? {}
-        : { structuredContent: event.structuredContent }),
-    };
+  });
+  pi.on("session_shutdown", () => {
+    clearHooksCache();
   });
 }

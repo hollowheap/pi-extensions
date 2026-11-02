@@ -78,6 +78,14 @@ describe("pi-classifier extension", () => {
     );
   });
 
+  it("does not throw when diagnostics have no UI", () => {
+    useConfig({ model: "bad" });
+    const pi = createMockPi();
+    extension(pi as never);
+
+    expect(() => pi.handlers.session_start({}, {})).not.toThrow();
+  });
+
   it("does not activate codemode", () => {
     const pi = createMockPi();
     pi.getAllTools = vi.fn(() => [{ name: "codemode" }]);

@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { session } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import autopilotExtension from "../../pi-autopilot/src/index.js";
-import budgetsExtension from "../../pi-budgets/src/index.js";
-import { createFdTool } from "../../pi-tools/src/fd.js";
 import toolsExtension from "../../pi-tools/src/index.js";
+import usageExtension from "../../pi-usage/src/index.js";
 import extension from "./index.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
@@ -50,8 +49,8 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
   extension(guardPi as never);
   const toolsPi = mockPi(bus);
   toolsExtension(toolsPi as never);
-  const budgetsPi = mockPi(bus);
-  budgetsExtension(budgetsPi as never);
+  const usagePi = mockPi(bus);
+  usageExtension(usagePi as never);
   if (withAutopilot) {
     const autoPi = mockPi(bus);
     autopilotExtension(autoPi as never);
@@ -72,14 +71,14 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
   const guardHandlers = Object.fromEntries(
     guardPi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
-  const budgetsHandlers = Object.fromEntries(
-    budgetsPi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  const usageHandlers = Object.fromEntries(
+    usagePi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
   const guardCommands = Object.fromEntries(
     guardPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
-  const budgetsCommands = Object.fromEntries(
-    budgetsPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  const usageCommands = Object.fromEntries(
+    usagePi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
   const toolsCommands = Object.fromEntries(
     toolsPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
@@ -89,11 +88,10 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
     ctx,
     start: () => {
       guardHandlers.session_start(undefined as never, ctx as never);
-      budgetsHandlers.session_start(undefined as never, ctx as never);
+      usageHandlers.session_start(undefined as never, ctx as never);
     },
     mode: (args: string) => guardCommands.mode.handler(args, ctx as never),
-    budget: (args: string) =>
-      budgetsCommands.budget.handler(args, ctx as never),
+    usage: (args: string) => usageCommands.usage.handler(args, ctx as never),
     cd: (args: string) => toolsCommands.cd.handler(args, ctx as never),
     hook: (toolName: string, input: Record<string, unknown>) =>
       guardHandlers.tool_call(
@@ -117,17 +115,10 @@ describe("split extensions over the event bus", () => {
     expect(session(env.ctx.sessionManager).mode).toBe("ask");
   });
 
-  it("cycles ask, edit, plan, autopilot with the cap gate", async () => {
+  it("enters autopilot without a mandatory cap", async () => {
     const env = setupAll();
     env.start();
     expect(session(env.ctx.sessionManager).mode).toBe("ask");
-    await env.mode("autopilot");
-    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("set a token cap first"),
-      "error",
-    );
-    expect(session(env.ctx.sessionManager).mode).toBe("ask");
-    await env.budget("1000");
     await env.mode("autopilot");
     expect(session(env.ctx.sessionManager).mode).toBe("autopilot");
     expect(env.ctx.ui.notify).toHaveBeenCalledWith(
@@ -151,26 +142,6 @@ describe("split extensions over the event bus", () => {
     expect(input.path).toBe(join(env.dir, "sub", "x.ts"));
   });
 
-  it("searches under the /cd directory across extensions", async () => {
-    const env = setupAll();
-    env.start();
-    await env.cd("sub");
-    const tool = createFdTool({
-      run: async () => "a.ts\n",
-      statMtimeMs: (path) =>
-        path === join(env.dir, "sub", "a.ts") ? 1 : undefined,
-    });
-    const result = await tool.execute(
-      "call-1",
-      { pattern: "*.ts" },
-      undefined,
-      () => {},
-      env.ctx as never,
-    );
-    const [first] = result.content as [{ type: string; text: string }];
-    expect(first.text).toBe("a.ts");
-  });
-
   it("publishes both providers on session start", () => {
     const bus = new EventEmitter();
     const seen: { name: string; text: string }[] = [];
@@ -180,8 +151,8 @@ describe("split extensions over the event bus", () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-split-prov-"));
     const guardPi = mockPi(bus);
     extension(guardPi as never);
-    const budgetsPi = mockPi(bus);
-    budgetsExtension(budgetsPi as never);
+    const usagePi = mockPi(bus);
+    usageExtension(usagePi as never);
     const sessionManager = {};
     const ctx = {
       cwd: dir,
@@ -193,12 +164,12 @@ describe("split extensions over the event bus", () => {
     const guardStart = guardPi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1] as (event: never, ctx: never) => void;
-    const budgetsStart = budgetsPi.on.mock.calls.find(
+    const usageStart = usagePi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1] as (event: never, ctx: never) => void;
     guardStart(undefined as never, ctx as never);
-    budgetsStart(undefined as never, ctx as never);
+    usageStart(undefined as never, ctx as never);
     expect(seen).toContainEqual({ name: "mode-guard", text: "ASK" });
-    expect(seen).toContainEqual({ name: "budgets", text: "" });
+    expect(seen).toContainEqual({ name: "usage", text: "" });
   });
 });

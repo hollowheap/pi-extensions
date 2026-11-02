@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { requestJsonl } from "@hollowheap/process";
+import { isProcessAlive, requestJsonl } from "@hollowheap/process";
 import type { SubagentState } from "./state.js";
 
 export interface RunnerRequestOptions {
@@ -30,10 +30,18 @@ export async function runnerRequest(
 export async function waitForRunner(
   state: SubagentState,
   timeoutMs = 2_000,
+  runner?: { pid: number; startTime?: number },
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
   while (Date.now() < deadline) {
+    if (runner !== undefined && !isProcessAlive(runner.pid, runner.startTime)) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(
+            `runner for ${state.id} exited before its socket was ready`,
+          );
+    }
     try {
       await runnerRequest(state, "status", undefined, { timeoutMs: 200 });
       return;

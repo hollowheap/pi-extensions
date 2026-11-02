@@ -46,23 +46,30 @@ assigned IDs.
 ## State
 
 State is stored in a `hollowheap.todos` custom session entry on the active
-branch. It is restored on session start and branch navigation, so resume and
-fork stay consistent. There is no global or project-file state.
+branch. It is restored on session start and branch navigation, and re-appended
+after compaction so resume and fork stay consistent. There is no global or
+project-file state.
 
 ## UI
 
-- A boxed widget above the editor displays open todos, running shell tasks, and active subagents inside a rounded Unicode border (`╭─ ... ─╮`, `│ ... │`, `╰─ ... ─╯`). When terminal width supports 80+ columns and both todos and background jobs are active, sections split into side-by-side columns.
-  - Todos list up to ten items with status icons (`•` open, `✓` completed with strikethrough). When more remain, it adds a `+N more (/todos)` line.
+- A width-aware component widget above the editor displays open todos, running shell tasks, and active subagents inside a rounded Unicode border (`╭─ ... ─╮`, `│ ... │`, `╰─ ... ─╯`). When the host renders at 80+ columns and both todos and background jobs are active, sections split into side-by-side columns.
+  - Todos list up to ten items, open todos first, with status icons (`•` open, `✓` completed with strikethrough). Completed rows cannot crowd out open work. When more remain, it adds a `+N more (/todos)` line.
   - Running background tasks (from `pi-tasks`) and active subagents (from `pi-subagents`) appear in dedicated sub-sections separated by divider borders (`├─ ... ─┤`).
   - The widget clears when all sections are empty.
-- `/todos` shows the full list. TUI opens a closeable list (Esc, Enter, q,
-  or Ctrl+C); RPC uses a notification.
-- The status count shows `open/total` and clears when the list is empty.
+- `/todos` shows the full list; `/todos search <query>` filters it. TUI opens a
+  closeable list (Esc, Enter, q, or Ctrl+C); RPC uses a notification.
+- `/todo complete <id|all>`, `/todo edit <id> <text>`, `/todo delete [id]`, and
+  `/todo priority <id> <high|medium|low>` manage the list. Priorities sort the
+  widget and list; the model can learn priority from the prompt section but
+  cannot set it through a todo block.
+- `/panel toggle` or `^x p` collapses and expands the sticky panel.
 - The TUI transcript strips valid todo blocks. The stored message, model
   context, and RPC clients keep the raw fence.
 
-## Mode gating
+## Mode behavior
 
-Todo blocks and the `todos_format` prompt section are active only when a UI is
-available (TUI and RPC). Print and JSON modes add no prompt section, ignore
-todo blocks, and open no dialogs.
+Todo blocks and the `todos_format` prompt section are active in every mode,
+including print and JSON, so headless runs still persist state. Widgets,
+notifications, and `/todos` dialogs require UI support; without a UI the state
+and follow-up confirmation still work. Terminal chord listeners are disposed
+when the session shuts down, so reloads do not stack handlers.

@@ -58,6 +58,23 @@ describe("cwd", () => {
     );
   });
 
+  it("shortens relative to the repository root", () => {
+    const root = "/home/u/projects/app";
+    expect(BUILTINS.cwd({ type: "cwd" }, ctx({ repoRoot: root }))).toBe("app");
+    expect(
+      BUILTINS.cwd(
+        { type: "cwd" },
+        ctx({ cwd: `${root}/src`, repoRoot: root }),
+      ),
+    ).toBe("app/src");
+    expect(
+      BUILTINS.cwd(
+        { type: "cwd", depth: 1 },
+        ctx({ cwd: `${root}/src`, repoRoot: root }),
+      ),
+    ).toBe("…/src");
+  });
+
   it("shortenPath handles root and exact home", () => {
     expect(shortenPath("/home/u", "/home/u", undefined)).toBe("~");
     expect(shortenPath("/a/b", "", 1)).toBe("/…/b");
@@ -199,6 +216,58 @@ describe("createGitDiffCache", () => {
     );
     expect(runner).toHaveBeenCalledTimes(1);
     expect(onUpdate).toHaveBeenCalled();
+  });
+
+  it("recovers from a synchronously throwing runner", async () => {
+    const runner = vi.fn(() => {
+      throw new Error("sync failure");
+    });
+    const onUpdate = vi.fn();
+    const cache = createGitDiffCache(runner, onUpdate, 5000);
+
+    cache.refresh("/repo");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    cache.refresh("/repo");
+    await Promise.resolve();
+
+    expect(runner).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out a runner that never settles and releases the slot", async () => {
+    vi.useFakeTimers();
+    try {
+      const runner = vi.fn(() => new Promise<string>(() => {})) as unknown as (
+        cwd: string,
+        signal: AbortSignal,
+      ) => Promise<string>;
+      const cache = createGitDiffCache(runner, () => {}, 5000);
+
+      cache.refresh("/repo");
+      await vi.advanceTimersByTimeAsync(6000);
+      await vi.advanceTimersByTimeAsync(0);
+      cache.refresh("/repo");
+      await Promise.resolve();
+
+      expect(runner).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears and aborts inflight refreshes", async () => {
+    const runner = vi.fn(() => new Promise<string>(() => {})) as unknown as (
+      cwd: string,
+      signal: AbortSignal,
+    ) => Promise<string>;
+    const cache = createGitDiffCache(runner, () => {}, 5000);
+
+    cache.refresh("/repo");
+    await Promise.resolve();
+    cache.clear();
+    cache.refresh("/repo");
+    await Promise.resolve();
+
+    expect(runner).toHaveBeenCalledTimes(2);
   });
 
   it("stores undefined on failure and refreshes stale entries", async () => {

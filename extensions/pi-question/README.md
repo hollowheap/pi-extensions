@@ -17,6 +17,8 @@ Interactive TUI and RPC sessions get sequential dialogs. Print and JSON sessions
 ````
 
 - One H2 per question; questions are asked in source order.
+- Add `[page: N]` to an H2 to group questions into pages. After a page, choose `Next page` or `Back`.
+- Add `[if: answer1 == 'Yes']` (or `answer1 != 'No'`) to show a question only when an earlier answer matches. Answer numbers follow source order, including skipped questions.
 - Ordered-list items are options. A question has 0–8 options; zero options asks for free text.
 - No checkbox means single-select. Put `[ ]` on every option for multi-select; `[x]` is also a mode marker, not a preselected option.
 - Do not add a write-in option. The UI always appends the final `Write-in answer` row, capped at 500 characters.
@@ -24,10 +26,11 @@ Interactive TUI and RPC sessions get sequential dialogs. Print and JSON sessions
 
 ## Behavior
 
-- **TUI:** single-select uses a choice dialog plus write-in input; multi-select uses checkbox rows (Space toggles, Enter opens the inline write-in editor, Enter on Done submits). Zero selections is valid.
+- **TUI:** single-select uses a choice dialog plus write-in input; multi-select uses checkbox rows (Space toggles, Enter opens the inline write-in editor, Enter on Done submits). Zero selections is valid. Free-text and write-in answers use the multi-line `ctx.ui.editor` when available.
 - **RPC:** single-select uses the same select/input flow; multi-select uses a select-toggle loop with `[ ]`/`[x]` rows, a write-in row, and Done.
 - **Display-only stripping:** the TUI transcript hides valid question blocks. The stored assistant message and model context keep the raw fence. RPC rendering is client-owned, so RPC clients still receive the raw fence.
 - **Cancellation:** dismissing any dialog cancels the whole set, sends no follow-up, and does not throw.
+- **Pages and branching:** pages are answered in ascending order with Next/Back navigation; conditions evaluate against prior answers by source question number.
 - **One message per set:** all questions from one assistant message are answered sequentially, then one `hollowheap.question.answers` follow-up is sent.
 
 ## Install

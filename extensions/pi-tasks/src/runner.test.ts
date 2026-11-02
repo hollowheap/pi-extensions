@@ -92,6 +92,28 @@ describe("pi-tasks runner", () => {
     expect(reused?.exitCode).toBeNull();
   });
 
+  it("waits for the shim to publish a pid before failing a new task", () => {
+    createTaskRecord(agentDir, {
+      id: "task-starting",
+      kind: "shell",
+      status: "running",
+      command: "sleep 60",
+      cwd: process.cwd(),
+      startedAt: Date.now(),
+    });
+    expect(reconcileTask(agentDir, "task-starting")?.status).toBe("running");
+
+    createTaskRecord(agentDir, {
+      id: "task-stale-start",
+      kind: "shell",
+      status: "running",
+      command: "sleep 60",
+      cwd: process.cwd(),
+      startedAt: Date.now() - 10_000,
+    });
+    expect(reconcileTask(agentDir, "task-stale-start")?.status).toBe("failed");
+  });
+
   it("supports cross-restart wait by watching/polling <id>.json", async () => {
     createTaskRecord(agentDir, {
       id: "task-cross",

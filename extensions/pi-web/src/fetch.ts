@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { extractHtml } from "./extract.js";
 import { createExaAdapter } from "./providers/exa.js";
 import { providerSignal } from "./providers/selection.js";
@@ -7,7 +8,14 @@ import type {
   NormalizedFetchResult,
   ProviderAdapter,
 } from "./providers/types.js";
-import { MAX_REDIRECTS, assertSafeUrl } from "./url.js";
+import {
+  type HostResolver,
+  MAX_REDIRECTS,
+  assertSafeResolvedUrl,
+  assertSafeUrl,
+} from "./url.js";
+
+export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
 export interface FetchOptions {
   apiKey?: string;
@@ -18,22 +26,45 @@ export interface FetchOptions {
   cacheTtlMs?: number;
   acceptType?: "json" | "html" | "text" | "auto";
   rateLimitMs?: number;
+  resolveHost?: HostResolver;
 }
 
+const MAX_CACHE_ENTRIES = 32;
 const fetchCache = new Map<
   string,
   { result: NormalizedFetchResult; expiresAt: number }
 >();
 
 let lastRequestTime = 0;
+let rateLimitChain: Promise<void> = Promise.resolve();
 
 async function rateLimit(ms: number): Promise<void> {
-  const now = Date.now();
-  const wait = Math.max(0, lastRequestTime + ms - now);
-  if (wait > 0) {
-    await new Promise((resolve) => setTimeout(resolve, wait));
+  const previous = rateLimitChain;
+  let release = (): void => {};
+  rateLimitChain = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    const now = Date.now();
+    const wait = Math.max(0, lastRequestTime + ms - now);
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastRequestTime = Date.now();
+  } finally {
+    release();
   }
-  lastRequestTime = Date.now();
+}
+
+function cacheKeyFor(url: string, options: FetchOptions): string {
+  const apiKey = options.apiKey
+    ? createHash("sha256").update(options.apiKey).digest("hex").slice(0, 16)
+    : "none";
+  const providers =
+    options.providers?.map((provider) => provider.id).join(",") ?? "default";
+  const fetchImpl = options.fetchImpl === undefined ? "default" : "custom";
+  return `${url}\0${options.acceptType ?? "auto"}\0${apiKey}\0${providers}\0${fetchImpl}`;
 }
 
 function ensureResult(
@@ -52,12 +83,48 @@ function ensureResult(
   };
 }
 
+async function readBoundedText(response: Response): Promise<{
+  text: string;
+  truncated: boolean;
+}> {
+  if (!response.body) return { text: "", truncated: false };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (total + value.byteLength > MAX_RESPONSE_BYTES) {
+      const remaining = MAX_RESPONSE_BYTES - total;
+      if (remaining > 0) chunks.push(value.subarray(0, remaining));
+      total = MAX_RESPONSE_BYTES;
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return {
+    text: new TextDecoder().decode(bytes),
+    truncated,
+  };
+}
+
 export async function rawFetch(
   url: string,
   options: {
     fetchImpl?: typeof fetch;
     signal?: AbortSignal;
     acceptType?: "json" | "html" | "text" | "auto";
+    resolveHost?: HostResolver;
   } = {},
 ): Promise<NormalizedFetchResult> {
   assertSafeUrl(url);
@@ -76,6 +143,7 @@ export async function rawFetch(
   let redirects = 0;
 
   while (true) {
+    await assertSafeResolvedUrl(currentUrl, options.resolveHost);
     const response = await fetchImpl(currentUrl, {
       signal,
       redirect: "manual",
@@ -89,19 +157,21 @@ export async function rawFetch(
       response.status === 307 ||
       response.status === 308
     ) {
-      const location = response.headers.get("location");
-      if (!location) {
+      try {
+        const location = response.headers.get("location");
+        if (!location) {
+          throw new Error("redirect missing Location header");
+        }
+        const nextUrl = new URL(location, currentUrl).href;
+        assertSafeUrl(nextUrl);
+        if (redirects >= MAX_REDIRECTS) {
+          throw new Error("too many redirects");
+        }
+        redirects += 1;
+        currentUrl = nextUrl;
+      } finally {
         await response.body?.cancel?.();
-        throw new Error("redirect missing Location header");
       }
-      const nextUrl = new URL(location, currentUrl).href;
-      assertSafeUrl(nextUrl);
-      await response.body?.cancel?.();
-      if (redirects >= MAX_REDIRECTS) {
-        throw new Error("too many redirects");
-      }
-      redirects += 1;
-      currentUrl = nextUrl;
       continue;
     }
 
@@ -110,6 +180,7 @@ export async function rawFetch(
     const mediaType = contentType.split(";")[0].trim();
 
     if (!response.ok) {
+      await response.body?.cancel?.();
       throw new Error(
         `raw fetch failed: ${response.status} ${response.statusText}`,
       );
@@ -117,7 +188,8 @@ export async function rawFetch(
 
     const lower = mediaType.toLowerCase();
     if (lower.includes("html")) {
-      const page = extractHtml(await response.text(), finalUrl);
+      const body = await readBoundedText(response);
+      const page = extractHtml(body.text, finalUrl);
       return {
         url,
         finalUrl,
@@ -126,7 +198,7 @@ export async function rawFetch(
         content: page.content,
         links: page.links,
         media: page.media,
-        truncated: false,
+        truncated: body.truncated,
       };
     }
 
@@ -136,15 +208,16 @@ export async function rawFetch(
       lower.includes("json") ||
       lower.includes("xml")
     ) {
+      const body = await readBoundedText(response);
       return {
         url,
         finalUrl,
         provider: "raw",
         contentType: mediaType || "text/plain",
-        content: await response.text(),
+        content: body.text,
         links: [],
         media: [],
-        truncated: false,
+        truncated: body.truncated,
       };
     }
 
@@ -169,11 +242,12 @@ export async function fetchUrl(
   assertSafeUrl(url);
 
   // Check cache
-  const cacheKey = `${url}:${options.acceptType ?? "auto"}`;
+  const cacheKey = cacheKeyFor(url, options);
   const cached = fetchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.result;
   }
+  if (cached !== undefined) fetchCache.delete(cacheKey);
 
   // Rate limiting
   if (options.rateLimitMs && options.rateLimitMs > 0) {
@@ -209,12 +283,19 @@ export async function fetchUrl(
     fetchImpl,
     signal,
     acceptType: options.acceptType,
+    resolveHost: options.resolveHost,
   });
 
   // Cache result
   const ttl = options.cacheTtlMs ?? 0;
   if (ttl > 0) {
+    fetchCache.delete(cacheKey);
     fetchCache.set(cacheKey, { result, expiresAt: Date.now() + ttl });
+    while (fetchCache.size > MAX_CACHE_ENTRIES) {
+      const oldest = fetchCache.keys().next().value;
+      if (oldest === undefined) break;
+      fetchCache.delete(oldest);
+    }
   }
 
   return result;

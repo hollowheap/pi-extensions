@@ -82,6 +82,24 @@ describe("out-of-workspace root trust rules", () => {
       expect(result.isTrusted).toBe(true);
     });
 
+    it("resolves relative trusted roots against the workspace", () => {
+      const target = join(externalDir, "data.txt");
+      const result = checkPathTrust(target, workspaceDir, ["../external"]);
+      expect(result.isOutsideWorkspace).toBe(true);
+      expect(result.isTrusted).toBe(true);
+    });
+
+    it("uses the most specific cached subpath decision", () => {
+      const target = join(externalDir, "dir", "file.txt");
+      const sessionDecisions = new Map<string, "allow" | "ask" | "deny">([
+        [resolveCanonicalPath(workspaceDir, externalDir), "allow"],
+        [resolveCanonicalPath(workspaceDir, join(externalDir, "dir")), "deny"],
+      ]);
+      const result = checkPathTrust(target, workspaceDir, [], sessionDecisions);
+      expect(result.cachedDecision).toBe("deny");
+      expect(result.isTrusted).toBe(false);
+    });
+
     it("uses cached session decision if present", () => {
       const target = join(externalDir, "file.txt");
       const sessionDecisions = new Map<string, "allow" | "ask" | "deny">([

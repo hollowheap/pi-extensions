@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_ANSWER,
   capAnswer,
+  evaluateCondition,
   formatAnswers,
   parseQuestionBlock,
 } from "./questions.js";
@@ -75,6 +76,45 @@ describe("parseQuestionBlock", () => {
 
   it("rejects options before the first H2", () => {
     expect(parseQuestionBlock("1. Alpha\n## Q")).toBeUndefined();
+  });
+
+  it("ignores unordered prose before the first H2", () => {
+    expect(parseQuestionBlock("- note\n## Q\n1. Alpha")).toEqual([
+      { prompt: "Q", mode: "single", options: ["Alpha"] },
+    ]);
+  });
+
+  it("parses page and condition metadata", () => {
+    expect(
+      parseQuestionBlock(
+        "## First [page: 1]\n1. Yes\n2. No\n## Second [page: 2] [if: answer1 == 'Yes']\n1. Maybe",
+      ),
+    ).toEqual([
+      { prompt: "First", mode: "single", options: ["Yes", "No"], page: 1 },
+      {
+        prompt: "Second",
+        mode: "single",
+        options: ["Maybe"],
+        page: 2,
+        condition: "answer1 == 'Yes'",
+      },
+    ]);
+  });
+
+  it("rejects duplicate and reserved option labels", () => {
+    expect(parseQuestionBlock("## Q\n1. Alpha\n2. Alpha")).toBeUndefined();
+    expect(parseQuestionBlock("## Q\n1. Done")).toBeUndefined();
+  });
+});
+
+describe("evaluateCondition", () => {
+  it("evaluates equality and inequality conditions", () => {
+    const answers = [{ mode: "single" as const, value: "Yes" }];
+    expect(evaluateCondition("answer1 == 'Yes'", answers)).toBe(true);
+    expect(evaluateCondition("answer1 != 'No'", answers)).toBe(true);
+    expect(evaluateCondition("answer1 == 'No'", answers)).toBe(false);
+    expect(evaluateCondition("answer2 == 'Yes'", answers)).toBe(false);
+    expect(evaluateCondition("unknown", answers)).toBe(false);
   });
 });
 

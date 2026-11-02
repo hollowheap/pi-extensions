@@ -4,10 +4,12 @@ Registers the `autopilot` approval mode for `pi-guard`: reads, edits, and shell 
 
 Mechanism: this package registers an `autopilot` mode layer on `@hollowheap/core` (allow defaults plus an entry warning). It imports nothing else at runtime.
 
+Composition: `pi-guard` is a declared dependency for tool approvals and core shell safety. Budget caps are optional and live in `pi-usage`; autopilot does not require one to enter.
+
 ## Try it
 
 ```bash
-pi -e ./extensions/pi-guard -e ./extensions/pi-autopilot
+pi -e ./extensions/pi-guard -e ./extensions/pi-usage -e ./extensions/pi-autopilot
 ```
 
 ## Install
@@ -16,4 +18,4 @@ pi -e ./extensions/pi-guard -e ./extensions/pi-autopilot
 pi install npm:@hollowheap/pi-autopilot
 ```
 
-Switching to `autopilot` without a token cap (`/budget`, from `pi-budgets`) is refused, and turning it on shows a chat warning. Without this package `/mode autopilot` is an unknown mode.
+Switching to `autopilot` shows a chat warning but never requires a cap. Set an optional dollar cap with `/usage cap $5`; `pi-usage` warns at 80% and aborts the next run at 100%. Without this package `/mode autopilot` is an unknown mode.

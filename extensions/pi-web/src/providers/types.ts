@@ -8,7 +8,7 @@ export interface NormalizedSearchResult {
   title: string;
   url: string;
   snippet: string;
-  provider: ProviderId;
+  provider: ProviderId | "duckduckgo";
 }
 
 export interface NormalizedLink {

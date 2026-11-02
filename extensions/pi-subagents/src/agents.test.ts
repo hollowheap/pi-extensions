@@ -25,7 +25,7 @@ describe("discoverAgents", () => {
     writeAgent(
       join(agentDir, "agents"),
       "scout.md",
-      "name: scout\ndescription: Fast recon\ntools: read, grep\nmodel: p/m\nthinking: high\nmode: plan\neffort: low",
+      "name: scout\ndescription: Fast recon\ntools: read, grep\nmodel: p/m\nthinking: high\nmode: plan\neffort: low\nharness: claude",
     );
 
     const result = discoverAgents({
@@ -42,6 +42,7 @@ describe("discoverAgents", () => {
         thinking: "high",
         mode: "plan",
         effort: "low",
+        harness: "claude",
         source: "user",
         systemPrompt: "System prompt",
       }),
@@ -118,6 +119,30 @@ describe("discoverAgents", () => {
     expect(result.agents).toEqual([
       expect.objectContaining({ name: "p", source: "project" }),
     ]);
+  });
+
+  it("resolves a relative cwd before walking up", () => {
+    const base = root();
+    const agentDir = join(base, "agent");
+    const project = join(base, "project");
+    writeAgent(
+      join(project, ".pi", "agents"),
+      "project.md",
+      "name: p\ndescription: P",
+    );
+    const previous = process.cwd();
+    try {
+      process.chdir(base);
+      const result = discoverAgents({
+        cwd: join("project", "src"),
+        agentDir,
+        trusted: true,
+      });
+      expect(result.projectAgentsDir).toBe(join(project, ".pi", "agents"));
+      expect(result.agents.map((agent) => agent.name)).toEqual(["p"]);
+    } finally {
+      process.chdir(previous);
+    }
   });
 
   it("parses array tools and skips invalid agents", () => {

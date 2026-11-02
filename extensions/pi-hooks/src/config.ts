@@ -38,7 +38,7 @@ interface CacheEntry {
   mtimeMs: number;
   config: HookConfig;
   diagnostics: string[];
-  reported: boolean;
+  delivered: WeakSet<object>;
 }
 
 // One reader, one module instance: the cache lives here rather than on the
@@ -57,8 +57,8 @@ function report(
   entry: CacheEntry,
   onDiagnostic?: (message: string) => void,
 ): void {
-  if (entry.reported || onDiagnostic === undefined) return;
-  entry.reported = true;
+  if (onDiagnostic === undefined || entry.delivered.has(onDiagnostic)) return;
+  entry.delivered.add(onDiagnostic);
   for (const diagnostic of entry.diagnostics) onDiagnostic(diagnostic);
 }
 
@@ -205,11 +205,15 @@ function readHooksFile(
     mtimeMs: mtime,
     config,
     diagnostics,
-    reported: false,
+    delivered: new WeakSet(),
   };
   CACHE.set(key, entry);
   report(entry, onDiagnostic);
   return config;
+}
+
+export function clearHooksCache(): void {
+  CACHE.clear();
 }
 
 export function loadHooks(options: LoadHooksOptions): HookConfig {

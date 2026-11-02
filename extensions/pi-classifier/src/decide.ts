@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import type {
   ClassifierAnswer,
@@ -8,7 +9,8 @@ import type {
 import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { loadClassifierConfig } from "./config.js";
+import { getSessionCache } from "@hollowheap/core";
+import { type ClassifierConfig, loadClassifierConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";
 
@@ -27,8 +29,7 @@ export interface DecideParams {
 }
 
 export interface DecideDeps {
-  loadConfig: () => ReturnType<typeof loadClassifierConfig>;
-  getAgentDir: () => string;
+  loadConfig: () => ClassifierConfig;
   classify: (
     ctx: PiExtensionContext,
     modelId: string,
@@ -50,21 +51,101 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProbability(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+  );
+}
+
+const MAX_CACHE_ENTRIES = 128;
+const RESULT_CACHE_NAMESPACE = "pi-classifier/results";
+const INFLIGHT_CACHE_NAMESPACE = "pi-classifier/inflight";
+
+interface Inflight {
+  promise: Promise<DecideToolResult>;
+  controller: AbortController;
+  waiters: number;
+}
+
 const defaultDeps: DecideDeps = {
   loadConfig: () => loadClassifierConfig(getAgentDir()),
-  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
   classify: defaultClassify,
 };
 
-export const decideTool = createDecideTool();
-
 export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
   const deps: DecideDeps = { ...defaultDeps, ...overrides };
-  const cache = new Map<
-    string,
-    { result: DecideToolResult; expires: number }
-  >();
-  const inflight = new Map<string, Promise<DecideToolResult>>();
+  const fallbackOwner = {};
+
+  function ownerFor(ctx: PiExtensionContext): object {
+    return typeof ctx.sessionManager === "object" && ctx.sessionManager !== null
+      ? ctx.sessionManager
+      : fallbackOwner;
+  }
+
+  function cacheKey(
+    model: string,
+    params: DecideParams,
+    question: ClassifierQuestion,
+  ): string {
+    return createHash("sha256")
+      .update(
+        stableStringify([
+          model,
+          params.kind,
+          params.question,
+          question,
+          params.input,
+        ]),
+      )
+      .digest("hex");
+  }
+
+  async function waitForResult(
+    entry: Inflight,
+    signal: AbortSignal | undefined,
+  ): Promise<DecideToolResult> {
+    if (signal === undefined) {
+      entry.waiters += 1;
+      try {
+        return await entry.promise;
+      } finally {
+        entry.waiters -= 1;
+      }
+    }
+    if (signal.aborted) return errorResult("aborted");
+
+    entry.waiters += 1;
+    return new Promise((resolve) => {
+      let settled = false;
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        entry.waiters -= 1;
+        if (entry.waiters === 0) entry.controller.abort();
+        resolve(errorResult("aborted"));
+      };
+      const finish = (result: DecideToolResult) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        entry.waiters -= 1;
+        resolve(result);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      entry.promise.then(finish, (error) =>
+        finish(
+          errorResult(error instanceof Error ? error.message : String(error)),
+        ),
+      );
+    });
+  }
 
   return defineTool({
     name: "decide",
@@ -107,6 +188,9 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
     deps: DecideDeps,
     signal: AbortSignal | undefined,
   ): Promise<DecideToolResult> {
+    if (signal?.aborted) {
+      return errorResult("aborted");
+    }
     const config = deps.loadConfig();
     if (config.model === undefined) {
       return errorResult(
@@ -124,35 +208,41 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
     if (typeof question === "string") {
       return errorResult(question);
     }
-    if (signal?.aborted) {
-      return errorResult("aborted");
-    }
 
-    const key = stableStringify([
-      config.model,
-      params.kind,
-      params.question,
-      question,
-      params.input,
-    ]);
-    const cached = cache.get(key);
-    if (cached !== undefined && cached.expires > Date.now()) {
-      return cached.result;
+    const owner = ownerFor(ctx);
+    const results = getSessionCache<DecideToolResult>(
+      owner,
+      RESULT_CACHE_NAMESPACE,
+      { maxEntries: MAX_CACHE_ENTRIES },
+    );
+    const inflight = getSessionCache<Inflight>(
+      owner,
+      INFLIGHT_CACHE_NAMESPACE,
+      { maxEntries: MAX_CACHE_ENTRIES },
+    );
+    const key = cacheKey(config.model, params, question);
+    const cached = results.get(key);
+    if (cached !== undefined) {
+      return cached;
     }
     const existing = inflight.get(key);
     if (existing !== undefined) {
-      return existing;
+      return waitForResult(existing, signal);
     }
 
+    const controller = new AbortController();
+    const requestSignal = AbortSignal.any([
+      AbortSignal.timeout(config.timeoutMs),
+      controller.signal,
+    ]);
     const task = (async (): Promise<DecideToolResult> => {
-      const timeout = AbortSignal.timeout(config.timeoutMs);
       let result: ClassifierResult;
       try {
         result = await deps.classify(
           ctx,
           config.model as string,
           { state: { input: params.input }, questions: { answer: question } },
-          timeout,
+          requestSignal,
         );
       } catch (error) {
         return errorResult(
@@ -174,32 +264,35 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
 
       const output = normalize(
         answer,
-        params.kind,
+        params,
         config.model as string,
         result.usage,
       );
+      if (typeof output === "string") {
+        return errorResult(output);
+      }
       return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],
         details: output,
       };
     })();
 
-    inflight.set(key, task);
-    try {
-      const result = await task;
-      if (signal?.aborted) {
-        return errorResult("aborted");
-      }
-      if (config.cacheTtlMs > 0 && result.details.error === undefined) {
-        cache.set(key, {
-          result,
-          expires: Date.now() + config.cacheTtlMs,
-        });
-      }
-      return result;
-    } finally {
-      inflight.delete(key);
+    const entry: Inflight = { promise: task, controller, waiters: 0 };
+    inflight.set(key, entry);
+    void task
+      .finally(() => {
+        if (inflight.get(key) === entry) inflight.delete(key);
+      })
+      .catch(() => {});
+
+    const result = await waitForResult(entry, signal);
+    if (signal?.aborted) {
+      return errorResult("aborted");
     }
+    if (config.cacheTtlMs > 0 && result.details.error === undefined) {
+      results.set(key, result, config.cacheTtlMs);
+    }
+    return result;
   }
 
   function buildQuestion(params: DecideParams): ClassifierQuestion | string {
@@ -275,11 +368,31 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
 
   function normalize(
     answer: ClassifierAnswer,
-    kind: DecideKind,
+    params: DecideParams,
     model: string,
     usage: ClassifierResult["usage"],
-  ): Record<string, unknown> {
+  ): Record<string, unknown> | string {
+    const kind = params.kind;
     if (answer.type === "choice") {
+      const labels = new Set((params.labels ?? []).map((label) => label.label));
+      if (!labels.has(answer.choice)) {
+        return `classifier returned unknown choice "${answer.choice}"`;
+      }
+      if (!isRecord(answer.probabilities)) {
+        return "classifier returned invalid probabilities";
+      }
+      const probabilities = Object.entries(answer.probabilities);
+      if (probabilities.length === 0) {
+        return "classifier returned empty probabilities";
+      }
+      for (const [label, probability] of probabilities) {
+        if (!labels.has(label) || !isProbability(probability)) {
+          return "classifier returned invalid probabilities";
+        }
+      }
+      if (!isProbability(answer.confidence)) {
+        return "classifier returned invalid confidence";
+      }
       return {
         kind,
         value: answer.choice,
@@ -290,13 +403,31 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
       };
     }
     if (answer.type === "score") {
+      if (
+        !Number.isInteger(answer.score) ||
+        answer.score < 0 ||
+        answer.score >= (params.labels?.length ?? 0)
+      ) {
+        return `classifier returned out-of-range score ${answer.score}`;
+      }
+      if (!isProbability(answer.confidence)) {
+        return "classifier returned invalid confidence";
+      }
+      const label = params.labels?.[answer.score]?.label;
+      if (label === undefined) {
+        return `classifier returned out-of-range score ${answer.score}`;
+      }
       return {
         kind,
         value: answer.score,
+        label,
         confidence: answer.confidence,
         model,
         usage,
       };
+    }
+    if (!isProbability(answer.probability)) {
+      return "classifier returned invalid probability";
     }
     return {
       kind,
@@ -340,7 +471,22 @@ export function defaultClassify(
   }
   const provider = modelId.slice(0, slash);
   const id = modelId.slice(slash + 1);
-  const model = ctx.modelRegistry.getModelOfType("classifier", provider, id);
+  const registry = ctx.modelRegistry;
+  if (
+    typeof registry?.getModelOfType !== "function" ||
+    typeof registry?.classify !== "function"
+  ) {
+    return Promise.resolve({
+      api: "classifier",
+      provider,
+      model: id,
+      answers: {},
+      stopReason: "error",
+      errorMessage: "classifier model registry unavailable",
+      timestamp: Date.now(),
+    });
+  }
+  const model = registry.getModelOfType("classifier", provider, id);
   if (model === undefined) {
     return Promise.resolve({
       api: "classifier",
@@ -352,7 +498,7 @@ export function defaultClassify(
       timestamp: Date.now(),
     });
   }
-  return ctx.modelRegistry.classify(model, input, {
+  return registry.classify(model, input, {
     signal,
     temperature: 0,
   });

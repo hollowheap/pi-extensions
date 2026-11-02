@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import {
   chmodSync,
   closeSync,
@@ -30,20 +30,34 @@ export interface WaitOptions {
   signal?: AbortSignal;
 }
 
+function readPsStartTime(pid: number): number | undefined {
+  try {
+    const output = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      timeout: 1_000,
+    }).trim();
+    const parsed = Date.parse(output);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Process start identity: /proc clock ticks on Linux, epoch ms via ps elsewhere. */
 export function readProcStartTime(pid: number): number | undefined {
   if (!Number.isInteger(pid) || pid <= 0) return undefined;
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     const closeParen = stat.lastIndexOf(")");
-    if (closeParen < 0) return undefined;
+    if (closeParen < 0) return readPsStartTime(pid);
     const fields = stat
       .slice(closeParen + 2)
       .trim()
       .split(/\s+/);
     const value = Number.parseInt(fields[19] ?? "", 10);
-    return Number.isFinite(value) ? value : undefined;
+    return Number.isFinite(value) ? value : readPsStartTime(pid);
   } catch {
-    return undefined;
+    return readPsStartTime(pid);
   }
 }
 
@@ -80,6 +94,8 @@ export function spawnDetachedProcess(
       detached: true,
       stdio: ["ignore", logFd, logFd],
     });
+    // Avoid an unhandled error event when a spawn fails asynchronously.
+    child.on("error", () => {});
     if (child.pid === undefined) {
       throw new Error(`failed to spawn detached process: ${options.command}`);
     }

@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -55,6 +61,22 @@ describe("discoverAgents in pi-agent", () => {
       systemPrompt: "Scout instructions",
       source: "user",
     });
+  });
+
+  it("reports unreadable agent files instead of silently skipping them", () => {
+    const dir = join(agentDir, "agents");
+    mkdirSync(dir, { recursive: true });
+    symlinkSync(join(dir, "missing.md"), join(dir, "broken.md"));
+
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+
+    expect(result.agents).toHaveLength(0);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toContain("broken.md");
   });
 
   it("loads trusted project agents overriding user agents", () => {

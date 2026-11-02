@@ -86,13 +86,21 @@ export function loadClassifierConfig(
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
-  } catch {
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== "ENOENT") {
+      diagnostics.push(
+        `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (onDiagnostic !== undefined) {
+      for (const message of diagnostics) onDiagnostic(message);
+    }
     return {
       timeoutMs: DEFAULT_TIMEOUT_MS,
       maxInputChars: DEFAULT_MAX_INPUT_CHARS,
       cacheTtlMs: DEFAULT_CACHE_TTL_MS,
       path,
-      diagnostics: [],
+      diagnostics: Object.freeze(diagnostics),
     };
   }
 

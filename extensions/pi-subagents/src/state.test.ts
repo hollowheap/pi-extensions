@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -35,6 +36,7 @@ describe("SubagentStore", () => {
       task: "find things",
       depth: 1,
       attempt: 1,
+      parentSession: "session-1",
       startedAt: 100,
       pid: 123,
       startTime: 456,
@@ -49,6 +51,7 @@ describe("SubagentStore", () => {
       task: "find things",
       depth: 1,
       attempt: 1,
+      parentSession: "session-1",
       pid: 123,
       startTime: 456,
       socket: "/tmp/x.sock",
@@ -83,6 +86,35 @@ describe("SubagentStore", () => {
 
     writeFileSync(join(store.dir, "bad.json"), "{", { mode: 0o600 });
     expect(store.read("bad")).toBeUndefined();
+  });
+
+  it("updates atomically and can refuse a stale patch", () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "sub-3",
+      status: "cancelled",
+      agent: "worker",
+      task: "work",
+      depth: 1,
+      attempt: 1,
+      startedAt: 100,
+    });
+
+    const cancelled = store.updateIf(
+      "sub-3",
+      (current) => current.status === "running",
+      { status: "completed" },
+    );
+    expect(cancelled?.status).toBe("cancelled");
+    expect(store.read("sub-3")?.status).toBe("cancelled");
+    expect(existsSync(`${store.statePath("sub-3")}.lock`)).toBe(false);
+
+    store.update("sub-3", { status: "failed", exitCode: 1 });
+    expect(store.read("sub-3")).toMatchObject({
+      status: "failed",
+      exitCode: 1,
+    });
   });
 
   it("lists states in start order", () => {

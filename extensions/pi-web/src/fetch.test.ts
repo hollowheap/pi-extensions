@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchUrl, rawFetch } from "./fetch.js";
+import { MAX_RESPONSE_BYTES, fetchUrl, rawFetch } from "./fetch.js";
 import type {
+  FetchRequest,
   NormalizedFetchResult,
   ProviderAdapter,
 } from "./providers/types.js";
+
+const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 
 function provider(
   id: ProviderAdapter["id"],
@@ -41,11 +44,76 @@ describe("fetchUrl", () => {
     const fetchResult = await fetchUrl("https://example.com", {
       providers: [provider("exa", exa)],
       fetchImpl: raw,
+      resolveHost: publicResolver,
     });
 
     expect(fetchResult.provider).toBe("exa");
     expect(fetchResult.content).toBe("from exa");
     expect(raw).not.toHaveBeenCalled();
+  });
+
+  it("isolates cached results by provider set and API key", async () => {
+    const exa = vi.fn().mockResolvedValue(result("exa", "exa content"));
+    const tavily = vi
+      .fn()
+      .mockResolvedValue(result("tavily", "tavily content"));
+
+    const first = await fetchUrl("https://example.com/cache-isolation", {
+      providers: [provider("exa", exa)],
+      apiKey: "first-key",
+      cacheTtlMs: 60_000,
+    });
+    const second = await fetchUrl("https://example.com/cache-isolation", {
+      providers: [provider("tavily", tavily)],
+      apiKey: "second-key",
+      cacheTtlMs: 60_000,
+    });
+
+    expect(first.content).toBe("exa content");
+    expect(second.content).toBe("tavily content");
+    expect(exa).toHaveBeenCalledTimes(1);
+    expect(tavily).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicts the oldest cached result", async () => {
+    const fetch = vi.fn(async (request: FetchRequest) =>
+      result("exa", request.url),
+    );
+    const adapter = provider("exa", fetch);
+    const options = {
+      providers: [adapter],
+      cacheTtlMs: 60_000,
+    };
+
+    for (let index = 0; index < 33; index++) {
+      await fetchUrl(`https://example.com/cache-${index}`, options);
+    }
+    await fetchUrl("https://example.com/cache-0", options);
+
+    expect(fetch).toHaveBeenCalledTimes(34);
+  });
+
+  it("queues concurrent rate-limited requests", async () => {
+    const starts: number[] = [];
+    const fetch = vi.fn(async (request: FetchRequest) => {
+      starts.push(Date.now());
+      return result("exa", request.url);
+    });
+    const adapter = provider("exa", fetch);
+
+    await Promise.all([
+      fetchUrl("https://example.com/rate-1", {
+        providers: [adapter],
+        rateLimitMs: 40,
+      }),
+      fetchUrl("https://example.com/rate-2", {
+        providers: [adapter],
+        rateLimitMs: 40,
+      }),
+    ]);
+
+    expect(starts).toHaveLength(2);
+    expect((starts[1] ?? 0) - (starts[0] ?? 0)).toBeGreaterThanOrEqual(25);
   });
 
   it("falls through provider failures and empty content", async () => {
@@ -74,6 +142,7 @@ describe("fetchUrl", () => {
     const fetchResult = await fetchUrl("https://example.com", {
       providers: [],
       fetchImpl: raw,
+      resolveHost: publicResolver,
     });
 
     expect(fetchResult.provider).toBe("raw");
@@ -95,6 +164,7 @@ describe("fetchUrl", () => {
     const textResult = await fetchUrl("https://example.com", {
       providers: [],
       fetchImpl: text,
+      resolveHost: publicResolver,
     });
     expect(textResult.content).toBe("hello");
     expect(textResult.links).toEqual([]);
@@ -108,6 +178,7 @@ describe("fetchUrl", () => {
     const binaryResult = await fetchUrl("https://example.com", {
       providers: [],
       fetchImpl: binary,
+      resolveHost: publicResolver,
     });
     expect(binaryResult.content).toBe("");
     expect(binaryResult.contentType).toBe("application/octet-stream");
@@ -122,7 +193,11 @@ describe("fetchUrl", () => {
       }),
     );
     await expect(
-      fetchUrl("https://example.com", { providers: [], fetchImpl: raw }),
+      fetchUrl("https://example.com", {
+        providers: [],
+        fetchImpl: raw,
+        resolveHost: publicResolver,
+      }),
     ).rejects.toThrow("raw fetch failed: 500");
   });
 
@@ -155,8 +230,80 @@ describe("fetchUrl", () => {
       }),
     );
     await expect(
-      rawFetch("https://example.com", { fetchImpl: raw }),
+      rawFetch("https://example.com", {
+        fetchImpl: raw,
+        resolveHost: publicResolver,
+      }),
     ).rejects.toThrow(/not allowed/);
+  });
+
+  it("bounds response bodies", async () => {
+    const raw = vi.fn().mockResolvedValue(
+      new Response("x".repeat(MAX_RESPONSE_BYTES + 10), {
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    const result = await rawFetch("https://example.com", {
+      fetchImpl: raw,
+      resolveHost: publicResolver,
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.content).toHaveLength(MAX_RESPONSE_BYTES);
+  });
+
+  it("cancels redirect bodies before rejecting unsafe locations", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const raw = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      }),
+    );
+
+    await expect(
+      rawFetch("https://example.com", {
+        fetchImpl: raw,
+        resolveHost: publicResolver,
+      }),
+    ).rejects.toThrow(/not allowed/);
+    expect(cancelled).toBe(true);
+  });
+
+  it("cancels non-OK response bodies", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const raw = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 500,
+        statusText: "Server Error",
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    await expect(
+      rawFetch("https://example.com", {
+        fetchImpl: raw,
+        resolveHost: publicResolver,
+      }),
+    ).rejects.toThrow("raw fetch failed: 500");
+    expect(cancelled).toBe(true);
   });
 
   it("caps redirects at five", async () => {
@@ -167,7 +314,10 @@ describe("fetchUrl", () => {
       }),
     );
     await expect(
-      rawFetch("https://example.com", { fetchImpl: raw }),
+      rawFetch("https://example.com", {
+        fetchImpl: raw,
+        resolveHost: publicResolver,
+      }),
     ).rejects.toThrow(/too many redirects/);
     expect(raw).toHaveBeenCalledTimes(6);
   });
@@ -181,6 +331,7 @@ describe("fetchUrl", () => {
     );
     const fetchResult = await rawFetch("https://example.com/start", {
       fetchImpl: raw,
+      resolveHost: publicResolver,
     });
     expect(fetchResult.finalUrl).toBe("https://example.com/start");
     expect(raw).toHaveBeenCalledWith(

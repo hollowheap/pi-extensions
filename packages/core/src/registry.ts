@@ -20,6 +20,7 @@ export interface GateEntry {
 
 export interface CoreState {
   sessions: Map<unknown, SessionState>;
+  caches: WeakMap<object, Map<string, unknown>>;
   layers: LayerEntry[];
   gates: GateEntry[];
 }
@@ -32,6 +33,7 @@ export function getState(): CoreState {
   if (existing !== undefined) return existing;
   const created: CoreState = {
     sessions: new Map(),
+    caches: new WeakMap(),
     layers: [],
     gates: [],
   };

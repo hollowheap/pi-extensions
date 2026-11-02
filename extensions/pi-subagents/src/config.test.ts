@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ describe("loadSubagentsConfig", () => {
     expect(config.defaultTimeoutMs).toBe(30 * 60 * 1000);
     expect(config.writeLockTimeoutMs).toBe(30 * 1000);
     expect(config.path).toBe(join(dir, CONFIG_FILE_NAME));
+    expect(config.harnesses).toEqual({});
     expect(config.diagnostics).toEqual([]);
   });
 
@@ -63,6 +64,62 @@ describe("loadSubagentsConfig", () => {
     expect(config.defaultTimeoutMs).toBe(30 * 60 * 1000);
     expect(config.writeLockTimeoutMs).toBe(30 * 1000);
     expect(diagnostics).toHaveLength(4);
+  });
+
+  it("parses generic harness definitions", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({
+        harnesses: {
+          claude: {
+            command: "claude",
+            args: ["-p", "{prompt}"],
+            input: "arg",
+            env: { ANTHROPIC_MODEL: "sonnet" },
+          },
+        },
+      }),
+    );
+    const config = loadSubagentsConfig(dir);
+    expect(config.harnesses.claude).toEqual({
+      command: "claude",
+      args: ["-p", "{prompt}"],
+      input: "arg",
+      env: { ANTHROPIC_MODEL: "sonnet" },
+    });
+    expect(config.diagnostics).toEqual([]);
+  });
+
+  it("diagnoses invalid harness definitions", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({
+        harnesses: {
+          "bad name": { command: "x" },
+          empty: {},
+          args: { command: "x", args: "nope" },
+          input: { command: "x", input: "pipe" },
+          env: { command: "x", env: { TOKEN: 1 } },
+        },
+      }),
+    );
+    const config = loadSubagentsConfig(dir);
+    expect(config.harnesses).toEqual({});
+    expect(config.diagnostics).toHaveLength(5);
+  });
+
+  it("diagnoses an existing unreadable config", () => {
+    const dir = agentDir();
+    mkdirSync(join(dir, CONFIG_FILE_NAME));
+    const diagnostics: string[] = [];
+    const config = loadSubagentsConfig(dir, (message) =>
+      diagnostics.push(message),
+    );
+    expect(config.maxConcurrent).toBe(4);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain(CONFIG_FILE_NAME);
   });
 
   it("reports invalid JSON and non-object roots", () => {

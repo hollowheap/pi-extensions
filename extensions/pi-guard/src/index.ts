@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from "node:path";
 import {
   type ExtensionAPI,
   type ExtensionContext,
+  type ToolCallEvent,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
@@ -32,6 +33,7 @@ import {
   checkPathTrust,
   persistDecision,
 } from "./rules.js";
+import { showTargetPicker } from "./target-picker.js";
 
 const TOOL_TAGS: Record<string, Tag> = {
   write: "edit",
@@ -52,23 +54,47 @@ const TOOL_TAGS: Record<string, Tag> = {
 
 const PASSTHROUGH_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
 
-const sessionDecisions = new Map<unknown, Map<string, DecisionEffect>>();
-
 interface TempGrant {
   target: string;
   expiresAt: number;
 }
-const sessionGrants = new Map<unknown, TempGrant[]>();
 
 interface EventSink {
   emit(channel: string, data: unknown): void;
 }
 
-let eventSink: EventSink | undefined;
-let lastOwner: unknown;
+interface GuardRuntime {
+  sessionDecisions: Map<unknown, Map<string, DecisionEffect>>;
+  sessionGrants: Map<unknown, TempGrant[]>;
+  sessionTargets: Map<unknown, Set<string>>;
+  eventSink?: EventSink;
+  lastOwner?: unknown;
+}
+
+function rememberTarget(
+  runtime: GuardRuntime,
+  owner: unknown,
+  target: string,
+): void {
+  if (target === "" || target === ".") return;
+  let targets = runtime.sessionTargets.get(owner);
+  if (!targets) {
+    targets = new Set();
+    runtime.sessionTargets.set(owner, targets);
+  }
+  targets.delete(target);
+  targets.add(target);
+  while (targets.size > 50) {
+    const oldest = targets.values().next().value;
+    if (oldest === undefined) break;
+    targets.delete(oldest);
+  }
+}
+
+const GRANT_DURATIONS = ["30s", "5m", "15m", "1h"] as const;
 
 function parseDuration(str: string): number | null {
-  const match = str.match(/^(\\d+)(s|m|h)$/);
+  const match = str.match(/^(\d+)(s|m|h)$/);
   if (!match) return null;
   const value = Number(match[1]);
   const unit = match[2];
@@ -126,10 +152,10 @@ function loadContextToolTags(ctx: ExtensionContext) {
   });
 }
 
-function publishValues(owner: unknown): void {
-  lastOwner = owner;
-  if (eventSink === undefined) return;
-  eventSink.emit("statusline:values", {
+function publishValues(runtime: GuardRuntime, owner: unknown): void {
+  runtime.lastOwner = owner;
+  if (runtime.eventSink === undefined) return;
+  runtime.eventSink.emit("statusline:values", {
     name: "mode-guard",
     text: session(owner).mode.toUpperCase(),
   });
@@ -166,7 +192,11 @@ async function requestApproval(
   return undefined;
 }
 
-async function switchMode(ctx: ExtensionContext, raw: string): Promise<void> {
+async function switchMode(
+  runtime: GuardRuntime,
+  ctx: ExtensionContext,
+  raw: string,
+): Promise<void> {
   const result = enterMode(ctx.sessionManager, raw);
   if (result.diagnostic !== undefined) {
     ctx.ui.notify(`pi-guard: ${result.diagnostic}`, "error");
@@ -185,15 +215,59 @@ async function switchMode(ctx: ExtensionContext, raw: string): Promise<void> {
   } else {
     ctx.ui.notify(`pi-guard: mode ${result.mode}`);
   }
-  publishValues(ctx.sessionManager);
+  publishValues(runtime, ctx.sessionManager);
+}
+
+async function pickGrantTarget(
+  runtime: GuardRuntime,
+  ctx: ExtensionContext,
+): Promise<string | undefined> {
+  const targets = [
+    ...(runtime.sessionTargets.get(ctx.sessionManager) ?? []),
+  ].reverse();
+  if (targets.length === 0) {
+    if (ctx.hasUI) {
+      ctx.ui.notify(
+        "No recent targets; use /grant <path-or-tool> <duration>",
+        "info",
+      );
+    }
+    return undefined;
+  }
+  if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
+    return showTargetPicker(ctx, targets);
+  }
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Recent targets:\n${targets.join("\n")}`, "info");
+  }
+  return undefined;
+}
+
+async function pickGrantDuration(
+  ctx: ExtensionContext,
+): Promise<string | undefined> {
+  if (!ctx.hasUI || typeof ctx.ui.select !== "function") return undefined;
+  return withPromptLock(() =>
+    ctx.ui.select("Grant duration", ["5m", "15m", "1h"]),
+  );
 }
 
 export default function (pi: ExtensionAPI) {
-  eventSink = pi.events;
+  const runtime: GuardRuntime = {
+    sessionDecisions: new Map(),
+    sessionGrants: new Map(),
+    sessionTargets: new Map(),
+    eventSink: pi.events,
+  };
   pi.events.on("statusline:request", () => {
-    if (lastOwner !== undefined) publishValues(lastOwner);
+    if (runtime.lastOwner !== undefined) {
+      publishValues(runtime, runtime.lastOwner);
+    }
   });
-  pi.on("tool_call", async (event, ctx) => {
+  const handleToolCall = async (
+    event: ToolCallEvent,
+    ctx: ExtensionContext,
+  ) => {
     if (isPassthroughTaskCall(event.toolName, event.input)) {
       return undefined;
     }
@@ -220,10 +294,11 @@ export default function (pi: ExtensionAPI) {
       tag === "shell"
         ? readCommandArg(event.input)
         : (readPathArg(event.input) ?? ".");
+    rememberTarget(runtime, ctx.sessionManager, target);
 
     if (tag !== "shell") {
       const guardConfig = loadGuardConfig(getAgentDir());
-      const sessionMap = sessionDecisions.get(ctx.sessionManager);
+      const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
       const trust = checkPathTrust(
         target,
         ctx.cwd,
@@ -276,10 +351,12 @@ export default function (pi: ExtensionAPI) {
           };
         }
 
-        let currentSessionMap = sessionDecisions.get(ctx.sessionManager);
+        let currentSessionMap = runtime.sessionDecisions.get(
+          ctx.sessionManager,
+        );
         if (!currentSessionMap) {
           currentSessionMap = new Map();
-          sessionDecisions.set(ctx.sessionManager, currentSessionMap);
+          runtime.sessionDecisions.set(ctx.sessionManager, currentSessionMap);
         }
 
         if (choice === "Allow (this session)") {
@@ -354,7 +431,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Check temporary grants
-    const grants = sessionGrants.get(ctx.sessionManager) ?? [];
+    const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
     const now = Date.now();
     const activeGrant = grants.find(
       (g) => g.target === target && g.expiresAt > now,
@@ -378,9 +455,23 @@ export default function (pi: ExtensionAPI) {
     }
     if (verdict === "ask") return requestApproval(event.toolName, target, ctx);
     return undefined;
+  };
+
+  pi.on("tool_call", async (event, ctx) => {
+    try {
+      return await handleToolCall(event, ctx);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        block: true,
+        reason: `pi-guard: tool call check failed: ${message}`,
+      };
+    }
   });
   pi.on("tool_result", (event, _ctx) => {
-    if (event.toolName !== "bash") return undefined;
+    if (event.toolName !== "bash" || !Array.isArray(event.content)) {
+      return undefined;
+    }
     let changed = false;
     const content = event.content.map((block) => {
       if (block.type !== "text") return block;
@@ -403,11 +494,12 @@ export default function (pi: ExtensionAPI) {
     const notify = (message: string) =>
       ctx.ui.notify(`pi-guard: ${message}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
-    publishValues(ctx.sessionManager);
+    publishValues(runtime, ctx.sessionManager);
   });
   pi.on("session_shutdown", (_event, ctx) => {
-    sessionDecisions.delete(ctx.sessionManager);
-    sessionGrants.delete(ctx.sessionManager);
+    runtime.sessionDecisions.delete(ctx.sessionManager);
+    runtime.sessionGrants.delete(ctx.sessionManager);
+    runtime.sessionTargets.delete(ctx.sessionManager);
     dropSession(ctx.sessionManager);
   });
   pi.registerCommand("mode", {
@@ -426,27 +518,70 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      await switchMode(ctx, raw);
+      await switchMode(runtime, ctx, raw);
     },
   });
   pi.registerShortcut(Key.alt("m"), {
     description: "Cycle plan/approval mode",
     handler: (ctx) =>
-      switchMode(ctx, nextMode(session(ctx.sessionManager).mode)),
+      switchMode(runtime, ctx, nextMode(session(ctx.sessionManager).mode)),
   });
 
   pi.registerCommand("grant", {
-    description: "Grant temporary permission: /grant <path-or-tool> <duration>",
+    description: "Grant temporary permission: /grant [path-or-tool] [duration]",
+    getArgumentCompletions: (prefix: string) => {
+      const parts = prefix.trimStart().split(/\s+/);
+      if (parts.length === 1) {
+        const query = (parts[0] ?? "").toLowerCase();
+        const targets = [
+          ...(runtime.sessionTargets.get(runtime.lastOwner) ??
+            new Set<string>()),
+        ].reverse();
+        return targets
+          .filter((target) => target.toLowerCase().startsWith(query))
+          .map((target) => ({
+            value: target,
+            label: target,
+            description: "recent permission target",
+          }));
+      }
+      if (parts.length === 2) {
+        const query = (parts[1] ?? "").toLowerCase();
+        return GRANT_DURATIONS.filter((duration) =>
+          duration.startsWith(query),
+        ).map((duration) => ({
+          value: duration,
+          label: duration,
+          description: "grant duration",
+        }));
+      }
+      return null;
+    },
     handler: async (args, ctx) => {
-      const parts = args.trim().split(/\\s+/).filter(Boolean);
-      if (parts.length < 2) {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      let target = parts.length > 0 ? parts[0] : undefined;
+      let durationStr: string | undefined;
+      if (parts.length === 0) {
+        target = await pickGrantTarget(runtime, ctx);
+      } else if (parts.length === 1) {
+        target = parts[0];
+      } else {
+        target = parts.slice(0, -1).join(" ");
+        durationStr = parts[parts.length - 1];
+      }
+      if (target === undefined || target === "") return;
+      durationStr ??= await pickGrantDuration(ctx);
+      if (durationStr === undefined) {
         if (ctx.hasUI) {
-          ctx.ui.notify("Usage: /grant <path-or-tool> <duration>", "info");
+          ctx.ui.notify(
+            parts.length === 0
+              ? "Grant cancelled"
+              : "Usage: /grant [path-or-tool] [duration]",
+            "info",
+          );
         }
         return;
       }
-      const target = parts[0];
-      const durationStr = parts[1];
       const durationMs = parseDuration(durationStr);
       if (durationMs === null) {
         if (ctx.hasUI) {
@@ -454,12 +589,13 @@ export default function (pi: ExtensionAPI) {
         }
         return;
       }
-      let grants = sessionGrants.get(ctx.sessionManager);
+      let grants = runtime.sessionGrants.get(ctx.sessionManager);
       if (!grants) {
         grants = [];
-        sessionGrants.set(ctx.sessionManager, grants);
+        runtime.sessionGrants.set(ctx.sessionManager, grants);
       }
       grants.push({ target, expiresAt: Date.now() + durationMs });
+      rememberTarget(runtime, ctx.sessionManager, target);
       if (ctx.hasUI) {
         ctx.ui.notify(`Granted ${target} for ${durationStr}`, "info");
       }
@@ -469,7 +605,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("grants", {
     description: "List active temporary permission grants",
     handler: async (_args, ctx) => {
-      const grants = sessionGrants.get(ctx.sessionManager) ?? [];
+      const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
       const now = Date.now();
       const active = grants.filter((g) => g.expiresAt > now);
       if (active.length === 0) {
@@ -481,14 +617,15 @@ export default function (pi: ExtensionAPI) {
           (g) =>
             `${g.target} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
         )
-        .join("\\n");
+        .join("\n");
       if (ctx.hasUI) ctx.ui.notify(text, "info");
     },
   });
   pi.registerCommand("context", {
     description: "Show context window usage broken down by category",
     handler: async (_args, ctx) => {
-      const entries = ctx.sessionManager?.getBranch?.() ?? [];
+      const branch = ctx.sessionManager?.getBranch?.();
+      const entries = Array.isArray(branch) ? branch : [];
       const model = ctx.model as { contextWindow?: number } | undefined;
       const breakdown = calculateContextBreakdown(entries, {
         limit: model?.contextWindow,

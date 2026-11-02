@@ -3,14 +3,25 @@ import { join } from "node:path";
 
 export const CONFIG_FILE_NAME = "subagents.json";
 
+export interface SubagentHarnessConfig {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly input: "stdin" | "arg";
+  readonly env?: Readonly<Record<string, string>>;
+}
+
 export interface SubagentsConfig {
   readonly maxConcurrent: number;
   readonly maxDepth: number;
   readonly defaultTimeoutMs: number;
   readonly writeLockTimeoutMs: number;
+  readonly harnesses: Readonly<Record<string, SubagentHarnessConfig>>;
   readonly path: string;
   readonly diagnostics: readonly string[];
 }
+
+const EMPTY_HARNESSES: Readonly<Record<string, SubagentHarnessConfig>> =
+  Object.freeze({});
 
 const DEFAULT_MAX_CONCURRENT = 4;
 const MAX_MAX_CONCURRENT = 8;
@@ -23,6 +34,76 @@ const MAX_WRITE_LOCK_TIMEOUT_MS = 300_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseHarnesses(
+  value: unknown,
+  diagnostics: string[],
+): Readonly<Record<string, SubagentHarnessConfig>> {
+  if (value === undefined) return EMPTY_HARNESSES;
+  if (!isRecord(value)) {
+    diagnostics.push('"harnesses" must be an object; ignoring');
+    return EMPTY_HARNESSES;
+  }
+  const harnesses: Record<string, SubagentHarnessConfig> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      diagnostics.push(`invalid harness name "${name}"; ignoring`);
+      continue;
+    }
+    if (!isRecord(raw)) {
+      diagnostics.push(`harness "${name}" must be an object; ignoring`);
+      continue;
+    }
+    const command = typeof raw.command === "string" ? raw.command.trim() : "";
+    if (command === "") {
+      diagnostics.push(`harness "${name}" needs a command; ignoring`);
+      continue;
+    }
+    let args: string[] = [];
+    if (raw.args !== undefined) {
+      if (
+        !Array.isArray(raw.args) ||
+        !raw.args.every((arg): arg is string => typeof arg === "string")
+      ) {
+        diagnostics.push(`harness "${name}" args must be strings; ignoring`);
+        continue;
+      }
+      args = [...raw.args];
+    }
+    let input: "stdin" | "arg" = "stdin";
+    if (raw.input !== undefined) {
+      if (raw.input !== "stdin" && raw.input !== "arg") {
+        diagnostics.push(
+          `harness "${name}" input must be "stdin" or "arg"; ignoring`,
+        );
+        continue;
+      }
+      input = raw.input;
+    }
+    let env: Record<string, string> | undefined;
+    if (raw.env !== undefined) {
+      if (
+        !isRecord(raw.env) ||
+        !Object.values(raw.env).every(
+          (entry): entry is string => typeof entry === "string",
+        )
+      ) {
+        diagnostics.push(
+          `harness "${name}" env must contain string values; ignoring`,
+        );
+        continue;
+      }
+      env = { ...raw.env } as Record<string, string>;
+    }
+    harnesses[name] = Object.freeze({
+      command,
+      args: Object.freeze(args),
+      input,
+      ...(env ? { env: Object.freeze(env) } : {}),
+    });
+  }
+  return Object.freeze(harnesses);
 }
 
 function parseMaxConcurrent(value: unknown, diagnostics: string[]): number {
@@ -101,14 +182,23 @@ export function loadSubagentsConfig(
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
-  } catch {
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== "ENOENT") {
+      diagnostics.push(
+        `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      if (onDiagnostic !== undefined) {
+        for (const message of diagnostics) onDiagnostic(message);
+      }
+    }
     return {
       maxConcurrent: DEFAULT_MAX_CONCURRENT,
       maxDepth: DEFAULT_MAX_DEPTH,
       defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
       writeLockTimeoutMs: DEFAULT_WRITE_LOCK_TIMEOUT_MS,
+      harnesses: EMPTY_HARNESSES,
       path,
-      diagnostics: [],
+      diagnostics: Object.freeze(diagnostics),
     };
   }
 
@@ -139,6 +229,10 @@ export function loadSubagentsConfig(
     ),
     writeLockTimeoutMs: parseWriteLockTimeoutMs(
       isRecord(parsed) ? parsed.writeLockTimeoutMs : undefined,
+      diagnostics,
+    ),
+    harnesses: parseHarnesses(
+      isRecord(parsed) ? parsed.harnesses : undefined,
       diagnostics,
     ),
     path,

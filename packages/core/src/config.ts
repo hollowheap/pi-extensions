@@ -1,17 +1,13 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getModeLayer } from "./modes.js";
+import { getMtimeCache } from "./mtime-cache.js";
 import type { Effect, ModeLayer, Rule, Tag } from "./types.js";
 
 const KNOWN_TAGS: readonly string[] = ["edit", "read", "search", "shell"];
-
-const CACHE_KEY = Symbol.for("@hollowheap/core/config");
 const MAX_CACHE_ENTRIES = 64;
 
 interface PermissionsEntry {
-  kind: "permissions";
-  agentMtimeMs: number;
-  overlayMtimeMs: number;
   rules: readonly Rule[];
   toolTags: Readonly<Record<string, Tag>>;
   diagnostics: readonly string[];
@@ -19,30 +15,17 @@ interface PermissionsEntry {
 }
 
 interface ModesEntry {
-  kind: "modes";
-  mtimeMs: number;
   layers: readonly ModeLayer[];
   diagnostics: readonly string[];
   reported: boolean;
 }
 
-type CacheEntry = PermissionsEntry | ModesEntry;
-
-type ConfigCache = Map<string, CacheEntry>;
-
-function getCache(): ConfigCache {
-  const store = globalThis as unknown as Record<
-    symbol,
-    ConfigCache | undefined
-  >;
-  const existing = store[CACHE_KEY];
-  if (existing !== undefined) return existing;
-  const created: ConfigCache = new Map();
-  store[CACHE_KEY] = created;
-  return created;
-}
-
-const CACHE = getCache();
+const PERMISSIONS_CACHE = getMtimeCache<PermissionsEntry>("core/permissions", {
+  maxEntries: MAX_CACHE_ENTRIES,
+});
+const MODES_CACHE = getMtimeCache<ModesEntry>("core/modes", {
+  maxEntries: MAX_CACHE_ENTRIES,
+});
 
 export interface LoadPermissionsOptions {
   agentDir: string;
@@ -178,7 +161,10 @@ function readPermissions(
   }
 }
 
-function report(entry: CacheEntry, onDiagnostic?: (message: string) => void) {
+function report(
+  entry: { reported: boolean; diagnostics: readonly string[] },
+  onDiagnostic?: (message: string) => void,
+): void {
   if (
     entry.reported ||
     entry.diagnostics.length === 0 ||
@@ -190,14 +176,6 @@ function report(entry: CacheEntry, onDiagnostic?: (message: string) => void) {
   for (const diagnostic of entry.diagnostics) onDiagnostic(diagnostic);
 }
 
-function store(key: string, entry: CacheEntry): void {
-  CACHE.set(key, entry);
-  if (CACHE.size > MAX_CACHE_ENTRIES) {
-    const oldest = CACHE.keys().next().value;
-    if (oldest !== undefined) CACHE.delete(oldest);
-  }
-}
-
 function loadPolicy(options: LoadPermissionsOptions): {
   rules: Rule[];
   toolTags: Record<string, Tag>;
@@ -207,14 +185,10 @@ function loadPolicy(options: LoadPermissionsOptions): {
   const agentMtime = mtimeMs(agentPath);
   const overlayMtime = mtimeMs(overlayPath);
   const key = `${agentPath}\0${overlayPath}\0${options.trusted ? "1" : "0"}`;
+  const signature = `${agentMtime}\0${overlayMtime}`;
 
-  const cached = CACHE.get(key);
-  if (
-    cached !== undefined &&
-    cached.kind === "permissions" &&
-    cached.agentMtimeMs === agentMtime &&
-    cached.overlayMtimeMs === overlayMtime
-  ) {
+  const cached = PERMISSIONS_CACHE.get(key, signature);
+  if (cached !== undefined) {
     report(cached, options.onDiagnostic);
     return {
       rules: [...cached.rules],
@@ -235,15 +209,12 @@ function loadPolicy(options: LoadPermissionsOptions): {
   }
 
   const entry: PermissionsEntry = {
-    kind: "permissions",
-    agentMtimeMs: agentMtime,
-    overlayMtimeMs: overlayMtime,
     rules: Object.freeze(rules),
     toolTags: Object.freeze(toolTags),
     diagnostics: Object.freeze(diagnostics),
     reported: false,
   };
-  store(key, entry);
+  PERMISSIONS_CACHE.set(key, signature, entry);
   report(entry, options.onDiagnostic);
   return {
     rules: [...entry.rules],
@@ -418,13 +389,10 @@ export function loadModesConfig(
   const agentPath = join(agentDir, "modes.json");
   const mtime = mtimeMs(agentPath);
   const key = `modes\0${agentPath}`;
+  const signature = String(mtime);
 
-  const cached = CACHE.get(key);
-  if (
-    cached !== undefined &&
-    cached.kind === "modes" &&
-    cached.mtimeMs === mtime
-  ) {
+  const cached = MODES_CACHE.get(key, signature);
+  if (cached !== undefined) {
     report(cached, onDiagnostic);
     return [...cached.layers];
   }
@@ -432,13 +400,11 @@ export function loadModesConfig(
   const diagnostics: string[] = [];
   const layers = readModesFile(agentPath, mtime, diagnostics);
   const entry: ModesEntry = {
-    kind: "modes",
-    mtimeMs: mtime,
     layers: Object.freeze(layers),
     diagnostics: Object.freeze(diagnostics),
     reported: false,
   };
-  store(key, entry);
+  MODES_CACHE.set(key, signature, entry);
   report(entry, onDiagnostic);
   return [...layers];
 }

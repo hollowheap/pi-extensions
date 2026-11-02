@@ -1,10 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTaskRecord, taskLogPath } from "./registry.js";
+import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 import { readProcStartTime } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
+import { taskWorkspaceTracker } from "./workspace.js";
 
 function createCtx(opts: { cwd: string; trusted?: boolean }) {
   return {
@@ -136,6 +143,197 @@ describe("pi-tasks task-tool", () => {
     );
     expect(getText(statusRes as never)).toContain("cut 1000 characters");
     expect(onStatusChange).toHaveBeenCalled();
+  });
+
+  it("uses and cleans an isolated workspace when requested", async () => {
+    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const ctx = createCtx({ cwd: workspaceDir, trusted: true });
+
+    const started = await tool.execute(
+      "1",
+      { action: "start", command: "pwd", isolated: true } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const startText = getText(started as never);
+    const taskId = startText.match(/task-[a-z0-9]+-[a-f0-9]+/)?.[0] ?? "";
+    expect(taskId).not.toBe("");
+
+    const waited = await tool.execute(
+      "2",
+      { action: "wait", id: taskId, timeoutMs: 5000 } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const waitText = getText(waited as never);
+    expect(waitText).toContain(".pi-workspaces");
+    const metadata = readTaskMetadata(agentDir, taskId);
+    expect(metadata?.cwd).toContain(".pi-workspaces");
+
+    await taskWorkspaceTracker.cleanupTerminal([
+      { id: taskId, status: "completed" },
+    ]);
+    expect(existsSync(metadata?.cwd ?? "")).toBe(false);
+  });
+
+  it("stops a TUI wait without cancelling the running task", async () => {
+    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    createTaskRecord(agentDir, {
+      id: "task-wait-cancel",
+      kind: "shell",
+      status: "running",
+      command: "sleep 30",
+      cwd: workspaceDir,
+      pid: process.pid,
+      startTime: readProcStartTime(process.pid),
+      startedAt: Date.now(),
+    });
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const ctx = {
+      ...createCtx({ cwd: workspaceDir, trusted: true }),
+      mode: "tui",
+      ui: {
+        notify: vi.fn(),
+        setStatus: vi.fn(),
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: (result: unknown) => void,
+            ) => {
+              handleInput(data: string): void;
+              render(width: number): string[];
+            },
+          ) =>
+            new Promise((resolve) => {
+              component = factory(
+                { requestRender: vi.fn() },
+                { fg: (_token: string, text: string) => text },
+                {},
+                resolve,
+              );
+            }),
+        ),
+      },
+    };
+
+    const pending = tool.execute(
+      "1",
+      { action: "wait", id: "task-wait-cancel", timeoutMs: 10_000 } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    await vi.waitFor(() => expect(component).toBeDefined());
+    component?.handleInput("\x1b");
+    const result = await pending;
+
+    expect(getText(result as never)).toContain("Stopped waiting");
+    expect(readTaskMetadata(agentDir, "task-wait-cancel")?.status).toBe(
+      "running",
+    );
+  });
+
+  it("emits running task state from list", async () => {
+    const onTasksChange = vi.fn();
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onTasksChange,
+    });
+    createTaskRecord(agentDir, {
+      id: "task-list-state",
+      kind: "shell",
+      status: "running",
+      command: "sleep 30",
+      cwd: workspaceDir,
+      pid: process.pid,
+      startTime: readProcStartTime(process.pid),
+      startedAt: Date.now(),
+    });
+
+    await tool.execute(
+      "1",
+      { action: "list" } as never,
+      undefined,
+      undefined,
+      createCtx({ cwd: workspaceDir, trusted: true }) as never,
+    );
+
+    expect(onTasksChange).toHaveBeenCalledWith([
+      {
+        id: "task-list-state",
+        command: "sleep 30",
+        status: "running",
+      },
+    ]);
+  });
+
+  it("rejects dependency cycles", async () => {
+    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    createTaskRecord(agentDir, {
+      id: "task-cycle-a",
+      kind: "shell",
+      status: "completed",
+      command: "echo a",
+      cwd: workspaceDir,
+      startedAt: Date.now(),
+      dependsOn: ["task-cycle-b"],
+    });
+    createTaskRecord(agentDir, {
+      id: "task-cycle-b",
+      kind: "shell",
+      status: "completed",
+      command: "echo b",
+      cwd: workspaceDir,
+      startedAt: Date.now(),
+      dependsOn: ["task-cycle-a"],
+    });
+
+    const result = await tool.execute(
+      "1",
+      {
+        action: "start",
+        command: "echo new",
+        dependsOn: ["task-cycle-a"],
+      } as never,
+      undefined,
+      undefined,
+      createCtx({ cwd: workspaceDir, trusted: true }) as never,
+    );
+
+    expect(getText(result as never)).toContain("Dependency cycle");
+  });
+
+  it("blocks starts that depend on a cancelled task", async () => {
+    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    createTaskRecord(agentDir, {
+      id: "task-cancelled-dep",
+      kind: "shell",
+      status: "cancelled",
+      command: "echo old",
+      cwd: workspaceDir,
+      startedAt: Date.now(),
+    });
+
+    const result = await tool.execute(
+      "1",
+      {
+        action: "start",
+        command: "echo new",
+        dependsOn: ["task-cancelled-dep"],
+      } as never,
+      undefined,
+      undefined,
+      createCtx({ cwd: workspaceDir, trusted: true }) as never,
+    );
+
+    expect(getText(result as never)).toContain("failed or cancelled");
   });
 
   it("supports cross-restart wait, timeout, cancel, unknown IDs, and validation errors without throwing", async () => {

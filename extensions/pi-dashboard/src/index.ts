@@ -1,11 +1,18 @@
 import {
   type ExtensionAPI,
+  VERSION,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { effectiveCwd } from "@hollowheap/core";
-import { type DashboardConfig, loadConfig } from "./config.js";
+import {
+  type DashboardConfig,
+  type DashboardSettings,
+  loadConfig,
+  saveDashboardSettings,
+} from "./config.js";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
+import { showDashboardSettings } from "./settings.js";
 
 export interface DashboardDeps {
   run: (
@@ -64,18 +71,26 @@ function terminalSection(
   let stopped = false;
   let retryCount = 0;
   const MAX_RETRIES = 3;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let requestRender: (() => void) | undefined;
   const controller = new AbortController();
 
   async function refresh(): Promise<void> {
-    if (running) return;
+    if (running || stopped) return;
     running = true;
     let aborted = false;
     try {
-      lines = splitOutput(await deps.run(command, args, controller.signal));
-      retryCount = 0;
+      const output = await deps.run(command, args, controller.signal);
+      if (controller.signal.aborted || stopped) {
+        aborted = true;
+      } else {
+        lines = splitOutput(output);
+        retryCount = 0;
+        if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
     } catch (error) {
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || stopped) {
         aborted = true;
       } else {
         lines = [error instanceof Error ? error.message : String(error)];
@@ -83,11 +98,11 @@ function terminalSection(
           warned = true;
           deps.notify(lines[0]);
         }
-        // Retry with backoff
         if (retryCount < MAX_RETRIES && !stopped) {
           retryCount++;
           const delay = Math.min(1000 * 2 ** retryCount, 10000);
-          setTimeout(() => {
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
             if (!stopped) void refresh();
           }, delay);
         }
@@ -107,6 +122,7 @@ function terminalSection(
     },
     refresh,
     start(renderRequest: () => void) {
+      if (stopped) return;
       requestRender = renderRequest;
       if (timer !== undefined) return;
       timer = setInterval(() => void refresh(), intervalMs);
@@ -116,6 +132,8 @@ function terminalSection(
       controller.abort();
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      retryTimer = undefined;
     },
   };
 }
@@ -124,19 +142,23 @@ export function createDashboard(
   config: DashboardConfig,
   deps: DashboardDeps,
 ): DashboardController {
-  const sections = config.sections.map((section) =>
-    section.type === "header"
-      ? headerSection(section.ascii, config.width, section.gap)
-      : terminalSection(
-          section.command,
-          section.args,
-          section.intervalMs,
-          config.width,
-          section.align,
-          section.gap,
-          deps,
-        ),
-  );
+  const sections = config.sections.map((section) => {
+    if (section.type === "header") {
+      return headerSection(section.ascii, config.width, section.gap);
+    }
+    if (section.type === "version") {
+      return headerSection([`Pi v${VERSION}`], config.width, section.gap);
+    }
+    return terminalSection(
+      section.command,
+      section.args,
+      section.intervalMs,
+      config.width,
+      section.align,
+      section.gap,
+      deps,
+    );
+  });
   return {
     lines: (renderWidth?: number) =>
       sections.flatMap((section) => section.lines(renderWidth)),
@@ -154,17 +176,13 @@ export function createDashboard(
 
 export default function (pi: ExtensionAPI) {
   let active: DashboardController | undefined;
-  pi.on("session_start", (_event, ctx) => {
-    if (ctx.mode !== "tui") return;
+
+  const install = (
+    ctx: Parameters<NonNullable<Parameters<ExtensionAPI["on"]>[1]>>[1],
+    config: DashboardConfig,
+  ) => {
     active?.stop();
-    const loaded = loadConfig(getAgentDir());
-    if (loaded.diagnostics.length > 0) {
-      ctx.ui.notify(
-        `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
-        "warning",
-      );
-    }
-    const controller = createDashboard(loaded.config, {
+    const controller = createDashboard(config, {
       run: (command, args, signal) =>
         runCommand(
           command,
@@ -184,6 +202,45 @@ export default function (pi: ExtensionAPI) {
         render: (width: number) => controller.lines(width),
       };
     });
+  };
+
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    const loaded = loadConfig(getAgentDir());
+    if (loaded.diagnostics.length > 0) {
+      ctx.ui.notify(
+        `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
+        "warning",
+      );
+    }
+    install(ctx, loaded.config);
+  });
+  pi.registerCommand("dashboard", {
+    description: "Dashboard settings: startup header and header gap",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+        if (ctx.hasUI) {
+          ctx.ui.notify("Dashboard settings require TUI mode.", "info");
+        }
+        return;
+      }
+      const loaded = loadConfig(getAgentDir());
+      let pending: DashboardSettings | undefined;
+      await showDashboardSettings(ctx, loaded.config, (settings) => {
+        pending = settings;
+      });
+      if (pending === undefined) return;
+      try {
+        saveDashboardSettings(getAgentDir(), pending);
+        install(ctx, loadConfig(getAgentDir()).config);
+        ctx.ui.notify("Dashboard settings saved", "info");
+      } catch (error) {
+        ctx.ui.notify(
+          `pi-dashboard: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        );
+      }
+    },
   });
   pi.on("session_shutdown", (_event, ctx) => {
     active?.stop();

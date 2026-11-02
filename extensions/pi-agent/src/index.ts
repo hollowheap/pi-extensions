@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { enterMode } from "@hollowheap/core";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import { formatModelId } from "./model.js";
+import { showAgentPicker } from "./picker.js";
 import { showAgentSwitchPopup } from "./popup.js";
 
 export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
@@ -22,38 +22,39 @@ const VALID_THINKING_LEVELS = new Set<string>([
   "max",
 ]);
 
-export interface AgentExtensionDeps {
-  getAgentDir?: () => string;
+function formatModelId(model: unknown): string {
+  if (typeof model === "string") return model.trim();
+  if (typeof model === "object" && model !== null) {
+    const raw = model as { provider?: unknown; id?: unknown };
+    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    const provider =
+      typeof raw.provider === "string" ? raw.provider.trim() : "";
+
+    if (!id) return "";
+    if (!provider) return id;
+    if (id.startsWith(`${provider}/`)) return id;
+    return `${provider}/${id}`;
+  }
+  return "";
 }
 
-export function createAgentExtension(
-  deps: AgentExtensionDeps = {},
-): (pi: ExtensionAPI) => void {
-  const resolveAgentDir = deps.getAgentDir ?? getAgentDir;
-
+export function createAgentExtension(): (pi: ExtensionAPI) => void {
   return (pi: ExtensionAPI): void => {
     let activeAgent: AgentConfig | undefined;
     let lastCwd = process.cwd();
     let lastTrusted = false;
-
-    const resolveAgents = (cwd: string, trusted: boolean): AgentConfig[] => {
-      return discoverAgents({
-        cwd,
-        agentDir: resolveAgentDir(),
-        trusted,
-      }).agents;
+    const syncTitle = (
+      ctx: ExtensionCommandContext | ExtensionContext,
+    ): void => {
+      ctx.ui?.setTitle?.(activeAgent ? `Pi — ${activeAgent.name}` : "Pi");
     };
-    const resolveAgentsWithDiagnostics = (
-      cwd: string,
-      trusted: boolean,
-    ): { agents: AgentConfig[]; diagnostics: string[] } => {
-      const result = discoverAgents({
+
+    const resolveAgentDiscovery = (cwd: string, trusted: boolean) =>
+      discoverAgents({
         cwd,
-        agentDir: resolveAgentDir(),
+        agentDir: getAgentDir(),
         trusted,
       });
-      return { agents: result.agents, diagnostics: result.diagnostics };
-    };
 
     const applyAgent = async (
       agent: AgentConfig,
@@ -67,6 +68,7 @@ export function createAgentExtension(
       }
 
       ctx.ui?.setStatus?.("agent", agent.name);
+      syncTitle(ctx);
 
       if (agent.mode && ctx.sessionManager) {
         const result = enterMode(ctx.sessionManager, agent.mode);
@@ -76,24 +78,18 @@ export function createAgentExtension(
         }
       }
 
-      if (agent.model && ctx.modelRegistry) {
-        const all = ctx.modelRegistry.getAll?.() ?? [];
-        const matched = all.find(
-          (m: unknown) =>
-            formatModelId(m) === agent.model ||
-            (m &&
-              typeof m === "object" &&
-              "id" in m &&
-              (m as { id?: unknown }).id === agent.model) ||
-            (m &&
-              typeof m === "object" &&
-              "provider" in m &&
-              "id" in m &&
-              `${(m as { provider?: unknown }).provider}/${(m as { id?: unknown }).id}` ===
-                agent.model),
-        );
+      if (agent.model && typeof ctx.modelRegistry?.getAll === "function") {
+        const matched = ctx.modelRegistry.getAll().find((model) => {
+          if (formatModelId(model) === agent.model) return true;
+          return (
+            typeof model === "object" &&
+            model !== null &&
+            "id" in model &&
+            (model as { id?: unknown }).id === agent.model
+          );
+        });
         if (matched) {
-          const ok = await piApi.setModel(matched as never);
+          const ok = await piApi.setModel(matched);
           if (!ok && options.notify) {
             ctx.ui?.notify?.(
               `Failed to set model to "${agent.model}" (authentication unconfigured)`,
@@ -119,7 +115,7 @@ export function createAgentExtension(
         }
       }
 
-      if (agent.tools && Array.isArray(agent.tools)) {
+      if (agent.tools?.length) {
         if (typeof piApi.setActiveTools === "function") {
           piApi.setActiveTools(agent.tools);
         }
@@ -143,10 +139,11 @@ export function createAgentExtension(
       const previousAgent = activeAgent;
       activeAgent = undefined;
       if (options.persist) {
-        piApi.appendEntry(ACTIVE_AGENT_TYPE, { name: undefined });
+        piApi.appendEntry(ACTIVE_AGENT_TYPE, { name: null });
       }
 
       ctx.ui?.setStatus?.("agent", undefined);
+      syncTitle(ctx);
 
       if (options.persist && previousAgent?.mode && ctx.sessionManager) {
         enterMode(ctx.sessionManager, "ask");
@@ -182,12 +179,12 @@ export function createAgentExtension(
 
       if (hasHistory && branch.length > 0 && typeof ctx.fork === "function") {
         const lastEntry = branch[branch.length - 1];
+        let forkStarted = false;
         try {
-          let forked = false;
-          const result = await ctx.fork(lastEntry.id, {
+          await ctx.fork(lastEntry.id, {
             position: "at",
             withSession: async (forkCtx) => {
-              forked = true;
+              forkStarted = true;
               pi.setSessionName(sessionName);
               if (typeof pi.setLabel === "function") {
                 pi.setLabel(lastEntry.id, `agent: ${agent.name}`);
@@ -202,11 +199,19 @@ export function createAgentExtension(
               });
             },
           });
-          if (!result.cancelled && forked) {
+          if (forkStarted) {
             return;
           }
-        } catch {
-          // If forking fails or session is not saved, fall through to in-place switch
+        } catch (error) {
+          if (forkStarted) {
+            ctx.ui?.notify?.(
+              `Agent switch failed after fork: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+            return;
+          }
+          // If forking fails before the replacement session starts, fall back
+          // to an in-place switch.
         }
       }
 
@@ -225,15 +230,16 @@ export function createAgentExtension(
       const entries = ctx.sessionManager?.getBranch?.() ?? [];
       for (const entry of entries) {
         if (entry.type === "custom" && entry.customType === ACTIVE_AGENT_TYPE) {
-          const data = entry.data as { name?: string } | undefined;
-          persistedName = data?.name;
+          const data = entry.data as { name?: unknown } | undefined;
+          if (typeof data?.name === "string" && data.name.trim() !== "") {
+            persistedName = data.name.trim();
+          } else if (data?.name === null) {
+            persistedName = undefined;
+          }
         }
       }
 
-      const discovery = resolveAgentsWithDiagnostics(
-        ctx.cwd,
-        ctx.isProjectTrusted(),
-      );
+      const discovery = resolveAgentDiscovery(ctx.cwd, ctx.isProjectTrusted());
       for (const d of discovery.diagnostics) {
         ctx.ui?.notify?.(`pi-agent: ${d}`, "warning");
       }
@@ -253,8 +259,17 @@ export function createAgentExtension(
 
     pi.on("session_start", (_event, ctx) => restore(ctx));
     pi.on("session_tree", (_event, ctx) => restore(ctx));
+    pi.on("project_trust", (event) => {
+      lastCwd = event.cwd;
+      lastTrusted = false;
+      return { trusted: "undecided" };
+    });
 
-    pi.on("before_agent_start", (event) => {
+    pi.on("before_agent_start", (event, ctx) => {
+      if (ctx) {
+        lastCwd = ctx.cwd;
+        lastTrusted = ctx.isProjectTrusted();
+      }
       if (!event.systemPromptOptions) return;
       if (!event.systemPromptOptions.sections) {
         event.systemPromptOptions.sections = {};
@@ -286,7 +301,7 @@ export function createAgentExtension(
         "Select or switch active agent (model, mode, thinking, tools, skills, prompt)",
       getArgumentCompletions: (prefix: string) => {
         const lower = prefix.trim().toLowerCase();
-        const agents = resolveAgents(lastCwd, lastTrusted);
+        const agents = resolveAgentDiscovery(lastCwd, lastTrusted).agents;
         const items = [
           {
             value: "default",
@@ -306,7 +321,7 @@ export function createAgentExtension(
       handler: async (args: string, ctx: ExtensionCommandContext) => {
         lastCwd = ctx.cwd;
         lastTrusted = ctx.isProjectTrusted();
-        const discovery = resolveAgentsWithDiagnostics(
+        const discovery = resolveAgentDiscovery(
           ctx.cwd,
           ctx.isProjectTrusted(),
         );
@@ -331,6 +346,18 @@ export function createAgentExtension(
             return;
           }
           await switchAndFork(matched, ctx);
+          return;
+        }
+
+        if (ctx.mode === "tui" && typeof ctx.ui?.custom === "function") {
+          const picked = await showAgentPicker(ctx, agents);
+          if (picked === undefined) return;
+          if (picked === "default") {
+            await applyDefault(ctx, pi, { persist: true, notify: true });
+            return;
+          }
+          const chosen = agents.find((agent) => agent.name === picked);
+          if (chosen) await switchAndFork(chosen, ctx);
           return;
         }
 

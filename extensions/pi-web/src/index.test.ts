@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
+import { rememberWebLinks } from "./tools.js";
 
 function createMockPi() {
   const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
@@ -21,6 +22,40 @@ function createMockPi() {
 }
 
 describe("pi-web extension", () => {
+  it("inserts a recent result link into the editor", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    rememberWebLinks([
+      { url: "https://example.com/a" },
+      { url: "https://example.com/b" },
+    ]);
+    const command = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string; description?: string }> | null;
+    };
+    const pasteToEditor = vi.fn();
+    const notify = vi.fn();
+
+    await command.handler("insert 2", {
+      hasUI: true,
+      mode: "tui",
+      ui: { pasteToEditor, notify, custom: vi.fn() },
+    });
+
+    expect(pasteToEditor).toHaveBeenCalledWith("https://example.com/b");
+    expect(notify).toHaveBeenCalledWith(
+      "Inserted https://example.com/b",
+      "info",
+    );
+    expect(
+      (command.getArgumentCompletions?.("insert 2") ?? []).map(
+        (item) => item.value,
+      ),
+    ).toEqual(["2"]);
+  });
+
   it("registers exactly two codemode tools", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -33,7 +68,10 @@ describe("pi-web extension", () => {
     for (const [tool] of pi.registerTool.mock.calls) {
       expect((tool as { exposure: string }).exposure).toBe("codemode");
     }
-    expect(pi.registerCommand).not.toHaveBeenCalled();
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "web",
+      expect.objectContaining({ handler: expect.any(Function) }),
+    );
     expect(pi.on).not.toHaveBeenCalled();
     expect(pi.setActiveTools).not.toHaveBeenCalled();
 

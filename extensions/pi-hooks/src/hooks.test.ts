@@ -6,6 +6,7 @@ import {
   type HookEntry,
   type HookPayload,
   type SessionHookPayload,
+  evaluateCondition,
   matchesTool,
   runPostHook,
   runPreHook,
@@ -46,6 +47,53 @@ function sessionPayload(
     ...overrides,
   };
 }
+
+describe("evaluateCondition", () => {
+  it("matches tool equality and inequality conditions", () => {
+    expect(
+      evaluateCondition(entry({ condition: "tool == 'bash'" }), payload()),
+    ).toBe(true);
+    expect(
+      evaluateCondition(entry({ condition: "tool == 'edit'" }), payload()),
+    ).toBe(false);
+    expect(
+      evaluateCondition(entry({ condition: "tool != 'edit'" }), payload()),
+    ).toBe(true);
+    expect(
+      evaluateCondition(entry({ condition: "tool != 'bash'" }), payload()),
+    ).toBe(false);
+  });
+
+  it("checks path and command substrings", () => {
+    expect(
+      evaluateCondition(
+        entry({ condition: "path contains 'SRC/'" }),
+        payload({ input: { path: "src/index.ts" } }),
+      ),
+    ).toBe(true);
+    expect(
+      evaluateCondition(
+        entry({ condition: "path contains 'src/'" }),
+        payload({ input: { command: "ls src/" } }),
+      ),
+    ).toBe(true);
+    expect(
+      evaluateCondition(
+        entry({ condition: "path contains 'tests/'" }),
+        payload({ input: { path: "src/index.ts" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats malformed conditions as false", () => {
+    expect(evaluateCondition(entry({ condition: "nonsense" }), payload())).toBe(
+      false,
+    );
+    expect(
+      evaluateCondition(entry({ condition: "tool = 'bash'" }), payload()),
+    ).toBe(false);
+  });
+});
 
 describe("matchesTool", () => {
   it("matches every tool when the matcher is empty", () => {
