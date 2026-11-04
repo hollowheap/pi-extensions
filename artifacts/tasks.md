@@ -594,19 +594,19 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 ### Process and subagents
 
-- [x] T92 [S103] (blocked-by: none): scaffold `packages/process` as `@hollowheap/process` and implement detached lifecycle, log, and cancel primitives.
-  - Verify: `npx vitest run packages/process/src/index.test.ts`
-  - Files: `packages/process/package.json`, `packages/process/tsconfig.json`, `packages/process/src/index.ts`, `packages/process/src/process.ts`, `packages/process/src/index.test.ts`, `package.json`, `package-lock.json`
+- [x] T92 [S103] (blocked-by: none): scaffold `packages/runtime` as `@hollowheap/runtime` and implement detached lifecycle, log, and cancel primitives.
+  - Verify: `npx vitest run packages/runtime/src/index.test.ts`
+  - Files: `packages/runtime/package.json`, `packages/runtime/tsconfig.json`, `packages/runtime/src/index.ts`, `packages/runtime/src/process.ts`, `packages/runtime/src/index.test.ts`, `package.json`, `package-lock.json`
   - Notes: Node-only, no Pi host imports; consumers supply state directory; process-group cancel.
   - Risk: workspace lock drift, orphan process, host coupling.
 
 - [x] T93 [S104] (blocked-by: T92): add atomic process state, PID/start-time reconciliation, permissions, and JSONL Unix socket framing.
-  - Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
-  - Files: `packages/process/src/state.ts`, `packages/process/src/state.test.ts`, `packages/process/src/socket.ts`, `packages/process/src/socket.test.ts`, `packages/process/src/index.ts`
+  - Verify: `npx vitest run packages/runtime/src/state.test.ts packages/runtime/src/socket.test.ts`
+  - Files: `packages/runtime/src/state.ts`, `packages/runtime/src/state.test.ts`, `packages/runtime/src/socket.ts`, `packages/runtime/src/socket.test.ts`, `packages/runtime/src/index.ts`
   - Notes: `0700` dirs, `0600` files/sockets, atomic rename, `{id,action,payload}` per line.
   - Risk: partial writes, framing loss, stale socket, request-id collision.
 
-- [x] T94 [S105] (blocked-by: T93): migrate `pi-tasks` runner and registry primitives to `@hollowheap/process` without behavior changes.
+- [x] T94 [S105] (blocked-by: T93): migrate `pi-tasks` runner and registry primitives to `@hollowheap/runtime` without behavior changes.
   - Verify: `npx vitest run extensions/pi-tasks/src/runner.test.ts`
   - Files: `extensions/pi-tasks/package.json`, `extensions/pi-tasks/src/runner.ts`, `extensions/pi-tasks/src/registry.ts`, tests, `package-lock.json`
   - Notes: preserve task tool behavior, PID/start-time reconciliation, cancel grace, and permissions.
@@ -668,7 +668,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 - [x] T104 [S102] (blocked-by: T93, T94, T96, T97, T98, T99, T100, T101, T102, T103): document the subagent contract and shared process package.
   - Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
-  - Files: `extensions/pi-subagents/README.md`, `packages/process/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Files: `extensions/pi-subagents/README.md`, `packages/runtime/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
   - Notes: config, agents, actions, state/socket, trust, depth, locks, recovery, ACP inactivity, limitations.
   - Risk: stale defaults, missing security limits.
 

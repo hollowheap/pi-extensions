@@ -1,17 +1,17 @@
 # Architecture
 
-Last verified: 2026-11-04.
+Last verified: 2026-11-05.
 Scope: `my-pi-agent` workspace.
 
 ## System Shape
 
 - Pi loads one extension per `extensions/pi-*` package through jiti with `moduleCache: false`; installed packages get separate module roots.
-- `packages/core` owns shared policy, config, shell/exec, formatting, modes, session state, pricing, session caches, and the prompt queue.
-- `packages/process` owns detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
+- `packages/core` owns shared policy, config, shell parsing, formatting, modes, session state, pricing, session caches, and the prompt queue.
+- `packages/runtime` owns command execution, sandboxing, detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
 - `packages/tui` owns reusable frames, pickers, pagers, cancellable progress, and the code viewer; it depends on core types and host TUI peers.
 - `packages/policy` owns headless permission enforcement and shared tool-category/target helpers; `pi-guard` uses them for interactive approval and `pi-subagents` loads the headless extension for children.
 - `packages/pi-acp` is a standalone ACP server plus a bundled extension. It runs one `pi --mode rpc -ne -e <ext> -nbt` child per session and routes execution through client capabilities.
-- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/process` and `packages/policy` primitives; ACP keeps subagents inactive.
+- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/runtime` and `packages/policy` primitives; ACP keeps subagents inactive.
 - Trust boundaries are the project trust gate, agent-dir config, workspace path rules, provider network calls, and the ACP client.
 
 ## Module Seams
@@ -23,7 +23,7 @@ Scope: `my-pi-agent` workspace.
 - The default active tool set excludes host `powershell` and `ls`; `bash` covers listing and shell work.
 - `pi-hooks` owns session/pre/post hook execution and trusted project overlays.
 - `pi-question` and `pi-todos` own tagged-block parsing, UI, and branch-local state.
-- `pi-tasks` owns durable shell tasks. `packages/process` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents, harness selection, write locking, and resume.
+- `pi-tasks` owns durable shell tasks. `packages/runtime` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents, harness selection, write locking, and resume.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
 - `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
 - `pi-usage` owns usage accounting, compaction-safe state, optional USD caps, and the statusline usage provider.
@@ -38,7 +38,7 @@ Scope: `my-pi-agent` workspace.
 ## Framework & Library Choices
 
 - Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, and biome.
-- Extensions import `@hollowheap/core/*` and `@hollowheap/process/*` subpaths instead of the package barrel. Pi reloads each extension through jiti, so a barrel import re-resolves every shared module and costs about 150 ms per extension; `artifacts/scripts/bench-startup.mjs` measures the full load.
+- Extensions import `@hollowheap/core/*` and `@hollowheap/runtime/*` subpaths instead of the package barrel. Pi reloads each extension through jiti, so a barrel import re-resolves every shared module and costs about 150 ms per extension; `artifacts/scripts/bench-startup.mjs` measures the full load.
 - Pi host modules are peer dependencies; shared runtime packages are real workspace dependencies.
 - `packages/pi-acp` builds with `tsc -p packages/pi-acp` into gitignored `dist/`.
 - `lang` is a dependency-free LSP client over stdio using Node builtins.
@@ -121,4 +121,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (993 tests/108 files), typecheck, and lint (310 files) green on 2026-11-04.
+- Final suite (993 tests/108 files), typecheck, and lint (310 files) green on 2026-11-05.

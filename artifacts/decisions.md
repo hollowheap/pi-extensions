@@ -69,7 +69,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D95 [R30]: Run each subagent as a detached `pi --mode rpc` child supervised by a per-child runner built on `@hollowheap/process`; the runner owns stdio, exposes a Unix socket for live reattach/steer, and persists state, logs, and session files under `<agentDir>/subagents/`; no central daemon.
+- [x] D95 [R30]: Run each subagent as a detached `pi --mode rpc` child supervised by a per-child runner built on `@hollowheap/runtime`; the runner owns stdio, exposes a Unix socket for live reattach/steer, and persists state, logs, and session files under `<agentDir>/subagents/`; no central daemon.
   - Context: Live steering plus durable children need a process that owns the child after the parent exits; a per-child runner avoids a daemon.
   - Alternatives: in-process SDK sessions; central parent-hub daemon; session-scoped children.
   - Consequences: children outlive the parent; live reattach needs socket and state reconciliation; one runner and socket per child; supersedes D71's session-scoped parent-hub design.
@@ -109,7 +109,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: code comments only; separate operations guide.
   - Consequences: docs must track default limits and the process/socket layout; users can audit what leaves the machine and what survives.
 
-- [x] D103 [R35]: Add `packages/process` as `@hollowheap/process`, a Node-only library with no Pi host imports, owning detached spawn, state, PID/start-time reconciliation, logs, cancellation, and Unix socket server/client primitives; `pi-tasks` and `pi-subagents` depend on it.
+- [x] D103 [R35]: Add `packages/runtime` as `@hollowheap/runtime`, a Node-only library with no Pi host imports, owning detached spawn, state, PID/start-time reconciliation, logs, cancellation, and Unix socket server/client primitives; `pi-tasks` and `pi-subagents` depend on it.
   - Context: Two durable subsystems need one lifecycle implementation to avoid cleanup and state drift; this supersedes D65's subagent ownership.
   - Alternatives: duplicate runners in both extensions; put process code in core; ship another extension.
   - Consequences: `pi-tasks` is refactored onto the shared layer; core stays host-free; the dependency graph gains one package.

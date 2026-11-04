@@ -696,14 +696,14 @@
 
 #### System Shape
 
-- [x] S103 [R35] [D103]: `@hollowheap/process` is a Node-only library exporting detached lifecycle and socket primitives
-  - Verify: `npx vitest run packages/process/src/index.test.ts`
+- [x] S103 [R35] [D103]: `@hollowheap/runtime` is a Node-only library exporting detached lifecycle and socket primitives
+  - Verify: `npx vitest run packages/runtime/src/index.test.ts`
   - Seam: package exports and host independence.
   - Behavior: no Pi host imports; exports spawn, state, log, cancel, and Unix socket server/client primitives.
   - Failures: host coupling, missing export, or a second lifecycle implementation.
 
 - [x] S104 [R35] [D104]: Process state/socket uses `0700`/`0600`, atomic state, PID/start-time, and JSONL envelopes
-  - Verify: `npx vitest run packages/process/src/state.test.ts packages/process/src/socket.test.ts`
+  - Verify: `npx vitest run packages/runtime/src/state.test.ts packages/runtime/src/socket.test.ts`
   - Seam: process state files and Unix socket transport.
   - Behavior: state writes are atomic; PID/start time recorded; directory `0700`; files/socket `0600`; one `{id,action,payload}` JSON object per line.
   - Failures: partial writes, wrong permissions, framing loss, missing request correlation, or stale owner reuse.

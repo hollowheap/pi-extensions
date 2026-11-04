@@ -16,7 +16,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | Package | Version | Description |
 | :--- | :--- | :--- |
 | [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, and mode-registry primitives |
-| [`@hollowheap/process`](./packages/process) | `0.2.0` | Detached process, atomic state, and JSONL Unix-socket primitives |
+| [`@hollowheap/runtime`](./packages/runtime) | `0.2.0` | Command execution, detached process, atomic state, and JSONL Unix-socket primitives |
 | [`@hollowheap/tui`](./packages/tui) | `0.2.0` | Shared frames, pickers, pagers, progress, and code viewer |
 | [`@hollowheap/policy`](./packages/policy) | `0.2.0` | Headless permission policy and shared tool-target helpers |
 | [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.2.0` | Configurable lualine-style statusline footer |
