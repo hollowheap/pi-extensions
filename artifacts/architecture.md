@@ -10,7 +10,7 @@ Scope: `my-pi-agent` workspace.
 - `packages/process` owns detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
 - `packages/tui` owns reusable frames, pickers, pagers, cancellable progress, and the code viewer; it depends on core types and host TUI peers.
 - `packages/pi-acp` is a standalone ACP server plus a bundled extension. It runs one `pi --mode rpc -ne -e <ext> -nbt` child per session and routes execution through client capabilities.
-- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `pi-tasks` and `packages/process` primitives; ACP keeps subagents inactive.
+- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/process` primitives; ACP keeps subagents inactive.
 - Trust boundaries are the project trust gate, agent-dir config, workspace path rules, provider network calls, and the ACP client.
 
 ## Module Seams
@@ -22,7 +22,7 @@ Scope: `my-pi-agent` workspace.
 - The default active tool set excludes host `powershell` and `ls`; `bash` covers listing and shell work.
 - `pi-hooks` owns session/pre/post hook execution and trusted project overlays.
 - `pi-question` and `pi-todos` own tagged-block parsing, UI, and branch-local state.
-- `pi-tasks` owns durable shell tasks and exports `TaskStore` plus detached-spawn helpers. `pi-subagents` owns child agents, harness selection, write locking, and resume on top of that layer.
+- `pi-tasks` owns durable shell tasks. `packages/process` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents, harness selection, write locking, and resume.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
 - `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
 - `pi-usage` owns usage accounting, compaction-safe state, optional USD caps, and the statusline usage provider.

@@ -27,7 +27,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.2.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
 | [`@hollowheap/pi-question`](./extensions/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
 | [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
-| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks and shared task lifecycle primitives |
+| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks |
 | [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, explicit resume, and generic CLI harnesses |
 | [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.2.0` | Advisory decision tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
