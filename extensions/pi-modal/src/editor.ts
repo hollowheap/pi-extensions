@@ -2,11 +2,15 @@ import {
   CustomEditor,
   type CustomEditorOptions,
   type KeybindingsManager,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   type EditorTheme,
   type TUI,
   matchesKey,
+  parseKey,
+  sliceByColumn,
+  stripTerminalSequences,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -22,7 +26,6 @@ export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
   private borderStyle = "rounded";
-  private editorTheme: EditorTheme;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -32,6 +35,9 @@ export class ModalEditor extends CustomEditor {
   private clipboardError: string | undefined;
   private commandMode = false;
   private commandBuffer = "";
+  private pendingChange = false;
+  private lastBottomBorder: string | undefined;
+  private modeTheme: Theme | undefined;
 
   constructor(
     tui: TUI,
@@ -39,9 +45,10 @@ export class ModalEditor extends CustomEditor {
     keybindings: KeybindingsManager,
     config?: ModalConfig,
     options?: CustomEditorOptions,
+    modeTheme?: Theme,
   ) {
     super(tui, theme, keybindings, options);
-    this.editorTheme = theme;
+    this.modeTheme = modeTheme;
     this.keymaps = resolveEffectiveKeymaps(config);
     if (config?.promptChar && [...config.promptChar].length === 1) {
       this.promptChar = config.promptChar;
@@ -252,8 +259,12 @@ export class ModalEditor extends CustomEditor {
   }
 
   override handleInput(data: string): void {
+    const printable = printableKey(data);
+    const input = printable ?? data;
+
     // Escape key handling
     if (matchesKey(data, "escape")) {
+      this.pendingChange = false;
       if (this.isShowingAutocomplete()) {
         super.handleInput(data);
         return;
@@ -290,14 +301,14 @@ export class ModalEditor extends CustomEditor {
 
     // Visual mode handling
     if (this.mode === "visual") {
-      if (data === "v" || matchesKey(data, "escape")) {
+      if (input === "v" || matchesKey(data, "escape")) {
         this.selectionAnchor = null;
         this.mode = "normal";
         return;
       }
 
       // Yank (y)
-      if (data === "y") {
+      if (input === "y") {
         const sel = this.resolveSelection();
         if (sel) {
           this.copyToClipboard(sel.text);
@@ -308,7 +319,7 @@ export class ModalEditor extends CustomEditor {
       }
 
       // Cut / Delete (d or x)
-      if (data === "d" || data === "x") {
+      if (input === "d" || input === "x") {
         const sel = this.resolveSelection();
         if (sel) {
           this.copyToClipboard(sel.text);
@@ -320,7 +331,7 @@ export class ModalEditor extends CustomEditor {
       }
 
       // Change (c)
-      if (data === "c") {
+      if (input === "c") {
         const sel = this.resolveSelection();
         if (sel) {
           this.copyToClipboard(sel.text);
@@ -332,8 +343,8 @@ export class ModalEditor extends CustomEditor {
       }
 
       // Movement keys from keymaps.visual
-      if (data in this.keymaps.visual) {
-        const seq = this.keymaps.visual[data];
+      if (input in this.keymaps.visual) {
+        const seq = this.keymaps.visual[input];
         if (seq) {
           super.handleInput(seq);
           return;
@@ -341,7 +352,7 @@ export class ModalEditor extends CustomEditor {
       }
 
       // Pass control sequences, block arbitrary typing
-      if (data.length === 1 && data.charCodeAt(0) >= 32) return;
+      if (printable !== undefined) return;
       super.handleInput(data);
       return;
     }
@@ -359,15 +370,15 @@ export class ModalEditor extends CustomEditor {
         this.searchQuery = "";
         return;
       }
-      if (data.length === 1 && data.charCodeAt(0) >= 32) {
-        this.searchQuery += data;
+      if (printable !== undefined) {
+        this.searchQuery += printable;
         return;
       }
       return;
     }
 
     // Command mode for substitution
-    if (this.mode === "normal" && data === ":") {
+    if (this.mode === "normal" && input === ":") {
       // Enter command mode - collect until enter
       this.searchMode = false;
       // For simplicity, handle :%s in handleInput via a separate flag
@@ -404,158 +415,285 @@ export class ModalEditor extends CustomEditor {
         this.commandBuffer = "";
         return;
       }
-      if (data.length === 1 && data.charCodeAt(0) >= 32) {
-        this.commandBuffer += data;
+      if (printable !== undefined) {
+        this.commandBuffer += printable;
         return;
       }
       return;
     }
 
     // Normal mode handling
-    if (data === "/" && this.mode === "normal") {
+    if (this.pendingChange) {
+      this.pendingChange = false;
+      if (input === "c") {
+        this.changeLine();
+        this.mode = "insert";
+      } else if (input === "w") {
+        this.changeWord();
+        this.mode = "insert";
+      } else if (input === "$") {
+        this.changeToEndOfLine();
+        this.mode = "insert";
+      }
+      return;
+    }
+
+    if (input === "/" && this.mode === "normal") {
       this.searchMode = true;
       this.searchQuery = "";
       return;
     }
 
-    if ((data === "n" || data === "N") && this.lastSearchQuery !== "") {
-      this.moveToMatch(this.lastSearchQuery, data === "n" ? 1 : -1);
+    if ((input === "n" || input === "N") && this.lastSearchQuery !== "") {
+      this.moveToMatch(this.lastSearchQuery, input === "n" ? 1 : -1);
       return;
     }
 
-    if (data in this.keymaps.normal) {
-      const seq = this.keymaps.normal[data];
+    if (input in this.keymaps.normal) {
+      const seq = this.keymaps.normal[input];
       if (typeof seq === "string") {
         super.handleInput(seq);
         return;
       }
-      if (data === "i") {
+      if (input === "i") {
         this.mode = "insert";
-      } else if (data === "a") {
+      } else if (input === "a") {
         this.mode = "insert";
         super.handleInput("\x1b[C"); // Move right first
-      } else if (data === "I") {
+      } else if (input === "I") {
         this.mode = "insert";
         super.handleInput("\x01"); // Move to start of line
-      } else if (data === "A") {
+      } else if (input === "A") {
         this.mode = "insert";
         super.handleInput("\x05"); // Move to end of line
-      } else if (data === "o") {
+      } else if (input === "o") {
         this.mode = "insert";
         super.handleInput("\x05\n"); // End of line + newline
-      } else if (data === "v") {
+      } else if (input === "v") {
         this.mode = "visual";
         this.selectionAnchor = { ...this.getCursor() };
       }
       return;
     }
 
+    if (input === "c") {
+      this.pendingChange = true;
+      return;
+    }
+
+    if (input === "C") {
+      this.changeToEndOfLine();
+      this.mode = "insert";
+      return;
+    }
+
     // Pass control sequences (Ctrl+C, Ctrl+D, etc.) through to CustomEditor; ignore printable chars
-    if (data.length === 1 && data.charCodeAt(0) >= 32) return;
+    if (printable !== undefined) return;
     super.handleInput(data);
+  }
+
+  private changeToEndOfLine(): void {
+    const cursor = this.getCursor();
+    const line = this.getLines()[cursor.line] ?? "";
+    if (cursor.col < line.length) {
+      this.deleteSelection({
+        start: cursor,
+        end: { line: cursor.line, col: line.length - 1 },
+      });
+    }
+  }
+
+  private changeLine(): void {
+    const cursor = this.getCursor();
+    const line = this.getLines()[cursor.line] ?? "";
+    if (line.length > 0) {
+      this.deleteSelection({
+        start: { line: cursor.line, col: 0 },
+        end: { line: cursor.line, col: line.length - 1 },
+      });
+    }
+  }
+
+  private changeWord(): void {
+    const cursor = this.getCursor();
+    const line = this.getLines()[cursor.line] ?? "";
+    let end = cursor.col;
+    while (end < line.length && /\s/.test(line[end] ?? "")) end++;
+    while (end < line.length && !/\s/.test(line[end] ?? "")) end++;
+    if (end > cursor.col) {
+      this.deleteSelection({
+        start: cursor,
+        end: { line: cursor.line, col: end - 1 },
+      });
+    }
+  }
+
+  private borderPaint(): (text: string) => string {
+    const appTheme = this.modeTheme;
+    if (!appTheme) return this.borderColor;
+    if (this.searchMode) return (text) => appTheme.fg("success", text);
+    if (this.commandMode) return (text) => appTheme.fg("error", text);
+    if (this.getText().trimStart().startsWith("!")) {
+      return appTheme.getBashModeBorderColor();
+    }
+    switch (this.mode) {
+      case "insert":
+        return (text) => appTheme.fg("accent", text);
+      case "visual":
+        return (text) => appTheme.fg("warning", text);
+      default:
+        return (text) => appTheme.fg("border", text);
+    }
+  }
+
+  protected override renderTopBorder(
+    width: number,
+    hiddenLineCount: number,
+  ): string {
+    if (this.borderStyle === "none" || width < 2) {
+      return super.renderTopBorder(width, hiddenLineCount);
+    }
+    const paint = this.borderPaint();
+    const borderChars = getBorderChars(this.borderStyle);
+    const innerWidth = width - 2;
+    const inner =
+      innerWidth > 0
+        ? paint(
+            stripTerminalSequences(
+              super.renderTopBorder(innerWidth, hiddenLineCount),
+            ),
+          )
+        : "";
+    return paint(borderChars.topLeft) + inner + paint(borderChars.topRight);
+  }
+
+  protected override renderBottomBorder(
+    width: number,
+    hiddenLineCount: number,
+  ): string {
+    const label = ` ${this.getText().trimStart().startsWith("!") ? "BASH" : this.mode.toUpperCase()} `;
+    if (this.borderStyle === "none" || width < 2) {
+      const line = fitRightLabel(
+        super.renderBottomBorder(width, hiddenLineCount),
+        width,
+        label,
+      );
+      this.lastBottomBorder = line;
+      return line;
+    }
+    const paint = this.borderPaint();
+    const borderChars = getBorderChars(this.borderStyle);
+    const innerWidth = width - 2;
+    const inner =
+      innerWidth > 0
+        ? paint(
+            stripTerminalSequences(
+              super.renderBottomBorder(innerWidth, hiddenLineCount),
+            ),
+          )
+        : "";
+    const line =
+      paint(borderChars.bottomLeft) +
+      fitRightLabel(inner, innerWidth, label) +
+      paint(borderChars.bottomRight);
+    this.lastBottomBorder = line;
+    return line;
   }
 
   override render(width: number): string[] {
     const lines = super.render(width);
     if (lines.length === 0) return lines;
 
-    const borderEnabled = this.borderStyle !== "none" && lines.length >= 3;
+    const paint = this.borderPaint();
+    const promptPrefix = `${this.promptChar} `;
+    const promptWidth = visibleWidth(promptPrefix);
+    const borderEnabled =
+      this.borderStyle !== "none" && width >= promptWidth + 2;
     const borderChars = borderEnabled ? getBorderChars(this.borderStyle) : null;
-    const contentWidth = borderEnabled ? Math.max(1, width - 1) : width;
+    const bottomIndex = this.lastBottomBorder
+      ? lines.lastIndexOf(this.lastBottomBorder)
+      : -1;
+    if (bottomIndex < 2) return lines;
 
-    if (lines.length >= 3) {
-      const firstContentIdx = 1;
-      const lastContentIdx = lines.length - 2;
-      const prefix = `${this.promptChar} `;
-      const prefixWidth = visibleWidth(prefix);
-      const indent = " ".repeat(prefixWidth);
+    const contentWidth = borderEnabled
+      ? Math.max(1, width - promptWidth - 1)
+      : Math.max(1, width - promptWidth);
+    const firstContentIdx = 1;
+    const lastContentIdx = bottomIndex - 1;
+    const indent = " ".repeat(promptWidth);
 
-      for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
-        const p = idx === firstContentIdx ? prefix : indent;
-        const line = lines[idx] ?? "";
-        const decorated = truncateToWidth(p + line, contentWidth, "");
-        const diff = contentWidth - visibleWidth(decorated);
-        lines[idx] = diff > 0 ? decorated + " ".repeat(diff) : decorated;
-      }
+    for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
+      const line = lines[idx] ?? "";
+      const decorated = truncateToWidth(line, contentWidth, "");
+      const diff = contentWidth - visibleWidth(decorated);
+      lines[idx] = diff > 0 ? decorated + " ".repeat(diff) : decorated;
+    }
 
-      if (this.mode === "visual" && this.selectionAnchor) {
-        const sel = this.resolveSelection();
-        if (sel) {
-          const contentLines = lastContentIdx - firstContentIdx + 1;
-          const cursor = this.getCursor();
-          const scrollOffset = Math.max(0, cursor.line - (contentLines - 1));
-          const pad = this.getPaddingX();
+    if (this.mode === "visual" && this.selectionAnchor) {
+      const sel = this.resolveSelection();
+      if (sel) {
+        const contentLines = lastContentIdx - firstContentIdx + 1;
+        const cursor = this.getCursor();
+        const scrollOffset = Math.max(0, cursor.line - (contentLines - 1));
+        const pad = this.getPaddingX();
 
-          for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
-            const logicalLineIdx = scrollOffset + (idx - firstContentIdx);
-            if (
-              logicalLineIdx < sel.start.line ||
-              logicalLineIdx > sel.end.line
-            ) {
-              continue;
-            }
-            const currentLineText = this.getLines()[logicalLineIdx] ?? "";
-            const selStartCol =
-              logicalLineIdx === sel.start.line ? sel.start.col : 0;
-            const selEndCol =
-              logicalLineIdx === sel.end.line
-                ? sel.end.col
-                : Math.max(0, currentLineText.length - 1);
-            const includePrompt =
-              idx === firstContentIdx &&
-              logicalLineIdx === sel.start.line &&
-              selStartCol === 0;
-            lines[idx] = highlightLineSelection(
-              lines[idx] ?? "",
-              includePrompt ? 0 : prefixWidth + pad + selStartCol,
-              prefixWidth + pad + selEndCol,
-            );
+        for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
+          const logicalLineIdx = scrollOffset + (idx - firstContentIdx);
+          if (
+            logicalLineIdx < sel.start.line ||
+            logicalLineIdx > sel.end.line
+          ) {
+            continue;
           }
+          const currentLineText = this.getLines()[logicalLineIdx] ?? "";
+          const selStartCol =
+            logicalLineIdx === sel.start.line ? sel.start.col : 0;
+          const selEndCol =
+            logicalLineIdx === sel.end.line
+              ? sel.end.col
+              : Math.max(0, currentLineText.length - 1);
+          lines[idx] = highlightLineSelection(
+            lines[idx] ?? "",
+            pad + selStartCol,
+            pad + selEndCol,
+          );
         }
       }
     }
 
-    const shellMode = this.getText().trimStart().startsWith("!");
-    const label = ` ${shellMode ? "BASH" : this.mode.toUpperCase()} `;
-
-    const last = lines.length - 1;
-    const lastLine = lines[last];
-    if (lastLine !== undefined && visibleWidth(lastLine) >= label.length) {
-      lines[last] =
-        truncateToWidth(lastLine, contentWidth - label.length, "") + label;
-    }
-
-    // Apply right-side border only, colored to match the editor theme.
     if (borderEnabled && borderChars) {
-      const v = this.editorTheme.borderColor(borderChars.vertical);
-      const tr = this.editorTheme.borderColor(borderChars.topRight);
-      const firstContentIdx = 1;
-      const lastContentIdx = lines.length - 2;
+      const vertical = paint(borderChars.vertical);
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
-        const line = lines[idx] ?? "";
-        const diff = contentWidth - visibleWidth(line);
-        const padded = diff > 0 ? line + " ".repeat(diff) : line;
-        lines[idx] = padded + v;
+        const gutter = idx === firstContentIdx ? promptPrefix : `${vertical} `;
+        lines[idx] = gutter + (lines[idx] ?? "") + vertical;
       }
-      // Style the top border's right corner to match.
-      if (lines.length > 0) {
-        const top = lines[0] ?? "";
-        const diff = Math.max(0, width - 1 - visibleWidth(top));
-        const padded = diff > 0 ? top + " ".repeat(diff) : top;
-        lines[0] = truncateToWidth(padded, Math.max(0, width - 1), "") + tr;
-      }
-      // Style the bottom-right corner to match, after the mode label.
-      if (lines.length > 1) {
-        const br = this.editorTheme.borderColor(borderChars.bottomRight);
-        const lastIdx = lines.length - 1;
-        const lastLine = lines[lastIdx] ?? "";
-        const diff = Math.max(0, contentWidth - visibleWidth(lastLine));
-        const padded = diff > 0 ? lastLine + " ".repeat(diff) : lastLine;
-        lines[lastIdx] = truncateToWidth(padded, contentWidth, "") + br;
+    } else {
+      for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
+        const gutter = idx === firstContentIdx ? promptPrefix : indent;
+        lines[idx] = gutter + (lines[idx] ?? "");
       }
     }
     return lines;
   }
+}
+
+function printableKey(data: string): string | undefined {
+  if (data.length === 1 && data.charCodeAt(0) >= 32) return data;
+  const key = parseKey(data);
+  if (key === undefined) return undefined;
+  if (key.length === 1) return key;
+  const shifted = /^shift\+([a-z])$/.exec(key);
+  return shifted?.[1]?.toUpperCase();
+}
+
+function fitRightLabel(line: string, width: number, label: string): string {
+  if (width <= 0) return "";
+  const text = truncateToWidth(label, width, "");
+  const labelWidth = visibleWidth(text);
+  const prefixWidth = Math.max(0, width - labelWidth);
+  const prefix = sliceByColumn(line, 0, prefixWidth);
+  const pad = Math.max(0, prefixWidth - visibleWidth(prefix));
+  return `${prefix}\x1b[0m${" ".repeat(pad)}${text}`;
 }
 
 function highlightLineSelection(

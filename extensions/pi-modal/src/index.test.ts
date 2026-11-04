@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { rgbColor, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "./editor.js";
 import extension from "./index.js";
@@ -43,13 +44,20 @@ afterEach(() => {
   tmpDirs.length = 0;
 });
 
-function createMockEditor(config = {}, options: { initialText?: string } = {}) {
+function createMockEditor(
+  config = {},
+  options: {
+    initialText?: string;
+    borderColor?: (value: string) => string;
+    modeTheme?: unknown;
+  } = {},
+) {
   const tui = {
     requestRender: vi.fn(),
     terminal: { rows: 24, columns: 80, write: vi.fn() },
   };
   const theme = {
-    borderColor: (s: string) => s,
+    borderColor: options.borderColor ?? ((s: string) => s),
     selectList: {
       selectedPrefix: (s: string) => s,
       selectedText: (s: string) => s,
@@ -66,6 +74,8 @@ function createMockEditor(config = {}, options: { initialText?: string } = {}) {
     theme as never,
     keybindings as never,
     config,
+    undefined,
+    options.modeTheme as never,
   );
   if (options.initialText) {
     editor.setText(options.initialText);
@@ -192,6 +202,73 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("insert");
   });
 
+  it("accepts kitty CSI-u printable keys for mode changes", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello" },
+    );
+
+    editor.handleInput("\x1b[105u"); // i
+    expect(editor.getMode()).toBe("insert");
+
+    editor.handleInput("\x1b");
+    editor.handleInput("\x1b[97u"); // a
+    expect(editor.getMode()).toBe("insert");
+
+    editor.handleInput("\x1b");
+    editor.handleInput("\x1b[73;2u"); // shift+i
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+
+    editor.handleInput("\x1b");
+    editor.handleInput("\x1b[65;2u"); // shift+a
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 5 });
+  });
+
+  it("changes text with C, cc, cw, and c$", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one two three" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("C");
+    expect(editor.getText()).toBe("");
+    expect(editor.getMode()).toBe("insert");
+
+    const { editor: cc } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one\ntwo" },
+    );
+    cc.handleInput("k");
+    cc.handleInput("0");
+    cc.handleInput("c");
+    cc.handleInput("c");
+    expect(cc.getText()).toBe("\ntwo");
+    expect(cc.getMode()).toBe("insert");
+
+    const { editor: cw } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one two" },
+    );
+    cw.handleInput("0");
+    cw.handleInput("c");
+    cw.handleInput("w");
+    expect(cw.getText()).toBe(" two");
+    expect(cw.getMode()).toBe("insert");
+
+    const { editor: cend } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one two" },
+    );
+    cend.handleInput("0");
+    cend.handleInput("w");
+    cend.handleInput("c");
+    cend.handleInput("$");
+    expect(cend.getText()).toBe("one");
+    expect(cend.getMode()).toBe("insert");
+  });
+
   it("transitions between normal and visual mode", () => {
     const { editor } = createMockEditor({ initialMode: "normal" });
     expect(editor.getMode()).toBe("normal");
@@ -256,7 +333,7 @@ describe("ModalEditor modal behavior", () => {
     expect(
       lines.some((l) => l.includes("\x1b[7m") && l.includes("hello")),
     ).toBe(true);
-    expect(lines[1]).toContain("\x1b[7m❯ hello");
+    expect(lines[1]).toContain("\x1b[7mhello");
   });
 
   it("yank (y) copies selection to clipboard without mutating buffer and returns to normal mode", () => {
@@ -493,12 +570,13 @@ describe("ModalEditor modal behavior", () => {
     expect(lines[lines.length - 1]).not.toContain("NORMAL");
   });
 
-  it("decorates input with default promptChar ❯ and indents continuation lines", () => {
+  it("continues the left border under the prompt character", () => {
     const { editor } = createMockEditor({}, { initialText: "line1\nline2" });
     const lines = editor.render(80);
     expect(lines.length).toBeGreaterThanOrEqual(4);
+    expect(lines[0]).toContain("╭");
     expect(lines[1]).toContain("❯ line1");
-    expect(lines[2]).toContain("line2");
+    expect(lines[2]).toContain("│ line2");
   });
 
   it("respects custom single-character promptChar in render", () => {
@@ -510,6 +588,75 @@ describe("ModalEditor modal behavior", () => {
     const lines = editor.render(80);
     expect(lines[1]).toContain("$ custom prompt");
   });
+
+  it("colors the prompt border by vim mode", () => {
+    const modeTheme = {
+      fg: (token: string, text: string) => `[${token}]${text}[/]`,
+      getBashModeBorderColor: () => (text: string) => `[bash]${text}[/]`,
+    };
+    const { editor } = createMockEditor(
+      {},
+      { initialText: "hello", modeTheme },
+    );
+
+    expect(editor.render(20)[0]).toContain("[accent]╭[/]");
+    expect(editor.render(20)[0]).toContain("[accent]─");
+
+    editor.setMode("normal");
+    expect(editor.render(20)[0]).toContain("[border]╭[/]");
+
+    editor.setMode("visual");
+    expect(editor.render(20)[0]).toContain("[warning]╭[/]");
+
+    editor.setMode("normal");
+    editor.handleInput(":");
+    expect(editor.render(20)[0]).toContain("[error]╭[/]");
+  });
+
+  it("uses the bash border color for shell prompts", () => {
+    const modeTheme = {
+      fg: (token: string, text: string) => `[${token}]${text}[/]`,
+      getBashModeBorderColor: () => (text: string) => `[bash]${text}[/]`,
+    };
+    const { editor } = createMockEditor({}, { initialText: "!ls", modeTheme });
+    expect(editor.render(20)[0]).toContain("[bash]╭[/]");
+  });
+
+  it("renders a full rounded box with themed left and right borders", () => {
+    const color = (value: string) => `\x1b[36m${value}\x1b[39m`;
+    const { editor } = createMockEditor(
+      {},
+      { initialText: "hello", borderColor: color },
+    );
+    const lines = editor.render(20).map(stripCursorMarkers);
+    const top = lines[0] ?? "";
+    const content = lines[1] ?? "";
+    const bottom = lines.at(-1) ?? "";
+
+    expect(top.startsWith(color("╭"))).toBe(true);
+    expect(top.endsWith(color("╮"))).toBe(true);
+    expect(content.startsWith("❯ ")).toBe(true);
+    expect(content.endsWith(color("│"))).toBe(true);
+    expect(content).toContain("hello");
+    expect(bottom.startsWith(color("╰"))).toBe(true);
+    expect(bottom.endsWith(color("╯"))).toBe(true);
+    expect(bottom).toContain("INSERT");
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBe(20);
+    }
+  });
+
+  it("keeps the prompt decoration without side borders when borderStyle is none", () => {
+    const { editor } = createMockEditor(
+      { borderStyle: "none" },
+      { initialText: "hello" },
+    );
+    const lines = editor.render(20).map(stripCursorMarkers);
+    expect(lines[1]).toContain("❯ hello");
+    expect(lines[1]).not.toContain("│");
+    expect(lines[0]).not.toContain("╭");
+    expect(lines.at(-1)).toContain("INSERT");
+  });
 });
 
 describe("extension registration", () => {
@@ -519,6 +666,8 @@ describe("extension registration", () => {
       on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
         handlers[event] = fn;
       }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
     };
     extension(pi as never);
 
@@ -528,11 +677,278 @@ describe("extension registration", () => {
       hasUI: true,
       ui: {
         setEditorComponent: vi.fn(),
+        setWorkingIndicator: vi.fn(),
+        theme: {
+          colors: {
+            accent: rgbColor(80, 120, 255),
+            borderAccent: rgbColor(80, 220, 255),
+            success: rgbColor(80, 220, 120),
+            warning: rgbColor(255, 200, 80),
+            error: rgbColor(255, 80, 80),
+            thinkingText: rgbColor(200, 120, 255),
+            text: rgbColor(230, 230, 230),
+            muted: rgbColor(120, 120, 120),
+          },
+          getColorMode: () => "truecolor",
+        },
       },
     };
 
     handlers.session_start?.({}, ctx);
+    expect(ctx.ui.setWorkingIndicator).toHaveBeenCalledTimes(1);
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "vimkeys",
+      expect.objectContaining({ handler: expect.any(Function) }),
+    );
+    expect(pi.registerShortcut).toHaveBeenCalledWith(
+      "ctrl+shift+k",
+      expect.objectContaining({ handler: expect.any(Function) }),
+    );
+  });
+
+  it("registers /expand and toggles tool output", async () => {
+    const commands: Record<
+      string,
+      { handler: (args: string, ctx: unknown) => Promise<void> }
+    > = {};
+    const pi = {
+      on: vi.fn(),
+      registerCommand: vi.fn((name: string, def: (typeof commands)[string]) => {
+        commands[name] = def;
+      }),
+      registerShortcut: vi.fn(),
+    };
+    extension(pi as never);
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "expand",
+      expect.any(Object),
+    );
+
+    let expanded = false;
+    const ui = {
+      getToolsExpanded: vi.fn(() => expanded),
+      setToolsExpanded: vi.fn((value: boolean) => {
+        expanded = value;
+      }),
+      notify: vi.fn(),
+    };
+    const ctx = { hasUI: true, ui };
+
+    await commands.expand?.handler("", ctx);
+    expect(expanded).toBe(true);
+    expect(ui.notify).toHaveBeenLastCalledWith(
+      "pi-modal: tool output expanded",
+    );
+
+    await commands.expand?.handler("off", ctx);
+    expect(expanded).toBe(false);
+    expect(ui.notify).toHaveBeenLastCalledWith(
+      "pi-modal: tool output collapsed",
+    );
+
+    await commands.expand?.handler("bogus", ctx);
+    expect(ui.notify).toHaveBeenLastCalledWith(
+      "Usage: /expand [on|off|toggle]",
+      "error",
+    );
+  });
+
+  it("opens the last codemode script with ctrl+shift+o", async () => {
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const shortcuts: Record<
+      string,
+      { handler: (ctx: unknown) => Promise<void> }
+    > = {};
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(
+        (key: string, def: (typeof shortcuts)[string]) => {
+          shortcuts[key] = def;
+        },
+      ),
+    };
+    extension(pi as never);
+
+    let component: { render: (width: number) => string[] } | undefined;
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => { render: (width: number) => string[] },
+      ) => {
+        component = factory(
+          { terminal: { rows: 30 }, requestRender: vi.fn() },
+          {
+            fg: (_token: string, value: string) => value,
+            bold: (value: string) => value,
+          },
+          {},
+          vi.fn(),
+        );
+      },
+    );
+    const notify = vi.fn();
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      sessionManager: { getBranch: () => [] },
+      ui: { custom, notify },
+    };
+
+    await shortcuts["ctrl+shift+o"]?.handler(ctx);
+    expect(notify).toHaveBeenLastCalledWith(
+      "pi-modal: no codemode script yet",
+      "info",
+    );
+
+    handlers.tool_call?.(
+      {
+        toolName: "codemode",
+        input: { code: "const answer = 42;" },
+      },
+      undefined,
+    );
+    await shortcuts["ctrl+shift+o"]?.handler(ctx);
+    expect(custom).toHaveBeenCalledTimes(1);
+    const lines = component?.render(40) ?? [];
+    expect(lines[0]).toContain("╭");
+    expect(lines.at(-1)).toContain("╰");
+    expect(lines.join("\n")).toContain("const answer = 42;");
+  });
+
+  it("recovers the last codemode script from the session branch", async () => {
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const shortcuts: Record<
+      string,
+      { handler: (ctx: unknown) => Promise<void> }
+    > = {};
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(
+        (key: string, def: (typeof shortcuts)[string]) => {
+          shortcuts[key] = def;
+        },
+      ),
+    };
+    extension(pi as never);
+
+    let rendered: string[] = [];
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  name: "codemode",
+                  arguments: { code: "const fromBranch = 1;" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ui: {
+        custom: vi.fn(
+          async (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => { render: (width: number) => string[] },
+          ) => {
+            const component = factory(
+              { terminal: { rows: 30 }, requestRender: vi.fn() },
+              {
+                fg: (_token: string, value: string) => value,
+                bold: (value: string) => value,
+              },
+              {},
+              vi.fn(),
+            );
+            rendered = component.render(40);
+          },
+        ),
+        notify: vi.fn(),
+      },
+    };
+
+    await shortcuts["ctrl+shift+o"]?.handler(ctx);
+    expect(rendered.join("\n")).toContain("const fromBranch = 1;");
+  });
+
+  it("falls back to the last tool call when no codemode script exists", async () => {
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const shortcuts: Record<
+      string,
+      { handler: (ctx: unknown) => Promise<void> }
+    > = {};
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(
+        (key: string, def: (typeof shortcuts)[string]) => {
+          shortcuts[key] = def;
+        },
+      ),
+    };
+    extension(pi as never);
+
+    let rendered: string[] = [];
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      sessionManager: { getBranch: () => [] },
+      ui: {
+        custom: vi.fn(
+          async (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => { render: (width: number) => string[] },
+          ) => {
+            const component = factory(
+              { terminal: { rows: 30 }, requestRender: vi.fn() },
+              {
+                fg: (_token: string, value: string) => value,
+                bold: (value: string) => value,
+              },
+              {},
+              vi.fn(),
+            );
+            rendered = component.render(40);
+          },
+        ),
+        notify: vi.fn(),
+      },
+    };
+
+    handlers.tool_call?.(
+      { toolName: "web_search", input: { query: "lil bro" } },
+      undefined,
+    );
+    await shortcuts["ctrl+shift+o"]?.handler(ctx);
+    expect(rendered.join("\n")).toContain('"query": "lil bro"');
   });
 
   it("bypasses registration when UI is missing", () => {
@@ -541,6 +957,8 @@ describe("extension registration", () => {
       on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
         handlers[event] = fn;
       }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
     };
     extension(pi as never);
 
