@@ -57,7 +57,7 @@ Each original item is checked against `artifacts/requirements.md` and
 
 | Item | Requirement link | Verdict |
 | --- | --- | --- |
-| `fetch.ts:39-53` — `ensureResult` defensive coercion over already-normalized provider output. | R02, R03 | **Overengineered.** R02/R03 require one normalized result shape, and every adapter already returns that shape. A second coercion layer hides adapter bugs instead of failing them; no requirement asks for it. |
+| `fetch.ts:39-53` — `ensureResult` defensive coercion over already-normalized provider output. | R02, R03 | **Fixed (2026-11-04).** `ensureResult` was removed; `fetchUrl` consumes provider output directly. R02/R03 require one normalized result shape, and every adapter already returns that shape. |
 | `fetch.ts:23-26,171-218` — cache + rate-limit machinery with default TTL 0. | R56, D128 | **Required, not overengineering.** R56/D128 explicitly require TTL response caching and a request queue for rate limiting; D86's earlier deferral is superseded. The defect is that defaults and tool wiring leave both inert, not that the feature exists. |
 | `providers/{exa,tavily,firecrawl}.ts` — class + options interface + factory + singleton per provider. | R02, R03, D78 | **Partly required.** D78 requires a separate adapter per provider that normalizes into the two shapes. The class/options/factory layers are the test and config seams for that adapter; the stateless singletons are redundant but trivial. |
 | `config.ts:46-56` — `diagnoseKeys` feature for a `keys` field that is explicitly unsupported. | R04, D81 | **Required, not overengineering.** R04/D81 require keys to come only from environment variables and never be stored in `web.json`. Warning when `keys` appears is the enforcement path for that contract. |
@@ -95,4 +95,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — overengineering findings resolved.

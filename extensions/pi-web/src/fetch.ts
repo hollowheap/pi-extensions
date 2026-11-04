@@ -76,23 +76,6 @@ function cacheKeyFor(url: string, options: FetchOptions): string {
   return `${url}\0${options.acceptType ?? "auto"}\0${apiKey}\0${providers}\0${fetchImpl}`;
 }
 
-function ensureResult(
-  result: NormalizedFetchResult,
-  requestUrl: string,
-): NormalizedFetchResult {
-  return {
-    url: result.url || requestUrl,
-    finalUrl: result.finalUrl || result.url || requestUrl,
-    provider: result.provider,
-    contentType: result.contentType || "",
-    content: result.content || "",
-    links: Array.isArray(result.links) ? result.links : [],
-    media: Array.isArray(result.media) ? result.media : [],
-    truncated: Boolean(result.truncated),
-    ...(result.image === undefined ? {} : { image: result.image }),
-  };
-}
-
 async function readBoundedBytes(
   response: Response,
   maxBytes: number,
@@ -357,7 +340,7 @@ export async function fetchUrl(
     if (provider.capabilities.fetch === false) continue;
     try {
       const request: FetchRequest = { url, apiKey: options.apiKey, signal };
-      const result = ensureResult(await provider.fetch(request), url);
+      const result = await provider.fetch(request);
       if (signal.aborted) {
         throw new DOMException("fetch aborted", "AbortError");
       }
