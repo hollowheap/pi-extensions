@@ -25,51 +25,11 @@ import {
   noServerHint,
 } from "./config.js";
 import {
+  type LspClient,
   type LspClientOptions,
   type LspPosition,
   getLspClient,
 } from "./lsp.js";
-
-export interface LangClient {
-  definition(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  references(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  documentSymbols(filePath: string, languageId: string): Promise<unknown>;
-  workspaceSymbols(query: string): Promise<unknown>;
-  hover(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  signatureHelp(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  typeDefinition(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  implementation(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  documentHighlights(
-    filePath: string,
-    languageId: string,
-    position: LspPosition,
-  ): Promise<unknown>;
-  diagnostics(filePath: string, languageId: string): Promise<unknown>;
-}
 
 export interface LangToolDeps {
   loadConfig: (
@@ -77,7 +37,7 @@ export interface LangToolDeps {
     onDiagnostic?: (message: string) => void,
   ) => LanguageToolsConfig;
   loadRules: (ctx: ExtensionContext) => Rule[];
-  getClient: (options: LspClientOptions) => LangClient;
+  getClient: (options: LspClientOptions) => LspClient;
   getAgentDir: () => string;
 }
 
@@ -151,12 +111,6 @@ interface SymbolNode {
   range?: ToolRange;
   location?: ResultLocation;
   children: SymbolNode[];
-}
-
-interface FormatContext {
-  effective: string;
-  root: string;
-  rules: readonly Rule[];
 }
 
 const SYMBOL_KINDS: readonly string[] = [
@@ -261,8 +215,12 @@ function pathForUri(uri: string): string | undefined {
   }
 }
 
-function pathAllowed(path: string, ctx: FormatContext): boolean {
-  return checkPath(ctx.rules, path, "read", ctx.root) !== "deny";
+function pathAllowed(
+  path: string,
+  rules: readonly Rule[],
+  root: string,
+): boolean {
+  return checkPath(rules, path, "read", root) !== "deny";
 }
 
 function kindName(kind: number): string {
@@ -271,22 +229,26 @@ function kindName(kind: number): string {
 
 function formatLocation(
   location: ResultLocation,
-  ctx: FormatContext,
+  effective: string,
+  root: string,
+  rules: readonly Rule[],
 ): string | undefined {
   const path = pathForUri(location.uri);
-  if (path === undefined || !pathAllowed(path, ctx)) return undefined;
-  return `${displayPath(ctx.effective, path)}:${location.range.start.line + 1}:${location.range.start.character + 1}`;
+  if (path === undefined || !pathAllowed(path, rules, root)) return undefined;
+  return `${displayPath(effective, path)}:${location.range.start.line + 1}:${location.range.start.character + 1}`;
 }
 
 function formatLocations(
   value: unknown,
-  ctx: FormatContext,
+  effective: string,
+  root: string,
+  rules: readonly Rule[],
   cap: number,
 ): { lines: string[]; truncated: boolean } {
   const lines: string[] = [];
   let truncated = false;
   for (const location of toLocations(value)) {
-    const formatted = formatLocation(location, ctx);
+    const formatted = formatLocation(location, effective, root, rules);
     if (formatted === undefined) continue;
     if (lines.length >= cap) {
       truncated = true;
@@ -325,16 +287,18 @@ function formatSymbolNode(
   node: SymbolNode,
   filePath: string,
   depth: number,
-  ctx: FormatContext,
+  effective: string,
+  root: string,
+  rules: readonly Rule[],
 ): string | undefined {
   const indent = "  ".repeat(depth);
   if (node.location !== undefined) {
     const path = pathForUri(node.location.uri);
-    if (path === undefined || !pathAllowed(path, ctx)) return undefined;
-    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(ctx.effective, path)}:${node.location.range.start.line + 1}`;
+    if (path === undefined || !pathAllowed(path, rules, root)) return undefined;
+    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(effective, path)}:${node.location.range.start.line + 1}`;
   }
   if (node.range !== undefined) {
-    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(ctx.effective, filePath)}:${node.range.start.line + 1}`;
+    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(effective, filePath)}:${node.range.start.line + 1}`;
   }
   return undefined;
 }
@@ -342,7 +306,9 @@ function formatSymbolNode(
 function formatDocumentSymbols(
   value: unknown,
   filePath: string,
-  ctx: FormatContext,
+  effective: string,
+  root: string,
+  rules: readonly Rule[],
   cap: number,
 ): { lines: string[]; truncated: boolean } {
   const lines: string[] = [];
@@ -351,7 +317,14 @@ function formatDocumentSymbols(
   const walk = (nodes: SymbolNode[], depth: number): void => {
     for (const node of nodes) {
       if (truncated) return;
-      const formatted = formatSymbolNode(node, filePath, depth, ctx);
+      const formatted = formatSymbolNode(
+        node,
+        filePath,
+        depth,
+        effective,
+        root,
+        rules,
+      );
       if (formatted !== undefined) {
         if (lines.length >= cap) {
           truncated = true;
@@ -375,7 +348,9 @@ function workspaceLocation(value: unknown): WorkspaceLocation | undefined {
 
 function formatWorkspaceSymbols(
   value: unknown,
-  ctx: FormatContext,
+  effective: string,
+  root: string,
+  rules: readonly Rule[],
   cap: number,
 ): { lines: string[]; truncated: boolean } {
   const lines: string[] = [];
@@ -387,7 +362,7 @@ function formatWorkspaceSymbols(
     const location = workspaceLocation(entry.location);
     if (location === undefined) continue;
     const path = pathForUri(location.uri);
-    if (path === undefined || !pathAllowed(path, ctx)) continue;
+    if (path === undefined || !pathAllowed(path, rules, root)) continue;
     if (lines.length >= cap) {
       truncated = true;
       break;
@@ -400,7 +375,7 @@ function formatWorkspaceSymbols(
         : "";
     const kind = typeof entry.kind === "number" ? entry.kind : 0;
     lines.push(
-      `${displayPath(ctx.effective, path)}:${line}:${column} ${entry.name} (${kindName(kind)})${container}`,
+      `${displayPath(effective, path)}:${line}:${column} ${entry.name} (${kindName(kind)})${container}`,
     );
   }
   return { lines, truncated };
@@ -477,13 +452,13 @@ function formatSignatureHelp(value: unknown): string {
 function formatHighlights(
   value: unknown,
   filePath: string,
-  ctx: FormatContext,
+  effective: string,
   cap: number,
 ): { lines: string[]; truncated: boolean } {
   const lines: string[] = [];
   let truncated = false;
   if (!Array.isArray(value)) return { lines, truncated };
-  const path = displayPath(ctx.effective, filePath);
+  const path = displayPath(effective, filePath);
   for (const entry of value) {
     if (!isRecord(entry)) continue;
     const range = rangeOf(entry.range);
@@ -512,7 +487,7 @@ function diagnosticSeverity(value: unknown): string {
 function formatDiagnostics(
   value: unknown,
   filePath: string,
-  ctx: FormatContext,
+  effective: string,
   cap: number,
 ): { lines: string[]; truncated: boolean } {
   const lines: string[] = [];
@@ -522,7 +497,7 @@ function formatDiagnostics(
     : isRecord(value) && Array.isArray(value.items)
       ? value.items
       : [];
-  const path = displayPath(ctx.effective, filePath);
+  const path = displayPath(effective, filePath);
   for (const entry of items) {
     if (!isRecord(entry)) continue;
     const range = rangeOf(entry.range);
@@ -786,16 +761,17 @@ async function executeLang(
       root: ctx.cwd,
       timeoutMs: server.timeoutMs,
     });
-    const formatCtx: FormatContext = {
-      effective,
-      root: ctx.cwd,
-      rules,
-    };
     const cap = clampMaxResults(params.max_results);
 
     if (action === "workspace_symbols") {
       const raw = await client.workspaceSymbols(params.query ?? "");
-      const { lines, truncated } = formatWorkspaceSymbols(raw, formatCtx, cap);
+      const { lines, truncated } = formatWorkspaceSymbols(
+        raw,
+        effective,
+        ctx.cwd,
+        rules,
+        cap,
+      );
       return formattedResult(
         lines,
         truncated,
@@ -809,7 +785,9 @@ async function executeLang(
       const { lines, truncated } = formatDocumentSymbols(
         raw,
         absolute,
-        formatCtx,
+        effective,
+        ctx.cwd,
+        rules,
         cap,
       );
       return formattedResult(
@@ -857,7 +835,13 @@ async function executeLang(
               languageId,
               position as LspPosition,
             );
-      const { lines, truncated } = formatLocations(raw, formatCtx, cap);
+      const { lines, truncated } = formatLocations(
+        raw,
+        effective,
+        ctx.cwd,
+        rules,
+        cap,
+      );
       return formattedResult(
         lines,
         truncated,
@@ -877,7 +861,7 @@ async function executeLang(
       const { lines, truncated } = formatHighlights(
         raw,
         absolute,
-        formatCtx,
+        effective,
         cap,
       );
       return formattedResult(
@@ -893,7 +877,7 @@ async function executeLang(
       const { lines, truncated } = formatDiagnostics(
         raw,
         absolute,
-        formatCtx,
+        effective,
         cap,
       );
       return formattedResult(
@@ -912,7 +896,13 @@ async function executeLang(
             languageId,
             position as LspPosition,
           );
-    const { lines, truncated } = formatLocations(raw, formatCtx, cap);
+    const { lines, truncated } = formatLocations(
+      raw,
+      effective,
+      ctx.cwd,
+      rules,
+      cap,
+    );
     return formattedResult(
       lines,
       truncated,

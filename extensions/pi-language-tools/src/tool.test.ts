@@ -6,7 +6,8 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Rule } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import type { LanguageToolsConfig, ServerConfig } from "./config.js";
-import { type LangClient, type LangToolDeps, createLangTool } from "./tool.js";
+import type { LspClient } from "./lsp.js";
+import { type LangToolDeps, createLangTool } from "./tool.js";
 
 function workspace(): string {
   return mkdtempSync(join(tmpdir(), "pi-language-tools-tool-"));
@@ -51,7 +52,7 @@ function config(servers: ServerConfig[] = [server()]): LanguageToolsConfig {
   };
 }
 
-function fakeClient(overrides: Partial<LangClient> = {}): LangClient {
+function fakeClient(overrides: Partial<LspClient> = {}): LspClient {
   return {
     definition: vi.fn(async () => []),
     references: vi.fn(async () => []),
@@ -64,11 +65,11 @@ function fakeClient(overrides: Partial<LangClient> = {}): LangClient {
     documentHighlights: vi.fn(async () => []),
     diagnostics: vi.fn(async () => []),
     ...overrides,
-  };
+  } as unknown as LspClient;
 }
 
 function setup(
-  client: LangClient,
+  client: LspClient,
   configValue: LanguageToolsConfig = config(),
   rules: Rule[] = [],
 ): {
