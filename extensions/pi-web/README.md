@@ -2,6 +2,10 @@
 
 `web_search` and `web_fetch` codemode tools for the Pi coding agent. No browser and no JavaScript rendering.
 
+Both tools are codemode-only. The extension activates `codemode` on
+`session_start` when the built-in extension is registered and the tool is
+inactive, so the web tools stay reachable without a manual `/tools` change.
+
 ## Try it
 
 ```bash

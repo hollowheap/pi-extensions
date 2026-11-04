@@ -13,6 +13,13 @@ import {
 export default function (pi: ExtensionAPI): void {
   pi.registerTool(createWebSearchTool());
   pi.registerTool(createWebFetchTool());
+
+  pi.on("session_start", () => {
+    if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
+    const active = pi.getActiveTools();
+    if (active.includes("codemode")) return;
+    pi.setActiveTools([...active, "codemode"]);
+  });
   pi.registerCommand("web", {
     description:
       "Web tools: /web settings; /web insert <n> inserts a recent result link",

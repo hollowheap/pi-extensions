@@ -56,6 +56,34 @@ describe("pi-web extension", () => {
     ).toEqual(["2"]);
   });
 
+  it("activates codemode when it is registered and inactive", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read"]);
+    extension(pi as never);
+
+    pi.handlers.session_start?.({}, {});
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+  });
+
+  it("does not duplicate an already-active codemode", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["codemode"]);
+    extension(pi as never);
+
+    pi.handlers.session_start?.({}, {});
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("does not add codemode when it is not registered", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+
+    pi.handlers.session_start?.({}, {});
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
   it("registers exactly two codemode tools", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -72,7 +100,7 @@ describe("pi-web extension", () => {
       "web",
       expect.objectContaining({ handler: expect.any(Function) }),
     );
-    expect(pi.on).not.toHaveBeenCalled();
+    expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     expect(pi.setActiveTools).not.toHaveBeenCalled();
 
     const search = pi.registerTool.mock.calls[0][0] as {
