@@ -788,19 +788,24 @@ describe("decide", () => {
   it("reports a classifier timeout as text", async () => {
     agentDir({ ...config(), timeoutMs: 1 });
     const classify = vi.fn(async (_model, _input, options) => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      if (options.signal?.aborted) {
-        return {
-          api: "classifier",
-          provider: "typesafe",
-          model: "jev-latest",
-          answers: {},
-          stopReason: "aborted",
-          errorMessage: "timed out",
-          timestamp: 1_000,
-        };
-      }
-      return classifierResult({ type: "bool", probability: 0.8 });
+      await new Promise<void>((resolve) => {
+        if (options.signal?.aborted) {
+          resolve();
+          return;
+        }
+        options.signal?.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
+      });
+      return {
+        api: "classifier",
+        provider: "typesafe",
+        model: "jev-latest",
+        answers: {},
+        stopReason: "aborted",
+        errorMessage: "timed out",
+        timestamp: 1_000,
+      };
     });
     const tool = createDecideTool();
 
