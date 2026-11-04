@@ -9,8 +9,9 @@ Scope: `my-pi-agent` workspace.
 - `packages/core` owns shared policy, config, shell/exec, formatting, modes, session state, pricing, session caches, and the prompt queue.
 - `packages/process` owns detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
 - `packages/tui` owns reusable frames, pickers, pagers, cancellable progress, and the code viewer; it depends on core types and host TUI peers.
+- `packages/policy` owns headless permission enforcement and shared tool-category/target helpers; `pi-guard` uses them for interactive approval and `pi-subagents` loads the headless extension for children.
 - `packages/pi-acp` is a standalone ACP server plus a bundled extension. It runs one `pi --mode rpc -ne -e <ext> -nbt` child per session and routes execution through client capabilities.
-- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/process` primitives; ACP keeps subagents inactive.
+- Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/process` and `packages/policy` primitives; ACP keeps subagents inactive.
 - Trust boundaries are the project trust gate, agent-dir config, workspace path rules, provider network calls, and the ACP client.
 
 ## Module Seams
@@ -120,4 +121,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (984 tests/108 files), typecheck, and lint (302 files) green on 2026-11-04.
+- Final suite (993 tests/108 files), typecheck, and lint (310 files) green on 2026-11-04.

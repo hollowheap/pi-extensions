@@ -877,3 +877,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: keep a closed tag union; add separate `network` and `model` tags; leave non-path tools untagged.
   - Consequences: `shell` keeps command parsing; `external` is the built-in non-path category for URLs, queries, and `decide`; extensions can define additional tags; missing mode defaults for custom tags fall back to `ask`, while missing `external` defaults to `allow` for backward compatibility.
   - Supersedes: none
+
+- [x] D171 [R10]: Headless permission enforcement and shared tool-target helpers live in `@hollowheap/policy`; `pi-guard` owns interactive approval and `pi-subagents` loads the headless extension for children.
+  - Context: Subagents needed guard enforcement but importing the interactive extension created the last extension-to-extension dependency.
+  - Alternatives: keep `pi-subagents -> pi-guard`; make guard optional; duplicate target mapping in subagents.
+  - Consequences: the extension graph is flat; `pi-guard` and child processes share one tool-category/target implementation; interactive decisions stay in `pi-guard`.
+  - Supersedes: none

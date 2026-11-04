@@ -18,6 +18,7 @@ Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, Ty
 - `packages/core/` — shared policy, config, pricing, shell/exec, formatting, modes, state.
 - `packages/process/` — detached process, atomic state, and JSONL Unix-socket primitives.
 - `packages/tui/` — shared frames, pickers, pagers, progress, and viewer primitives.
+- `packages/policy/` — headless permission policy and shared tool-target helpers.
 - `packages/pi-acp/` — standalone ACP server plus bundled pi extension.
 - `extensions/pi-hooks/src/skills/hooks-init/` — lifecycle-hooks skill.
 - `artifacts/` — requirements, decisions, specs, plan, context.
