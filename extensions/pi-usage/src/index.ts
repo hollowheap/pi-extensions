@@ -1,6 +1,5 @@
 import {
   type ExtensionAPI,
-  type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -9,227 +8,36 @@ import {
   resolveModelPricing,
 } from "@hollowheap/core/pricing";
 import {
+  type CumulativeUsage,
   type SubagentUsage,
-  combineUsage,
-  readSubagentUsageSnapshot,
-  scanSubagentUsage,
-} from "./subagents.js";
+  clearSessionUsage,
+  getSessionUsage,
+  persistUsage,
+  recordTurnUsage,
+  restoreSessionUsage,
+  setSessionBudgetCap,
+  setSessionUsage,
+} from "@hollowheap/core/usage";
+import { combineUsage, scanSubagentUsage } from "./subagents.js";
 
-export const USAGE_ENTRY_TYPE = "hollowheap.usage";
-
-export interface ModelUsage {
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  cost: number;
-}
-
-export interface CumulativeUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  totalTokens: number;
-  totalCost: number;
-  byModel: Record<string, ModelUsage>;
-  budgetCap?: number;
-  budgetWarning?: boolean;
-  subagents?: SubagentUsage[];
-}
-
-function emptyUsage(): CumulativeUsage {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    totalTokens: 0,
-    totalCost: 0,
-    byModel: {},
-  };
-}
+export {
+  type CumulativeUsage,
+  type ModelUsage,
+  type SubagentUsage,
+  USAGE_ENTRY_TYPE,
+  clearSessionUsage,
+  emptyUsage,
+  extractLatestUsage,
+  getSessionUsage,
+  persistUsage,
+  recordTurnUsage,
+  restoreSessionUsage,
+  setSessionBudgetCap,
+  setSessionUsage,
+} from "@hollowheap/core/usage";
 
 function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-function roundCost(value: number): number {
-  return Math.round(value * 1e9) / 1e9;
-}
-
-function readByModel(value: unknown): Record<string, ModelUsage> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
-  const byModel: Record<string, ModelUsage> = {};
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
-    const entry = raw as Record<string, unknown>;
-    if (
-      !isNonNegativeNumber(entry.inputTokens) ||
-      !isNonNegativeNumber(entry.outputTokens) ||
-      !isNonNegativeNumber(entry.cost)
-    ) {
-      continue;
-    }
-    byModel[key] = {
-      model: typeof entry.model === "string" ? entry.model : key,
-      inputTokens: entry.inputTokens,
-      outputTokens: entry.outputTokens,
-      cacheReadTokens: isNonNegativeNumber(entry.cacheReadTokens)
-        ? entry.cacheReadTokens
-        : 0,
-      cacheWriteTokens: isNonNegativeNumber(entry.cacheWriteTokens)
-        ? entry.cacheWriteTokens
-        : 0,
-      cost: entry.cost,
-    };
-  }
-  return byModel;
-}
-
-export function extractLatestUsage(
-  entries: readonly unknown[],
-): CumulativeUsage {
-  if (!Array.isArray(entries)) return emptyUsage();
-  let latest: CumulativeUsage = emptyUsage();
-
-  for (const entry of entries) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const typed = entry as {
-      type?: unknown;
-      customType?: unknown;
-      data?: unknown;
-    };
-    if (
-      typed.customType === USAGE_ENTRY_TYPE &&
-      typeof typed.data === "object" &&
-      typed.data !== null
-    ) {
-      const data = typed.data as {
-        inputTokens?: unknown;
-        outputTokens?: unknown;
-        totalCost?: unknown;
-        cacheReadTokens?: unknown;
-        cacheWriteTokens?: unknown;
-        byModel?: unknown;
-        budgetCap?: unknown;
-        budgetWarning?: unknown;
-        subagents?: unknown;
-      };
-      if (
-        isNonNegativeNumber(data.inputTokens) &&
-        isNonNegativeNumber(data.outputTokens) &&
-        isNonNegativeNumber(data.totalCost)
-      ) {
-        const cacheReadTokens = isNonNegativeNumber(data.cacheReadTokens)
-          ? data.cacheReadTokens
-          : 0;
-        const cacheWriteTokens = isNonNegativeNumber(data.cacheWriteTokens)
-          ? data.cacheWriteTokens
-          : 0;
-        latest = {
-          inputTokens: data.inputTokens,
-          outputTokens: data.outputTokens,
-          cacheReadTokens,
-          cacheWriteTokens,
-          totalTokens:
-            data.inputTokens +
-            data.outputTokens +
-            cacheReadTokens +
-            cacheWriteTokens,
-          totalCost: data.totalCost,
-          byModel: readByModel(data.byModel),
-          ...(isNonNegativeNumber(data.budgetCap) && data.budgetCap > 0
-            ? { budgetCap: data.budgetCap }
-            : {}),
-          ...(data.budgetWarning === true ? { budgetWarning: true } : {}),
-          ...(() => {
-            const subagents = readSubagentUsageSnapshot(data.subagents);
-            return subagents.length > 0 ? { subagents } : {};
-          })(),
-        };
-      }
-    }
-  }
-
-  return latest;
-}
-
-export function recordTurnUsage(
-  current: CumulativeUsage,
-  turnUsage: {
-    input: number;
-    output: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-  },
-  turnCost = 0,
-  model = "unknown",
-): CumulativeUsage {
-  const input = isNonNegativeNumber(turnUsage.input) ? turnUsage.input : 0;
-  const output = isNonNegativeNumber(turnUsage.output) ? turnUsage.output : 0;
-  const cacheRead = isNonNegativeNumber(turnUsage.cacheRead)
-    ? turnUsage.cacheRead
-    : 0;
-  const cacheWrite = isNonNegativeNumber(turnUsage.cacheWrite)
-    ? turnUsage.cacheWrite
-    : 0;
-  const cost = isNonNegativeNumber(turnCost) ? turnCost : 0;
-
-  if (
-    input === 0 &&
-    output === 0 &&
-    cacheRead === 0 &&
-    cacheWrite === 0 &&
-    cost === 0
-  ) {
-    return current;
-  }
-
-  const prevModel = current.byModel[model] ?? {
-    model,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    cost: 0,
-  };
-
-  const byModel = {
-    ...current.byModel,
-    [model]: {
-      model,
-      inputTokens: prevModel.inputTokens + input,
-      outputTokens: prevModel.outputTokens + output,
-      cacheReadTokens: prevModel.cacheReadTokens + cacheRead,
-      cacheWriteTokens: prevModel.cacheWriteTokens + cacheWrite,
-      cost: roundCost(prevModel.cost + cost),
-    },
-  };
-
-  const newTotal = roundCost(current.totalCost + cost);
-  const budgetCap = current.budgetCap;
-
-  return {
-    inputTokens: current.inputTokens + input,
-    outputTokens: current.outputTokens + output,
-    cacheReadTokens: current.cacheReadTokens + cacheRead,
-    cacheWriteTokens: current.cacheWriteTokens + cacheWrite,
-    totalTokens: current.totalTokens + input + output + cacheRead + cacheWrite,
-    totalCost: newTotal,
-    byModel,
-    ...(budgetCap !== undefined ? { budgetCap } : {}),
-    ...(budgetCap !== undefined &&
-    (current.budgetWarning === true || newTotal >= budgetCap * 0.8)
-      ? { budgetWarning: true }
-      : {}),
-    ...(current.subagents !== undefined
-      ? { subagents: current.subagents }
-      : {}),
-  };
 }
 
 export function formatUsageReport(
@@ -286,85 +94,6 @@ export function formatUsageReport(
   }
 
   return lines.join("\n");
-}
-
-const activeUsage = new WeakMap<object, CumulativeUsage>();
-
-function ownerKey(owner: unknown): object | undefined {
-  return typeof owner === "object" && owner !== null ? owner : undefined;
-}
-
-function setSessionUsage(owner: unknown, usage: CumulativeUsage): void {
-  const key = ownerKey(owner);
-  if (key !== undefined) activeUsage.set(key, usage);
-}
-
-function clearSessionUsage(owner: unknown): void {
-  const key = ownerKey(owner);
-  if (key !== undefined) activeUsage.delete(key);
-}
-
-export function setSessionBudgetCap(
-  owner: unknown,
-  cap: number | undefined,
-): CumulativeUsage {
-  const current = getSessionUsage(owner);
-  const next: CumulativeUsage = { ...current };
-  if (cap === undefined) {
-    next.budgetCap = undefined;
-    next.budgetWarning = undefined;
-  } else {
-    next.budgetCap = cap;
-    next.budgetWarning = next.totalCost >= cap * 0.8 ? true : undefined;
-  }
-  setSessionUsage(owner, next);
-  return next;
-}
-
-export function getSessionUsage(owner: unknown): CumulativeUsage {
-  const key = ownerKey(owner);
-  return (key !== undefined ? activeUsage.get(key) : undefined) ?? emptyUsage();
-}
-
-function persistUsage(ctx: ExtensionContext, usage: CumulativeUsage): void {
-  const manager = ctx.sessionManager as {
-    appendCustomEntry?: (customType: string, data?: unknown) => unknown;
-  };
-  if (typeof manager.appendCustomEntry !== "function") return;
-  try {
-    manager.appendCustomEntry(USAGE_ENTRY_TYPE, usage);
-  } catch {
-    // Custom entries are optional.
-  }
-}
-
-function restoreSessionUsage(ctx: ExtensionContext): CumulativeUsage {
-  const manager = ctx.sessionManager as {
-    getEntries?: () => readonly unknown[];
-    getBranch?: () => readonly unknown[];
-  };
-  let entries: readonly unknown[] | undefined;
-  if (typeof manager.getEntries === "function") {
-    try {
-      entries = manager.getEntries();
-    } catch {
-      entries = undefined;
-    }
-  } else if (typeof manager.getBranch === "function") {
-    try {
-      entries = manager.getBranch();
-    } catch {
-      entries = undefined;
-    }
-  }
-
-  if (entries === undefined || !Array.isArray(entries)) {
-    return getSessionUsage(ctx.sessionManager);
-  }
-
-  const restored = extractLatestUsage(entries);
-  setSessionUsage(ctx.sessionManager, restored);
-  return restored;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -438,7 +167,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     statusOwner = ctx.sessionManager;
     activeSubagents.clear();
-    const restored = restoreSessionUsage(ctx);
+    const restored = restoreSessionUsage(ctx.sessionManager);
     subagentRows = restored.subagents ?? [];
     warningNotified = false;
     refreshSubagents(ctx.sessionManager);
@@ -448,7 +177,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_tree", (_event, ctx) => {
     statusOwner = ctx.sessionManager;
     activeSubagents.clear();
-    const restored = restoreSessionUsage(ctx);
+    const restored = restoreSessionUsage(ctx.sessionManager);
     subagentRows = restored.subagents ?? [];
     warningNotified = false;
     refreshSubagents(ctx.sessionManager);
@@ -509,7 +238,7 @@ export default function (pi: ExtensionAPI) {
       modelId,
     );
     setSessionUsage(ctx.sessionManager, next);
-    persistUsage(ctx, next);
+    persistUsage(ctx.sessionManager, next);
     publishCurrent();
 
     const after = combined(ctx.sessionManager);
@@ -571,7 +300,7 @@ export default function (pi: ExtensionAPI) {
         if (value.toLowerCase() === "off" || value.toLowerCase() === "none") {
           warningNotified = false;
           const next = setSessionBudgetCap(ctx.sessionManager, undefined);
-          persistUsage(ctx, next);
+          persistUsage(ctx.sessionManager, next);
           publishCurrent();
           if (ctx.hasUI) ctx.ui.notify("pi-usage: budget cap cleared");
           return;
@@ -590,7 +319,7 @@ export default function (pi: ExtensionAPI) {
         }
         warningNotified = false;
         const next = setSessionBudgetCap(ctx.sessionManager, amount);
-        persistUsage(ctx, next);
+        persistUsage(ctx.sessionManager, next);
         publishCurrent();
         if (ctx.hasUI) {
           ctx.ui.notify(

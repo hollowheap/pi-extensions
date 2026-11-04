@@ -13,3 +13,4 @@ export * from "./prompt-lock.js";
 export * from "./pricing.js";
 export * from "./session-cache.js";
 export * from "./workspace.js";
+export * from "./usage.js";
