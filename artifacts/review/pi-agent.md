@@ -52,9 +52,9 @@ Each original item is checked against `artifacts/requirements.md` and
 
 | Item | Requirement link | Verdict |
 | --- | --- | --- |
-| `index.ts:25-32` + `:39-56` — `AgentExtensionDeps` + duplicate `resolveAgents`/`resolveAgentsWithDiagnostics` wrappers. | R43 | **Overengineered.** R43 requires `/agent` discovery and switching, not dependency injection. `getAgentDir` exists only for tests, and both wrappers call the same `discoverAgents`; one call site would do. |
-| `model.ts` — standalone module for a 15-line normalizer. | R43 | **Overengineered.** R43 needs model matching, so `formatModelId` is required behavior. A separate module is not: it has one consumer (`index.ts:83`) and no seam of its own. |
-| `agents.ts:5` — `AgentScope`/`scope` option. | R43 | **Overengineered.** R43 requires discovery from both user and project scopes. The `scope` filter is never passed by a caller; `discoverAgents` defaults to `"both"`, so the option only exists for tests. |
+| `index.ts:25-32` + `:39-56` — `AgentExtensionDeps` + duplicate `resolveAgents`/`resolveAgentsWithDiagnostics` wrappers. | R43 | **Fixed.** R43 requires `/agent` discovery and switching, not dependency injection. `getAgentDir` exists only for tests, and both wrappers call the same `discoverAgents`; one call site would do. |
+| `model.ts` — standalone module for a 15-line normalizer. | R43 | **Fixed.** R43 needs model matching, so `formatModelId` is required behavior. A separate module is not: it has one consumer (`index.ts:83`) and no seam of its own. |
+| `agents.ts:5` — `AgentScope`/`scope` option. | R43 | **Fixed.** R43 requires discovery from both user and project scopes. The `scope` filter is never passed by a caller; `discoverAgents` defaults to `"both"`, so the option only exists for tests. |
 
 ## Acceptance Review
 
@@ -66,4 +66,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — overengineering findings resolved.

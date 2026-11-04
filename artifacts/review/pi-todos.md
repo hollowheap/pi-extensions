@@ -110,4 +110,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — findings resolved.
