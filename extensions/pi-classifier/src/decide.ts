@@ -10,7 +10,7 @@ import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { getSessionCache } from "@hollowheap/core";
-import { type ClassifierConfig, loadClassifierConfig } from "./config.js";
+import { loadClassifierConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";
 
@@ -26,16 +26,6 @@ export interface DecideParams {
   labels?: DecideLabel[];
   trueDescription?: string;
   falseDescription?: string;
-}
-
-export interface DecideDeps {
-  loadConfig: () => ClassifierConfig;
-  classify: (
-    ctx: PiExtensionContext,
-    modelId: string,
-    input: ClassifierContext,
-    signal: AbortSignal | undefined,
-  ) => Promise<ClassifierResult>;
 }
 
 function stableStringify(value: unknown): string {
@@ -74,13 +64,7 @@ interface Inflight {
   waiters: number;
 }
 
-const defaultDeps: DecideDeps = {
-  loadConfig: () => loadClassifierConfig(getAgentDir()),
-  classify: defaultClassify,
-};
-
-export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
-  const deps: DecideDeps = { ...defaultDeps, ...overrides };
+export function createDecideTool() {
   const fallbackOwner = {};
 
   function ownerFor(ctx: PiExtensionContext): object {
@@ -178,20 +162,19 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
       ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return executeDecide(params as DecideParams, ctx, deps, signal);
+      return executeDecide(params as DecideParams, ctx, signal);
     },
   });
 
   async function executeDecide(
     params: DecideParams,
     ctx: PiExtensionContext,
-    deps: DecideDeps,
     signal: AbortSignal | undefined,
   ): Promise<DecideToolResult> {
     if (signal?.aborted) {
       return errorResult("aborted");
     }
-    const config = deps.loadConfig();
+    const config = loadClassifierConfig(getAgentDir());
     if (config.model === undefined) {
       return errorResult(
         "classifier model is not configured in classifier.json",
@@ -238,7 +221,7 @@ export function createDecideTool(overrides: Partial<DecideDeps> = {}) {
     const task = (async (): Promise<DecideToolResult> => {
       let result: ClassifierResult;
       try {
-        result = await deps.classify(
+        result = await defaultClassify(
           ctx,
           config.model as string,
           { state: { input: params.input }, questions: { answer: question } },

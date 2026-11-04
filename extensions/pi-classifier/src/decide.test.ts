@@ -1,12 +1,23 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { CONFIG_FILE_NAME } from "./config.js";
-import { type DecideDeps, createDecideTool } from "./decide.js";
 
-function agentDir(): string {
-  return mkdtempSync(join(tmpdir(), "pi-classifier-decide-"));
+const state = vi.hoisted(() => ({ agentDir: "" }));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => state.agentDir,
+}));
+
+import { CONFIG_FILE_NAME } from "./config.js";
+import { createDecideTool } from "./decide.js";
+
+function agentDir(overrides: Record<string, unknown> = config()): string {
+  const dir = mkdtempSync(join(tmpdir(), "pi-classifier-decide-"));
+  writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify(overrides));
+  state.agentDir = dir;
+  return dir;
 }
 
 function config(model = "typesafe/jev-latest"): Record<string, unknown> {
@@ -39,7 +50,7 @@ function ctx(classify: ReturnType<typeof vi.fn>, sessionManager: object = {}) {
   return {
     sessionManager,
     modelRegistry: {
-      classify: classify as DecideDeps["classify"],
+      classify,
       getModelOfType: vi.fn(() => ({ id: "jev-latest" })),
     },
   };
@@ -47,17 +58,8 @@ function ctx(classify: ReturnType<typeof vi.fn>, sessionManager: object = {}) {
 
 describe("decide", () => {
   it("returns unavailable when no model is configured", async () => {
-    const dir = agentDir();
-    const tool = createDecideTool({
-      loadConfig: () => ({
-        timeoutMs: 5000,
-        maxInputChars: 20000,
-        cacheTtlMs: 600000,
-        path: join(dir, CONFIG_FILE_NAME),
-        diagnostics: [],
-      }),
-      classify: vi.fn() as DecideDeps["classify"],
-    });
+    agentDir({});
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -78,7 +80,7 @@ describe("decide", () => {
   });
 
   it("answers a choice question", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({
         type: "choice",
@@ -87,15 +89,7 @@ describe("decide", () => {
         confidence: 0.9,
       }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -124,7 +118,7 @@ describe("decide", () => {
   });
 
   it("answers score and bool questions", async () => {
-    const dir = agentDir();
+    agentDir();
     const scoreClassify = vi.fn(async () =>
       classifierResult({
         type: "score",
@@ -132,15 +126,7 @@ describe("decide", () => {
         confidence: 0.8,
       }),
     );
-    const scoreTool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: scoreClassify as DecideDeps["classify"],
-    });
+    const scoreTool = createDecideTool();
     const scoreResult = await scoreTool.execute(
       "1",
       {
@@ -162,15 +148,7 @@ describe("decide", () => {
     const boolClassify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.95 }),
     );
-    const boolTool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: boolClassify as DecideDeps["classify"],
-    });
+    const boolTool = createDecideTool();
     const boolResult = await boolTool.execute(
       "1",
       {
@@ -189,16 +167,8 @@ describe("decide", () => {
   });
 
   it("rejects invalid input and labels", async () => {
-    const dir = agentDir();
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: vi.fn() as DecideDeps["classify"],
-    });
+    agentDir();
+    const tool = createDecideTool();
     const ctxValue = ctx(vi.fn());
 
     const empty = await tool.execute(
@@ -243,28 +213,16 @@ describe("decide", () => {
   });
 
   it("rejects answers outside the caller contract", async () => {
-    const dir = agentDir();
-    const toolFor = (classify: ReturnType<typeof vi.fn>) =>
-      createDecideTool({
-        loadConfig: () =>
-          ({
-            ...config(),
-            path: join(dir, CONFIG_FILE_NAME),
-            diagnostics: [],
-          }) as never,
-        classify: classify as DecideDeps["classify"],
-      });
-
-    const choiceResult = await toolFor(
-      vi.fn(async () =>
-        classifierResult({
-          type: "choice",
-          choice: "c",
-          probabilities: { c: 1 },
-          confidence: 1,
-        }),
-      ),
-    ).execute(
+    agentDir();
+    const choiceClassify = vi.fn(async () =>
+      classifierResult({
+        type: "choice",
+        choice: "c",
+        probabilities: { c: 1 },
+        confidence: 1,
+      }),
+    );
+    const choiceResult = await createDecideTool().execute(
       "1",
       {
         kind: "choice",
@@ -277,15 +235,14 @@ describe("decide", () => {
       },
       undefined,
       undefined,
-      ctx(vi.fn()) as never,
+      ctx(choiceClassify) as never,
     );
     expect(textOf(choiceResult)).toContain("unknown choice");
 
-    const scoreResult = await toolFor(
-      vi.fn(async () =>
-        classifierResult({ type: "score", score: 2, confidence: 0.8 }),
-      ),
-    ).execute(
+    const scoreClassify = vi.fn(async () =>
+      classifierResult({ type: "score", score: 2, confidence: 0.8 }),
+    );
+    const scoreResult = await createDecideTool().execute(
       "1",
       {
         kind: "score",
@@ -298,13 +255,14 @@ describe("decide", () => {
       },
       undefined,
       undefined,
-      ctx(vi.fn()) as never,
+      ctx(scoreClassify) as never,
     );
     expect(textOf(scoreResult)).toContain("out-of-range score");
 
-    const boolResult = await toolFor(
-      vi.fn(async () => classifierResult({ type: "bool", probability: 2 })),
-    ).execute(
+    const boolClassify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 2 }),
+    );
+    const boolResult = await createDecideTool().execute(
       "1",
       {
         kind: "bool",
@@ -315,13 +273,13 @@ describe("decide", () => {
       },
       undefined,
       undefined,
-      ctx(vi.fn()) as never,
+      ctx(boolClassify) as never,
     );
     expect(textOf(boolResult)).toContain("invalid probability");
   });
 
   it("returns classifier errors", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () => ({
       api: "classifier",
       provider: "typesafe",
@@ -331,15 +289,7 @@ describe("decide", () => {
       errorMessage: "model unavailable",
       timestamp: 1_000,
     }));
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -360,19 +310,11 @@ describe("decide", () => {
   });
 
   it("returns a text error when classify rejects", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () => {
       throw new Error("transport failed");
     });
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -393,7 +335,7 @@ describe("decide", () => {
   });
 
   it("does not let one caller's abort poison concurrent waiters", async () => {
-    const dir = agentDir();
+    agentDir();
     let releaseClassify!: (value: unknown) => void;
     const gate = new Promise<unknown>((resolve) => {
       releaseClassify = resolve;
@@ -402,15 +344,7 @@ describe("decide", () => {
       await gate;
       return classifierResult({ type: "bool", probability: 0.8 });
     });
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const params = {
       kind: "bool" as const,
       input: "x",
@@ -447,22 +381,22 @@ describe("decide", () => {
   });
 
   it("aborts the shared request when the last waiter cancels", async () => {
-    const dir = agentDir();
+    agentDir();
     let requestSignal: AbortSignal | undefined;
     let markStarted!: () => void;
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
     const classify = vi.fn(
-      async (_ctx, _model, _input, signal: AbortSignal | undefined) => {
-        requestSignal = signal;
+      async (_model, _input, options: { signal?: AbortSignal }) => {
+        requestSignal = options.signal;
         markStarted();
         await new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
+          if (options.signal?.aborted) {
             reject(new Error("aborted"));
             return;
           }
-          signal?.addEventListener(
+          options.signal?.addEventListener(
             "abort",
             () => reject(new Error("aborted")),
             {
@@ -473,15 +407,7 @@ describe("decide", () => {
         return classifierResult({ type: "bool", probability: 0.8 });
       },
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const controller = new AbortController();
 
     const pending = tool.execute(
@@ -506,7 +432,7 @@ describe("decide", () => {
   });
 
   it("does not cache a result after the caller aborts", async () => {
-    const dir = agentDir();
+    agentDir();
     let release!: (value: unknown) => void;
     let markStarted!: () => void;
     const gate = new Promise<unknown>((resolve) => {
@@ -524,15 +450,7 @@ describe("decide", () => {
       }
       return classifierResult({ type: "bool", probability: 0.8 });
     });
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const context = ctx(classify);
     const params = {
       kind: "bool" as const,
@@ -560,7 +478,7 @@ describe("decide", () => {
   });
 
   it("uses a stable cache key across label order", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({
         type: "choice",
@@ -569,15 +487,7 @@ describe("decide", () => {
         confidence: 0.8,
       }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const base = {
       kind: "choice" as const,
       input: "x",
@@ -602,17 +512,10 @@ describe("decide", () => {
   });
 
   it("returns an error when the configured model cannot be used", async () => {
-    const dir = agentDir();
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-    });
+    agentDir();
+    const tool = createDecideTool();
     const registry = {
-      classify: vi.fn() as DecideDeps["classify"],
+      classify: vi.fn(),
       getModelOfType: vi.fn(() => undefined),
     };
     const ctxValue = { modelRegistry: registry };
@@ -635,15 +538,8 @@ describe("decide", () => {
   });
 
   it("reports an unavailable classifier model registry", async () => {
-    const dir = agentDir();
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-    });
+    agentDir();
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -663,18 +559,8 @@ describe("decide", () => {
   });
 
   it("enforces the input cap", async () => {
-    const dir = agentDir();
-    const tool = createDecideTool({
-      loadConfig: () => ({
-        model: "typesafe/jev-latest",
-        timeoutMs: 5000,
-        maxInputChars: 3,
-        cacheTtlMs: 600000,
-        path: join(dir, CONFIG_FILE_NAME),
-        diagnostics: [],
-      }),
-      classify: vi.fn() as DecideDeps["classify"],
-    });
+    agentDir({ ...config(), maxInputChars: 3 });
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -694,19 +580,11 @@ describe("decide", () => {
   });
 
   it("caches successful results and shares concurrent requests", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     const context = ctx(classify);
     const first = await tool.execute(
@@ -772,19 +650,11 @@ describe("decide", () => {
   });
 
   it("isolates the cache per session", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const params = {
       kind: "bool" as const,
       input: "x",
@@ -812,19 +682,11 @@ describe("decide", () => {
   });
 
   it("evicts the oldest cached result after 128 entries", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
     const context = ctx(classify);
     const params = (input: string) => ({
       kind: "bool" as const,
@@ -855,21 +717,11 @@ describe("decide", () => {
   });
 
   it("does not cache when TTL is zero or a call is aborted", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const tool = createDecideTool({
-      loadConfig: () => ({
-        model: "typesafe/jev-latest",
-        timeoutMs: 5000,
-        maxInputChars: 20000,
-        cacheTtlMs: 0,
-        path: join(dir, CONFIG_FILE_NAME),
-        diagnostics: [],
-      }),
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     await tool.execute(
       "1",
@@ -902,15 +754,7 @@ describe("decide", () => {
     const abortedClassify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const abortTool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: abortedClassify as DecideDeps["classify"],
-    });
+    const abortTool = createDecideTool();
     const aborted = await abortTool.execute(
       "3",
       {
@@ -942,10 +786,10 @@ describe("decide", () => {
   });
 
   it("reports a classifier timeout as text", async () => {
-    const dir = agentDir();
-    const classify = vi.fn(async (_ctx, _model, _input, signal) => {
+    agentDir({ ...config(), timeoutMs: 1 });
+    const classify = vi.fn(async (_model, _input, options) => {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      if (signal?.aborted) {
+      if (options.signal?.aborted) {
         return {
           api: "classifier",
           provider: "typesafe",
@@ -958,17 +802,7 @@ describe("decide", () => {
       }
       return classifierResult({ type: "bool", probability: 0.8 });
     });
-    const tool = createDecideTool({
-      loadConfig: () => ({
-        model: "typesafe/jev-latest",
-        timeoutMs: 1,
-        maxInputChars: 20000,
-        cacheTtlMs: 600000,
-        path: join(dir, CONFIG_FILE_NAME),
-        diagnostics: [],
-      }),
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     const result = await tool.execute(
       "1",
@@ -989,19 +823,11 @@ describe("decide", () => {
   });
 
   it("sends only caller-supplied input and criteria", async () => {
-    const dir = agentDir();
+    agentDir();
     const classify = vi.fn(async () =>
       classifierResult({ type: "bool", probability: 0.8 }),
     );
-    const tool = createDecideTool({
-      loadConfig: () =>
-        ({
-          ...config(),
-          path: join(dir, CONFIG_FILE_NAME),
-          diagnostics: [],
-        }) as never,
-      classify: classify as DecideDeps["classify"],
-    });
+    const tool = createDecideTool();
 
     await tool.execute(
       "1",
@@ -1019,7 +845,6 @@ describe("decide", () => {
 
     expect(classify).toHaveBeenCalledWith(
       expect.anything(),
-      "typesafe/jev-latest",
       {
         state: { input: "secret-ish input" },
         questions: {
@@ -1030,7 +855,7 @@ describe("decide", () => {
           },
         },
       },
-      expect.any(AbortSignal),
+      { signal: expect.any(AbortSignal), temperature: 0 },
     );
   });
 });

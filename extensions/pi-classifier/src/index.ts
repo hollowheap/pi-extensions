@@ -1,19 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadClassifierConfig } from "./config.js";
-import { createDecideTool, defaultClassify } from "./decide.js";
+import { createDecideTool } from "./decide.js";
 
 export default function (pi: ExtensionAPI): void {
   const diagnostics: string[] = [];
-  const config = loadClassifierConfig(getAgentDir(), (message) =>
-    diagnostics.push(message),
-  );
-  pi.registerTool(
-    createDecideTool({
-      loadConfig: () => config,
-      classify: defaultClassify,
-    }),
-  );
+  loadClassifierConfig(getAgentDir(), (message) => diagnostics.push(message));
+  pi.registerTool(createDecideTool());
 
   let reported = false;
   pi.on("session_start", (_event, ctx) => {
