@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const CONFIG_FILE_NAME = "decide.json";
+export const LEGACY_CONFIG_FILE_NAME = "classifier.json";
 
 export interface DecideConfig {
   readonly model?: string;
@@ -83,17 +84,29 @@ export function loadDecideConfig(
   agentDir: string,
   onDiagnostic?: (message: string) => void,
 ): DecideConfig {
-  const path = join(agentDir, CONFIG_FILE_NAME);
+  const decidePath = join(agentDir, CONFIG_FILE_NAME);
+  const legacyPath = join(agentDir, LEGACY_CONFIG_FILE_NAME);
   const diagnostics: string[] = [];
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (error) {
-    if ((error as { code?: unknown }).code !== "ENOENT") {
-      diagnostics.push(
-        `${path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+  let path = decidePath;
+  let raw: string | undefined;
+
+  for (const candidate of [decidePath, legacyPath]) {
+    path = candidate;
+    try {
+      raw = readFileSync(candidate, "utf8");
+      break;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== "ENOENT") {
+        diagnostics.push(
+          `${candidate}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        break;
+      }
     }
+  }
+
+  if (raw === undefined) {
+    path = decidePath;
     if (onDiagnostic !== undefined) {
       for (const message of diagnostics) onDiagnostic(message);
     }
@@ -104,6 +117,12 @@ export function loadDecideConfig(
       path,
       diagnostics: Object.freeze(diagnostics),
     };
+  }
+
+  if (path === legacyPath) {
+    diagnostics.push(
+      `${legacyPath} is deprecated; rename it to ${CONFIG_FILE_NAME}`,
+    );
   }
 
   let parsed: unknown;

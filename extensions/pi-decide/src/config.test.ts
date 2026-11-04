@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONFIG_FILE_NAME, loadDecideConfig } from "./config.js";
+import {
+  CONFIG_FILE_NAME,
+  LEGACY_CONFIG_FILE_NAME,
+  loadDecideConfig,
+} from "./config.js";
 
 function agentDir(): string {
   return mkdtempSync(join(tmpdir(), "pi-decide-config-"));
@@ -22,6 +26,23 @@ describe("loadDecideConfig", () => {
     expect(config.cacheTtlMs).toBe(600000);
     expect(config.path).toBe(join(dir, CONFIG_FILE_NAME));
     expect(config.diagnostics).toEqual([]);
+  });
+
+  it("reads the legacy classifier.json with a deprecation warning", () => {
+    const dir = agentDir();
+    writeFileSync(
+      join(dir, LEGACY_CONFIG_FILE_NAME),
+      JSON.stringify({ model: "typesafe/jev-latest" }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadDecideConfig(dir, (message) =>
+      diagnostics.push(message),
+    );
+
+    expect(config.model).toBe("typesafe/jev-latest");
+    expect(config.path).toBe(join(dir, LEGACY_CONFIG_FILE_NAME));
+    expect(diagnostics[0]).toContain("deprecated");
+    expect(diagnostics[0]).toContain(CONFIG_FILE_NAME);
   });
 
   it("reports non-missing read failures", () => {
