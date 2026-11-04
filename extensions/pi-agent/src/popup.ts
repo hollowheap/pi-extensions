@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "./agents.js";
+import { roundedFrame } from "./frame.js";
 
 export interface ForkInfo {
   sessionName?: string;
@@ -21,57 +22,28 @@ export async function showAgentSwitchPopup(
           done();
         };
 
-        const title = ` Agent Activated: ${agent.name} `;
-        const modeText = `  Mode:     ${agent.mode ?? "ask"}`;
-        const modelText = `  Model:    ${agent.model ?? "default"}`;
-        const effortText = `  Effort:   ${agent.thinking ?? agent.effort ?? "default"}`;
-        const toolsText = `  Tools:    ${agent.tools ? agent.tools.join(", ") : "all"}`;
-        const skillsText = `  Skills:   ${agent.skills ? agent.skills.join(", ") : "all workspace"}`;
-        const sessionText = forkInfo?.forked
-          ? `  Branch:   ${forkInfo.sessionName ?? agent.name} (forked)`
-          : `  Session:  ${forkInfo?.sessionName ?? "active"}`;
-        const footerText = "  [Press Enter, Space, or Esc to close]";
-
+        const label = (value: string) => theme.fg("muted", value);
         const contentLines = [
-          title,
-          `  ${"─".repeat(Math.max(title.length + 4, 46))}`,
-          modeText,
-          modelText,
-          effortText,
-          toolsText,
-          skillsText,
-          sessionText,
+          `${label("  Mode:     ")}${agent.mode ?? "ask"}`,
+          `${label("  Model:    ")}${agent.model ?? "default"}`,
+          `${label("  Effort:   ")}${agent.thinking ?? agent.effort ?? "default"}`,
+          `${label("  Tools:    ")}${agent.tools ? agent.tools.join(", ") : "all"}`,
+          `${label("  Skills:   ")}${agent.skills ? agent.skills.join(", ") : "all workspace"}`,
+          forkInfo?.forked
+            ? `${label("  Branch:   ")}${forkInfo.sessionName ?? agent.name} (forked)`
+            : `${label("  Session:  ")}${forkInfo?.sessionName ?? "active"}`,
           "",
-          footerText,
+          theme.fg("dim", "  [Press Enter, Space, or Esc to close]"),
         ];
 
         return {
-          render(_width: number): string[] {
-            const borderFn = (s: string) =>
-              typeof theme?.fg === "function" ? theme.fg("border", s) : s;
-            const accentFn = (s: string) =>
-              typeof theme?.fg === "function" ? theme.fg("accent", s) : s;
-
-            const maxLen =
-              (contentLines.length === 0
-                ? 0
-                : contentLines.reduce(
-                    (max, line) => Math.max(max, line.length),
-                    0,
-                  )) + 2;
-            const top = borderFn(`╭${"─".repeat(maxLen)}╮`);
-            const bot = borderFn(`╰${"─".repeat(maxLen)}╯`);
-
-            const middle = contentLines.map((line, idx) => {
-              const padded = line.padEnd(maxLen, " ");
-              const styled =
-                idx === 0 || idx === contentLines.length - 1
-                  ? accentFn(padded)
-                  : padded;
-              return `${borderFn("│")}${styled}${borderFn("│")}`;
-            });
-
-            return [top, ...middle, bot];
+          render(width: number): string[] {
+            return roundedFrame(
+              contentLines,
+              width,
+              theme,
+              `Agent Activated: ${agent.name}`,
+            );
           },
           invalidate(): void {},
           handleInput(data: string): void {

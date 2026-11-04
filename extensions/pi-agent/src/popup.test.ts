@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import { showAgentSwitchPopup } from "./popup.js";
@@ -52,12 +53,18 @@ describe("showAgentSwitchPopup", () => {
     const done = vi.fn();
     const component = capturedFactory(
       { requestRender: vi.fn() },
-      { fg: (_color: string, text: string) => text },
+      {
+        fg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+      },
       {},
       done,
     );
 
     const lines = component.render(80);
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBe(80);
+    }
     expect(lines[0]?.startsWith("╭")).toBe(true);
     expect(lines[0]?.endsWith("╮")).toBe(true);
     expect(lines[lines.length - 1]?.startsWith("╰")).toBe(true);

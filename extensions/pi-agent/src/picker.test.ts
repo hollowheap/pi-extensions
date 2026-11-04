@@ -65,7 +65,11 @@ describe("showAgentPicker", () => {
     await vi.waitFor(() => expect(env.component()).toBeDefined());
 
     const component = env.component();
-    expect(component?.render(60).join("\n")).toContain("engineer");
+    const initial = component?.render(60) ?? [];
+    expect(initial[0]).toContain("Select an agent");
+    expect(initial[0]?.startsWith("╭")).toBe(true);
+    expect(initial.at(-1)?.startsWith("╰")).toBe(true);
+    expect(initial.join("\n")).toContain("engineer");
     for (const key of "eng") component?.handleInput(key);
     expect(component?.render(60).join("\n")).not.toContain("scout");
     component?.handleInput("\r");

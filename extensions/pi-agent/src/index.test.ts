@@ -153,6 +153,14 @@ describe("pi-agent extension", () => {
         handler: expect.any(Function),
       }),
     );
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "agents",
+      expect.objectContaining({
+        description: expect.any(String),
+        getArgumentCompletions: expect.any(Function),
+        handler: expect.any(Function),
+      }),
+    );
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     expect(pi.on).toHaveBeenCalledWith("session_tree", expect.any(Function));
     expect(pi.on).toHaveBeenCalledWith(

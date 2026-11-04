@@ -7,10 +7,10 @@ import {
   decodeKittyPrintable,
   fuzzyFilter,
   matchesKey,
-  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { AgentConfig } from "./agents.js";
+import { roundedFrame } from "./frame.js";
 
 interface AgentPickerItem extends SelectItem {
   agent?: AgentConfig;
@@ -122,12 +122,11 @@ export async function showAgentPicker(
         return {
           render(width: number): string[] {
             const lines = [
-              theme.fg("accent", theme.bold("Select an agent")),
               theme.fg(
                 "muted",
                 query === "" ? "Filter: (type to search)" : `Filter: ${query}`,
               ),
-              ...list.render(width),
+              ...list.render(Math.max(1, width - 4)),
               "",
               ...preview(),
               "",
@@ -136,7 +135,7 @@ export async function showAgentPicker(
                 "↑↓ move  Enter select  Esc cancel  type to filter",
               ),
             ];
-            return lines.map((line) => truncateToWidth(line, width, ""));
+            return roundedFrame(lines, width, theme, "Select an agent");
           },
           invalidate(): void {
             list.invalidate();

@@ -296,7 +296,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
     });
 
-    pi.registerCommand("agent", {
+    const agentCommand = {
       description:
         "Select or switch active agent (model, mode, thinking, tools, skills, prompt)",
       getArgumentCompletions: (prefix: string) => {
@@ -394,7 +394,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           await applyDefault(ctx, pi, { persist: true, notify: true });
         }
       },
-    });
+    };
+
+    pi.registerCommand("agent", agentCommand);
+    pi.registerCommand("agents", agentCommand);
   };
 }
 
