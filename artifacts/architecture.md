@@ -49,7 +49,7 @@ Scope: `my-pi-agent` workspace.
 - Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `decide.json`, `language-tools.json`, `modal.json`, `web.json`).
 - Trusted project overlays are read only after `ctx.isProjectTrusted()`; untrusted projects are ignored or asked.
 - Session state is stored as custom entries: mode, todos, and usage survive resume and compaction.
-- Permission rules use `allow|ask|deny`, tag maps, path matching, and a fixed precedence order.
+- Permission rules use `allow|ask|deny` with open category tags. Built-in path categories are `read`, `edit`, and `search`; `shell` matches commands; `external` and extension-defined categories match non-path targets such as URLs, queries, and model actions.
 - Web search and fetch return normalized shapes with caps; provider keys come only from environment variables.
 - Detached processes persist state atomically, stream logs, and speak one JSON object per line over Unix sockets.
 - Task records carry id, kind, status, cwd, timestamps, exit code, output, wait, and cancel. Subagent state adds agent, task, PID, start time, socket, session, attempt, and parent session.
@@ -119,4 +119,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (982 tests/108 files), typecheck, and lint (299 files) green on 2026-11-04.
+- Final suite (984 tests/108 files), typecheck, and lint (299 files) green on 2026-11-04.

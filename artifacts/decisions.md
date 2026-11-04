@@ -871,3 +871,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: optional upstream bridge; separate compatibility package; no adapter.
   - Consequences: a pure mapper handles IDs, labels, states, start times, and active tools; terminal runs are omitted; local runner remains authoritative.
   - Supersedes: none
+
+- [x] D170 [R10]: Permission categories are open tags, not a closed union; path matching applies only to `read`, `edit`, and `search`.
+  - Context: Web and model actions are neither file reads nor shell commands, and forcing new categories through core edits blocks extension-defined policy.
+  - Alternatives: keep a closed tag union; add separate `network` and `model` tags; leave non-path tools untagged.
+  - Consequences: `shell` keeps command parsing; `external` is the built-in non-path category for URLs, queries, and `decide`; extensions can define additional tags; missing mode defaults for custom tags fall back to `ask`, while missing `external` defaults to `allow` for backward compatibility.
+  - Supersedes: none
