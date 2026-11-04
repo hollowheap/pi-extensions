@@ -15,25 +15,25 @@ Every package here is completely plug-and-play. You can grab individual packages
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, usage ledger, and mode-registry primitives |
-| [`@hollowheap/runtime`](./packages/runtime) | `0.2.0` | Command execution, detached process, atomic state, and JSONL Unix-socket primitives |
-| [`@hollowheap/tui`](./packages/tui) | `0.2.0` | Shared frames, pickers, pagers, progress, and code viewer |
-| [`@hollowheap/policy`](./packages/policy) | `0.2.0` | Headless permission policy and shared tool-target helpers |
-| [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.2.0` | Configurable lualine-style statusline footer |
-| [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.2.0` | Policy enforcement, approvals, shell safety gates, and modes |
-| [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.2.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
-| [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.2.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.2.0` | Hands-free autopilot mode for autonomous workflow loops |
-| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.2.0` | Workspace `/cd` control |
-| [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.2.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
-| [`@hollowheap/pi-question`](./extensions/pi-question) | `0.2.0` | Single-question prompt tool for guided user input |
-| [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.2.0` | Tool-free todo blocks with branch-local state and `/todos` |
-| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.2.0` | Durable background shell tasks |
-| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, explicit resume, and generic CLI harnesses |
-| [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.2.0` | Advisory decision tool with structured `decide` calls |
-| [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
-| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Usage presentation, optional `/usage cap`, and statusline usage |
-| [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
+| [`@hollowheap/core`](./packages/core) | `0.3.0` | Shared contracts, rules, budgets, usage ledger, and mode-registry primitives |
+| [`@hollowheap/runtime`](./packages/runtime) | `0.3.0` | Command execution, detached process, atomic state, and JSONL Unix-socket primitives |
+| [`@hollowheap/tui`](./packages/tui) | `0.3.0` | Shared frames, pickers, pagers, progress, and code viewer |
+| [`@hollowheap/policy`](./packages/policy) | `0.3.0` | Headless permission policy and shared tool-target helpers |
+| [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.3.0` | Configurable lualine-style statusline footer |
+| [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.3.0` | Policy enforcement, approvals, shell safety gates, and modes |
+| [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.3.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
+| [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.3.0` | Interactive startup dashboard with ASCII banners and widgets |
+| [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.3.0` | Hands-free autopilot mode for autonomous workflow loops |
+| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.3.0` | Workspace `/cd` control |
+| [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.3.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
+| [`@hollowheap/pi-question`](./extensions/pi-question) | `0.3.0` | Single-question prompt tool for guided user input |
+| [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.3.0` | Tool-free todo blocks with branch-local state and `/todos` |
+| [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.3.0` | Durable background shell tasks |
+| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.3.0` | Durable child agents with live reattach, write locking, explicit resume, and generic CLI harnesses |
+| [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.3.0` | Advisory decision tool with structured `decide` calls |
+| [`@hollowheap/pi-web`](./extensions/pi-web) | `0.3.0` | Codemode `web_search` and `web_fetch` tools for current docs and web results |
+| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.3.0` | Usage presentation, optional `/usage cap`, and statusline usage |
+| [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.3.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---
 

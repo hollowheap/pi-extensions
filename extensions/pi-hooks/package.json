@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-hooks",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Lifecycle hooks for pi: session-start, pre-tool, and post-tool commands configured in JSON",
   "license": "MIT",
@@ -13,8 +13,8 @@
     "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0",
-    "@hollowheap/runtime": "^0.2.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/runtime": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

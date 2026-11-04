@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-statusline",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Lualine-style configurable statusline footer for the Pi coding agent",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

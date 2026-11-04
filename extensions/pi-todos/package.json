@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-todos",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Manage branch-local todos with tagged blocks in assistant text",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

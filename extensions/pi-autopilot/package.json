@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-autopilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "pi-autopilot Pi coding agent extension",
   "license": "MIT",
@@ -20,6 +20,6 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.3.0"
   }
 }

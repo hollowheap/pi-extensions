@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Workspace working-directory command for the Pi coding agent",
   "license": "MIT",
@@ -16,6 +16,6 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.3.0"
   }
 }

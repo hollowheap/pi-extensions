@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-guard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Policy enforcement core for the Pi coding agent: modes, approvals, shell gate",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0",
-    "@hollowheap/policy": "^0.2.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/policy": "^0.3.0"
   }
 }

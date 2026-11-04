@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-subagents",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Durable subagent parent tool and child RPC for the Pi coding agent",
   "license": "MIT",
@@ -13,10 +13,10 @@
     "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0",
-    "@hollowheap/runtime": "^0.2.0",
-    "@hollowheap/tui": "^0.2.0",
-    "@hollowheap/policy": "^0.2.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/runtime": "^0.3.0",
+    "@hollowheap/tui": "^0.3.0",
+    "@hollowheap/policy": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

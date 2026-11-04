@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Shared rules, budget, and mode-registry primitives for Hollowheap Pi extensions",
   "license": "MIT",
@@ -14,6 +14,6 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@hollowheap/runtime": "^0.2.0"
+    "@hollowheap/runtime": "^0.3.0"
   }
 }

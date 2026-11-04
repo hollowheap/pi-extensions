@@ -1,6 +1,6 @@
 {
   "name": "@hollowheap/pi-decide",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Advisory decision tool for Pi: structured choice, score, and bool decisions",
   "license": "MIT",
@@ -20,6 +20,6 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.3.0"
   }
 }
