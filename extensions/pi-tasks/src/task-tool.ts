@@ -7,8 +7,8 @@ import { loadPermissions } from "@hollowheap/core/config";
 import { displayTarget, truncateText } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
 import { effectiveCwd } from "@hollowheap/core/state";
+import { withCancellableProgress } from "@hollowheap/tui/progress";
 import { taskAlertTracker } from "./alerts.js";
-import { withCancellableProgress } from "./progress.js";
 import { generateTaskId } from "./registry.js";
 import { type TaskRecord, taskLogPath } from "./registry.js";
 import {

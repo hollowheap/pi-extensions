@@ -3,18 +3,18 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { showMarkdownPager } from "@hollowheap/tui/pager";
+import { showFuzzyPicker } from "@hollowheap/tui/picker";
 import { taskAlertTracker } from "./alerts.js";
-import { showMarkdownPager } from "./pager.js";
-import { showFuzzyPicker } from "./picker.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
 export * from "./lifecycle.js";
-export * from "./pager.js";
-export * from "./picker.js";
-export * from "./progress.js";
+export * from "@hollowheap/tui/pager";
+export * from "@hollowheap/tui/picker";
+export * from "@hollowheap/tui/progress";
 export * from "./registry.js";
 export * from "./runner.js";
 export * from "./store.js";

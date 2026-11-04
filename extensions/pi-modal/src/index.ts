@@ -3,9 +3,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
-import { showCodeViewer } from "./viewer.js";
 import { formatVimKeys } from "./vimkeys.js";
 import { crushWorkingIndicator } from "./working.js";
 

@@ -11,7 +11,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { truncateText } from "@hollowheap/core/format";
 import { session } from "@hollowheap/core/state";
-import { withCancellableProgress } from "@hollowheap/pi-tasks/progress";
+import { withCancellableProgress } from "@hollowheap/tui/progress";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
 import {

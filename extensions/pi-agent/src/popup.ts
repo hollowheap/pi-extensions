@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { roundedFrame } from "@hollowheap/tui/frame";
 import type { AgentConfig } from "./agents.js";
-import { roundedFrame } from "./frame.js";
 
 export interface ForkInfo {
   sessionName?: string;
