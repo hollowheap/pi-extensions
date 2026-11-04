@@ -16,13 +16,14 @@ Scope: `my-pi-agent` workspace.
 
 - `core` is the single policy/config/state owner; consumers keep UI, transport, and adapter behavior.
 - `pi-guard` owns verdict prompts, bash truncation, `/mode`, `/context`, and `alt+m`; it does not parse rules.
+- `pi-modal` owns the modal editor, mode-themed prompt borders, working indicator, rounded code viewer, vim keybind reference, and the `/expand` tool-output toggle.
 - `pi-tools` owns `/cd` only. `pi-language-tools` owns the codemode-only `lang` LSP client and its pooled servers.
 - The default active tool set excludes host `powershell` and `ls`; `bash` covers listing and shell work.
 - `pi-hooks` owns session/pre/post hook execution and trusted project overlays.
 - `pi-question` and `pi-todos` own tagged-block parsing, UI, and branch-local state.
 - `pi-tasks` owns durable shell tasks and exports `TaskStore` plus detached-spawn helpers. `pi-subagents` owns child agents, harness selection, write locking, and resume on top of that layer.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
-- `pi-web` owns provider adapters and URL safety; `pi-classifier` owns the advisory `decide` tool; `pi-agent` owns profile switching.
+- `pi-web` owns provider adapters and URL safety; `pi-classifier` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
 - `pi-usage` owns usage accounting, compaction-safe state, optional USD caps, and the statusline usage provider.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
@@ -118,4 +119,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (962 tests/105 files), typecheck, and lint (292 files) green on 2026-11-04.
+- Final suite (981 tests/108 files), typecheck, and lint (299 files) green on 2026-11-04.
