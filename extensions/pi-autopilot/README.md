@@ -1,15 +1,15 @@
 # pi-autopilot
 
-Registers the `autopilot` approval mode for `pi-guard`: reads, edits, and shell run silently, except calls a `deny` rule or the bash safety list blocks. See the outcome matrix in `pi-guard`'s README for the full `autopilot` column.
+Registers the `autopilot` approval mode: reads, edits, shell, and external actions run silently, except calls a `deny` rule or the shell safety list blocks. See the outcome matrix in `pi-guard`'s README for the full `autopilot` column.
 
-Mechanism: this package registers an `autopilot` mode layer on `@hollowheap/core` (allow defaults plus an entry warning). It imports nothing else at runtime.
+Mechanism: this package registers an `autopilot` mode layer on `@hollowheap/core` (allow defaults plus an entry warning). It imports nothing else at runtime and has no extension dependencies.
 
-Composition: `pi-guard` is a declared dependency for tool approvals and core shell safety. Budget caps are optional and live in `pi-usage`; autopilot does not require one to enter.
+Composition: `pi-guard` enforces the mode when loaded; `pi-usage` budget caps are optional. Autopilot does not require either package to register the mode.
 
 ## Try it
 
 ```bash
-pi -e ./extensions/pi-guard -e ./extensions/pi-usage -e ./extensions/pi-autopilot
+pi -e ./extensions/pi-guard -e ./extensions/pi-autopilot
 ```
 
 ## Install
