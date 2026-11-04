@@ -121,4 +121,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (993 tests/108 files), typecheck, and lint (311 files) green on 2026-11-05.
+- Final suite (994 tests/108 files), typecheck, and lint (311 files) green on 2026-11-05.
