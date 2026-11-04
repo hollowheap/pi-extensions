@@ -55,6 +55,10 @@ Each original item is checked against `artifacts/requirements.md` and
 | `config.ts:37-42` + `:56-63` — mtime-keyed cache with `reported` flag and per-entry diagnostics. | R08, D05 | **Required behavior, duplicated implementation.** D05 requires mtime-cached JSON config with once-per-change diagnostics, and R08 says consumers use the core primitive. This is a duplicate cache, not an overengineered feature. |
 | `hooks.ts:23-35` + `interpretPreHook` — exported types and interpreter expose implementation details. | R15, D35, D37 | **Required, not overengineering.** D35/D37 define the stdin/stdout hook protocol and allow/block verdict. `interpretPreHook` is the interpreter for that protocol; the exported payload types are the test seam for the same contract. |
 
+### Resolution (2026-11-04)
+
+- `config.ts` now uses the shared core `MtimeCache`; the local cache and its `mtimeMs` bookkeeping were removed. Cached diagnostics remain once per change per consumer.
+
 ## Acceptance Review
 
 N/A — package robustness review; end-to-end verification is recorded under Code Review > Verification when present.
@@ -65,4 +69,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — overengineering findings resolved.

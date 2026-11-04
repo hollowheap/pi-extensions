@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { getMtimeCache } from "@hollowheap/core";
 
 export interface HookEntry {
   /** Exact tool name, a trailing "*" prefix, or "" for every tool. Ignored for sessionStart. */
@@ -35,15 +36,14 @@ const KINDS = ["preTool", "postTool", "sessionStart"] as const;
 type HookKind = (typeof KINDS)[number];
 
 interface CacheEntry {
-  mtimeMs: number;
   config: HookConfig;
   diagnostics: string[];
   delivered: WeakSet<object>;
 }
 
-// One reader, one module instance: the cache lives here rather than on the
-// shared core registry.
-const CACHE = new Map<string, CacheEntry>();
+const CACHE = getMtimeCache<CacheEntry>("pi-hooks/config", {
+  maxEntries: 8,
+});
 
 function mtimeMs(path: string): number {
   try {
@@ -183,8 +183,9 @@ function readHooksFile(
 ): HookConfig {
   const key = `${path}\0${trusted ? "1" : "0"}`;
   const mtime = mtimeMs(path);
-  const cached = CACHE.get(key);
-  if (cached !== undefined && cached.mtimeMs === mtime) {
+  const signature = String(mtime);
+  const cached = CACHE.get(key, signature);
+  if (cached !== undefined) {
     report(cached, onDiagnostic);
     return cached.config;
   }
@@ -202,12 +203,11 @@ function readHooksFile(
     }
   }
   const entry: CacheEntry = {
-    mtimeMs: mtime,
     config,
     diagnostics,
     delivered: new WeakSet(),
   };
-  CACHE.set(key, entry);
+  CACHE.set(key, signature, entry);
   report(entry, onDiagnostic);
   return config;
 }
