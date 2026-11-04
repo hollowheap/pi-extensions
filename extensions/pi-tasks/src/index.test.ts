@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
-import { readProcStartTime, spawnShellTask } from "./runner.js";
+import { cancelTask, readProcStartTime, spawnShellTask } from "./runner.js";
 
 let mockAgentDir = "/tmp/pi-tasks-index-test";
 
@@ -274,6 +274,6 @@ describe("pi-tasks extension", () => {
     const meta = readTaskMetadata(mockAgentDir, task.id);
     expect(meta?.status).toBe("running");
 
-    await task.cancel();
+    await cancelTask(mockAgentDir, task.id);
   });
 });

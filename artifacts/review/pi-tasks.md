@@ -29,8 +29,8 @@ N/A — package robustness review; tasks remain in `artifacts/plan.md`.
 ### Public Seams
 
 - `index.ts:10-12` — re-exports `registry`, `runner`, `task-tool` modules.
-- `registry.ts:5-26` — exports `TaskKind`, `TaskStatus`, `TaskMetadata`, `TaskRecord`, `TaskOperations`.
-- `registry.ts:42-121` — exports `tasksDir`, `ensureTasksDir`, `generateTaskId`, `taskMetaPath`, `taskLogPath`, metadata CRUD, `toTaskRecord`, `createTaskRecord`.
+- `registry.ts:5-26` — exports `TaskKind`, `TaskStatus`, `TaskMetadata`, `TaskRecord`.
+- `registry.ts:42-104` — exports `tasksDir`, `ensureTasksDir`, `generateTaskId`, `taskMetaPath`, `taskLogPath`, metadata CRUD, `toTaskRecord`, `createTaskRecord`.
 - `runner.ts:108-141,143-261` — exports `reconcileTask`, `reconcileAllTasks`, `spawnShellTask`, `waitForTask`, `cancelTask`, `readProcStartTime`.
 - `task-tool.ts:23-39,104` — exports `TaskAction`, `TaskToolParams`, `TaskToolDeps`, `createTaskTool`.
 - `index.ts:25-32,37-39` — event seam `tasks:state` (running tasks only) plus statusline key `"tasks"`.
@@ -57,12 +57,19 @@ Each original item is checked against `artifacts/requirements.md` and
 
 | Item | Requirement link | Verdict |
 | --- | --- | --- |
-| `registry.ts:5` — `TaskKind` includes `"subagent"` although only `"shell"` exists. | R20, D65, D70 | **Partly required.** D70 requires a generic `kind` field with `shell` as the first kind, so the generic type is required. The literal `"subagent"` has no consumer yet and is speculative until R20 expands beyond shell tasks. |
-| `registry.ts:28-36,85-108` — injectable `TaskOperations` and repeated `toTaskRecord` wrapping. | R20, D70 | **Overengineered.** R20/D70 require a task record and operations, not an injectable operations interface. The wrapper is a test seam and repeats the same shape. |
-| `runner.ts:95-106` — `runnerOps` wrapper duplicates function references. | No R/D | **Overengineered.** No requirement asks for a second dispatch object; it simply aliases the functions and adds a layer to trace. |
-| `task-tool.ts:33-39` — `TaskToolDeps` optional callbacks for behavior `index.ts` always supplies. | No R/D | **Overengineered.** R20 requires the tool actions, not optional dependency callbacks. The production path always supplies them, so this is test scaffolding. |
+| `registry.ts:5` — `TaskKind` includes `"subagent"` although only `"shell"` exists. | R20, D65, D70 | **Fixed (2026-11-04).** `TaskKind` is now `"shell"`; the speculative `"subagent"` literal was removed. |
+| `registry.ts:28-36,85-108` — injectable `TaskOperations` and repeated `toTaskRecord` wrapping. | R20, D70 | **Fixed (2026-11-04).** `TaskOperations` was removed; `TaskRecord` keeps metadata plus `output`, and `toTaskRecord` has no dispatch wrapper. |
+| `runner.ts:95-106` — `runnerOps` wrapper duplicates function references. | No R/D | **Fixed (2026-11-04).** `runnerOps` was removed; callers use `waitForTask` and `cancelTask` directly. |
+| `task-tool.ts:33-39` — `TaskToolDeps` optional callbacks for behavior `index.ts` always supplies. | No R/D | **Fixed (2026-11-04).** `TaskToolDeps` is now required, including `getAgentDir` and both callbacks. |
 | `registry.ts:19` plus `task-tool.ts:216-255` — dependency graph support exists only for shell tasks. | R52, D124 | **Required, not overengineering.** R52/D124 explicitly require task B to declare a dependency on task A and wait. Shell is the only implemented task kind, so the scope matches the requirement. |
-| `runner.ts:21-93` — large `SHIM_SCRIPT` string embedded instead of a separate asset. | R20, D69 | **Overengineered.** D69 requires a detached runner shim, not that its source be embedded in a TypeScript string. The string makes escaping and error handling harder without a requirement behind it. |
+| `runner.ts:21-93` — large `SHIM_SCRIPT` string embedded instead of a separate asset. | R20, D69 | **Fixed (2026-11-04).** The shim moved to `src/shim.cjs` and is read with `readFileSync(new URL(...))`; the embedded string was removed. |
+
+### Resolution (2026-11-04)
+
+- Removed `TaskOperations`, `runnerOps`, and the wait/cancel closures from `TaskRecord`; callers use `waitForTask` and `cancelTask` directly.
+- Moved the detached runner script to `src/shim.cjs`.
+- Made `TaskToolDeps` fully required.
+- Narrowed `TaskKind` to `"shell"`.
 
 ## Acceptance Review
 
@@ -74,4 +81,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — overengineering findings resolved.

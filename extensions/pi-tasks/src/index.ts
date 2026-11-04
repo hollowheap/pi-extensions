@@ -96,6 +96,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool(
     createTaskTool({
+      getAgentDir,
       onStatusChange: updateTasksStatus,
       onTasksChange: (tasks) => {
         pi.events?.emit?.("tasks:state", tasks);

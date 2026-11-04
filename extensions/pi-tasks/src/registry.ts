@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ProcessState } from "@hollowheap/process";
 import { TaskStore } from "./store.js";
 
-export type TaskKind = "shell" | "subagent";
+export type TaskKind = "shell";
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface TaskMetadata extends ProcessState {
@@ -22,18 +22,6 @@ export interface TaskMetadata extends ProcessState {
 
 export interface TaskRecord extends TaskMetadata {
   output: () => Promise<string>;
-  wait: (timeoutMs?: number, signal?: AbortSignal) => Promise<TaskRecord>;
-  cancel: () => Promise<TaskRecord>;
-}
-
-export interface TaskOperations {
-  wait?: (
-    agentDir: string,
-    id: string,
-    timeoutMs?: number,
-    signal?: AbortSignal,
-  ) => Promise<TaskRecord>;
-  cancel?: (agentDir: string, id: string) => Promise<TaskRecord>;
 }
 
 function store(agentDir: string): TaskStore<TaskMetadata> {
@@ -71,7 +59,7 @@ function isTaskMetadata(value: unknown): value is TaskMetadata {
   const record = value as Record<string, unknown>;
   return (
     typeof record.id === "string" &&
-    (record.kind === "shell" || record.kind === "subagent") &&
+    record.kind === "shell" &&
     (record.status === "running" ||
       record.status === "completed" ||
       record.status === "failed" ||
@@ -98,40 +86,19 @@ export function listTaskMetadata(agentDir: string): TaskMetadata[] {
   return store(agentDir).list().filter(isTaskMetadata);
 }
 
-export function toTaskRecord(
-  agentDir: string,
-  meta: TaskMetadata,
-  ops?: TaskOperations,
-): TaskRecord {
-  const record: TaskRecord = {
+export function toTaskRecord(agentDir: string, meta: TaskMetadata): TaskRecord {
+  return {
     ...meta,
     output: async () => readTaskLog(agentDir, meta.id),
-    wait: async (timeoutMs?: number, signal?: AbortSignal) => {
-      if (ops?.wait) return ops.wait(agentDir, meta.id, timeoutMs, signal);
-      const latest = readTaskMetadata(agentDir, meta.id) ?? meta;
-      return toTaskRecord(agentDir, latest, ops);
-    },
-    cancel: async () => {
-      if (ops?.cancel) return ops.cancel(agentDir, meta.id);
-      const updated: TaskMetadata = {
-        ...(readTaskMetadata(agentDir, meta.id) ?? meta),
-        status: "cancelled",
-        finishedAt: Date.now(),
-      };
-      writeTaskMetadata(agentDir, updated);
-      return toTaskRecord(agentDir, updated, ops);
-    },
   };
-  return record;
 }
 
 export function createTaskRecord(
   agentDir: string,
   meta: TaskMetadata,
-  ops?: TaskOperations,
 ): TaskRecord {
   const processStore = store(agentDir);
   processStore.ensureLog(meta.id);
   processStore.write(meta);
-  return toTaskRecord(agentDir, meta, ops);
+  return toTaskRecord(agentDir, meta);
 }

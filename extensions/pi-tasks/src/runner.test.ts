@@ -34,12 +34,12 @@ describe("pi-tasks runner", () => {
     expect(task.kind).toBe("shell");
     expect(task.pid).toBeTypeOf("number");
 
-    const finished = await task.wait(5000);
-    expect(finished.status).toBe("completed");
-    expect(finished.exitCode).toBe(0);
-    expect(finished.finishedAt).toBeTypeOf("number");
+    const finished = await waitForTask(agentDir, task.id, 5000);
+    expect(finished?.status).toBe("completed");
+    expect(finished?.exitCode).toBe(0);
+    expect(finished?.finishedAt).toBeTypeOf("number");
 
-    const output = await finished.output();
+    const output = await finished?.output();
     expect(output).toContain("out-line");
     expect(output).toContain("err-line");
   });

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 import { readProcStartTime } from "./runner.js";
-import { createTaskTool } from "./task-tool.js";
+import { type TaskToolDeps, createTaskTool } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
 function createCtx(opts: { cwd: string; trusted?: boolean }) {
@@ -46,14 +46,23 @@ describe("pi-tasks task-tool", () => {
     rmSync(workspaceDir, { recursive: true, force: true });
   });
 
+  function createTool(overrides: Partial<TaskToolDeps> = {}) {
+    return createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+      ...overrides,
+    });
+  }
+
   it("registers direct task tool without codemode exposure", () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     expect(tool.name).toBe("task");
     expect("exposure" in tool).toBe(false);
   });
 
   it("rejects start in an untrusted project before spawning", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     const ctx = createCtx({ cwd: workspaceDir, trusted: false });
 
     const res = await tool.execute(
@@ -73,7 +82,7 @@ describe("pi-tasks task-tool", () => {
       join(workspaceDir, ".pi", "permissions.json"),
       JSON.stringify({ rules: ["deny shell rm"] }),
     );
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     const ctx = createCtx({ cwd: workspaceDir, trusted: true });
 
     const res = await tool.execute(
@@ -89,10 +98,7 @@ describe("pi-tasks task-tool", () => {
 
   it("starts a background task, lists it, waits for completion, and reads truncated status output", async () => {
     const onStatusChange = vi.fn();
-    const tool = createTaskTool({
-      getAgentDir: () => agentDir,
-      onStatusChange,
-    });
+    const tool = createTool({ onStatusChange });
     const ctx = createCtx({ cwd: workspaceDir, trusted: true });
 
     const started = await tool.execute(
@@ -146,7 +152,7 @@ describe("pi-tasks task-tool", () => {
   });
 
   it("uses and cleans an isolated workspace when requested", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     const ctx = createCtx({ cwd: workspaceDir, trusted: true });
 
     const started = await tool.execute(
@@ -179,7 +185,7 @@ describe("pi-tasks task-tool", () => {
   });
 
   it("stops a TUI wait without cancelling the running task", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     createTaskRecord(agentDir, {
       id: "task-wait-cancel",
       kind: "shell",
@@ -242,10 +248,7 @@ describe("pi-tasks task-tool", () => {
 
   it("emits running task state from list", async () => {
     const onTasksChange = vi.fn();
-    const tool = createTaskTool({
-      getAgentDir: () => agentDir,
-      onTasksChange,
-    });
+    const tool = createTool({ onTasksChange });
     createTaskRecord(agentDir, {
       id: "task-list-state",
       kind: "shell",
@@ -275,7 +278,7 @@ describe("pi-tasks task-tool", () => {
   });
 
   it("rejects dependency cycles", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     createTaskRecord(agentDir, {
       id: "task-cycle-a",
       kind: "shell",
@@ -311,7 +314,7 @@ describe("pi-tasks task-tool", () => {
   });
 
   it("blocks starts that depend on a cancelled task", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     createTaskRecord(agentDir, {
       id: "task-cancelled-dep",
       kind: "shell",
@@ -337,7 +340,7 @@ describe("pi-tasks task-tool", () => {
   });
 
   it("supports cross-restart wait, timeout, cancel, unknown IDs, and validation errors without throwing", async () => {
-    const tool = createTaskTool({ getAgentDir: () => agentDir });
+    const tool = createTool();
     const ctx = createCtx({ cwd: workspaceDir, trusted: true });
 
     createTaskRecord(agentDir, {

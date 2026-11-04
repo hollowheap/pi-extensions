@@ -1,9 +1,9 @@
+import { readFileSync } from "node:fs";
 import { cancelProcessGroup, isProcessAlive } from "@hollowheap/process";
 export { readProcStartTime } from "@hollowheap/process";
 import { spawnDetachedTask } from "./lifecycle.js";
 import {
   type TaskMetadata,
-  type TaskOperations,
   type TaskRecord,
   generateTaskId,
   listTaskMetadata,
@@ -14,92 +14,10 @@ import {
 } from "./registry.js";
 import { TaskStore } from "./store.js";
 
-const SHIM_SCRIPT = `
-const { spawn } = require("node:child_process");
-const { randomBytes } = require("node:crypto");
-const { chmodSync, openSync, closeSync, readFileSync, renameSync, writeFileSync } = require("node:fs");
-const { dirname, join } = require("node:path");
-
-const [metaPath, logPath, cwd, shellBin, command] = process.argv.slice(1);
-
-function readStartTime(pid) {
-  try {
-    const stat = readFileSync("/proc/" + pid + "/stat", "utf8");
-    const closeParen = stat.lastIndexOf(")");
-    if (closeParen < 0) return undefined;
-    const fields = stat.slice(closeParen + 2).trim().split(/\\s+/);
-    const val = Number.parseInt(fields[19] ?? "", 10);
-    return Number.isFinite(val) ? val : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function updateMeta(patch) {
-  try {
-    const raw = JSON.parse(readFileSync(metaPath, "utf8"));
-    if (raw.status === "cancelled" && patch.status !== "cancelled") return;
-    const next = { ...raw, ...patch };
-    const tmp = join(dirname(metaPath), "." + raw.id + "." + process.pid + "." + randomBytes(4).toString("hex") + ".tmp");
-    writeFileSync(tmp, JSON.stringify(next, null, 2) + "\\n", { mode: 0o600 });
-    try { chmodSync(tmp, 0o600); } catch {}
-    renameSync(tmp, metaPath);
-  } catch {}
-}
-
-let logFd;
-try {
-  logFd = openSync(logPath, "a", 0o600);
-  try { chmodSync(logPath, 0o600); } catch {}
-} catch {
-  updateMeta({ status: "failed", exitCode: null, finishedAt: Date.now() });
-  process.exit(1);
-}
-
-const selfStart = readStartTime(process.pid);
-updateMeta({ pid: process.pid, ...(selfStart !== undefined ? { startTime: selfStart } : {}) });
-
-const child = spawn(shellBin, ["-c", command], {
-  cwd,
-  stdio: ["ignore", logFd, logFd],
-});
-
-const forwardSignal = (sig) => {
-  try { child.kill(sig); } catch {}
-};
-process.on("SIGTERM", () => forwardSignal("SIGTERM"));
-process.on("SIGINT", () => forwardSignal("SIGINT"));
-
-child.on("error", (err) => {
-  try {
-    writeFileSync(logFd, (err && err.message ? err.message : String(err)) + "\\n");
-  } catch {}
-  try { closeSync(logFd); } catch {}
-  updateMeta({ status: "failed", exitCode: null, finishedAt: Date.now() });
-  process.exit(1);
-});
-
-child.on("close", (code) => {
-  try { closeSync(logFd); } catch {}
-  const exitCode = typeof code === "number" ? code : null;
-  const status = exitCode === 0 ? "completed" : "failed";
-  updateMeta({ status, exitCode, finishedAt: Date.now() });
-  process.exit(0);
-});
-`;
-
-const runnerOps: TaskOperations = {
-  wait: async (agentDir, id, timeoutMs, signal) => {
-    const record = await waitForTask(agentDir, id, timeoutMs, signal);
-    if (!record) throw new Error(`Task not found: ${id}`);
-    return record;
-  },
-  cancel: async (agentDir, id) => {
-    const record = await cancelTask(agentDir, id);
-    if (!record) throw new Error(`Task not found: ${id}`);
-    return record;
-  },
-};
+const SHIM_SCRIPT = readFileSync(
+  new URL("./shim.cjs", import.meta.url),
+  "utf8",
+);
 
 const STARTUP_GRACE_MS = 5_000;
 
@@ -119,10 +37,10 @@ export function reconcileTask(
         (current) => current.status === "running",
         { status: "failed", exitCode: null, finishedAt: Date.now() },
       );
-      return toTaskRecord(agentDir, updated ?? meta, runnerOps);
+      return toTaskRecord(agentDir, updated ?? meta);
     }
   }
-  return toTaskRecord(agentDir, meta, runnerOps);
+  return toTaskRecord(agentDir, meta);
 }
 
 export function reconcileAllTasks(agentDir: string): TaskRecord[] {
@@ -190,7 +108,7 @@ export async function spawnShellTask(
   }
 
   const current = store.read(id) ?? initialMeta;
-  return toTaskRecord(opts.agentDir, current, runnerOps);
+  return toTaskRecord(opts.agentDir, current);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -238,13 +156,13 @@ export async function cancelTask(
   const meta = readTaskMetadata(agentDir, id);
   if (!meta) return undefined;
   if (meta.status !== "running") {
-    return toTaskRecord(agentDir, meta, runnerOps);
+    return toTaskRecord(agentDir, meta);
   }
 
   if (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) {
     await cancelProcessGroup(meta.pid, meta.startTime, graceMs);
     if (isProcessAlive(meta.pid, meta.startTime)) {
-      return toTaskRecord(agentDir, meta, runnerOps);
+      return toTaskRecord(agentDir, meta);
     }
   }
 
@@ -254,5 +172,5 @@ export async function cancelTask(
     (current) => current.status === "running",
     { status: "cancelled", finishedAt: Date.now() },
   );
-  return toTaskRecord(agentDir, cancelled ?? meta, runnerOps);
+  return toTaskRecord(agentDir, cancelled ?? meta);
 }
