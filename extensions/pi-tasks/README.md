@@ -25,7 +25,7 @@ Durable background shell tasks for the Pi coding agent.
 - **Scrollable logs**: `/task` opens a fuzzy task picker, then the selected task log in a keyboard-scrollable Markdown overlay; `/task logs <id>` opens a log directly. Task IDs and the `logs` action support tab completion. Non-TUI modes fall back to a notification.
 - **ACP inactivity**: Inactive under ACP (`-ne` omits user extensions, and `PI_ACP` leaves `pi-tasks` inert so `acp_bash` remains the sole terminal path).
 - **Generic v1 task layer**: `TaskRecord` (`id`, `kind`, `status`, `command`, `cwd`, `pid`, `startTime`, `startedAt`, `finishedAt`, `exitCode`, `output`, `wait`, `cancel`) is generic (`kind: "shell" | "subagent"`, with `"shell"` implemented in v1).
-- **Shared lifecycle primitives**: `@hollowheap/process` provides `LockedProcessStore` for atomic state, log access, and conditional updates, plus `spawnDetachedTask` for detached spawn and PID/start-time persistence. `pi-tasks` re-exports them as `TaskStore` for compatibility.
+- **Shared lifecycle primitives**: `@hollowheap/runtime` provides `LockedProcessStore` for atomic state, log access, and conditional updates, plus `spawnDetachedTask` for detached spawn and PID/start-time persistence. `pi-tasks` re-exports them as `TaskStore` for compatibility.
 
 ## Tool Schema
 

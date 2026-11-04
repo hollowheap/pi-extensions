@@ -1,4 +1,4 @@
-import { runCapture } from "./exec.js";
+import { runCapture } from "@hollowheap/runtime/exec";
 
 export const ALERT_EVENTS = [
   "completion",

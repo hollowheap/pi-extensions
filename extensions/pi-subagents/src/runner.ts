@@ -2,13 +2,13 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnDetachedTask } from "@hollowheap/process/lifecycle";
+import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
   cancelProcessGroup,
   isProcessAlive,
   isSocketConnectable,
   waitForProcessExit,
-} from "@hollowheap/process/process";
+} from "@hollowheap/runtime/process";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
 

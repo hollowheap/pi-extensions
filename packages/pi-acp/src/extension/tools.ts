@@ -9,13 +9,12 @@ import {
 import {
   type Tag,
   checkPath,
-  clampMaxResults,
   displayPath,
   displayTarget,
   evaluate,
-  runBinary,
   truncateText,
 } from "@hollowheap/core";
+import { clampMaxResults, runBinary } from "@hollowheap/runtime/exec";
 import type { ClientCaps } from "./client.js";
 import { loadPermissions } from "./permissions.js";
 

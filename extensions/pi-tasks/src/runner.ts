@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import {
   cancelProcessGroup,
   isProcessAlive,
-} from "@hollowheap/process/process";
-export { readProcStartTime } from "@hollowheap/process/process";
-import { spawnDetachedTask } from "@hollowheap/process/lifecycle";
-import { LockedProcessStore } from "@hollowheap/process/store";
+} from "@hollowheap/runtime/process";
+export { readProcStartTime } from "@hollowheap/runtime/process";
+import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
+import { LockedProcessStore } from "@hollowheap/runtime/store";
 import {
   type TaskMetadata,
   type TaskRecord,

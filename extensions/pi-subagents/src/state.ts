@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { ProcessState } from "@hollowheap/process";
-import { LockedProcessStore } from "@hollowheap/process/store";
+import type { ProcessState } from "@hollowheap/runtime";
+import { LockedProcessStore } from "@hollowheap/runtime/store";
 
 export const SUBAGENTS_DIR = "subagents";
 

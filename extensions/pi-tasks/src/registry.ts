@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import type { ProcessState } from "@hollowheap/process";
-import { LockedProcessStore } from "@hollowheap/process/store";
+import type { ProcessState } from "@hollowheap/runtime";
+import { LockedProcessStore } from "@hollowheap/runtime/store";
 
 export type TaskKind = "shell";
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";

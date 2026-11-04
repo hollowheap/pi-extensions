@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isProcessAlive } from "@hollowheap/process";
+import { isProcessAlive } from "@hollowheap/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   abortSubagent,

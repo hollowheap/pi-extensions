@@ -15,8 +15,9 @@ const runBinaryMock = vi.hoisted(() =>
   vi.fn(async (_command: string, _args: string[]) => ""),
 );
 
-vi.mock("@hollowheap/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@hollowheap/core")>();
+vi.mock("@hollowheap/runtime/exec", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@hollowheap/runtime/exec")>();
   return { ...actual, runBinary: runBinaryMock };
 });
 

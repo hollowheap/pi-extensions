@@ -10,11 +10,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, type MarkdownTheme, Text } from "@earendil-works/pi-tui";
 import { loadPermissions } from "@hollowheap/core/config";
-import { clampMaxResults } from "@hollowheap/core/exec";
 import { displayPath } from "@hollowheap/core/format";
 import { checkPath } from "@hollowheap/core/policy";
 import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
+import { clampMaxResults } from "@hollowheap/runtime/exec";
 import {
   type LanguageToolsConfig,
   findServer,

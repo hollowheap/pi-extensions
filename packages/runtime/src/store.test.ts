@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProcessState } from "@hollowheap/process";
+import type { ProcessState } from "@hollowheap/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { LockedProcessStore } from "./store.js";
 

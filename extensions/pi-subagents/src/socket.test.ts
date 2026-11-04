@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type JsonlServer, startJsonlServer } from "@hollowheap/process";
+import { type JsonlServer, startJsonlServer } from "@hollowheap/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import type { SubagentState } from "./state.js";

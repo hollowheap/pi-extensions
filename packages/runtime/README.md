@@ -1,6 +1,6 @@
-# @hollowheap/process
+# @hollowheap/runtime
 
-Node-only detached process, state, and Unix-socket primitives shared by durable task and subagent packages. No Pi host imports.
+Node-only command execution, detached process, state, and Unix-socket primitives shared by durable task and subagent packages. No Pi host imports.
 
 ## Exports
 

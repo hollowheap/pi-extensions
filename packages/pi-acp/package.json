@@ -20,6 +20,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.2.0"
+    "@hollowheap/core": "^0.2.0",
+    "@hollowheap/runtime": "^0.2.0"
   }
 }
