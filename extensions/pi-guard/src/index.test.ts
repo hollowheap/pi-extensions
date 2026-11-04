@@ -308,6 +308,33 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
+  it("targets web, lang, and decide calls with their own arguments", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["ask read *", "ask search *"] }),
+    );
+
+    await expect(
+      call("web_fetch", { url: "https://example.com/x" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow web_fetch?",
+      "https://example.com/x",
+    );
+
+    await expect(
+      call("web_search", { query: "lil bro" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow web_search?", "lil bro");
+
+    await expect(
+      call("lang", { action: "definition", path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow lang?", "src/x.ts");
+
+    await expect(call("decide", { input: "x" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow decide?", "decide");
+  });
+
   it("allows search without matching rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("find", { path: "src/x.ts" })).resolves.toBeUndefined();

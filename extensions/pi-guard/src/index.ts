@@ -49,6 +49,8 @@ const TOOL_TAGS: Record<string, Tag> = {
   subagent: "shell",
   web_search: "search",
   web_fetch: "read",
+  lang: "read",
+  decide: "read",
 };
 
 const PASSTHROUGH_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
@@ -107,6 +109,19 @@ function readPathArg(input: unknown): string | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const path = (input as Record<string, unknown>).path;
   return typeof path === "string" && path !== "" ? path : undefined;
+}
+
+function readToolTarget(toolName: string, input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const record = input as Record<string, unknown>;
+  if (toolName === "web_fetch" && typeof record.url === "string") {
+    return record.url;
+  }
+  if (toolName === "web_search" && typeof record.query === "string") {
+    return record.query;
+  }
+  if (toolName === "decide") return "decide";
+  return readPathArg(input);
 }
 
 function readCommandArg(input: unknown): string {
@@ -273,7 +288,7 @@ export default function (pi: ExtensionAPI) {
     const tag: Tag | undefined =
       TOOL_TAGS[event.toolName] ?? loadContextToolTags(ctx)[event.toolName];
     if (tag === undefined) {
-      const raw = readPathArg(event.input) ?? ".";
+      const raw = readToolTarget(event.toolName, event.input) ?? ".";
       return requestApproval(event.toolName, raw, ctx);
     }
     if (tag !== "shell") {
@@ -292,7 +307,7 @@ export default function (pi: ExtensionAPI) {
     const target =
       tag === "shell"
         ? readCommandArg(event.input)
-        : (readPathArg(event.input) ?? ".");
+        : (readToolTarget(event.toolName, event.input) ?? ".");
     rememberTarget(runtime, ctx.sessionManager, target);
 
     if (tag !== "shell") {
