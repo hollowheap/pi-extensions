@@ -47,11 +47,11 @@ interface ChildSpec {
 
 function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
   const require = createRequire(import.meta.url);
-  let guardDir: string;
+  let policyDir: string;
   try {
-    guardDir = dirname(require.resolve("@hollowheap/pi-guard/package.json"));
+    policyDir = dirname(require.resolve("@hollowheap/policy/package.json"));
   } catch {
-    throw new Error("pi-guard is required to run subagents");
+    throw new Error("pi-policy is required to run subagents");
   }
   const args = [
     "--mode",
@@ -59,7 +59,7 @@ function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
     "--no-themes",
     "-ne",
     "-e",
-    join(guardDir, "index.ts"),
+    join(policyDir, "index.ts"),
     "-e",
     fileURLToPath(new URL("../child.ts", import.meta.url)),
     "--append-system-prompt",

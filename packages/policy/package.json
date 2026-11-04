@@ -1,0 +1,26 @@
+{
+  "name": "@hollowheap/policy",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Headless permission policy extension and shared tool-target helpers",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["index.ts", "src", "README.md"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./package.json": "./package.json"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@hollowheap/core": "^0.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

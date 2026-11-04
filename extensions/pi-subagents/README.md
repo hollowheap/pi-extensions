@@ -63,7 +63,7 @@ harness: claude
 You are a read-only scout. Return compressed findings.
 ```
 
-`tools` accepts a comma-separated string or a YAML list. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus `pi-guard` and the child write-lock extension.
+`tools` accepts a comma-separated string or a YAML list. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
 
 ## Harnesses
 
@@ -73,7 +73,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 - `input: "stdin"` writes the prompt to stdin; `input: "arg"` adds it to the command arguments.
 - Steering writes raw text to stdin. It is best-effort because external CLIs may not accept input while running.
 - Output, wait, cancel, and resume still use the task/state lifecycle.
-- Generic harnesses do not load `pi-guard`, the write lock, or the Pi session; resume re-runs the saved task without continuing Pi session context.
+- Generic harnesses do not load the headless policy, the write lock, or the Pi session; resume re-runs the saved task without continuing Pi session context.
 - `message` steering is normalized to text for these harnesses.
 
 
@@ -134,5 +134,5 @@ When `PI_ACP` is set, `pi-subagents` registers no tool and starts no children. A
 - No central hub daemon.
 - No automatic resume.
 - No scheduling or missions.
-- Children run built-in tools plus `pi-guard` and the lock extension; other suite tools are not loaded.
+- Children run built-in tools plus headless policy and the lock extension; other suite tools are not loaded.
 - Prompts, logs, and results are stored locally under the agent directory.
