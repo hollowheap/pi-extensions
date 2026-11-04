@@ -13,10 +13,10 @@ import {
 import { alertAgentCompletion } from "./alerts.js";
 import {
   BUILTINS,
-  type GitDiffCache,
+  type GitDiffState,
   type TokenTotals,
   clockIntervalMs,
-  createGitDiffCache,
+  createGitDiffState,
   defaultGitRunner,
 } from "./components.js";
 import {
@@ -90,11 +90,7 @@ export default function (pi: ExtensionAPI) {
   let busy = false;
   let currentModel: unknown;
   let repoRoot: string | undefined;
-  let diffCache: GitDiffCache = createGitDiffCache(
-    defaultGitRunner,
-    () => {},
-    5000,
-  );
+  let diffState: GitDiffState = createGitDiffState(defaultGitRunner, () => {});
   let requestRender: (() => void) | undefined;
   let cleanupFooter: (() => void) | undefined;
   let owner: ExtensionContext["sessionManager"] | undefined;
@@ -143,7 +139,7 @@ export default function (pi: ExtensionAPI) {
     cleanupFooter?.();
     cleanupFooter = undefined;
     requestRender = undefined;
-    diffCache.clear();
+    diffState.clear();
   }
 
   function installFooter(ctx: ExtensionContext): void {
@@ -154,13 +150,9 @@ export default function (pi: ExtensionAPI) {
     void refreshRepoRoot(ctx);
     ctx.ui.setFooter((tui, theme, footerData) => {
       requestRender = () => tui.requestRender();
-      diffCache = createGitDiffCache(
-        defaultGitRunner,
-        () => requestRender?.(),
-        config.options.gitIntervalMs,
-      );
+      diffState = createGitDiffState(defaultGitRunner, () => requestRender?.());
       const branchUnsubscribe = footerData.onBranchChange(() => {
-        diffCache.refresh(ctx.cwd);
+        diffState.refresh(ctx.cwd);
         tui.requestRender();
       });
       const clockMs = clockIntervalMs(config.sections);
@@ -168,7 +160,7 @@ export default function (pi: ExtensionAPI) {
         clockMs === undefined
           ? undefined
           : setInterval(() => tui.requestRender(), clockMs);
-      diffCache.refresh(ctx.cwd);
+      diffState.refresh(ctx.cwd);
       pi.events.emit("statusline:request", { names: neededNames() });
       let disposed = false;
       const cleanup = () => {
@@ -196,7 +188,7 @@ export default function (pi: ExtensionAPI) {
               busy,
               thinkingLevel: ctx.thinkingLevel,
               now: new Date(),
-              gitDiff: diffCache.get(ctx.cwd),
+              gitDiff: diffState.get(ctx.cwd),
             },
             theme,
             values,
@@ -250,14 +242,14 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_end", (_event, ctx) => {
     if (ctx.sessionManager !== owner) return;
-    diffCache.refresh(ctx.cwd);
+    diffState.refresh(ctx.cwd);
     void refreshRepoRoot(ctx);
     requestRender?.();
   });
 
   pi.on("tool_execution_end", (_event, ctx) => {
     if (ctx.sessionManager !== owner) return;
-    diffCache.refresh(ctx.cwd);
+    diffState.refresh(ctx.cwd);
     void refreshRepoRoot(ctx);
     requestRender?.();
   });

@@ -24,8 +24,7 @@ Create `<agentDir>/statusline.json` (`~/.pi/agent/statusline.json`). Missing fil
 {
   "options": {
     "componentSeparator": " ",
-    "sectionSeparator": "  ",
-    "gitIntervalMs": 5000
+    "sectionSeparator": "  "
   },
   "extensions": ["mode-guard", "usage"],
   "sections": {

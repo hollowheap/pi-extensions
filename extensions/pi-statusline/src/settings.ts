@@ -13,13 +13,6 @@ const SEPARATORS = [
   { value: "dot", label: "dot", text: " · " },
 ] as const;
 
-const INTERVALS = [
-  { value: "5s", label: "5s", ms: 5000 },
-  { value: "10s", label: "10s", ms: 10000 },
-  { value: "30s", label: "30s", ms: 30000 },
-  { value: "60s", label: "60s", ms: 60000 },
-] as const;
-
 function settingsTheme(theme: Theme): SettingsListTheme {
   return {
     label: (text, selected) =>
@@ -34,10 +27,6 @@ function settingsTheme(theme: Theme): SettingsListTheme {
 
 function separatorValue(text: string): string {
   return SEPARATORS.find((entry) => entry.text === text)?.value ?? "custom";
-}
-
-function intervalValue(ms: number): string {
-  return INTERVALS.find((entry) => entry.ms === ms)?.value ?? "custom";
 }
 
 function applySetting(
@@ -62,9 +51,6 @@ function applySetting(
         text: separator.text,
       };
     }
-  } else if (id === "git-interval") {
-    const interval = INTERVALS.find((entry) => entry.value === value);
-    if (interval) options.gitIntervalMs = interval.ms;
   }
   return { ...config, options };
 }
@@ -101,13 +87,6 @@ export async function showStatuslineSettings(
                 current.options.sectionSeparator.text,
               ),
               values: SEPARATORS.map((entry) => entry.value),
-            },
-            {
-              id: "git-interval",
-              label: "Git refresh",
-              description: "How often the git branch and diff refresh",
-              currentValue: intervalValue(current.options.gitIntervalMs),
-              values: INTERVALS.map((entry) => entry.value),
             },
           ],
           10,

@@ -234,17 +234,14 @@ export function parseGitPorcelain(porcelain: string): GitDiffSummary {
   return summary;
 }
 
-export type GitRunner = (cwd: string, signal: AbortSignal) => Promise<string>;
+export type GitRunner = (cwd: string) => Promise<string>;
 
-export function defaultGitRunner(
-  cwd: string,
-  signal: AbortSignal,
-): Promise<string> {
+export function defaultGitRunner(cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
       ["status", "--porcelain=v1", "--untracked-files=normal"],
-      { cwd, timeout: 5000, signal },
+      { cwd, timeout: 5000 },
       (error, stdout) => {
         if (error) reject(error);
         else resolve(stdout);
@@ -253,22 +250,17 @@ export function defaultGitRunner(
   });
 }
 
-export interface GitDiffCache {
+export interface GitDiffState {
   get: (cwd: string) => GitDiffSummary | undefined;
   refresh: (cwd: string) => void;
   clear: () => void;
 }
 
-export function createGitDiffCache(
+export function createGitDiffState(
   runner: GitRunner,
   onUpdate: () => void,
-  intervalMs: number,
-): GitDiffCache {
-  const cache = new Map<
-    string,
-    { at: number; summary: GitDiffSummary | undefined }
-  >();
-  const controllers = new Map<string, AbortController>();
+): GitDiffState {
+  const summaries = new Map<string, GitDiffSummary | undefined>();
   let generation = 0;
   function store(
     cwd: string,
@@ -276,44 +268,25 @@ export function createGitDiffCache(
     expectedGeneration: number,
   ): void {
     if (expectedGeneration !== generation) return;
-    cache.set(cwd, { at: Date.now(), summary });
+    summaries.set(cwd, summary);
     onUpdate();
-  }
-  function refresh(cwd: string): void {
-    if (controllers.has(cwd)) return;
-    const controller = new AbortController();
-    const expectedGeneration = generation;
-    controllers.set(cwd, controller);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        reject(new Error("git status timed out"));
-      }, 6000);
-    });
-    const run = Promise.resolve().then(() => runner(cwd, controller.signal));
-    const finish = (summary: GitDiffSummary | undefined): void => {
-      if (timer !== undefined) clearTimeout(timer);
-      controllers.delete(cwd);
-      store(cwd, summary, expectedGeneration);
-    };
-    Promise.race([run, timeout]).then(
-      (stdout) => finish(parseGitPorcelain(stdout)),
-      () => finish(undefined),
-    );
   }
   return {
     get(cwd: string): GitDiffSummary | undefined {
-      const entry = cache.get(cwd);
-      if (!entry || Date.now() - entry.at > intervalMs) refresh(cwd);
-      return entry?.summary;
+      return summaries.get(cwd);
     },
-    refresh,
+    refresh(cwd: string): void {
+      const expectedGeneration = generation;
+      Promise.resolve()
+        .then(() => runner(cwd))
+        .then(
+          (stdout) => store(cwd, parseGitPorcelain(stdout), expectedGeneration),
+          () => store(cwd, undefined, expectedGeneration),
+        );
+    },
     clear(): void {
       generation += 1;
-      cache.clear();
-      for (const controller of controllers.values()) controller.abort();
-      controllers.clear();
+      summaries.clear();
     },
   };
 }

@@ -33,7 +33,6 @@ export interface ResolvedSeparator {
 export interface StatuslineOptions {
   componentSeparator: ResolvedSeparator;
   sectionSeparator: ResolvedSeparator;
-  gitIntervalMs: number;
 }
 
 export interface StatuslineConfig {
@@ -51,7 +50,6 @@ export function defaultOptions(): StatuslineOptions {
   return {
     componentSeparator: { text: " " },
     sectionSeparator: { text: "  " },
-    gitIntervalMs: 5000,
   };
 }
 
@@ -304,20 +302,6 @@ export function normalizeConfig(input: unknown): {
         config.options,
         diagnostics,
       );
-      const interval = options.gitIntervalMs;
-      if (interval !== undefined) {
-        if (
-          typeof interval === "number" &&
-          Number.isFinite(interval) &&
-          interval > 0
-        ) {
-          config.options.gitIntervalMs = interval;
-        } else {
-          diagnostics.push(
-            "options.gitIntervalMs must be a positive number; using default",
-          );
-        }
-      }
     }
   }
   if (input.clickActions !== undefined) {
@@ -466,7 +450,6 @@ export function saveOptions(
       currentOptions.sectionSeparator,
       options.sectionSeparator.text,
     ),
-    gitIntervalMs: options.gitIntervalMs,
   };
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(path, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });

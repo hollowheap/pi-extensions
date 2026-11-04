@@ -36,7 +36,6 @@ describe("normalizeConfig", () => {
       options: {
         componentSeparator: "|",
         sectionSeparator: " / ",
-        gitIntervalMs: 1000,
       },
       sections: { b: [{ type: "cwd", depth: 2 }] },
     });
@@ -44,7 +43,6 @@ describe("normalizeConfig", () => {
     expect(config.options).toEqual({
       componentSeparator: { text: "|" },
       sectionSeparator: { text: " / " },
-      gitIntervalMs: 1000,
     });
     expect(config.sections.b).toEqual([{ type: "cwd", depth: 2 }]);
   });
@@ -90,7 +88,7 @@ describe("normalizeConfig", () => {
 
   it("rejects invalid option values with diagnostics", () => {
     const { config, diagnostics } = normalizeConfig({
-      options: { componentSeparator: 7, gitIntervalMs: -1 },
+      options: { componentSeparator: 7, sectionSeparator: 8 },
     });
     expect(config.options).toEqual(defaultConfig().options);
     expect(diagnostics).toHaveLength(2);
@@ -276,7 +274,6 @@ describe("loadConfig", () => {
     );
     const { config } = loadConfig(dir);
     config.options.sectionSeparator = { text: " · " };
-    config.options.gitIntervalMs = 10000;
     saveOptions(dir, config.options);
 
     const saved = JSON.parse(readFileSync(path, "utf8")) as Record<
@@ -288,7 +285,6 @@ describe("loadConfig", () => {
     expect(saved.options).toMatchObject({
       componentSeparator: { text: "|", fg: "accent" },
       sectionSeparator: " · ",
-      gitIntervalMs: 10000,
     });
   });
 });

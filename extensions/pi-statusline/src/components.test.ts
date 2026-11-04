@@ -3,7 +3,7 @@ import {
   BUILTINS,
   type ComponentContext,
   clockIntervalMs,
-  createGitDiffCache,
+  createGitDiffState,
   formatClock,
   formatCount,
   parseGitPorcelain,
@@ -200,14 +200,15 @@ describe("clockIntervalMs", () => {
   });
 });
 
-describe("createGitDiffCache", () => {
+describe("createGitDiffState", () => {
   it("fills asynchronously and notifies", async () => {
     const runner = vi.fn(async () => " M a.ts\n?? b.ts\n");
     const onUpdate = vi.fn();
-    const cache = createGitDiffCache(runner, onUpdate, 5000);
-    expect(cache.get("/repo")).toBeUndefined();
+    const state = createGitDiffState(runner, onUpdate);
+    expect(state.get("/repo")).toBeUndefined();
+    state.refresh("/repo");
     await vi.waitFor(() =>
-      expect(cache.get("/repo")).toEqual({
+      expect(state.get("/repo")).toEqual({
         added: 0,
         modified: 1,
         removed: 0,
@@ -223,63 +224,41 @@ describe("createGitDiffCache", () => {
       throw new Error("sync failure");
     });
     const onUpdate = vi.fn();
-    const cache = createGitDiffCache(runner, onUpdate, 5000);
+    const state = createGitDiffState(runner, onUpdate);
 
-    cache.refresh("/repo");
+    state.refresh("/repo");
     await new Promise((resolve) => setTimeout(resolve, 20));
-    cache.refresh("/repo");
+    state.refresh("/repo");
     await Promise.resolve();
 
     expect(runner).toHaveBeenCalledTimes(2);
   });
 
-  it("times out a runner that never settles and releases the slot", async () => {
-    vi.useFakeTimers();
-    try {
-      const runner = vi.fn(() => new Promise<string>(() => {})) as unknown as (
-        cwd: string,
-        signal: AbortSignal,
-      ) => Promise<string>;
-      const cache = createGitDiffCache(runner, () => {}, 5000);
-
-      cache.refresh("/repo");
-      await vi.advanceTimersByTimeAsync(6000);
-      await vi.advanceTimersByTimeAsync(0);
-      cache.refresh("/repo");
-      await Promise.resolve();
-
-      expect(runner).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("refreshes on demand and clears stored summaries", async () => {
+    const runner = vi.fn(async () => " M a.ts\n");
+    const state = createGitDiffState(runner, () => {});
+    state.refresh("/repo");
+    await vi.waitFor(() =>
+      expect(state.get("/repo")).toEqual({
+        added: 0,
+        modified: 1,
+        removed: 0,
+        untracked: 0,
+      }),
+    );
+    state.refresh("/repo");
+    await vi.waitFor(() => expect(runner).toHaveBeenCalledTimes(2));
+    state.clear();
+    expect(state.get("/repo")).toBeUndefined();
   });
 
-  it("clears and aborts inflight refreshes", async () => {
-    const runner = vi.fn(() => new Promise<string>(() => {})) as unknown as (
-      cwd: string,
-      signal: AbortSignal,
-    ) => Promise<string>;
-    const cache = createGitDiffCache(runner, () => {}, 5000);
-
-    cache.refresh("/repo");
-    await Promise.resolve();
-    cache.clear();
-    cache.refresh("/repo");
-    await Promise.resolve();
-
-    expect(runner).toHaveBeenCalledTimes(2);
-  });
-
-  it("stores undefined on failure and refreshes stale entries", async () => {
+  it("stores undefined on failure", async () => {
     const runner = vi.fn(async () => {
       throw new Error("no git");
     });
-    const cache = createGitDiffCache(runner, () => {}, -1);
-    cache.refresh("/repo");
-    await vi.waitFor(() => {
-      cache.get("/repo");
-      expect(runner.mock.calls.length).toBeGreaterThan(1);
-    });
-    expect(cache.get("/repo")).toBeUndefined();
+    const state = createGitDiffState(runner, () => {});
+    state.refresh("/repo");
+    await vi.waitFor(() => expect(runner).toHaveBeenCalledTimes(1));
+    expect(state.get("/repo")).toBeUndefined();
   });
 });

@@ -29,18 +29,18 @@ N/A — package robustness review; tasks remain in `artifacts/plan.md`.
 ### Public Seams
 
 - Event bus protocol: providers emit `statusline:values` and answer `statusline:request`.
-- Deep imports: `config.ts` (`StatuslineConfig`, `ComponentSpec`, `defaultConfig`, `loadConfig`, `normalizeConfig`, `normalizeComponentStyle`, `normalizeSeparator`), `components.ts` (`BUILTINS`, `ComponentFn`, `ComponentContext`, `GitDiffCache`, `createGitDiffCache`, `defaultGitRunner`, `formatCount`, `formatClock`, `shortenPath`, `clockIntervalMs`, `parseGitPorcelain`), `colors.ts` (`parseColorSpec`, `styleText`, `styleComponent`), `render.ts` (`renderStatusline`, `applySeparator`).
+- Deep imports: `config.ts` (`StatuslineConfig`, `ComponentSpec`, `defaultConfig`, `loadConfig`, `normalizeConfig`, `normalizeComponentStyle`, `normalizeSeparator`), `components.ts` (`BUILTINS`, `ComponentFn`, `ComponentContext`, `GitDiffState`, `createGitDiffState`, `defaultGitRunner`, `formatCount`, `formatClock`, `shortenPath`, `clockIntervalMs`, `parseGitPorcelain`), `colors.ts` (`parseColorSpec`, `styleText`, `styleComponent`), `render.ts` (`renderStatusline`, `applySeparator`).
 - Extension component allowlist: `DEFAULT_EXTENSIONS` and `extensions` field controls named providers.
 
 ### Robustness Issues
 
 - `index.ts:87-94` — values arriving before footer installation are stored but no render triggered.
 - `index.ts:76-85` — `values` never cleared on `session_start`; stale provider values from previous session persist.
-- `index.ts:114-124` — footer reinstallation recreates `diffCache` but does not cancel inflight refreshes from previous cache.
+- `index.ts:114-124` — footer reinstallation recreates `diffState`; `clear` invalidates late results from the previous state.
 - `index.ts:222-225` — `model_select` updates `currentModel` without checking `owner`, unlike other handlers.
-- `components.ts:258-271` — `createGitDiffCache.refresh` does not wrap synchronously throwing runner; `inflight` stays populated.
-- `components.ts:259` — if runner never settles, `inflight` remains and refreshes for that cwd permanently blocked.
-- `components.ts:276-277` — `get` triggers async refresh when stale but returns previous (possibly undefined) summary.
+- Resolution (2026-11-04): `createGitDiffState.refresh` catches synchronously throwing runners and stores `undefined` on failure.
+- Resolution (2026-11-04): a runner that never settles no longer blocks future refreshes because there is no in-flight slot.
+- Resolution (2026-11-04): `get` returns only the stored summary; refresh is explicit from footer and session events.
 - `config.ts:388-392` — all-empty `sections` object silently replaced with defaults.
 - `config.ts:325-345` — `extensions` processed before `sections`; ordering subtle but works.
 
@@ -54,7 +54,7 @@ Each original item is checked against `artifacts/requirements.md` and
 | `colors.ts:9-28` and `:77-137` — large duplicated theme-token lists and starship color tables. | R12, D21 | **Required feature, duplicated data.** D21 requires the component/pill pipeline and theme-aware colors. The duplication is maintainability debt, not an unrequested abstraction. |
 | `colors.ts:110-157` — `styleComponent` powerline pill rendering with caps/icons. | R12, D21 | **Required, not overengineering.** D21 explicitly defines the pill pipeline; caps and icons are its rendering contract. |
 | `config.ts:139-262` — `resolveColor`, `normalizeSeparator`, `normalizeComponentStyle` plus `STYLE_KEYS` form heavy normalization pipeline. | R12, R59, D21, D131 | **Required, not overengineering.** Statusline config is user-facing and R59/D131 add custom components/click actions; normalization is how invalid color/style specs fail safely. |
-| `components.ts:238-284` — `GitDiffCache` with inflight tracking, abort timers, TTL. | No R/D | **Overengineered.** No requirement asks for a git-diff TTL cache or in-flight coalescing. It adds stuck-inflight and abort-timer failure modes for a status segment that could refresh on demand. |
+| `components.ts:238-284` — `GitDiffCache` with inflight tracking, abort timers, TTL. | No R/D | **Fixed (2026-11-04).** The cache was replaced by `GitDiffState`, which stores the latest summary and refreshes only on explicit events; TTL, in-flight coalescing, and abort timers were removed. |
 
 ### Resolution (2026-10-30)
 
@@ -70,6 +70,12 @@ Each original item is checked against `artifacts/requirements.md` and
 - `customComponentsPath` was removed from the live config until a loader contract exists; custom TS loading is tracked in `artifacts/plan.md` backlog.
 - The git-diff cache remains package-local because it is UI refresh infrastructure, not shared policy.
 
+### Resolution (2026-11-04)
+
+- Replaced `GitDiffCache` with `GitDiffState`: no TTL, in-flight coalescing, abort timers, or stale-refresh getter.
+- `refresh` stores the latest result; `clear` invalidates late results with a generation counter.
+- Removed `options.gitIntervalMs` and the matching settings row; git refresh follows footer, branch, turn, and tool events.
+
 ## Acceptance Review
 
 N/A — package robustness review; end-to-end verification is recorded under Code Review > Verification when present.
@@ -80,4 +86,4 @@ See the Code Review subsections above. Existing findings and resolutions are pre
 
 ## Verdict
 
-Accepted — existing review record; formatting only.
+Accepted — overengineering findings resolved.
