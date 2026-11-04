@@ -546,41 +546,41 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: advance on empty results, preserve configured order, and return empty only after all providers fail.
   - Risk: first empty result stopping fallback or duplicate providers.
 
-### pi-classifier
+### pi-decide
 
-- [x] T85 [S88] (blocked-by: none): scaffold `pi-classifier` and register one direct `decide` tool for choice/score/bool questions.
-  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts extensions/pi-classifier/src/decide.test.ts`
-  - Files: `extensions/pi-classifier/package.json`, `extensions/pi-classifier/tsconfig.json`, `extensions/pi-classifier/index.ts`, `extensions/pi-classifier/src/index.ts`, `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`, `extensions/pi-classifier/src/index.test.ts`, `package.json`, `package-lock.json`
+- [x] T85 [S88] (blocked-by: none): scaffold `pi-decide` and register one direct `decide` tool for choice/score/bool questions.
+  - Verify: `npx vitest run extensions/pi-decide/src/index.test.ts extensions/pi-decide/src/decide.test.ts`
+  - Files: `extensions/pi-decide/package.json`, `extensions/pi-decide/tsconfig.json`, `extensions/pi-decide/index.ts`, `extensions/pi-decide/src/index.ts`, `extensions/pi-decide/src/decide.ts`, `extensions/pi-decide/src/decide.test.ts`, `extensions/pi-decide/src/index.test.ts`, `package.json`, `package-lock.json`
   - Notes: direct exposure; one question per call; return label/score/probability, confidence, model, usage.
   - Risk: extra tools, codemode exposure, malformed label schema.
 
-- [x] T86 [S89] (blocked-by: T85): add explicit `classifier.json` model resolution with no first-available fallback.
-  - Verify: `npx vitest run extensions/pi-classifier/src/config.test.ts`
-  - Files: `extensions/pi-classifier/src/config.ts`, `extensions/pi-classifier/src/config.test.ts`, `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/README.md`
+- [x] T86 [S89] (blocked-by: T85): add explicit `decide.json` model resolution with no first-available fallback.
+  - Verify: `npx vitest run extensions/pi-decide/src/config.test.ts`
+  - Files: `extensions/pi-decide/src/config.ts`, `extensions/pi-decide/src/config.test.ts`, `extensions/pi-decide/src/decide.ts`, `extensions/pi-decide/README.md`
   - Notes: require `provider/model-id`; validate timeout, input cap, cache TTL; use `getModelOfType("classifier", ...)`.
   - Risk: fallback model selection, wrong model type, unconfigured auth.
 
 - [x] T87 [S90] (blocked-by: T85): enforce input cap, timeout, and explanatory capability errors.
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
-  - Files: `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
+  - Files: `extensions/pi-decide/src/decide.ts`, `extensions/pi-decide/src/decide.test.ts`
   - Notes: 20k default input cap; 5s default timeout; abort signal; errors as text, no session mutation.
   - Risk: provider error, abort, timeout, missing config, unavailable auth.
 
 - [x] T88 [S91] (blocked-by: T85): add per-session result cache and in-flight dedupe.
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
-  - Files: `extensions/pi-classifier/src/cache.ts`, `extensions/pi-classifier/src/decide.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
+  - Files: `extensions/pi-decide/src/cache.ts`, `extensions/pi-decide/src/decide.ts`
   - Notes: key model/kind/question/criteria/input; TTL from config; failed/aborted calls not cached.
   - Risk: stale TTL, key collision, duplicate concurrent provider calls.
 
 - [x] T89 [S92] (blocked-by: T85, T86, T87, T88): document advisory use and verify direct-only exposure.
-  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts && rg -q "decide" extensions/pi-classifier/README.md`
-  - Files: `extensions/pi-classifier/README.md`, `extensions/pi-classifier/src/index.test.ts`, `package.json`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Verify: `npx vitest run extensions/pi-decide/src/index.test.ts && rg -q "decide" extensions/pi-decide/README.md`
+  - Files: `extensions/pi-decide/README.md`, `extensions/pi-decide/src/index.test.ts`, `package.json`, `README.md`, `AGENTS.md`, `artifacts/context.md`
   - Notes: direct tool, no codemode activation, no CLI, no service registry; warn that input is sent to the classifier.
   - Risk: hidden/codemode exposure, extra tools, undocumented privacy limits.
 
 - [x] T90 [S93] (blocked-by: T85): restrict the classifier payload to caller-supplied input, question, and criteria.
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
-  - Files: `extensions/pi-classifier/src/decide.ts`, `extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
+  - Files: `extensions/pi-decide/src/decide.ts`, `extensions/pi-decide/src/decide.test.ts`
   - Notes: state contains input only; no cwd/mode/session/files/tool output.
   - Risk: automatic context enrichment, file reads, hidden session data.
 
@@ -851,9 +851,9 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/keymap.ts`
   - Notes: borderStyle in modal.json (rounded/double/dashed/sharp/none); default rounded; right side only.
   - Risk: Covered by the Verify command and listed files.
-- [x] T136 [S138] (blocked-by: none): add a session-scoped TTL/LRU cache to core and migrate `pi-classifier` to it.
-  - Verify: `npx vitest run packages/core/src/session-cache.test.ts extensions/pi-classifier/src/decide.test.ts`
-  - Files: `packages/core/src/session-cache.ts`, `packages/core/src/registry.ts`, `packages/core/src/state.ts`, `packages/core/src/index.ts`, `packages/core/src/session-cache.test.ts`, `extensions/pi-classifier/src/decide.ts`
+- [x] T136 [S138] (blocked-by: none): add a session-scoped TTL/LRU cache to core and migrate `pi-decide` to it.
+  - Verify: `npx vitest run packages/core/src/session-cache.test.ts extensions/pi-decide/src/decide.test.ts`
+  - Files: `packages/core/src/session-cache.ts`, `packages/core/src/registry.ts`, `packages/core/src/state.ts`, `packages/core/src/index.ts`, `packages/core/src/session-cache.test.ts`, `extensions/pi-decide/src/decide.ts`
   - Notes: namespaced per session owner; 128-entry cap; TTL on results; in-flight entries have no TTL; `dropSession` invalidates all caches for the owner.
   - Risk: Covered by the Verify command and listed files.
 - [x] T137 [S152] (blocked-by: none): add parent-session identity to subagent state and set it on start/resume.

@@ -590,42 +590,42 @@
   - Behavior: both register with codemode exposure; activation runs only when registered and inactive; tool_search stays disabled.
   - Failures: missing exposure, duplicate activation, or enabling tool_search.
 
-### pi-classifier
+### pi-decide
 
 #### Data & Contracts
 
 - [x] S88 [R23] [D88]: `decide` accepts one choice/score/bool question and returns a structured label/score/probability with confidence
-  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/index.test.ts extensions/pi-decide/src/decide.test.ts`
   - Seam: `decide` tool input/output.
   - Behavior: `choice` 2–10 options returns label/probabilities; `score` 2–10 levels returns index/label; `bool` returns probability; all return model and optional usage.
   - Failures: invalid kind, missing or >10 labels, malformed descriptions, missing input/question.
 
-- [x] S89 [R24] [D89]: `decide` requires an explicit `provider/model-id` in `classifier.json` and never falls back to another classifier
-  - Verify: `npx vitest run extensions/pi-classifier/src/config.test.ts`
+- [x] S89 [R24] [D89]: `decide` requires an explicit `provider/model-id` in `decide.json` and never falls back to another classifier
+  - Verify: `npx vitest run extensions/pi-decide/src/config.test.ts`
   - Seam: agent-dir config and model resolution.
   - Behavior: validates `model`, `timeoutMs`, `maxInputChars`, `cacheTtlMs`; missing or invalid model produces explanatory error text.
   - Failures: first-available fallback, malformed model id, wrong model type, unconfigured auth.
 
 - [x] S90 [R25] [D90]: `decide` enforces the configured input cap and timeout and reports capability failures as text
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
   - Seam: tool execution failure boundary.
   - Behavior: rejects oversize input, aborts at deadline, returns classifier `stopReason`/`errorMessage`, never mutates session state.
   - Failures: provider error, abort, timeout, missing config, unavailable auth.
 
 - [x] S91 [R26] [D91]: Successful `decide` results are cached per session and concurrent identical requests share one in-flight call
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
   - Seam: classifier request cache.
   - Behavior: key includes model/kind/question/criteria/input; TTL from config; failures and aborts are not cached.
   - Failures: stale result after TTL, cache key collision, duplicate concurrent provider calls.
 
-- [x] S92 [R27] [D92]: `pi-classifier` registers one direct `decide` tool, adds no CLI/service/codemode activation, and documents advisory use
-  - Verify: `npx vitest run extensions/pi-classifier/src/index.test.ts && rg -q "decide" extensions/pi-classifier/README.md`
+- [x] S92 [R27] [D92]: `pi-decide` registers one direct `decide` tool, adds no CLI/service/codemode activation, and documents advisory use
+  - Verify: `npx vitest run extensions/pi-decide/src/index.test.ts && rg -q "decide" extensions/pi-decide/README.md`
   - Seam: package entry and tool exposure.
   - Behavior: direct tool only; no `pi-guard` dependency, no service registry, no CLI bin.
   - Failures: hidden/codemode exposure, extra tools, service registration, missing docs.
 
 - [x] S93 [R28] [D93]: `decide` sends only caller-supplied input, question, and criteria to the classifier
-  - Verify: `npx vitest run extensions/pi-classifier/src/decide.test.ts`
+  - Verify: `npx vitest run extensions/pi-decide/src/decide.test.ts`
   - Seam: classifier payload construction.
   - Behavior: `state` contains input only; `questions` contains question and labels; no cwd/mode/session/files/tool output.
   - Failures: automatic context enrichment, file reads, hidden session data, undocumented redaction.
@@ -966,8 +966,8 @@
 
 #### Module Seams
 
-- [x] S138 [R08] [R26] [D138]: core exposes a session-scoped TTL/LRU cache, and `pi-classifier` uses it for per-session results and in-flight dedupe
-  - Verify: `npx vitest run packages/core/src/session-cache.test.ts extensions/pi-classifier/src/decide.test.ts`
+- [x] S138 [R08] [R26] [D138]: core exposes a session-scoped TTL/LRU cache, and `pi-decide` uses it for per-session results and in-flight dedupe
+  - Verify: `npx vitest run packages/core/src/session-cache.test.ts extensions/pi-decide/src/decide.test.ts`
   - Seam: `@hollowheap/core` session cache plus classifier request state.
   - Behavior: caches are namespaced by session owner; LRU eviction at 128 entries; TTL applies to results; `dropSession` clears the owner's caches; in-flight entries are deleted when settled.
   - Failures: cross-session reuse, unbounded growth, stale entries after TTL, cache surviving session teardown, duplicate concurrent requests.

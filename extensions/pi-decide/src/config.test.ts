@@ -2,20 +2,20 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONFIG_FILE_NAME, loadClassifierConfig } from "./config.js";
+import { CONFIG_FILE_NAME, loadDecideConfig } from "./config.js";
 
 function agentDir(): string {
-  return mkdtempSync(join(tmpdir(), "pi-classifier-config-"));
+  return mkdtempSync(join(tmpdir(), "pi-decide-config-"));
 }
 
 function write(dir: string, content: string): void {
   writeFileSync(join(dir, CONFIG_FILE_NAME), content);
 }
 
-describe("loadClassifierConfig", () => {
+describe("loadDecideConfig", () => {
   it("returns defaults when the file is missing", () => {
     const dir = agentDir();
-    const config = loadClassifierConfig(dir);
+    const config = loadDecideConfig(dir);
     expect(config.model).toBeUndefined();
     expect(config.timeoutMs).toBe(5000);
     expect(config.maxInputChars).toBe(20000);
@@ -29,7 +29,7 @@ describe("loadClassifierConfig", () => {
     mkdirSync(join(dir, CONFIG_FILE_NAME));
     const diagnostics: string[] = [];
 
-    const config = loadClassifierConfig(dir, (message) =>
+    const config = loadDecideConfig(dir, (message) =>
       diagnostics.push(message),
     );
 
@@ -50,7 +50,7 @@ describe("loadClassifierConfig", () => {
         cacheTtlMs: 0,
       }),
     );
-    const config = loadClassifierConfig(dir);
+    const config = loadDecideConfig(dir);
     expect(config.model).toBe("typesafe/jev-latest");
     expect(config.timeoutMs).toBe(2000);
     expect(config.maxInputChars).toBe(1000);
@@ -70,7 +70,7 @@ describe("loadClassifierConfig", () => {
         cacheTtlMs: -1,
       }),
     );
-    const config = loadClassifierConfig(dir, (message) =>
+    const config = loadDecideConfig(dir, (message) =>
       diagnostics.push(message),
     );
     expect(config.model).toBeUndefined();
@@ -83,13 +83,13 @@ describe("loadClassifierConfig", () => {
   it("reports invalid JSON and non-object roots", () => {
     const json = agentDir();
     write(json, "{");
-    expect(loadClassifierConfig(json).diagnostics[0]).toContain(
+    expect(loadDecideConfig(json).diagnostics[0]).toContain(
       "is not valid JSON",
     );
 
     const array = agentDir();
     write(array, "[]");
-    expect(loadClassifierConfig(array).diagnostics[0]).toContain(
+    expect(loadDecideConfig(array).diagnostics[0]).toContain(
       "must be an object",
     );
   });

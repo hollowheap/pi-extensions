@@ -103,7 +103,7 @@
   - [section] artifacts/retro.md (L393)
   - [section] artifacts/review/pi-agent.md (L400)
   - [section] artifacts/review/pi-autopilot.md (L406)
-  - [section] artifacts/review/pi-classifier.md (L412)
+  - [section] artifacts/review/pi-decide.md (L412)
   - [section] artifacts/review/pi-dashboard.md (L419)
   - [section] artifacts/review/pi-guard.md (L426)
   - [section] artifacts/review/pi-hooks.md (L432)
@@ -148,15 +148,15 @@
   - [section] extensions/pi-budgets/src/index.test.ts (L1072)
   - [section] extensions/pi-budgets/src/index.ts (L1142)
   - [section] extensions/pi-budgets/tsconfig.json (L1182)
-  - [section] extensions/pi-classifier/README.md (L1188)
-  - [section] extensions/pi-classifier/package.json (L1198)
-  - [section] extensions/pi-classifier/src/config.test.ts (L1222)
-  - [section] extensions/pi-classifier/src/config.ts (L1238)
-  - [section] extensions/pi-classifier/src/decide.test.ts (L1269)
-  - [section] extensions/pi-classifier/src/decide.ts (L1395)
-  - [section] extensions/pi-classifier/src/index.test.ts (L1467)
-  - [section] extensions/pi-classifier/src/index.ts (L1483)
-  - [section] extensions/pi-classifier/tsconfig.json (L1489)
+  - [section] extensions/pi-decide/README.md (L1188)
+  - [section] extensions/pi-decide/package.json (L1198)
+  - [section] extensions/pi-decide/src/config.test.ts (L1222)
+  - [section] extensions/pi-decide/src/config.ts (L1238)
+  - [section] extensions/pi-decide/src/decide.test.ts (L1269)
+  - [section] extensions/pi-decide/src/decide.ts (L1395)
+  - [section] extensions/pi-decide/src/index.test.ts (L1467)
+  - [section] extensions/pi-decide/src/index.ts (L1483)
+  - [section] extensions/pi-decide/tsconfig.json (L1489)
   - [section] extensions/pi-dashboard/README.md (L1495)
   - [section] extensions/pi-dashboard/package.json (L1501)
   - [section] extensions/pi-dashboard/src/config.test.ts (L1527)
@@ -409,8 +409,8 @@
   - [section] Robustness Issues (L9)
   - [section] Overengineering Audit (2026-10-29) (L15)
 
-## artifacts/review/pi-classifier.md
-  - [chapter] pi-classifier Review (L1)
+## artifacts/review/pi-decide.md
+  - [chapter] pi-decide Review (L1)
   - [section] Public Seams (L3)
   - [section] Robustness Issues (L12)
   - [section] Overengineering Audit (2026-10-29) (L24)
@@ -1185,8 +1185,8 @@
   - [string] 1 (L3)
   - [array] include (L3)
 
-## extensions/pi-classifier/README.md
-  - [chapter] pi-classifier (L1)
+## extensions/pi-decide/README.md
+  - [chapter] pi-decide (L1)
   - [section] Try it (L5)
   - [section] Install (L11)
   - [section] Configure (L17)
@@ -1195,7 +1195,7 @@
   - [section] Limits (L55)
   - [section] Trust and policy (L65)
 
-## extensions/pi-classifier/package.json
+## extensions/pi-decide/package.json
   - [string] name (L2)
   - [string] version (L3)
   - [string] type (L4)
@@ -1219,7 +1219,7 @@
   - [string] @earendil-works/pi-tui (L19)
   - [string] typebox (L20)
 
-## extensions/pi-classifier/src/config.test.ts
+## extensions/pi-decide/src/config.test.ts
   - [function] agentDir (L7)
   - [function] write (L11)
   - [constant] dir (L17)
@@ -1235,7 +1235,7 @@
   - [constant] json (L84)
   - [constant] array (L90)
 
-## extensions/pi-classifier/src/config.ts
+## extensions/pi-decide/src/config.ts
   - [constant] CONFIG_FILE_NAME (L4)
   - [interface] ClassifierConfig (L6)
   - [property] model (L7)
@@ -1266,7 +1266,7 @@
   - [constant] config (L119)
   - [constant] message (L137)
 
-## extensions/pi-classifier/src/decide.test.ts
+## extensions/pi-decide/src/decide.test.ts
   - [alias] DecideDeps (L6)
   - [function] agentDir (L8)
   - [function] config (L12)
@@ -1392,7 +1392,7 @@
   - [constant] classify (L993)
   - [constant] tool (L996)
 
-## extensions/pi-classifier/src/decide.ts
+## extensions/pi-decide/src/decide.ts
   - [alias] ClassifierConfig (L13)
   - [alias] DecideKind (L15)
   - [interface] DecideLabel (L17)
@@ -1464,7 +1464,7 @@
   - [constant] registry (L474)
   - [constant] model (L489)
 
-## extensions/pi-classifier/src/index.test.ts
+## extensions/pi-decide/src/index.test.ts
   - [constant] state (L6)
   - [function] createMockPi (L17)
   - [constant] handlers (L18)
@@ -1480,13 +1480,13 @@
   - [constant] pi (L83)
   - [constant] pi (L90)
 
-## extensions/pi-classifier/src/index.ts
+## extensions/pi-decide/src/index.ts
   - [constant] diagnostics (L7)
   - [constant] config (L8)
   - [variable] reported (L18)
   - [constant] message (L22)
 
-## extensions/pi-classifier/tsconfig.json
+## extensions/pi-decide/tsconfig.json
   - [string] extends (L2)
   - [string] 0 (L3)
   - [string] 1 (L3)

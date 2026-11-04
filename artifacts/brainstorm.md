@@ -149,7 +149,7 @@ Do not start with a rewrite of all three. The verified probes in
 # Architectural Exploration: Classifier Decision Contract
 
 Status: Draft for decision. Date: 2026-10-30.
-Scope: `extensions/pi-classifier`. Prior web/subagents/todos exploration above is preserved.
+Scope: `extensions/pi-decide`. Prior web/subagents/todos exploration above is preserved.
 
 ## Destination
 
@@ -167,13 +167,13 @@ User-visible outcomes:
 
 ## References
 
-- `artifacts/review/pi-classifier.md` — verified robustness and overengineering
+- `artifacts/review/pi-decide.md` — verified robustness and overengineering
   findings.
 - `artifacts/requirements.md` — R23-R28.
 - `artifacts/decisions.md` — D88-D93.
 - `artifacts/specs.md` — S88-S93.
-- `extensions/pi-classifier/src/decide.ts` — tool, cache, timeout, normalize.
-- `extensions/pi-classifier/src/config.ts` — explicit model config and input
+- `extensions/pi-decide/src/decide.ts` — tool, cache, timeout, normalize.
+- `extensions/pi-decide/src/config.ts` — explicit model config and input
   bounds.
 - `node_modules/@earendil-works/pi-ai/dist/types.d.ts:465-510` — classifier
   answers contain `score`, not a score label.
@@ -207,7 +207,7 @@ questions, not provider documentation questions.
    other callers are still waiting? Only when no waiter remains?
 3. **Cache bounds:** fixed entry cap, byte cap, or configurable? TTL alone does
    not bound memory.
-4. **Config lifecycle:** load `classifier.json` once at extension load (current)
+4. **Config lifecycle:** load `decide.json` once at extension load (current)
    or re-read per session/per call? Diagnostics depend on this choice.
 5. **Output trust:** reject invalid `choice`/`score`/probability answers, or
    clamp/repair them? R25 says fail with text.
@@ -232,7 +232,7 @@ session-scoped container.
   probability bounds; score output maps the index back to `labels[index].label`.
 - Remove `DecideDeps`, `defaultDeps`, `getAgentDir` from the tool deps, and the
   unused `decideTool` singleton.
-- Tests write `classifier.json` through `PI_CODING_AGENT_DIR` or pass a config
+- Tests write `decide.json` through `PI_CODING_AGENT_DIR` or pass a config
   object; fake `ctx.modelRegistry` supplies classifier results.
 
 Failure modes: `WeakMap` cache is lost on resume or fork; watcher/refcount bugs
@@ -302,7 +302,7 @@ Concrete decisions:
 
 ## Not yet specified
 
-- Whether `classifier.json` should hot-reload per session or remain load-once.
+- Whether `decide.json` should hot-reload per session or remain load-once.
 - Whether the per-session cache cap is fixed (for example 100 entries) or
   configurable.
 - Whether the shared request should abort immediately when its last waiter

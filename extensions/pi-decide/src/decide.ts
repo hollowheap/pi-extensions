@@ -10,7 +10,7 @@ import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { getSessionCache } from "@hollowheap/core/session-cache";
-import { loadClassifierConfig } from "./config.js";
+import { loadDecideConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";
 
@@ -55,8 +55,8 @@ function isProbability(value: unknown): value is number {
 }
 
 const MAX_CACHE_ENTRIES = 128;
-const RESULT_CACHE_NAMESPACE = "pi-classifier/results";
-const INFLIGHT_CACHE_NAMESPACE = "pi-classifier/inflight";
+const RESULT_CACHE_NAMESPACE = "pi-decide/results";
+const INFLIGHT_CACHE_NAMESPACE = "pi-decide/inflight";
 
 interface Inflight {
   promise: Promise<DecideToolResult>;
@@ -135,7 +135,7 @@ export function createDecideTool() {
     name: "decide",
     label: "decide",
     description:
-      "Ask the configured classifier one advisory question. Kinds: choice, score, bool. Input is sent to the classifier; do not include secrets.",
+      "Ask the configured decide model one advisory question. Kinds: choice, score, bool. Input is sent to the decide model; do not include secrets.",
     exposure: "direct",
     parameters: Type.Object({
       kind: Type.Union([
@@ -174,11 +174,9 @@ export function createDecideTool() {
     if (signal?.aborted) {
       return errorResult("aborted");
     }
-    const config = loadClassifierConfig(getAgentDir());
+    const config = loadDecideConfig(getAgentDir());
     if (config.model === undefined) {
-      return errorResult(
-        "classifier model is not configured in classifier.json",
-      );
+      return errorResult("decide model is not configured in decide.json");
     }
     if (params.input.length > config.maxInputChars) {
       return errorResult(`input exceeds ${config.maxInputChars} characters`);
@@ -221,7 +219,7 @@ export function createDecideTool() {
     const task = (async (): Promise<DecideToolResult> => {
       let result: ClassifierResult;
       try {
-        result = await defaultClassify(
+        result = await defaultDecide(
           ctx,
           config.model as string,
           { state: { input: params.input }, questions: { answer: question } },
@@ -233,15 +231,15 @@ export function createDecideTool() {
         );
       }
       if (result.stopReason !== "stop") {
-        return errorResult(result.errorMessage ?? "classifier failed");
+        return errorResult(result.errorMessage ?? "decide failed");
       }
       const answer = result.answers.answer;
       if (answer === undefined) {
-        return errorResult("classifier returned no answer");
+        return errorResult("decide returned no answer");
       }
       if (answer.type !== params.kind) {
         return errorResult(
-          `classifier returned ${answer.type} for a ${params.kind} question`,
+          `decide returned ${answer.type} for a ${params.kind} question`,
         );
       }
 
@@ -359,22 +357,22 @@ export function createDecideTool() {
     if (answer.type === "choice") {
       const labels = new Set((params.labels ?? []).map((label) => label.label));
       if (!labels.has(answer.choice)) {
-        return `classifier returned unknown choice "${answer.choice}"`;
+        return `decide returned unknown choice "${answer.choice}"`;
       }
       if (!isRecord(answer.probabilities)) {
-        return "classifier returned invalid probabilities";
+        return "decide returned invalid probabilities";
       }
       const probabilities = Object.entries(answer.probabilities);
       if (probabilities.length === 0) {
-        return "classifier returned empty probabilities";
+        return "decide returned empty probabilities";
       }
       for (const [label, probability] of probabilities) {
         if (!labels.has(label) || !isProbability(probability)) {
-          return "classifier returned invalid probabilities";
+          return "decide returned invalid probabilities";
         }
       }
       if (!isProbability(answer.confidence)) {
-        return "classifier returned invalid confidence";
+        return "decide returned invalid confidence";
       }
       return {
         kind,
@@ -391,14 +389,14 @@ export function createDecideTool() {
         answer.score < 0 ||
         answer.score >= (params.labels?.length ?? 0)
       ) {
-        return `classifier returned out-of-range score ${answer.score}`;
+        return `decide returned out-of-range score ${answer.score}`;
       }
       if (!isProbability(answer.confidence)) {
-        return "classifier returned invalid confidence";
+        return "decide returned invalid confidence";
       }
       const label = params.labels?.[answer.score]?.label;
       if (label === undefined) {
-        return `classifier returned out-of-range score ${answer.score}`;
+        return `decide returned out-of-range score ${answer.score}`;
       }
       return {
         kind,
@@ -410,7 +408,7 @@ export function createDecideTool() {
       };
     }
     if (!isProbability(answer.probability)) {
-      return "classifier returned invalid probability";
+      return "decide returned invalid probability";
     }
     return {
       kind,
@@ -434,7 +432,7 @@ type DecideToolResult = {
   details: Record<string, unknown>;
 };
 
-export function defaultClassify(
+export function defaultDecide(
   ctx: PiExtensionContext,
   modelId: string,
   input: ClassifierContext,
@@ -448,7 +446,7 @@ export function defaultClassify(
       model: modelId,
       answers: {},
       stopReason: "error",
-      errorMessage: `classifier model must be "provider/model-id": ${modelId}`,
+      errorMessage: `decide model must be "provider/model-id": ${modelId}`,
       timestamp: Date.now(),
     });
   }
@@ -465,7 +463,7 @@ export function defaultClassify(
       model: id,
       answers: {},
       stopReason: "error",
-      errorMessage: "classifier model registry unavailable",
+      errorMessage: "decide model registry unavailable",
       timestamp: Date.now(),
     });
   }
@@ -477,7 +475,7 @@ export function defaultClassify(
       model: id,
       answers: {},
       stopReason: "error",
-      errorMessage: `classifier model not found: ${modelId}`,
+      errorMessage: `decide model not found: ${modelId}`,
       timestamp: Date.now(),
     });
   }

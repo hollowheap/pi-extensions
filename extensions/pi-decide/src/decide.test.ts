@@ -14,7 +14,7 @@ import { CONFIG_FILE_NAME } from "./config.js";
 import { createDecideTool } from "./decide.js";
 
 function agentDir(overrides: Record<string, unknown> = config()): string {
-  const dir = mkdtempSync(join(tmpdir(), "pi-classifier-decide-"));
+  const dir = mkdtempSync(join(tmpdir(), "pi-decide-decide-"));
   writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify(overrides));
   state.agentDir = dir;
   return dir;
@@ -278,7 +278,7 @@ describe("decide", () => {
     expect(textOf(boolResult)).toContain("invalid probability");
   });
 
-  it("returns classifier errors", async () => {
+  it("returns decide errors", async () => {
     agentDir();
     const classify = vi.fn(async () => ({
       api: "classifier",
@@ -533,7 +533,7 @@ describe("decide", () => {
       ctxValue as never,
     );
 
-    expect(textOf(result)).toContain("classifier model not found");
+    expect(textOf(result)).toContain("decide model not found");
     expect(registry.classify).not.toHaveBeenCalled();
   });
 

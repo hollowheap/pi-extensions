@@ -45,12 +45,12 @@ afterEach(() => {
 });
 
 function useConfig(value: unknown): void {
-  const dir = mkdtempSync(join(tmpdir(), "pi-classifier-"));
-  writeFileSync(join(dir, "classifier.json"), JSON.stringify(value));
+  const dir = mkdtempSync(join(tmpdir(), "pi-decide-"));
+  writeFileSync(join(dir, "decide.json"), JSON.stringify(value));
   state.agentDir = dir;
 }
 
-describe("pi-classifier extension", () => {
+describe("pi-decide extension", () => {
   it("registers one direct decide tool by default", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -73,7 +73,7 @@ describe("pi-classifier extension", () => {
     };
     pi.handlers.session_start({}, ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("pi-classifier:"),
+      expect.stringContaining("pi-decide:"),
       "warning",
     );
   });

@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { loadClassifierConfig } from "./config.js";
+import { loadDecideConfig } from "./config.js";
 import { createDecideTool } from "./decide.js";
 
 export default function (pi: ExtensionAPI): void {
   const diagnostics: string[] = [];
-  loadClassifierConfig(getAgentDir(), (message) => diagnostics.push(message));
+  loadDecideConfig(getAgentDir(), (message) => diagnostics.push(message));
   pi.registerTool(createDecideTool());
 
   let reported = false;
@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI): void {
     if (reported || diagnostics.length === 0) return;
     reported = true;
     for (const message of diagnostics) {
-      ctx.ui?.notify?.(`pi-classifier: ${message}`, "warning");
+      ctx.ui?.notify?.(`pi-decide: ${message}`, "warning");
     }
   });
 }

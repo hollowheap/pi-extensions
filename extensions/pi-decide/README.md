@@ -1,22 +1,22 @@
-# pi-classifier
+# pi-decide
 
-Advisory classifier tool for the Pi coding agent. `decide` asks a configured classifier model one structured question and returns a label, score, or probability with confidence. It is a direct tool, not a policy gate.
+Advisory decision tool for the Pi coding agent. `decide` asks a configured decide model one structured question and returns a label, score, or probability with confidence. It is a direct tool, not a policy gate.
 
 ## Try it
 
 ```bash
-pi -e ./extensions/pi-classifier
+pi -e ./extensions/pi-decide
 ```
 
 ## Install
 
 ```bash
-pi install npm:@hollowheap/pi-classifier
+pi install npm:@hollowheap/pi-decide
 ```
 
 ## Configure
 
-Create `<agent-dir>/classifier.json`:
+Create `<agent-dir>/decide.json`:
 
 ```json
 {
@@ -27,15 +27,15 @@ Create `<agent-dir>/classifier.json`:
 }
 ```
 
-`model` is required. It must name a classifier model available through Pi's model registry, in `provider/model-id` form. `cacheTtlMs: 0` disables the session cache.
+`model` is required. It must name a decide model available through Pi's model registry, in `provider/model-id` form. `cacheTtlMs: 0` disables the session cache.
 
 ## Tool
 
 `decide` accepts one question:
 
 - `kind`: `choice`, `score`, or `bool`.
-- `input`: the text to classify. It is the only payload sent.
-- `question`: instructions for the classifier.
+- `input`: the text to decide on. It is the only payload sent.
+- `question`: instructions for the decide model.
 - `choice`: 2–10 `{label, description}` options.
 - `score`: 2–10 ordered `{label, description}` levels.
 - `bool`: `trueDescription` and `falseDescription`.
@@ -46,11 +46,11 @@ Results:
 - `score`: `value` (level index), `label`, `confidence`.
 - `bool`: `value`, `probability`.
 
-All results include `model` and `usage`. A classifier error returns explanatory text instead of throwing.
+All results include `model` and `usage`. A decide error returns explanatory text instead of throwing.
 
 ## Privacy
 
-`decide` sends only `input`, `question`, and the criteria. It does not add cwd, mode, session history, file contents, or tool output. Do not send secrets. Prefer local classifier models for sensitive repositories.
+`decide` sends only `input`, `question`, and the criteria. It does not add cwd, mode, session history, file contents, or tool output. Do not send secrets. Prefer local decide models for sensitive repositories.
 
 ## Limits
 

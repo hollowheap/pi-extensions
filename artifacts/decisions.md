@@ -433,12 +433,12 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: image blocks; download to temp files.
   - Consequences: the model cannot inspect image pixels or PDF bytes through this tool.
 
-- [x] D88 [R23]: `pi-classifier` exposes one direct `decide` tool with one question per call. `kind` is `choice`, `score`, or `bool`; `choice` takes 2–10 `{label, description}` options, `score` takes an ordered 2–10 scale, and `bool` takes `true`/`false` descriptions. The tool returns the label/score/probability, confidence, model, and usage; it returns no free-form rationale.
+- [x] D88 [R23]: `pi-decide` exposes one direct `decide` tool with one question per call. `kind` is `choice`, `score`, or `bool`; `choice` takes 2–10 `{label, description}` options, `score` takes an ordered 2–10 scale, and `bool` takes `true`/`false` descriptions. The tool returns the label/score/probability, confidence, model, and usage; it returns no free-form rationale.
   - Context: The classifier primitives already provide choice, score, and bool; a rationale would require a different model path.
   - Alternatives: multiple questions per call; separate `decide` and `classify` tools; chat model with rationale.
   - Consequences: callers repeat calls for multiple questions; output stays structured and cheap.
 
-- [x] D89 [R24]: Model selection is explicit in `<agentDir>/classifier.json`; there is no fallback to the first available classifier. Config fields are `model` (`provider/model-id`), `timeoutMs` (default 5000), `maxInputChars` (default 20000), and `cacheTtlMs` (default 600000, 0 disables).
+- [x] D89 [R24]: Model selection is explicit in `<agentDir>/decide.json`; there is no fallback to the first available classifier. Config fields are `model` (`provider/model-id`), `timeoutMs` (default 5000), `maxInputChars` (default 20000), and `cacheTtlMs` (default 600000, 0 disables).
   - Context: Explicit selection keeps cost, privacy, and behavior predictable.
   - Alternatives: first-available fallback; per-call model override; no config.
   - Consequences: missing or invalid config makes `decide` unavailable until fixed.
@@ -558,10 +558,10 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: always rounded, no borders, full box.
   - Consequences: Border style enum (rounded/double/dashed/sharp/none); only right edge bordered; left edge stays clean for prompt char.
 
-- [x] D138 [R08] [R26]: `@hollowheap/core` owns a session-scoped TTL/LRU cache primitive. Caches are namespaced per session owner and invalidated by `dropSession`; `pi-classifier` uses separate result and in-flight caches capped at 128 entries each.
+- [x] D138 [R08] [R26]: `@hollowheap/core` owns a session-scoped TTL/LRU cache primitive. Caches are namespaced per session owner and invalidated by `dropSession`; `pi-decide` uses separate result and in-flight caches capped at 128 entries each.
   - Context: This is a session slice, not a cache-only slice: the core primitive ships with the classifier consumer that proves the contract.
   - Alternatives: keep the classifier-local `WeakMap`; add a generic cache without session ownership; use a process-wide cache.
-  - Consequences: session isolation and eviction live in one host-free primitive; cache stores survive only while the session owner is alive; `pi-classifier` still owns TTL and request semantics.
+  - Consequences: session isolation and eviction live in one host-free primitive; cache stores survive only while the session owner is alive; `pi-decide` still owns TTL and request semantics.
 
 - [x] D139 [R19]: `lang` is codemode-only. The extension always registers `exposure: "codemode"` and activates codemode on `session_start`; there is no direct or hidden mode, and `language-tools.json` no longer accepts an exposure override.
   - Context: Navigation is orchestration surface, so keeping it out of the direct schema is the invariant.

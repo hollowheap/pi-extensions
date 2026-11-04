@@ -1,4 +1,4 @@
-# Review — pi-classifier (V03)
+# Review — pi-decide (V03)
 
 ## Scope
 
@@ -29,7 +29,7 @@ N/A — package robustness review; tasks remain in `artifacts/plan.md`.
 ### Public Seams
 
 - `decide.ts:67` — `createDecideTool()`.
-- `decide.ts:437` — `defaultClassify(ctx, modelId, input, signal)`.
+- `decide.ts:437` — `defaultDecide(ctx, modelId, input, signal)`.
 - `decide.ts:15-30` — `DecideKind`, `DecideLabel`, `DecideParams`.
 - `config.ts:4` — `CONFIG_FILE_NAME`, `:6` `ClassifierConfig`, `:80` `loadClassifierConfig(agentDir, onDiagnostic?)`.
 - `index.ts:6` — default extension factory.
@@ -44,7 +44,7 @@ N/A — package robustness review; tasks remain in `artifacts/plan.md`.
 - `stableStringify` embeds full `input` in key (`decide.ts:131-137`), large key strings for 100k-char inputs.
 - Validation ordering: `decide.ts:123-129` returns validation error before `signal?.aborted` check.
 - `normalize` (`decide.ts:276-308`) does not verify returned `choice`/`score` is one of caller-supplied labels.
-- `defaultClassify` (`decide.ts:343`) accesses `ctx.modelRegistry` without guard.
+- `defaultDecide` (`decide.ts:343`) accesses `ctx.modelRegistry` without guard.
 
 ### Overengineering Audit (2026-10-29)
 
@@ -55,7 +55,7 @@ Each original item is checked against `artifacts/requirements.md` and
 | --- | --- | --- |
 | `decide.ts:40-51` — `stableStringify` reimplements sorted-key serialization. | R26, D91 | **Required, not overengineering.** R26/D91 require a cache key covering model, kind, question, criteria, and input. Sorted serialization is the minimal way to keep that key deterministic across object field order. |
 | `decide.ts:59` — `decideTool` singleton uses unusable default deps (`getAgentDir` returns a fake test path). | R27 | **Fixed.** The singleton/default-dependency path was removed; `createDecideTool` now requires explicit dependencies. |
-| `decide.ts:29-62` — `DecideDeps`/`defaultDeps`/`Partial` injection plus per-instance cache/inflight. | R26, D91 | **Fixed (2026-11-04).** The cache and in-flight map remain required by R26/D91. The `DecideDeps` injection layer and `Partial` overrides were removed; the tool loads config and calls `defaultClassify` directly. |
+| `decide.ts:29-62` — `DecideDeps`/`defaultDeps`/`Partial` injection plus per-instance cache/inflight. | R26, D91 | **Fixed (2026-11-04).** The cache and in-flight map remain required by R26/D91. The `DecideDeps` injection layer and `Partial` overrides were removed; the tool loads config and calls `defaultDecide` directly. |
 
 ### Resolution (2026-10-30)
 
@@ -71,8 +71,8 @@ Each original item is checked against `artifacts/requirements.md` and
 
 ### Resolution (2026-11-04)
 
-- Removed `DecideDeps`, `defaultDeps`, and `Partial` overrides. `createDecideTool()` loads the classifier config and calls `defaultClassify` directly.
-- Tests now exercise the real config loader through a mocked agent directory and the real `defaultClassify` path through `ctx.modelRegistry`.
+- Removed `DecideDeps`, `defaultDeps`, and `Partial` overrides. `createDecideTool()` loads the decide config and calls `defaultDecide` directly.
+- Tests now exercise the real config loader through a mocked agent directory and the real `defaultDecide` path through `ctx.modelRegistry`.
 
 ## Acceptance Review
 

@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | V01 | pi-agent | `review/pi-agent.md` | robust | pi-agent |
 | V02 | pi-autopilot | `review/pi-autopilot.md` | robust | pi-autopilot |
-| V03 | pi-classifier | `review/pi-classifier.md` | robust | pi-classifier |
+| V03 | pi-decide | `review/pi-decide.md` | robust | pi-decide |
 | V04 | pi-dashboard | `review/pi-dashboard.md` | robust | pi-dashboard |
 | V05 | pi-guard | `review/pi-guard.md` | robust | pi-guard |
 | V06 | pi-hooks | `review/pi-hooks.md` | robust | pi-hooks |

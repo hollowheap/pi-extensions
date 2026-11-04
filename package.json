@@ -22,7 +22,7 @@
       "./extensions/pi-todos/index.ts",
       "./extensions/pi-language-tools/index.ts",
       "./extensions/pi-tasks/index.ts",
-      "./extensions/pi-classifier/index.ts",
+      "./extensions/pi-decide/index.ts",
       "./extensions/pi-web/index.ts",
       "./extensions/pi-subagents/index.ts",
       "./extensions/pi-usage/index.ts",

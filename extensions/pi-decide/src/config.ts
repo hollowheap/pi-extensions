@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const CONFIG_FILE_NAME = "classifier.json";
+export const CONFIG_FILE_NAME = "decide.json";
 
-export interface ClassifierConfig {
+export interface DecideConfig {
   readonly model?: string;
   readonly timeoutMs: number;
   readonly maxInputChars: number;
@@ -27,7 +27,9 @@ function parseModel(value: unknown, diagnostics: string[]): string | undefined {
   if (typeof value === "string" && value.trim() !== "" && value.includes("/")) {
     return value.trim();
   }
-  diagnostics.push('"model" must be "provider/model-id"; using no classifier');
+  diagnostics.push(
+    '"model" must be "provider/model-id"; using no decide model',
+  );
   return undefined;
 }
 
@@ -77,10 +79,10 @@ function parseCacheTtlMs(value: unknown, diagnostics: string[]): number {
   return DEFAULT_CACHE_TTL_MS;
 }
 
-export function loadClassifierConfig(
+export function loadDecideConfig(
   agentDir: string,
   onDiagnostic?: (message: string) => void,
-): ClassifierConfig {
+): DecideConfig {
   const path = join(agentDir, CONFIG_FILE_NAME);
   const diagnostics: string[] = [];
   let raw: string;
@@ -116,7 +118,7 @@ export function loadClassifierConfig(
     parsed = undefined;
   }
 
-  const config: ClassifierConfig = {
+  const config: DecideConfig = {
     model: parseModel(isRecord(parsed) ? parsed.model : undefined, diagnostics),
     timeoutMs: parseTimeout(
       isRecord(parsed) ? parsed.timeoutMs : undefined,

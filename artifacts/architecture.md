@@ -23,7 +23,7 @@ Scope: `my-pi-agent` workspace.
 - `pi-question` and `pi-todos` own tagged-block parsing, UI, and branch-local state.
 - `pi-tasks` owns durable shell tasks and exports `TaskStore` plus detached-spawn helpers. `pi-subagents` owns child agents, harness selection, write locking, and resume on top of that layer.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
-- `pi-web` owns provider adapters and URL safety; `pi-classifier` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
+- `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
 - `pi-usage` owns usage accounting, compaction-safe state, optional USD caps, and the statusline usage provider.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
@@ -46,7 +46,7 @@ Scope: `my-pi-agent` workspace.
 
 ## Data & Contracts
 
-- Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `classifier.json`, `language-tools.json`, `modal.json`, `web.json`).
+- Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `decide.json`, `language-tools.json`, `modal.json`, `web.json`).
 - Trusted project overlays are read only after `ctx.isProjectTrusted()`; untrusted projects are ignored or asked.
 - Session state is stored as custom entries: mode, todos, and usage survive resume and compaction.
 - Permission rules use `allow|ask|deny`, tag maps, path matching, and a fixed precedence order.
@@ -119,4 +119,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (981 tests/108 files), typecheck, and lint (299 files) green on 2026-11-04.
+- Final suite (982 tests/108 files), typecheck, and lint (299 files) green on 2026-11-04.

@@ -126,7 +126,7 @@
 
 - [x] R24: `decide` uses only the classifier explicitly configured for it.
   - Verify: Missing, malformed, or unavailable model config returns an explanatory error and makes no fallback call.
-  - Acceptance: `<agentDir>/classifier.json` requires `model: "provider/id"`; optional timeout, input cap, and cache TTL; no first-available fallback.
+  - Acceptance: `<agentDir>/decide.json` requires `model: "provider/id"`; optional timeout, input cap, and cache TTL; no first-available fallback.
   - Rationale: Predictable model choice matters for privacy, cost, and reproducibility.
 
 - [x] R25: `decide` bounds input and latency and fails without mutating state or crashing the session.
