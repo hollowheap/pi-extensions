@@ -1,4 +1,13 @@
-export type Tag = "edit" | "read" | "search" | "shell";
+export const BUILTIN_TAGS = [
+  "edit",
+  "read",
+  "search",
+  "shell",
+  "external",
+] as const;
+
+export type BuiltinTag = (typeof BUILTIN_TAGS)[number];
+export type Tag = BuiltinTag | (string & {});
 export type Effect = "allow" | "ask" | "deny";
 export type Verdict = Effect;
 
@@ -23,7 +32,7 @@ export type ModeSource = "builtin" | "package" | "config";
 export interface ModeLayer {
   name: string;
   description?: string;
-  defaults: Record<Tag, Effect>;
+  defaults: Partial<Record<Tag, Effect>>;
   overrides?: readonly Rule[];
   onEnter?: (owner: unknown) => ModeEnter | undefined;
   source?: ModeSource;

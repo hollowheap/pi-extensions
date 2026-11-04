@@ -10,6 +10,7 @@ export const AUTOPILOT_MODE: ModeLayer = Object.freeze({
     search: "allow",
     edit: "allow",
     shell: "allow",
+    external: "allow",
   }),
   onEnter: () => ({
     notice: {

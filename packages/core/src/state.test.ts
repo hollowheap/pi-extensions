@@ -20,6 +20,7 @@ const ALLOW: Record<Tag, Effect> = {
   search: "allow",
   edit: "allow",
   shell: "allow",
+  external: "allow",
 };
 
 describe("session state", () => {

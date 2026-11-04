@@ -2,9 +2,14 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getModeLayer } from "./modes.js";
 import { getMtimeCache } from "./mtime-cache.js";
-import type { Effect, ModeLayer, Rule, Tag } from "./types.js";
+import {
+  BUILTIN_TAGS,
+  type Effect,
+  type ModeLayer,
+  type Rule,
+  type Tag,
+} from "./types.js";
 
-const KNOWN_TAGS: readonly string[] = ["edit", "read", "search", "shell"];
 const MAX_CACHE_ENTRIES = 64;
 
 interface PermissionsEntry {
@@ -46,6 +51,10 @@ function mtimeMs(path: string): number {
   }
 }
 
+function isTagName(value: string): boolean {
+  return /^[a-z][a-z0-9_-]*$/.test(value);
+}
+
 function buildRule(
   effect: unknown,
   tag: unknown,
@@ -55,15 +64,13 @@ function buildRule(
   if (
     (effect === "allow" || effect === "ask" || effect === "deny") &&
     typeof tag === "string" &&
-    KNOWN_TAGS.includes(tag) &&
+    isTagName(tag) &&
     typeof pattern === "string" &&
     pattern !== ""
   ) {
     return Object.freeze({ effect, tag: tag as Tag, pattern });
   }
-  diagnostics.push(
-    'ignoring rule: need "allow|ask|deny <tag> <pattern>" (edit, read, search, shell)',
-  );
+  diagnostics.push('ignoring rule: need "allow|ask|deny <tag> <pattern>"');
   return undefined;
 }
 
@@ -130,13 +137,9 @@ function parsePermissionsFile(
       diagnostics.push(`permissions "tools" must be an object: ${path}`);
     } else {
       for (const [name, tag] of Object.entries(toolEntries)) {
-        if (
-          name.trim() === "" ||
-          typeof tag !== "string" ||
-          !KNOWN_TAGS.includes(tag)
-        ) {
+        if (name.trim() === "" || typeof tag !== "string" || !isTagName(tag)) {
           diagnostics.push(
-            `ignoring tool tag "${name}": expected edit, read, search, or shell`,
+            `ignoring tool tag "${name}": expected a permission category such as edit, read, search, shell, or external`,
           );
           continue;
         }
@@ -236,19 +239,18 @@ function parseModeDefaults(
   name: string,
   value: unknown,
   diagnostics: string[],
-): Record<Tag, Effect> | undefined {
+): Partial<Record<Tag, Effect>> | undefined {
   if (!isRecord(value)) {
     diagnostics.push(
       `ignoring mode layer "${name}": "defaults" must be an object`,
     );
     return undefined;
   }
-  const defaults = {} as Record<Tag, Effect>;
-  for (const tag of KNOWN_TAGS) {
-    const effect = value[tag];
-    if (effect === undefined) {
+  const defaults: Record<string, Effect> = {};
+  for (const [tag, effect] of Object.entries(value)) {
+    if (!isTagName(tag)) {
       diagnostics.push(
-        `ignoring mode layer "${name}": missing default for "${tag}"`,
+        `ignoring mode layer "${name}": invalid category "${tag}"`,
       );
       return undefined;
     }
@@ -258,7 +260,18 @@ function parseModeDefaults(
       );
       return undefined;
     }
-    defaults[tag as Tag] = effect;
+    defaults[tag] = effect;
+  }
+  for (const tag of BUILTIN_TAGS) {
+    if (defaults[tag] !== undefined) continue;
+    if (tag === "external") {
+      defaults[tag] = "allow";
+      continue;
+    }
+    diagnostics.push(
+      `ignoring mode layer "${name}": missing default for "${tag}"`,
+    );
+    return undefined;
   }
   return defaults;
 }
@@ -295,7 +308,7 @@ function parseModeOverride(
   if (
     (effect !== "ask" && effect !== "deny") ||
     typeof tag !== "string" ||
-    !KNOWN_TAGS.includes(tag) ||
+    !isTagName(tag) ||
     typeof pattern !== "string" ||
     pattern === ""
   ) {

@@ -15,6 +15,7 @@ describe("pi-autopilot extension", () => {
       search: "allow",
       edit: "allow",
       shell: "allow",
+      external: "allow",
     });
   });
 

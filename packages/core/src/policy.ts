@@ -84,7 +84,51 @@ function resolveReal(root: string, path: string): string | undefined {
   return current;
 }
 
-export type PathTag = Exclude<Tag, "shell">;
+export type PathTag = "edit" | "read" | "search";
+
+export function isPathTag(tag: Tag): tag is PathTag {
+  return tag === "edit" || tag === "read" || tag === "search";
+}
+
+export interface ExternalMatch {
+  rule?: Rule;
+}
+
+/**
+ * Match a non-path capability target such as a URL, query, or "decide".
+ * External rules use plain glob patterns without path normalization.
+ */
+export function matchExternal(
+  rules: readonly Rule[],
+  target: string,
+  tag: Tag = "external",
+): ExternalMatch {
+  let deny: Rule | undefined;
+  let best: Rule | undefined;
+  let bestSpecificity = -1;
+  for (const rule of rules) {
+    if (rule.tag !== tag) continue;
+    if (!globToRegExp(rule.pattern).test(target)) continue;
+    const ruleSpecificity = specificity(rule.pattern);
+    if (rule.effect === "deny") {
+      if (deny === undefined || ruleSpecificity > specificity(deny.pattern)) {
+        deny = rule;
+      }
+      continue;
+    }
+    if (ruleSpecificity > bestSpecificity) {
+      best = rule;
+      bestSpecificity = ruleSpecificity;
+    } else if (
+      ruleSpecificity === bestSpecificity &&
+      best !== undefined &&
+      SEVERITY[rule.effect] > SEVERITY[best.effect]
+    ) {
+      best = rule;
+    }
+  }
+  return { rule: deny ?? best };
+}
 
 export interface PathMatch {
   outside: boolean;

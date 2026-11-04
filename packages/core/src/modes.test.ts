@@ -16,6 +16,7 @@ const ALLOW: Record<Tag, Effect> = {
   search: "allow",
   edit: "allow",
   shell: "allow",
+  external: "allow",
 };
 
 function rule(effect: Effect, tag: Tag, pattern: string): Rule {
@@ -47,18 +48,21 @@ describe("built-in modes", () => {
       search: "allow",
       edit: "ask",
       shell: "ask",
+      external: "allow",
     });
     expect(getModeLayer("edit")?.defaults).toEqual({
       read: "allow",
       search: "allow",
       edit: "allow",
       shell: "ask",
+      external: "allow",
     });
     expect(getModeLayer("plan")?.defaults).toEqual({
       read: "allow",
       search: "allow",
       edit: "deny",
       shell: "ask",
+      external: "allow",
     });
 
     expect(evaluateAs("ask", "edit", "src/a.ts")).toBe("ask");
@@ -71,6 +75,21 @@ describe("built-in modes", () => {
     expect(evaluateAs("plan", "read", "src/a.ts")).toBe("allow");
     expect(evaluateAs("plan", "edit", "src/a.ts")).toBe("deny");
     expect(evaluateAs("plan", "shell", "ls")).toBe("ask");
+  });
+
+  it("evaluates external and custom categories without path semantics", () => {
+    expect(evaluateAs("edit", "external", "https://example.com")).toBe("allow");
+    expect(
+      evaluateAs("edit", "external", "https://example.com", [
+        rule("deny", "external", "https://example.com"),
+      ]),
+    ).toBe("deny");
+    expect(evaluateAs("edit", "custom", "https://example.com")).toBe("ask");
+    expect(
+      evaluateAs("edit", "custom", "https://example.com", [
+        rule("allow", "custom", "https://example.com"),
+      ]),
+    ).toBe("allow");
   });
 
   it("asks on plan artifacts in plan mode", () => {

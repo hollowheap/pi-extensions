@@ -117,7 +117,7 @@ describe("loadPermissions", () => {
       join(agentDir, "permissions.json"),
       JSON.stringify({
         rules: [
-          { tag: "bogus", pattern: "*", effect: "allow" },
+          { tag: "bogus tag", pattern: "*", effect: "allow" },
           { tag: "edit", pattern: "", effect: "allow" },
           { tag: "edit", pattern: "*", effect: "block" },
           42,
@@ -127,6 +127,29 @@ describe("loadPermissions", () => {
     );
     expect(load(agentDir, root, false, diagnostics)).toEqual([]);
     expect(diagnostics).toHaveLength(4);
+  });
+
+  it("accepts custom permission categories", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({
+        rules: [
+          { tag: "custom", pattern: "https://example.com/*", effect: "ask" },
+        ],
+        tools: { mcp__example: "custom" },
+      }),
+      1_000,
+    );
+
+    const rules = load(agentDir, root, false);
+    expect(rules).toEqual([
+      { tag: "custom", pattern: "https://example.com/*", effect: "ask" },
+    ]);
+    expect(
+      loadToolTags({ agentDir, workspaceRoot: root, trusted: false }),
+    ).toEqual({ mcp__example: "custom" });
   });
 
   it("returns cached rules when the mtime is unchanged", () => {
@@ -267,7 +290,7 @@ describe("loadToolTags", () => {
     write(
       join(agentDir, "permissions.json"),
       JSON.stringify({
-        tools: { good: "read", bad: "write", "": "read", number: 7 },
+        tools: { good: "read", bad: "Bad Tag", "": "read", number: 7 },
       }),
       1_000,
     );
@@ -367,6 +390,7 @@ describe("loadModesConfig", () => {
       search: "allow",
       edit: "deny",
       shell: "deny",
+      external: "allow",
     });
     expect(layers[0].overrides).toEqual([
       { tag: "edit", pattern: "docs/**", effect: "ask" },

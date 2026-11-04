@@ -1,4 +1,9 @@
-import { matchPath, matchPathSpecific } from "./policy.js";
+import {
+  isPathTag,
+  matchExternal,
+  matchPath,
+  matchPathSpecific,
+} from "./policy.js";
 import type { PathTag } from "./policy.js";
 import { type GateEntry, type ModeGate, getState } from "./registry.js";
 import { matchShellPart, shellPartSafety, splitShellParts } from "./shell.js";
@@ -32,17 +37,35 @@ const BUILTIN_LAYERS: ModeLayer[] = [
   {
     name: "ask",
     source: "builtin",
-    defaults: { read: "allow", search: "allow", edit: "ask", shell: "ask" },
+    defaults: {
+      read: "allow",
+      search: "allow",
+      edit: "ask",
+      shell: "ask",
+      external: "allow",
+    },
   },
   {
     name: "edit",
     source: "builtin",
-    defaults: { read: "allow", search: "allow", edit: "allow", shell: "ask" },
+    defaults: {
+      read: "allow",
+      search: "allow",
+      edit: "allow",
+      shell: "ask",
+      external: "allow",
+    },
   },
   {
     name: "plan",
     source: "builtin",
-    defaults: { read: "allow", search: "allow", edit: "deny", shell: "ask" },
+    defaults: {
+      read: "allow",
+      search: "allow",
+      edit: "deny",
+      shell: "ask",
+      external: "allow",
+    },
     overrides: [
       { tag: "edit", pattern: "artifacts/plan.md", effect: "ask" },
       { tag: "edit", pattern: "artifacts/specs.md", effect: "ask" },
@@ -258,12 +281,32 @@ function evaluateShell(
   return verdict;
 }
 
+function evaluateExternal(
+  options: EvaluateOptions,
+  layer: ModeLayer | undefined,
+  fallback: Effect,
+): Verdict {
+  const project = matchExternal(options.rules, options.target, options.tag);
+  if (project.rule?.effect === "deny") return "deny";
+
+  const overrides = (layer?.overrides ?? []).filter(
+    (rule) => rule.tag === options.tag && rule.effect !== "allow",
+  );
+  const override = matchExternal(overrides, options.target, options.tag);
+  if (override.rule !== undefined) return override.rule.effect;
+  if (project.rule !== undefined) return project.rule.effect;
+  return fallback;
+}
+
 export function evaluate(options: EvaluateOptions): Verdict {
   const active = getModeLayer(session(options.owner).mode);
   const layer = active ?? getModeLayer(DEFAULT_MODE);
   const fallback = layer?.defaults[options.tag] ?? "ask";
   if (options.tag === "shell") return evaluateShell(options, layer, fallback);
-  return evaluatePath(options, options.tag, layer, fallback);
+  if (isPathTag(options.tag)) {
+    return evaluatePath(options, options.tag, layer, fallback);
+  }
+  return evaluateExternal(options, layer, fallback);
 }
 
 for (const layer of BUILTIN_LAYERS) registerMode(layer);
