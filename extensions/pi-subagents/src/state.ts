@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { TaskStore } from "@hollowheap/pi-tasks/store";
 import type { ProcessState } from "@hollowheap/process";
+import { LockedProcessStore } from "@hollowheap/process/store";
 
 export const SUBAGENTS_DIR = "subagents";
 
@@ -72,12 +72,16 @@ function sanitize(state: SubagentState): ProcessState {
 }
 
 export class SubagentStore {
-  readonly store: TaskStore<SubagentState>;
+  readonly store: LockedProcessStore<SubagentState>;
 
   constructor(agentDir: string) {
-    this.store = new TaskStore<SubagentState>(agentDir, SUBAGENTS_DIR, {
-      sanitize,
-    });
+    this.store = new LockedProcessStore<SubagentState>(
+      agentDir,
+      SUBAGENTS_DIR,
+      {
+        sanitize,
+      },
+    );
   }
 
   get dir(): string {

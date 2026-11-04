@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import type { ProcessState } from "@hollowheap/process";
-import { TaskStore } from "./store.js";
+import { LockedProcessStore } from "@hollowheap/process/store";
 
 export type TaskKind = "shell";
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
@@ -24,8 +24,8 @@ export interface TaskRecord extends TaskMetadata {
   output: () => Promise<string>;
 }
 
-function store(agentDir: string): TaskStore<TaskMetadata> {
-  return new TaskStore<TaskMetadata>(agentDir);
+function store(agentDir: string): LockedProcessStore<TaskMetadata> {
+  return new LockedProcessStore<TaskMetadata>(agentDir);
 }
 
 export function tasksDir(agentDir: string): string {

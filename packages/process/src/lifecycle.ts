@@ -1,12 +1,9 @@
-import type { ProcessState } from "@hollowheap/process";
-import {
-  type DetachedProcess,
-  spawnDetachedProcess,
-} from "@hollowheap/process/process";
-import type { TaskStore } from "./store.js";
+import { type DetachedProcess, spawnDetachedProcess } from "./process.js";
+import type { ProcessState } from "./state.js";
+import type { LockedProcessStore } from "./store.js";
 
 export interface SpawnDetachedTaskOptions<T extends ProcessState> {
-  store: TaskStore<T>;
+  store: LockedProcessStore<T>;
   state: T;
   command: string;
   args?: readonly string[];

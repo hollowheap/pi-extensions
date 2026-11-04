@@ -4,7 +4,8 @@ import {
   isProcessAlive,
 } from "@hollowheap/process/process";
 export { readProcStartTime } from "@hollowheap/process/process";
-import { spawnDetachedTask } from "./lifecycle.js";
+import { spawnDetachedTask } from "@hollowheap/process/lifecycle";
+import { LockedProcessStore } from "@hollowheap/process/store";
 import {
   type TaskMetadata,
   type TaskRecord,
@@ -15,7 +16,6 @@ import {
   taskMetaPath,
   toTaskRecord,
 } from "./registry.js";
-import { TaskStore } from "./store.js";
 
 const SHIM_SCRIPT = readFileSync(
   new URL("./shim.cjs", import.meta.url),
@@ -28,7 +28,7 @@ export function reconcileTask(
   agentDir: string,
   id: string,
 ): TaskRecord | undefined {
-  const store = new TaskStore<TaskMetadata>(agentDir);
+  const store = new LockedProcessStore<TaskMetadata>(agentDir);
   const meta = store.read(id);
   if (!meta) return undefined;
   if (meta.status === "running") {
@@ -80,7 +80,7 @@ export async function spawnShellTask(
     startedAt,
     dependsOn: opts.dependsOn,
   };
-  const store = new TaskStore<TaskMetadata>(opts.agentDir);
+  const store = new LockedProcessStore<TaskMetadata>(opts.agentDir);
   const metaPath = taskMetaPath(opts.agentDir, id);
   const logPath = taskLogPath(opts.agentDir, id);
 
@@ -169,7 +169,7 @@ export async function cancelTask(
     }
   }
 
-  const store = new TaskStore<TaskMetadata>(agentDir);
+  const store = new LockedProcessStore<TaskMetadata>(agentDir);
   const cancelled = store.updateIf(
     id,
     (current) => current.status === "running",

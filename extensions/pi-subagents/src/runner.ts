@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnDetachedTask } from "@hollowheap/pi-tasks/lifecycle";
+import { spawnDetachedTask } from "@hollowheap/process/lifecycle";
 import {
   cancelProcessGroup,
   isProcessAlive,

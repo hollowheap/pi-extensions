@@ -1,7 +1,7 @@
 import { closeSync, openSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { readLog } from "@hollowheap/process/process";
-import { type ProcessState, ProcessStore } from "@hollowheap/process/state";
+import { readLog } from "./process.js";
+import { type ProcessState, ProcessStore } from "./state.js";
 
 const LOCK_TIMEOUT_MS = 1_000;
 const STALE_LOCK_MS = 2_000;
@@ -45,18 +45,18 @@ function acquireStateLock(path: string): () => void {
   }
 }
 
-export interface TaskStoreOptions<T extends ProcessState> {
+export interface LockedProcessStoreOptions<T extends ProcessState> {
   sanitize?: (state: T) => ProcessState;
 }
 
-export class TaskStore<T extends ProcessState = ProcessState> {
+export class LockedProcessStore<T extends ProcessState = ProcessState> {
   readonly store: ProcessStore;
   private readonly sanitize: ((state: T) => ProcessState) | undefined;
 
   constructor(
     agentDir: string,
     subdir = "tasks",
-    options: TaskStoreOptions<T> = {},
+    options: LockedProcessStoreOptions<T> = {},
   ) {
     this.store = new ProcessStore(join(agentDir, subdir));
     this.sanitize = options.sanitize;

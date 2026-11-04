@@ -11,13 +11,17 @@ import { reconcileAllTasks } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
-export * from "./lifecycle.js";
+export * from "@hollowheap/process/lifecycle";
 export * from "@hollowheap/tui/pager";
 export * from "@hollowheap/tui/picker";
 export * from "@hollowheap/tui/progress";
 export * from "./registry.js";
 export * from "./runner.js";
-export * from "./store.js";
+export * from "@hollowheap/process/store";
+export {
+  LockedProcessStore as TaskStore,
+  type LockedProcessStoreOptions as TaskStoreOptions,
+} from "@hollowheap/process/store";
 export * from "./task-tool.js";
 export * from "./workspace.js";
 

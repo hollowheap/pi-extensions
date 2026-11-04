@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProcessState } from "@hollowheap/process";
 import { afterEach, describe, expect, it } from "vitest";
-import { TaskStore } from "./store.js";
+import { LockedProcessStore } from "./store.js";
 
 const dirs: string[] = [];
 
@@ -19,10 +19,10 @@ afterEach(() => {
   }
 });
 
-describe("TaskStore", () => {
+describe("LockedProcessStore", () => {
   it("stores tasks in a caller-selected subdirectory", () => {
     const dir = root();
-    const store = new TaskStore<ProcessState>(dir, "custom");
+    const store = new LockedProcessStore<ProcessState>(dir, "custom");
     store.write({ id: "a", status: "running", startedAt: 1 });
     expect(store.read("a")).toMatchObject({ id: "a", status: "running" });
     expect(store.dir).toBe(join(dir, "custom"));
@@ -31,7 +31,7 @@ describe("TaskStore", () => {
 
   it("updates atomically and refuses a stale patch", () => {
     const dir = root();
-    const store = new TaskStore<ProcessState>(dir);
+    const store = new LockedProcessStore<ProcessState>(dir);
     store.write({ id: "a", status: "cancelled", startedAt: 1 });
     const current = store.updateIf("a", (state) => state.status === "running", {
       status: "completed",

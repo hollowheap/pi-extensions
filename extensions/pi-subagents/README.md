@@ -105,7 +105,7 @@ Actions and known subagent IDs support tab completion.
 
 ## Durability and state
 
-Each child has a detached runner and a Unix control socket. State lives under `<agentDir>/subagents/`, using the shared `@hollowheap/pi-tasks` task store and detached-spawn lifecycle:
+Each child has a detached runner and a Unix control socket. State lives under `<agentDir>/subagents/`, using the shared `@hollowheap/process` store and detached-spawn lifecycle:
 
 - `<id>.json` — state, PID/start time, depth, attempt, harness, input mode, socket, session.
 - `<id>.log` — child output.
