@@ -58,7 +58,6 @@ describe("discoverAgents in pi-agent", () => {
       effort: "low",
       tools: ["read", "grep"],
       skills: ["author-pr", "review"],
-      systemPrompt: "Scout instructions",
       source: "user",
     });
   });

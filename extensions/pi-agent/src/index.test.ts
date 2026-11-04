@@ -324,7 +324,7 @@ describe("pi-agent extension", () => {
     expect(ctx.ui.custom).toHaveBeenCalled();
   });
 
-  it("filters skills and injects agent instructions in before_agent_start", async () => {
+  it("filters skills without injecting agent instructions", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();
     ext(pi as never);
@@ -346,9 +346,6 @@ describe("pi-agent extension", () => {
 
     pi.emit("before_agent_start", event);
 
-    expect(event.systemPromptOptions.sections.agent).toBe(
-      "Scout persona instructions",
-    );
     // Scout specifies skills: author-pr
     expect(event.systemPromptOptions.skills.map((s) => s.name)).toEqual([
       "author-pr",
@@ -385,7 +382,7 @@ describe("pi-agent extension", () => {
       },
     };
     pi.emit("before_agent_start", event);
-    expect(event.systemPromptOptions.sections.agent).toBeUndefined();
+    expect(event.systemPromptOptions.sections.agent).toBe("existing");
     expect(event.systemPromptOptions.skills).toHaveLength(1);
   });
 
@@ -412,9 +409,7 @@ describe("pi-agent extension", () => {
       },
     };
     pi.emit("before_agent_start", event);
-    expect(event.systemPromptOptions.sections.agent).toBe(
-      "Engineer persona instructions",
-    );
+    expect(event.systemPromptOptions.sections.agent).toBeUndefined();
   });
 
   it("ignores malformed persisted agent entries", async () => {

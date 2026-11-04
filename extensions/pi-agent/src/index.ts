@@ -271,15 +271,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         lastTrusted = ctx.isProjectTrusted();
       }
       if (!event.systemPromptOptions) return;
-      if (!event.systemPromptOptions.sections) {
-        event.systemPromptOptions.sections = {};
-      }
-
-      if (activeAgent?.systemPrompt) {
-        event.systemPromptOptions.sections.agent = activeAgent.systemPrompt;
-      } else {
-        Reflect.deleteProperty(event.systemPromptOptions.sections, "agent");
-      }
 
       if (
         activeAgent?.skills &&
@@ -298,7 +289,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
     const agentCommand = {
       description:
-        "Select or switch active agent (model, mode, thinking, tools, skills, prompt)",
+        "Select or switch active agent (model, mode, thinking, tools, skills)",
       getArgumentCompletions: (prefix: string) => {
         const lower = prefix.trim().toLowerCase();
         const agents = resolveAgentDiscovery(lastCwd, lastTrusted).agents;

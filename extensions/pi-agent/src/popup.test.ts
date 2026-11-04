@@ -12,7 +12,6 @@ const sampleAgent: AgentConfig = {
   effort: "low",
   tools: ["read", "grep"],
   skills: ["author-pr"],
-  systemPrompt: "Instructions",
   source: "user",
   filePath: "/path/scout.md",
 };

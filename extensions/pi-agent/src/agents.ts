@@ -11,7 +11,6 @@ export interface AgentConfig {
   thinking?: string;
   mode?: string;
   effort?: string;
-  systemPrompt: string;
   source: "user" | "project";
   filePath: string;
 }
@@ -71,7 +70,7 @@ function loadDirectory(
     try {
       if (!statSync(filePath).isFile()) continue;
       const content = readFileSync(filePath, "utf8");
-      const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(content);
+      const { frontmatter } = parseFrontmatter<AgentFrontmatter>(content);
       if (
         typeof frontmatter.name !== "string" ||
         frontmatter.name.trim() === ""
@@ -123,7 +122,6 @@ function loadDirectory(
         frontmatter.effort.trim() !== ""
           ? { effort: frontmatter.effort.trim() }
           : {}),
-        systemPrompt: body.trim(),
         source,
         filePath,
       });

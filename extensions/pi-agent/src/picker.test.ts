@@ -13,7 +13,6 @@ const agents: AgentConfig[] = [
     description: "Fast recon",
     model: "provider/scout",
     source: "user",
-    systemPrompt: "Scout",
     filePath: "/tmp/scout.md",
   },
   {
@@ -21,7 +20,6 @@ const agents: AgentConfig[] = [
     description: "Software engineer",
     model: "provider/engineer",
     source: "project",
-    systemPrompt: "Engineer",
     filePath: "/tmp/engineer.md",
   },
 ];
