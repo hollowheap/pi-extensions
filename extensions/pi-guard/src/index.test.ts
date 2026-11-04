@@ -310,7 +310,7 @@ describe("pi-guard extension", () => {
 
   it("targets web, lang, and decide calls with their own arguments", async () => {
     const { ctx, call } = setupProject(
-      JSON.stringify({ rules: ["ask read *", "ask search *"] }),
+      JSON.stringify({ rules: ["ask read *", "ask external *"] }),
     );
 
     await expect(
@@ -376,35 +376,35 @@ describe("pi-guard extension", () => {
     });
   });
 
-  it("tags web_search as search", async () => {
+  it("tags web_search as external", async () => {
     const { ctx, call } = setupProject(
       JSON.stringify({
-        rules: ["deny search secret/*", "allow search *"],
+        rules: ["deny external secret/*", "allow external *"],
       }),
     );
     await expect(
-      call("web_search", { path: "src/x" }),
+      call("web_search", { query: "src/x" }),
     ).resolves.toBeUndefined();
-    await expect(call("web_search", { path: "secret/x" })).resolves.toEqual({
+    await expect(call("web_search", { query: "secret/x" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("tags web_fetch as read", async () => {
+  it("tags web_fetch as external", async () => {
     const { ctx, call } = setupProject(
       JSON.stringify({
         rules: [
-          { effect: "deny", tag: "read", pattern: "secret/*" },
-          { effect: "allow", tag: "read", pattern: "src/*" },
+          { effect: "deny", tag: "external", pattern: "secret/*" },
+          { effect: "allow", tag: "external", pattern: "src/*" },
         ],
       }),
     );
     await expect(
-      call("web_fetch", { path: "src/x.ts" }),
+      call("web_fetch", { url: "src/x.ts" }),
     ).resolves.toBeUndefined();
-    await expect(call("web_fetch", { path: "secret/x.ts" })).resolves.toEqual({
+    await expect(call("web_fetch", { url: "secret/x.ts" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });
@@ -415,12 +415,15 @@ describe("pi-guard extension", () => {
     const { call } = setupProject(
       JSON.stringify({
         tools: { web_search: "read", web_fetch: "search" },
-        rules: ["deny read *", "allow search *"],
+        rules: ["deny external *"],
       }),
       false,
     );
-    await expect(call("web_search", { path: "x" })).resolves.toBeUndefined();
-    await expect(call("web_fetch", { path: "x" })).resolves.toEqual({
+    await expect(call("web_search", { query: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    await expect(call("web_fetch", { url: "x" })).resolves.toEqual({
       block: true,
       reason: expect.stringContaining("denied"),
     });

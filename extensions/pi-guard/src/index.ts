@@ -47,10 +47,10 @@ const TOOL_TAGS: Record<string, Tag> = {
   powershell: "shell",
   task: "shell",
   subagent: "shell",
-  web_search: "search",
-  web_fetch: "read",
+  web_search: "external",
+  web_fetch: "external",
   lang: "read",
-  decide: "read",
+  decide: "external",
 };
 
 const PASSTHROUGH_ACTIONS = new Set(["list", "status", "wait", "cancel"]);
