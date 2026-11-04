@@ -1,6 +1,7 @@
 import { closeSync, openSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { type ProcessState, ProcessStore, readLog } from "@hollowheap/process";
+import { readLog } from "@hollowheap/process/process";
+import { type ProcessState, ProcessStore } from "@hollowheap/process/state";
 
 const LOCK_TIMEOUT_MS = 1_000;
 const STALE_LOCK_MS = 2_000;

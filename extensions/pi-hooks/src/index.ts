@@ -5,7 +5,8 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { effectiveCwd, session, truncateText } from "@hollowheap/core";
+import { truncateText } from "@hollowheap/core/format";
+import { effectiveCwd, session } from "@hollowheap/core/state";
 import { type HookConfig, clearHooksCache, loadHooks } from "./config.js";
 import {
   type HookPayload,

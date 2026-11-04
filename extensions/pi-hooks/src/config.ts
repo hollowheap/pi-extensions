@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { getMtimeCache } from "@hollowheap/core";
+import { getMtimeCache } from "@hollowheap/core/mtime-cache";
 
 export interface HookEntry {
   /** Exact tool name, a trailing "*" prefix, or "" for every tool. Ignored for sessionStart. */

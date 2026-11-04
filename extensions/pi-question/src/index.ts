@@ -8,7 +8,8 @@ import {
   decodeKittyPrintable,
   matchesKey,
 } from "@earendil-works/pi-tui";
-import { scanTaggedBlocks, withPromptLock } from "@hollowheap/core";
+import { scanTaggedBlocks } from "@hollowheap/core/blocks";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { alertQuestion } from "./alerts.js";
 import {
   DONE_LABEL,

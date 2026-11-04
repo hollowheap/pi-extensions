@@ -3,7 +3,8 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { showFuzzyPicker, showMarkdownPager } from "@hollowheap/pi-tasks";
+import { showMarkdownPager } from "@hollowheap/pi-tasks/pager";
+import { showFuzzyPicker } from "@hollowheap/pi-tasks/picker";
 import { subagentAlertTracker } from "./alerts.js";
 import {
   abortSubagent,

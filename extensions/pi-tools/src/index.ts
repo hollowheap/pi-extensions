@@ -12,7 +12,8 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { checkPath, effectiveCwd, setCwd } from "@hollowheap/core";
+import { checkPath } from "@hollowheap/core/policy";
+import { effectiveCwd, setCwd } from "@hollowheap/core/state";
 import { loadContextPermissions } from "./permissions.js";
 
 function isWithinRoot(root: string, path: string): boolean {

@@ -3,13 +3,10 @@ import {
   type ExtensionContext,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
-import {
-  displayTarget,
-  effectiveCwd,
-  evaluate,
-  loadPermissions,
-  truncateText,
-} from "@hollowheap/core";
+import { loadPermissions } from "@hollowheap/core/config";
+import { displayTarget, truncateText } from "@hollowheap/core/format";
+import { evaluate } from "@hollowheap/core/modes";
+import { effectiveCwd } from "@hollowheap/core/state";
 import { taskAlertTracker } from "./alerts.js";
 import { withCancellableProgress } from "./progress.js";
 import { generateTaskId } from "./registry.js";

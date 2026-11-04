@@ -1,4 +1,7 @@
-import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
+import {
+  type ListItemNode,
+  parseMarkdownBlocks,
+} from "@hollowheap/core/blocks";
 
 export const MAX_ANSWER = 500;
 export const WRITE_IN_LABEL = "Write-in answer";

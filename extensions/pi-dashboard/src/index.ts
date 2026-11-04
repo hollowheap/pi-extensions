@@ -3,7 +3,7 @@ import {
   VERSION,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { effectiveCwd } from "@hollowheap/core";
+import { effectiveCwd } from "@hollowheap/core/state";
 import {
   type DashboardConfig,
   type DashboardSettings,

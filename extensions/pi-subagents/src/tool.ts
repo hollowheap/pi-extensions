@@ -9,8 +9,9 @@ import {
   keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { session, truncateText } from "@hollowheap/core";
-import { withCancellableProgress } from "@hollowheap/pi-tasks";
+import { truncateText } from "@hollowheap/core/format";
+import { session } from "@hollowheap/core/state";
+import { withCancellableProgress } from "@hollowheap/pi-tasks/progress";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
 import {

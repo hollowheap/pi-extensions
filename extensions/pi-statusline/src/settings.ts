@@ -4,7 +4,7 @@ import {
   type SettingsListTheme,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { StatuslineConfig } from "./config.js";
 
 const SEPARATORS = [

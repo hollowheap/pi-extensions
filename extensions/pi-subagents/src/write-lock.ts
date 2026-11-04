@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { isProcessAlive, readProcStartTime } from "@hollowheap/process";
+import { isProcessAlive, readProcStartTime } from "@hollowheap/process/process";
 
 export interface WriteLockOptions {
   timeoutMs?: number;

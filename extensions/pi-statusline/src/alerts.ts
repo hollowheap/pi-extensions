@@ -2,7 +2,7 @@ import {
   type AlertDelivery,
   buildAlertPayload,
   deliverAlert,
-} from "@hollowheap/core";
+} from "@hollowheap/core/alerts";
 
 function defaultDelivery(): AlertDelivery {
   if (process.env.VITEST !== undefined) {

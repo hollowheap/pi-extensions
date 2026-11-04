@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type ModeLayer, registerMode } from "@hollowheap/core";
+import { registerMode } from "@hollowheap/core/modes";
+import type { ModeLayer } from "@hollowheap/core/types";
 
 export const AUTOPILOT_MODE: ModeLayer = Object.freeze({
   name: "autopilot",

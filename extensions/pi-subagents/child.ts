@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { enterMode } from "@hollowheap/core";
+import { enterMode } from "@hollowheap/core/modes";
 import { loadSubagentsConfig } from "./src/config.js";
 import { SubagentStore } from "./src/state.js";
 import { acquireWriteLock } from "./src/write-lock.js";

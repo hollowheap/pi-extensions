@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
-import { cancelProcessGroup, isProcessAlive } from "@hollowheap/process";
-export { readProcStartTime } from "@hollowheap/process";
+import {
+  cancelProcessGroup,
+  isProcessAlive,
+} from "@hollowheap/process/process";
+export { readProcStartTime } from "@hollowheap/process/process";
 import { spawnDetachedTask } from "./lifecycle.js";
 import {
   type TaskMetadata,

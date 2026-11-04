@@ -9,7 +9,7 @@ import type {
 import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { getSessionCache } from "@hollowheap/core";
+import { getSessionCache } from "@hollowheap/core/session-cache";
 import { loadClassifierConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";

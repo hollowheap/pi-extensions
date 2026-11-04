@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { TaskStore } from "@hollowheap/pi-tasks";
+import { TaskStore } from "@hollowheap/pi-tasks/store";
 import type { ProcessState } from "@hollowheap/process";
 
 export const SUBAGENTS_DIR = "subagents";

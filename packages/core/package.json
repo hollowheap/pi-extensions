@@ -10,6 +10,7 @@
   "keywords": ["pi-package"],
   "files": ["src", "README.md"],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
   }
 }

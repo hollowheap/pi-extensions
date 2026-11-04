@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session, setCwd, withPromptLock } from "@hollowheap/core";
 
-vi.mock("@hollowheap/core", async (importOriginal) => {
+vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
 });

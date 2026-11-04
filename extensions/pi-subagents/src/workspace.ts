@@ -4,7 +4,7 @@ import {
   allocateWorkspace,
   cleanupWorkspace,
   integrateWorkspace,
-} from "@hollowheap/core";
+} from "@hollowheap/core/workspace";
 
 export interface SubagentWorkspaceOptions {
   root: string;

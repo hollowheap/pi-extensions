@@ -7,7 +7,7 @@ import {
   calculateDollarCost,
   formatDollarCost,
   resolveModelPricing,
-} from "@hollowheap/core";
+} from "@hollowheap/core/pricing";
 import {
   type SubagentUsage,
   combineUsage,

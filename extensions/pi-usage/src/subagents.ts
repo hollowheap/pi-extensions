@@ -1,6 +1,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { calculateDollarCost, resolveModelPricing } from "@hollowheap/core";
+import {
+  calculateDollarCost,
+  resolveModelPricing,
+} from "@hollowheap/core/pricing";
 import type { CumulativeUsage, ModelUsage } from "./index.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);

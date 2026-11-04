@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-11-02.
+Last verified: 2026-11-04.
 Scope: `my-pi-agent` workspace.
 
 ## System Shape
@@ -35,6 +35,7 @@ Scope: `my-pi-agent` workspace.
 ## Framework & Library Choices
 
 - Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, and biome.
+- Extensions import `@hollowheap/core/*` and `@hollowheap/process/*` subpaths instead of the package barrel. Pi reloads each extension through jiti, so a barrel import re-resolves every shared module and costs about 150 ms per extension; `artifacts/scripts/bench-startup.mjs` measures the full load.
 - Pi host modules are peer dependencies; shared runtime packages are real workspace dependencies.
 - `packages/pi-acp` builds with `tsc -p packages/pi-acp` into gitignored `dist/`.
 - `lang` is a dependency-free LSP client over stdio using Node builtins.
@@ -117,4 +118,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (924 tests/95 files), typecheck, and lint (270 files) green on 2026-11-02.
+- Final suite (962 tests/105 files), typecheck, and lint (292 files) green on 2026-11-04.

@@ -1,4 +1,4 @@
-import { runCapture } from "@hollowheap/core";
+import { runCapture } from "@hollowheap/core/exec";
 import type { HookEntry } from "./config.js";
 
 export type { HookEntry } from "./config.js";

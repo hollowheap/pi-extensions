@@ -5,7 +5,7 @@ import {
   Text,
   matchesKey,
 } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 
 export type CancellableProgressResult<T> =
   | { status: "completed"; value: T }

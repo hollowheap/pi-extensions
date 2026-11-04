@@ -2,7 +2,7 @@ import type { ProcessState } from "@hollowheap/process";
 import {
   type DetachedProcess,
   spawnDetachedProcess,
-} from "@hollowheap/process";
+} from "@hollowheap/process/process";
 import type { TaskStore } from "./store.js";
 
 export interface SpawnDetachedTaskOptions<T extends ProcessState> {

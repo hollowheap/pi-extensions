@@ -5,7 +5,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { enterMode } from "@hollowheap/core";
+import { enterMode } from "@hollowheap/core/modes";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { showAgentPicker } from "./picker.js";
 import { showAgentSwitchPopup } from "./popup.js";

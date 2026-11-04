@@ -6,7 +6,7 @@ import {
   matchesKey,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 
 export interface MarkdownPagerOptions {
   title: string;

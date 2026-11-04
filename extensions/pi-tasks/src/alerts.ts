@@ -2,7 +2,7 @@ import {
   type AlertDelivery,
   AlertDispatcher,
   buildAlertPayload,
-} from "@hollowheap/core";
+} from "@hollowheap/core/alerts";
 
 export interface TaskAlertState {
   id: string;

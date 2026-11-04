@@ -1,4 +1,4 @@
-import { runBinary } from "@hollowheap/core";
+import { runBinary } from "@hollowheap/core/exec";
 
 export function runCommand(
   command: string,

@@ -11,7 +11,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 
-import { getBorderChars } from "@hollowheap/core";
+import { getBorderChars } from "@hollowheap/core/border";
 import {
   type EditorMode,
   type ModalConfig,

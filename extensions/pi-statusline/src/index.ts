@@ -7,9 +7,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   calculateDollarCost,
-  effectiveCwd,
   resolveModelPricing,
-} from "@hollowheap/core";
+} from "@hollowheap/core/pricing";
+import { effectiveCwd } from "@hollowheap/core/state";
 import { alertAgentCompletion } from "./alerts.js";
 import {
   BUILTINS,

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { isProcessAlive, requestJsonl } from "@hollowheap/process";
+import { isProcessAlive } from "@hollowheap/process/process";
+import { requestJsonl } from "@hollowheap/process/socket";
 import type { SubagentState } from "./state.js";
 
 export interface RunnerRequestOptions {

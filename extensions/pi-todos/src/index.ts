@@ -3,7 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
-import { scanTaggedBlocks } from "@hollowheap/core";
+import { scanTaggedBlocks } from "@hollowheap/core/blocks";
 import {
   type SubagentStateItem,
   type TaskStateItem,

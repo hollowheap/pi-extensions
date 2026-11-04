@@ -7,22 +7,21 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import {
-  type Tag,
-  displayTarget,
-  dropSession,
-  effectiveCwd,
-  enterMode,
-  evaluate,
   loadModesConfig,
   loadPermissions,
   loadToolTags,
+} from "@hollowheap/core/config";
+import { displayTarget, truncateText } from "@hollowheap/core/format";
+import {
+  enterMode,
+  evaluate,
   modeNames,
   replaceConfigModes,
   resetSession,
-  session,
-  truncateText,
-  withPromptLock,
-} from "@hollowheap/core";
+} from "@hollowheap/core/modes";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { dropSession, effectiveCwd, session } from "@hollowheap/core/state";
+import type { Tag } from "@hollowheap/core/types";
 import { loadGuardConfig } from "./config.js";
 import {
   calculateContextBreakdown,

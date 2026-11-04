@@ -1,5 +1,8 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { type ListItemNode, parseMarkdownBlocks } from "@hollowheap/core";
+import {
+  type ListItemNode,
+  parseMarkdownBlocks,
+} from "@hollowheap/core/blocks";
 
 export type TodoPriority = "high" | "medium" | "low";
 

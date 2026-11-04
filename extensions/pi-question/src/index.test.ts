@@ -2,7 +2,7 @@ import { withPromptLock } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
-vi.mock("@hollowheap/core", async (importOriginal) => {
+vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
 });

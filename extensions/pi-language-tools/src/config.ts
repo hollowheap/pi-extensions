@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { getMtimeCache } from "@hollowheap/core";
+import { getMtimeCache } from "@hollowheap/core/mtime-cache";
 
 export const CONFIG_FILE_NAME = "language-tools.json";
 export const DEFAULT_TIMEOUT_MS = 10_000;

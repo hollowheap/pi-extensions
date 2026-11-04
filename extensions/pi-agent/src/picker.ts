@@ -9,7 +9,7 @@ import {
   matchesKey,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { AgentConfig } from "./agents.js";
 
 interface AgentPickerItem extends SelectItem {
