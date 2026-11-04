@@ -6,7 +6,7 @@ Scope: `my-pi-agent` workspace.
 ## System Shape
 
 - Pi loads one extension per `extensions/pi-*` package through jiti with `moduleCache: false`; installed packages get separate module roots.
-- `packages/core` owns shared policy, config, shell parsing, formatting, modes, session state, pricing, session caches, and the prompt queue.
+- `packages/core` owns shared policy, config, shell parsing, formatting, modes, session state, pricing, usage ledger, session caches, and the prompt queue.
 - `packages/runtime` owns command execution, sandboxing, detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
 - `packages/tui` owns reusable frames, pickers, pagers, cancellable progress, and the code viewer; it depends on core types and host TUI peers.
 - `packages/policy` owns headless permission enforcement and shared tool-category/target helpers; `pi-guard` uses them for interactive approval and `pi-subagents` loads the headless extension for children.
@@ -26,7 +26,7 @@ Scope: `my-pi-agent` workspace.
 - `pi-tasks` owns durable shell tasks. `packages/runtime` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents, harness selection, write locking, and resume.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
 - `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
-- `pi-usage` owns usage accounting, compaction-safe state, optional USD caps, and the statusline usage provider.
+- `pi-usage` owns `/usage` presentation, subagent usage scanning, optional USD cap UX, and the statusline usage provider; accounting and compaction-safe state live in core.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
 
@@ -121,4 +121,4 @@ Scope: `my-pi-agent` workspace.
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (993 tests/108 files), typecheck, and lint (310 files) green on 2026-11-05.
+- Final suite (993 tests/108 files), typecheck, and lint (311 files) green on 2026-11-05.

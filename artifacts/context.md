@@ -4,7 +4,7 @@
 
 - Node >= 22.19, npm workspaces (`packages/*`, `extensions/*`), TypeScript via jiti (`noEmit`), vitest, biome.
 - Extensions: `extensions/pi-<name>/index.ts` re-exports `src/index.ts`; entry declared in `pi.extensions`.
-- `packages/core` (`@hollowheap/core`): shared policy, config, shell parsing, formatting, modes, and session/mode registry.
+- `packages/core` (`@hollowheap/core`): shared policy, config, usage ledger, shell parsing, formatting, modes, and session/mode registry.
 - `packages/runtime` (`@hollowheap/runtime`): command execution, sandboxing, detached process, atomic state, and JSONL Unix-socket primitives.
 - `packages/tui` (`@hollowheap/tui`): shared frames, pickers, pagers, progress, and code viewer.
 - `packages/policy` (`@hollowheap/policy`): headless permission enforcement and shared tool-target helpers.

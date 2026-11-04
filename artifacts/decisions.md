@@ -883,3 +883,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: keep `pi-subagents -> pi-guard`; make guard optional; duplicate target mapping in subagents.
   - Consequences: the extension graph is flat; `pi-guard` and child processes share one tool-category/target implementation; interactive decisions stay in `pi-guard`.
   - Supersedes: none
+
+- [x] D172 [R39]: The cumulative usage ledger, budget-cap state, and compaction restore/persist helpers live in `@hollowheap/core/usage`; `pi-usage` owns presentation, subagent scanning, and statusline events.
+  - Context: usage accounting is shared session state, while `/usage`, caps UX, and subagent file scanning are feature-specific.
+  - Alternatives: keep accounting in `pi-usage`; expose it only through statusline events.
+  - Consequences: other extensions can read/record usage without depending on `pi-usage`; `pi-usage` re-exports the ledger API for compatibility.
+  - Supersedes: none

@@ -15,7 +15,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 
 | Package | Version | Description |
 | :--- | :--- | :--- |
-| [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, and mode-registry primitives |
+| [`@hollowheap/core`](./packages/core) | `0.2.0` | Shared contracts, rules, budgets, usage ledger, and mode-registry primitives |
 | [`@hollowheap/runtime`](./packages/runtime) | `0.2.0` | Command execution, detached process, atomic state, and JSONL Unix-socket primitives |
 | [`@hollowheap/tui`](./packages/tui) | `0.2.0` | Shared frames, pickers, pagers, progress, and code viewer |
 | [`@hollowheap/policy`](./packages/policy) | `0.2.0` | Headless permission policy and shared tool-target helpers |
@@ -32,7 +32,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.2.0` | Durable child agents with live reattach, write locking, explicit resume, and generic CLI harnesses |
 | [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.2.0` | Advisory decision tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.2.0` | Direct `web_search` and `web_fetch` tools for current docs and web results |
-| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Compaction-safe usage tracking, optional `/usage cap`, and statusline usage |
+| [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.2.0` | Usage presentation, optional `/usage cap`, and statusline usage |
 | [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.2.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
 
 ---
