@@ -1177,3 +1177,13 @@
   - Seam: `definitions.ts` definition/tombstone parser, `tool.ts` delete and bound checks, `index.ts` delete persistence, and `config.ts` session bounds.
   - Behavior: delete removes a session definition and fails for file-only names; tombstones are order-sensitive with later definitions; redefinition does not consume a new slot; serialized definitions over the byte limit or new names over the count limit are rejected; invalid config values diagnose and fall back; delete passes guard/policy.
   - Failures: deleting file agents, resurrecting deleted definitions on restore, rejecting redefinitions at the count limit, bypassing bounds through define, or accepting invalid config silently.
+
+### Observational memory
+
+#### Module Seams
+
+- [x] S172 [R81] [D175]: A new `pi-memory` extension owns an opt-in observer, branch-local memory entries, compaction injection, commands, and usage refresh.
+  - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
+  - Seam: `config.ts` for `memory.json`, `ledger.ts` for observations/consumed/clear entries, `observer.ts` for the model call and JSON parse, and `index.ts` for lifecycle, compaction, commands, and usage.
+  - Behavior: disabled by default; explicit `provider/model`; pending messages trigger observer after `observeAfterTokens`; observations and empty-result consumed markers append to the session; clear and branch restore are order-sensitive; compaction passes memory as extra focus to the host summarizer; observer usage appends to `hollowheap.usage` and emits `usage:refresh`; redaction defaults on; `/memory status|view|clear` work; ACP registers nothing.
+  - Failures: hidden model calls while disabled, repeated calls on consumed messages, stale results after branch navigation, losing usage spend, injecting secrets by default, replacing compaction with a memory-only summary, or writing a separate memory file.

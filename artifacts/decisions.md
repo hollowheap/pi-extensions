@@ -901,3 +901,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: delete by removing the session entry; allow deleting file agents; impose fixed limits without config; bound only the system prompt.
   - Consequences: delete only succeeds for names in the session map and never touches files; a later define after a tombstone restores the name; redefining an existing name does not consume another slot; limits apply to new definitions while existing session entries stay readable; invalid config values diagnose and fall back.
   - Supersedes: none
+
+- [x] D175 [R81]: A new `pi-memory` extension implements observer-only observational memory instead of depending on or vendoring `pi-observational-memory`; it is disabled by default, requires an explicit `provider/model` in `memory.json`, stores observations as branch-local custom entries, and reuses the host compaction path with memory as extra focus.
+  - Context: The upstream package is MIT and functional, but it adds hidden background spend, unredacted conversation transfer, and a prompt-heavy implementation that does not match this repository's config and usage seams.
+  - Alternatives: install upstream; vendor it verbatim; fork it; implement reflector/dropper/recall in the first slice.
+  - Consequences: observer calls happen only after `agent_settled` and the configured token threshold; empty observer results append consumed markers; `/memory clear` appends a tombstone; common credentials are redacted by default; observer usage appends to `hollowheap.usage` and emits `usage:refresh`; compaction still uses Pi's normal summarizer; reflector, dropper, recall, and ongoing context injection remain deferred.
+  - Supersedes: none

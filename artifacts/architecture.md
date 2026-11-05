@@ -27,6 +27,7 @@ Scope: `my-pi-agent` workspace.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
 - `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
 - `pi-usage` owns `/usage` presentation, subagent usage scanning, optional USD cap UX, and the statusline usage provider; accounting and compaction-safe state live in core.
+- `pi-memory` owns opt-in observer calls, branch-local observations, compaction focus, `/memory` commands, and observer usage recording. It does not replace Pi compaction.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
 
@@ -48,9 +49,9 @@ Scope: `my-pi-agent` workspace.
 
 ## Data & Contracts
 
-- Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `decide.json`, `language-tools.json`, `modal.json`, `web.json`).
+- Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `memory.json`, `decide.json`, `language-tools.json`, `modal.json`, `web.json`).
 - Trusted project overlays are read only after `ctx.isProjectTrusted()`; untrusted projects are ignored or asked.
-- Session state is stored as custom entries: mode, todos, usage, and session-only subagent definitions survive resume and restore from the active branch. Definition tombstones use a separate custom type. `maxSessionAgents` and `maxSessionAgentBytes` in `<agentDir>/subagents.json` bound new definitions.
+- Session state is stored as custom entries: mode, todos, usage, session-only subagent definitions, and observational memory survive resume and restore from the active branch. Definition and memory tombstones use separate custom types. `maxSessionAgents` and `maxSessionAgentBytes` in `<agentDir>/subagents.json` bound new definitions; `memory.json` controls observer activation, thresholds, redaction, and injection size.
 - Permission rules use `allow|ask|deny` with open category tags. Built-in path categories are `read`, `edit`, and `search`; `shell` matches commands; `external` and extension-defined categories match non-path targets such as URLs, queries, and model actions.
 - Web search and fetch return normalized shapes with caps; provider keys come only from environment variables.
 - Detached processes persist state atomically, stream logs, and speak one JSON object per line over Unix sockets.
@@ -116,9 +117,9 @@ Scope: `my-pi-agent` workspace.
 
 ## Evidence
 
-- Accepted decisions: `artifacts/decisions.md` D01-D174.
-- Behavioral specs: `artifacts/specs.md` (169 entries, S01-S171; S139-S140 absent).
+- Accepted decisions: `artifacts/decisions.md` D01-D175.
+- Behavioral specs: `artifacts/specs.md` (170 entries, S01-S172; S139-S140 absent).
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.
 - Requirements: `artifacts/requirements.md`.
-- Final suite (1013 tests/112 files), typecheck, and lint (314 files) green on 2026-11-05.
+- Final suite (1045 tests/117 files), typecheck, and lint (327 files) green on 2026-11-05.

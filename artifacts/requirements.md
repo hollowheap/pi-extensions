@@ -447,3 +447,11 @@
   - Acceptance: `delete` removes only names present in the session map and appends a tombstone that survives branch restore; file-only names fail; `maxSessionAgents` and `maxSessionAgentBytes` reject new over-limit definitions; redefining an existing name does not consume another slot; invalid config values diagnose and fall back.
   - Constraints: Limits apply to new definitions; existing session entries remain readable.
   - Non-goals: Deleting file agents, editing agent files, or global definition management.
+
+### Observational memory
+
+- [x] R81: An opt-in observer distills durable memory into session entries and carries it through compaction without hiding model spend.
+  - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
+  - Acceptance: disabled by default; requires an explicit provider/model; observes only unconsumed messages after the token threshold; stores branch-local observations and consumed markers; restores on session start and tree navigation; injects active memory into `session_before_compact`; supports `/memory status`, `/memory view`, and `/memory clear`; redacts common credentials by default; records observer usage in the shared ledger; ACP registers nothing.
+  - Constraints: No dependency on `pi-observational-memory` and no separate memory file. Redaction is best-effort.
+  - Non-goals: Reflector, dropper, `recall`, ongoing context injection outside compaction, or global memory across sessions.
