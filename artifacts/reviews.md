@@ -19,3 +19,4 @@
 | V15 | pi-usage | `review/pi-usage.md` | robust | pi-usage |
 | V16 | pi-web | `review/pi-web.md` | robust | pi-web |
 | V17 | ui-upgrades | `review/ui-upgrades.md` | robust | ui-upgrades |
+| V18 | session-definitions | `review/session-definitions.md` | robust | session-only subagent definitions |
