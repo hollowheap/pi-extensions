@@ -6,6 +6,11 @@
 
 - `pi-subagents`: the `subagent` tool's `define` action creates session-only agent definitions. Definitions persist as session custom entries, restore from the active branch, and shadow file agents with the same name.
 
+### Fixed
+
+- `pi-subagents`: `define` results render as a named session agent instead of an empty child row.
+- `pi-subagents`: a failed or malformed branch read clears session definitions instead of leaving definitions from the previous branch active.
+
 ## 0.3.0 — 2026-11-05
 
 Coordinated release of the extension suite.

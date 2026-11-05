@@ -58,6 +58,11 @@ describe("definitionsFromEntries", () => {
     expect(agents.get("valid")?.tools).toBeUndefined();
   });
 
+  it("ignores non-array input", () => {
+    expect(definitionsFromEntries(undefined).size).toBe(0);
+    expect(definitionsFromEntries({}).size).toBe(0);
+  });
+
   it("lets the latest definition of a name win", () => {
     const agents = definitionsFromEntries([
       entry({ name: "scout", description: "First", systemPrompt: "One" }),

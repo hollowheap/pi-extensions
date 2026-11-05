@@ -39,9 +39,10 @@ function parseTools(value: unknown): string[] | undefined {
 }
 
 export function definitionsFromEntries(
-  entries: readonly unknown[],
+  entries: unknown,
 ): Map<string, AgentConfig> {
   const agents = new Map<string, AgentConfig>();
+  if (!Array.isArray(entries)) return agents;
   for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) continue;
     const typed = entry as {

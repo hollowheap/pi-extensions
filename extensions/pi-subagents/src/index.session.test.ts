@@ -85,6 +85,45 @@ describe("pi-subagents session definitions", () => {
     expect(options?.getSessionAgents?.()).toEqual([]);
   });
 
+  it("clears definitions when the branch cannot be read", () => {
+    const pi = createMockPi();
+    const ext = createSubagentsExtension({
+      getAgentDir: () => "/tmp/agent",
+      listSubagents: vi.fn().mockResolvedValue([]),
+    });
+    ext(pi as never);
+
+    const options = toolMocks.options;
+    const definition = {
+      name: "reviewer",
+      description: "Reviews changes",
+      systemPrompt: "You review code.",
+    };
+    options?.defineSessionAgent?.(definition);
+    expect(options?.getSessionAgents?.()).toHaveLength(1);
+
+    const tree = handler(pi, "session_tree");
+    expect(() =>
+      tree?.(
+        {},
+        {
+          sessionManager: {
+            getBranch: () => {
+              throw new Error("branch unavailable");
+            },
+          },
+        },
+      ),
+    ).not.toThrow();
+    expect(options?.getSessionAgents?.()).toEqual([]);
+
+    options?.defineSessionAgent?.(definition);
+    expect(() =>
+      tree?.({}, { sessionManager: { getBranch: () => ({}) } }),
+    ).not.toThrow();
+    expect(options?.getSessionAgents?.()).toEqual([]);
+  });
+
   it("registers branch restore for session tree navigation", () => {
     const pi = createMockPi();
     const ext = createSubagentsExtension({

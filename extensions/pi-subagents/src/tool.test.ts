@@ -234,6 +234,35 @@ describe("subagent tool", () => {
     });
   });
 
+  it("renders a session agent definition result", async () => {
+    const tool = createSubagentTool({ defineSessionAgent: vi.fn() });
+    const result = await tool.execute(
+      "1",
+      {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "You review code.",
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const theme = {
+      fg: (_token: string, text: string) => text,
+    } as never;
+
+    const component = tool.renderResult?.(
+      result as never,
+      { expanded: false, isPartial: false },
+      theme,
+      {} as never,
+    );
+
+    expect(component?.render(80).join("\n")).toContain(
+      "session agent reviewer",
+    );
+  });
+
   it("starts session agents and prefers them over file agents", async () => {
     const sessionAgent: AgentConfig = {
       name: "scout",

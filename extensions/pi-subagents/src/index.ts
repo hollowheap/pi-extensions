@@ -55,9 +55,14 @@ export function createSubagentsExtension(
     let sessionAgents = new Map<string, AgentConfig>();
 
     const restoreSessionAgents = (ctx: ExtensionContext): void => {
-      sessionAgents = definitionsFromEntries(
-        ctx.sessionManager?.getBranch?.() ?? [],
-      );
+      try {
+        sessionAgents = definitionsFromEntries(
+          ctx.sessionManager?.getBranch?.(),
+        );
+      } catch {
+        // A failed branch read must not leave definitions from the previous branch active.
+        sessionAgents = new Map();
+      }
     };
 
     const defineSessionAgent = (definition: SessionAgentDefinition): void => {

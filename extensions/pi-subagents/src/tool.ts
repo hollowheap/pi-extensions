@@ -300,6 +300,13 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         return text;
       }
 
+      if (typeof details.defined === "string") {
+        text.setText(
+          `${theme.fg("success", "✓")} ${theme.fg("muted", "session agent")} ${theme.fg("toolTitle", details.defined)}`,
+        );
+        return text;
+      }
+
       if (Array.isArray(details.agents)) {
         const agents = details.agents as Array<{
           id: string;
