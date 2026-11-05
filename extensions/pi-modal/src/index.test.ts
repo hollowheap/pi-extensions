@@ -950,6 +950,8 @@ describe("extension registration", () => {
       undefined,
     );
     await shortcuts["ctrl+shift+o"]?.handler(ctx);
+    expect(rendered.join("\n")).toContain("Last tool call");
+    expect(rendered.join("\n")).toContain("(not codemode)");
     expect(rendered.join("\n")).toContain('"query": "lil bro"');
   });
 

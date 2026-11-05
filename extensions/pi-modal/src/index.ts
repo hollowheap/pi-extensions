@@ -76,7 +76,7 @@ export default function (pi: ExtensionAPI): void {
     if (lastToolCall !== undefined) {
       await showCodeViewer(
         ctx,
-        `Last tool call: ${lastToolCall.name}`,
+        `Last tool call (not codemode): ${lastToolCall.name}`,
         JSON.stringify(lastToolCall.input, null, 2),
       );
       return;
