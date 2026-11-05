@@ -660,6 +660,29 @@ describe("pi-usage extension lifecycle", () => {
     });
   });
 
+  it("refreshes persisted usage when another extension records spend", () => {
+    const setup = setupUsageExtension();
+    setup.sessionStart();
+
+    const next = recordTurnUsage(
+      getSessionUsage(setup.sessionManager),
+      { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 },
+      0.01,
+      "memory-model",
+    );
+    setup.customEntries.push({ customType: USAGE_ENTRY_TYPE, data: next });
+    setup.eventHandlers["usage:refresh"]?.(undefined);
+
+    expect(
+      getSessionUsage(setup.sessionManager).byModel["memory-model"]
+        ?.inputTokens,
+    ).toBe(100);
+    expect(setup.pi.events.emit).toHaveBeenCalledWith(
+      "statusline:values",
+      expect.objectContaining({ name: "usage" }),
+    );
+  });
+
   it("restores persisted subagent attribution when child files are gone", async () => {
     const env = setupUsageExtension();
     env.customEntries.push({

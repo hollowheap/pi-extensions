@@ -164,6 +164,13 @@ export default function (pi: ExtensionAPI) {
     publishCurrent();
   });
 
+  pi.events?.on?.("usage:refresh", () => {
+    if (statusOwner === undefined || statusOwner === null) return;
+    restoreSessionUsage(statusOwner as never);
+    refreshSubagents(statusOwner);
+    publishStatus(combined(statusOwner));
+  });
+
   pi.on("session_start", (_event, ctx) => {
     statusOwner = ctx.sessionManager;
     activeSubagents.clear();
