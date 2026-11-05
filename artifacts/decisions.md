@@ -889,3 +889,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: keep accounting in `pi-usage`; expose it only through statusline events.
   - Consequences: other extensions can read/record usage without depending on `pi-usage`; `pi-usage` re-exports the ledger API for compatibility.
   - Supersedes: none
+
+- [x] D173 [R79]: The `subagent` tool's `define` action stores session-only agent definitions as `hollowheap.subagent.definition` custom entries; `session_start` and `session_tree` restore them from the active branch, and session definitions shadow file agents by name.
+  - Context: Callers need ad-hoc specialists without writing Markdown agent files or changing global agent discovery.
+  - Alternatives: write agent files on define; accept a full inline agent during start only; add a separate definition tool.
+  - Consequences: `define` requires name and system prompt; optional fields match agent frontmatter; definitions persist in the session JSONL and never touch `<agentDir>/agents` or `.pi/agents`; branch navigation removes definitions absent from the new branch.
+  - Supersedes: none

@@ -1161,3 +1161,13 @@
   - Seam: raw fetch image branch and tool result content.
   - Behavior: supported PNG/JPEG/GIF/WebP bytes under the cap become an image block; unsupported/oversized images return text; metadata/previews remain.
   - Failures: image bytes as text, oversized payload, wrong MIME, or upstream dependency.
+
+### Session subagent definitions
+
+#### Module Seams
+
+- [x] S170 [R79] [D173]: The `subagent` tool's `define` action stores session-only agents as `hollowheap.subagent.definition` entries and start resolves them before file agents.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Seam: `definitions.ts` branch parser, `tool.ts` define/start resolution, and `index.ts` session restore/persistence.
+  - Behavior: `define` validates name and system prompt; optional tools/model/thinking/mode/effort/harness are trimmed; entries restore on session start and tree navigation; session definitions shadow file agents; define passes guard/policy without a shell prompt while start keeps the existing gate; shutdown clears the map.
+  - Failures: writing files, accepting invalid definitions, stale definitions after branch switch, file agents winning the name collision, or losing the definition on resume.

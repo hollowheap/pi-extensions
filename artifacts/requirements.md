@@ -433,3 +433,11 @@
   - Acceptance: Supported image bytes return one image block with MIME type and a size cap; unsupported or oversized images return explanatory text; terminal previews remain.
   - Constraints: No upstream web engine; no SVG or unbounded payloads.
   - Non-goals: Video/audio content or image OCR.
+
+### Session subagent definitions
+
+- [x] R79: A caller can define a subagent that exists only in the current session and start it by name.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Acceptance: `define` requires `name` and `systemPrompt`; the definition persists as a session custom entry; session start and tree navigation restore it from the active branch; a session definition shadows a file agent with the same name; no agent file is written; invalid entries are ignored.
+  - Constraints: Definitions are branch-local and stored only in session history.
+  - Non-goals: Global definitions, definition file editing, or a definition management UI.
