@@ -11,6 +11,7 @@ packages=(
   @hollowheap/pi-decide
   @hollowheap/pi-hooks
   @hollowheap/pi-language-tools
+  @hollowheap/pi-memory
   @hollowheap/pi-modal
   @hollowheap/pi-question
   @hollowheap/pi-statusline

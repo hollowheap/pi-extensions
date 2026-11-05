@@ -26,6 +26,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.3.0` | Hands-free autopilot mode for autonomous workflow loops |
 | [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.3.0` | Workspace `/cd` control |
 | [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.3.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
+| [`@hollowheap/pi-memory`](./extensions/pi-memory) | `0.3.0` | Opt-in observational memory with compaction injection and branch-local observations |
 | [`@hollowheap/pi-question`](./extensions/pi-question) | `0.3.0` | Single-question prompt tool for guided user input |
 | [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.3.0` | Tool-free todo blocks with branch-local state and `/todos` |
 | [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.3.0` | Durable background shell tasks |

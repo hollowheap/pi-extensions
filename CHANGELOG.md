@@ -6,6 +6,7 @@
 
 - `pi-subagents`: the `subagent` tool's `define` action creates session-only agent definitions. Definitions persist as session custom entries, restore from the active branch, and shadow file agents with the same name.
 - `pi-subagents`: the `delete` action removes session definitions with a tombstone entry and refuses file agents. New definitions are bounded by `maxSessionAgents` and `maxSessionAgentBytes` in `subagents.json`.
+- `pi-memory`: opt-in observer-only observational memory. Observations persist as branch-local session entries, inject into compaction summaries, support `/memory status`, `/memory view`, and `/memory clear`, record observer usage, and redact common credentials by default.
 
 ### Fixed
 
