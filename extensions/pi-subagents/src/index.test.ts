@@ -57,7 +57,7 @@ describe("pi-subagents extension", () => {
     const sessionStartHandler = pi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1];
-    sessionStartHandler?.();
+    sessionStartHandler?.({}, { sessionManager: { getBranch: () => [] } });
 
     await vi.waitFor(() => {
       expect(pi.events.emit).toHaveBeenCalledWith("subagents:state", [
@@ -164,7 +164,7 @@ describe("pi-subagents extension", () => {
     const sessionStart = pi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1];
-    sessionStart?.();
+    sessionStart?.({}, { sessionManager: { getBranch: () => [] } });
     await vi.waitFor(() => expect(mockList).toHaveBeenCalled());
 
     const command = pi.registerCommand.mock.calls[0]?.[1] as {

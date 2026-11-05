@@ -195,6 +195,109 @@ describe("subagent tool", () => {
     expect(detailsOf(result).status).toBe("running");
   });
 
+  it("defines session agents through the tool", async () => {
+    const defineSessionAgent = vi.fn();
+    const tool = createSubagentTool({ defineSessionAgent });
+    const result = await tool.execute(
+      "1",
+      {
+        action: "define",
+        name: " reviewer ",
+        description: " Reviews changes ",
+        systemPrompt: " You review code. ",
+        tools: [" read ", "", "grep"],
+        model: "p/m",
+        thinking: "high",
+        agentMode: "plan",
+        effort: "low",
+        harness: "claude",
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(detailsOf(result)).toEqual({
+      defined: "reviewer",
+      source: "session",
+    });
+    expect(defineSessionAgent).toHaveBeenCalledWith({
+      name: "reviewer",
+      description: "Reviews changes",
+      systemPrompt: "You review code.",
+      tools: ["read", "grep"],
+      model: "p/m",
+      thinking: "high",
+      mode: "plan",
+      effort: "low",
+      harness: "claude",
+    });
+  });
+
+  it("starts session agents and prefers them over file agents", async () => {
+    const sessionAgent: AgentConfig = {
+      name: "scout",
+      description: "Session scout",
+      systemPrompt: "You are a session scout.",
+      tools: ["read"],
+      model: "session/model",
+      source: "session",
+    };
+    const tool = createSubagentTool({
+      getSessionAgents: () => [sessionAgent],
+    });
+
+    const result = await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    const spec = mocks.startSubagent.mock.calls[0]?.[0] as {
+      args: string[];
+      model?: string;
+    };
+    expect(spec.args).toContain("You are a session scout.");
+    expect(spec.args).toContain("session/model");
+    expect(spec.args[spec.args.indexOf("--tools") + 1]).toBe("read");
+    expect(spec.model).toBe("session/model");
+    expect(detailsOf(result).status).toBe("running");
+  });
+
+  it("validates session agent definition input", async () => {
+    const defineSessionAgent = vi.fn();
+    const tool = createSubagentTool({ defineSessionAgent });
+
+    const missingPrompt = await tool.execute(
+      "1",
+      { action: "define", name: "reviewer" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(missingPrompt)).toContain(
+      "define requires name and systemPrompt",
+    );
+
+    const missingCallback = await createTool().execute(
+      "2",
+      {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "You review.",
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(missingCallback)).toContain(
+      "session agent definitions are unavailable",
+    );
+    expect(defineSessionAgent).not.toHaveBeenCalled();
+  });
+
   it("prioritizes parent mode over frontmatter mode, falling back to frontmatter", async () => {
     mocks.discoverAgents.mockReturnValue({
       agents: [
@@ -397,6 +500,53 @@ describe("subagent tool", () => {
       }),
     );
     expect(mocks.sendSubagent).not.toHaveBeenCalled();
+  });
+
+  it("resumes a failed child from a session agent definition", async () => {
+    mocks.discoverAgents.mockReturnValue({ agents: [] });
+    mocks.loadSubagentsConfig.mockReturnValue({
+      maxConcurrent: 4,
+      maxDepth: 1,
+      defaultTimeoutMs: 30 * 60 * 1_000,
+      writeLockTimeoutMs: 30_000,
+      harnesses: {
+        claude: { command: "claude", args: ["-p"], input: "stdin" },
+      },
+      path: "/tmp/subagents.json",
+      diagnostics: [],
+    });
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      agent: "reviewer",
+      status: "failed",
+    });
+    const tool = createSubagentTool({
+      getSessionAgents: () => [
+        {
+          name: "reviewer",
+          description: "Session reviewer",
+          systemPrompt: "You are a session reviewer.",
+          harness: "claude",
+          source: "session",
+        },
+      ],
+    });
+
+    await tool.execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: "reviewer",
+        harness: "claude",
+        initialInput: "You are a session reviewer.\n\nfind",
+      }),
+    );
   });
 
   it("rejects an unknown generic harness", async () => {

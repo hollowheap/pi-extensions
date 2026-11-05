@@ -495,8 +495,15 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build");
   });
 
-  it("treats read-only subagent actions as passthrough and gates start by mode", async () => {
+  it("treats subagent definition and inspection actions as passthrough and gates start by mode", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(
+      call("subagent", {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "Review changes.",
+      }),
+    ).resolves.toBeUndefined();
     await expect(call("subagent", { action: "list" })).resolves.toBeUndefined();
     await expect(
       call("subagent", { action: "status", id: "sub-1" }),

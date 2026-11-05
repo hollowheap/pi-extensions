@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `pi-subagents`: the `subagent` tool's `define` action creates session-only agent definitions. Definitions persist as session custom entries, restore from the active branch, and shadow file agents with the same name.
+
 ## 0.3.0 — 2026-11-05
 
 Coordinated release of the extension suite.

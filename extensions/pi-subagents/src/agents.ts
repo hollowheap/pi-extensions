@@ -14,8 +14,8 @@ export interface AgentConfig {
   effort?: string;
   harness?: string;
   systemPrompt: string;
-  source: "user" | "project";
-  filePath: string;
+  source: "user" | "project" | "session";
+  filePath?: string;
 }
 
 export interface AgentDiscoveryResult {

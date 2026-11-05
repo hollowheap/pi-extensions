@@ -20,6 +20,7 @@ export const TOOL_TAGS: Record<string, Tag> = {
 };
 
 export const PASSTHROUGH_ACTIONS = new Set([
+  "define",
   "list",
   "status",
   "wait",

@@ -1,6 +1,6 @@
 # pi-subagents
 
-Durable child Pi agents for the Pi coding agent. The `subagent` tool starts one child per call, keeps it alive across parent restarts, and lets a later session reattach, send, wait, cancel, or resume it.
+Durable child Pi agents for the Pi coding agent. The `subagent` tool starts one child per call, keeps it alive across parent restarts, and lets a later session reattach, send, wait, cancel, or resume it. Agents can come from Markdown files or session-only definitions.
 
 ## Try it
 
@@ -59,6 +59,31 @@ You are a read-only scout. Return compressed findings.
 
 `tools` accepts a comma-separated string or a YAML list. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
 
+### Session definitions
+
+Call `subagent` with action `define` to create an agent that exists only in the current session:
+
+```json
+{
+  "action": "define",
+  "name": "reviewer",
+  "description": "Reviews the current diff",
+  "systemPrompt": "You review code. Return only actionable findings.",
+  "tools": ["read", "grep"],
+  "thinking": "high"
+}
+```
+
+The same fields as Markdown frontmatter are supported. `name` and `systemPrompt` are required; `description` defaults to `Session agent <name>`. The tool stores the definition as a `hollowheap.subagent.definition` custom session entry. It never writes an agent file.
+
+A session definition persists in the session JSONL, restores from the active branch on session start or tree navigation, and shadows a user or project agent with the same name. Start it with the normal `start` action:
+
+```json
+{ "action": "start", "agent": "reviewer", "task": "Review the working tree" }
+```
+
+Session definitions are branch-local. Navigating to a branch without the definition removes it from the available set. Defining an agent does not start a child or ask for shell approval; `start` keeps the normal project-trust and permission checks.
+
 ## Harnesses
 
 The default `pi` harness speaks JSONL RPC, so steering, session continuation, write locking, and guard policy work as described below. A generic harness runs an external CLI instead:
@@ -77,7 +102,8 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 
 | Action | Input | Result |
 | --- | --- | --- |
-| `start` | `agent`, `task` | Starts a child and sends the task prompt. |
+| `define` | `name`, `systemPrompt`; optional `description`, `tools`, `model`, `thinking`, `agentMode`, `effort`, `harness` | Stores a session-only agent definition; no file is written. |
+| `start` | `agent`, `task` | Starts a child and sends the task prompt. `agent` can name a file agent or a session definition. |
 | `list` | none | Summaries of persisted children. |
 | `status` | `id` | State plus bounded log output. |
 | `send` | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`) | Writes an RPC message to the live child. |
@@ -130,3 +156,4 @@ When `PI_ACP` is set, `pi-subagents` registers no tool and starts no children. A
 - No scheduling or missions.
 - Children run built-in tools plus headless policy and the lock extension; other suite tools are not loaded.
 - Prompts, logs, and results are stored locally under the agent directory.
+- Session definitions are not global agents. They exist only in the session branch that created them and never appear in `<agentDir>/agents` or `.pi/agents`.

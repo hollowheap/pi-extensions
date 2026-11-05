@@ -5,7 +5,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { showMarkdownPager } from "@hollowheap/tui/pager";
 import { showFuzzyPicker } from "@hollowheap/tui/picker";
+import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
+import {
+  SUBAGENT_DEFINITION_TYPE,
+  type SessionAgentDefinition,
+  definitionToAgent,
+  definitionsFromEntries,
+} from "./definitions.js";
 import {
   abortSubagent,
   listSubagents,
@@ -45,6 +52,18 @@ export function createSubagentsExtension(
       agent: string;
       task: string;
     }> = [];
+    let sessionAgents = new Map<string, AgentConfig>();
+
+    const restoreSessionAgents = (ctx: ExtensionContext): void => {
+      sessionAgents = definitionsFromEntries(
+        ctx.sessionManager?.getBranch?.() ?? [],
+      );
+    };
+
+    const defineSessionAgent = (definition: SessionAgentDefinition): void => {
+      pi.appendEntry(SUBAGENT_DEFINITION_TYPE, definition);
+      sessionAgents.set(definition.name, definitionToAgent(definition));
+    };
 
     const stopTicker = () => {
       if (ticker !== undefined) {
@@ -158,11 +177,18 @@ export function createSubagentsExtension(
       onSubagentsChange: () => {
         void emitSubagentsState();
       },
+      getSessionAgents: () => [...sessionAgents.values()],
+      defineSessionAgent,
     });
     pi.registerTool(tool);
 
-    pi.on("session_start", () => {
+    pi.on("session_start", (_event, ctx) => {
+      restoreSessionAgents(ctx);
       void emitSubagentsState();
+    });
+
+    pi.on("session_tree", (_event, ctx) => {
+      restoreSessionAgents(ctx);
     });
 
     pi.registerCommand("subagent", {
@@ -274,6 +300,7 @@ export function createSubagentsExtension(
     pi.on("session_shutdown", () => {
       stopTicker();
       lastStates = [];
+      sessionAgents = new Map();
     });
   };
 }

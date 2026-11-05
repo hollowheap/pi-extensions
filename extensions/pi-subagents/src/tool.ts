@@ -14,6 +14,7 @@ import { session } from "@hollowheap/core/state";
 import { withCancellableProgress } from "@hollowheap/tui/progress";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
+import type { SessionAgentDefinition } from "./definitions.js";
 import {
   abortSubagent,
   attachSubagent,
@@ -34,6 +35,8 @@ import {
 
 export interface SubagentToolOptions {
   onSubagentsChange?: () => void;
+  getSessionAgents?: () => readonly AgentConfig[];
+  defineSessionAgent?: (definition: SessionAgentDefinition) => void;
 }
 
 interface ChildSpec {
@@ -181,10 +184,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
     name: "subagent",
     label: "subagent",
     description:
-      "Start and manage one durable child agent (start, list, status, send, wait, cancel).",
+      "Start and manage one durable child agent (define, start, list, status, send, wait, cancel).",
     exposure: "direct",
     parameters: Type.Object({
       action: Type.Union([
+        Type.Literal("define"),
         Type.Literal("start"),
         Type.Literal("list"),
         Type.Literal("status"),
@@ -193,6 +197,35 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         Type.Literal("cancel"),
         Type.Literal("resume"),
       ]),
+      name: Type.Optional(
+        Type.String({ description: "Agent name for define" }),
+      ),
+      description: Type.Optional(
+        Type.String({ description: "Agent description for define" }),
+      ),
+      systemPrompt: Type.Optional(
+        Type.String({ description: "Child system prompt for define" }),
+      ),
+      tools: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Tool allowlist for define",
+        }),
+      ),
+      model: Type.Optional(
+        Type.String({ description: "Model override for define" }),
+      ),
+      thinking: Type.Optional(
+        Type.String({ description: "Thinking level for define" }),
+      ),
+      agentMode: Type.Optional(
+        Type.String({ description: "Mode name for define" }),
+      ),
+      effort: Type.Optional(
+        Type.String({ description: "Effort override for define" }),
+      ),
+      harness: Type.Optional(
+        Type.String({ description: "Harness name for define" }),
+      ),
       agent: Type.Optional(
         Type.String({ description: "Agent name for start" }),
       ),
@@ -224,7 +257,13 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           : new Text("", 0, 0);
       const action = args?.action ?? "subagent";
       let line = `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("accent", action)}`;
-      if (action === "start") {
+      if (action === "define") {
+        const name = args?.name ?? args?.agent;
+        if (name) line += ` ${theme.fg("toolTitle", name)}`;
+        if (args?.systemPrompt) {
+          line += ` ${theme.fg("muted", `${args.systemPrompt.length} chars`)}`;
+        }
+      } else if (action === "start") {
         if (args?.agent) line += ` ${theme.fg("toolTitle", args.agent)}`;
         if (args?.task) {
           const taskSummary =
@@ -330,6 +369,15 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
     async execute(_toolCallId, raw, signal, _onUpdate, ctx) {
       const params = (raw ?? {}) as {
         action?: string;
+        name?: string;
+        description?: string;
+        systemPrompt?: string;
+        tools?: string[];
+        model?: string;
+        thinking?: string;
+        agentMode?: string;
+        effort?: string;
+        harness?: string;
         agent?: string;
         task?: string;
         id?: string;
@@ -341,6 +389,38 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       const agentDir = getAgentDir();
       const action = params.action;
       try {
+        if (action === "define") {
+          const name = (params.name ?? params.agent ?? "").trim();
+          const systemPrompt = params.systemPrompt?.trim() ?? "";
+          if (name === "" || systemPrompt === "") {
+            return errorResult("define requires name and systemPrompt");
+          }
+          if (options.defineSessionAgent === undefined) {
+            return errorResult("session agent definitions are unavailable");
+          }
+          const tools = params.tools
+            ?.map((tool) => tool.trim())
+            .filter(Boolean);
+          options.defineSessionAgent({
+            name,
+            description: params.description?.trim() || `Session agent ${name}`,
+            systemPrompt,
+            ...(tools && tools.length > 0 ? { tools } : {}),
+            ...(params.model?.trim() ? { model: params.model.trim() } : {}),
+            ...(params.thinking?.trim()
+              ? { thinking: params.thinking.trim() }
+              : {}),
+            ...(params.agentMode?.trim()
+              ? { mode: params.agentMode.trim() }
+              : {}),
+            ...(params.effort?.trim() ? { effort: params.effort.trim() } : {}),
+            ...(params.harness?.trim()
+              ? { harness: params.harness.trim() }
+              : {}),
+          });
+          return textResult({ defined: name, source: "session" });
+        }
+
         if (action === "list") {
           const agents = await listSubagents(agentDir);
           return textResult({ agents: agents.map(summary) });
@@ -378,12 +458,16 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             agentDir,
             trusted: true,
           });
-          const agent = discovery.agents.find((item) => item.name === name);
+          const sessionAgents = options.getSessionAgents?.() ?? [];
+          const agent =
+            sessionAgents.find((item) => item.name === name) ??
+            discovery.agents.find((item) => item.name === name);
           if (agent === undefined) {
+            const names = [...sessionAgents, ...discovery.agents].map(
+              (item) => item.name,
+            );
             return errorResult(
-              `unknown agent "${name}"; available: ${
-                discovery.agents.map((item) => item.name).join(", ") || "none"
-              }`,
+              `unknown agent "${name}"; available: ${names.join(", ") || "none"}`,
             );
           }
           const usesPiHarness =
@@ -549,14 +633,16 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             agentDir,
             trusted: true,
           });
-          const agent = discovery.agents.find(
-            (item) => item.name === state.agent,
-          );
+          const sessionAgents = options.getSessionAgents?.() ?? [];
+          const agent =
+            sessionAgents.find((item) => item.name === state.agent) ??
+            discovery.agents.find((item) => item.name === state.agent);
           if (agent === undefined) {
+            const names = [...sessionAgents, ...discovery.agents].map(
+              (item) => item.name,
+            );
             return errorResult(
-              `unknown agent "${state.agent}"; available: ${
-                discovery.agents.map((item) => item.name).join(", ") || "none"
-              }`,
+              `unknown agent "${state.agent}"; available: ${names.join(", ") || "none"}`,
             );
           }
           const sessionPath =

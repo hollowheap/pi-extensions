@@ -33,6 +33,7 @@ describe("policy targets", () => {
 
   it("passes through task inspection actions", () => {
     expect(isPassthroughTaskCall("task", { action: "list" })).toBe(true);
+    expect(isPassthroughTaskCall("subagent", { action: "define" })).toBe(true);
     expect(isPassthroughTaskCall("subagent", { action: "cancel" })).toBe(true);
     expect(isPassthroughTaskCall("task", { action: "start" })).toBe(false);
     expect(isPassthroughTaskCall("bash", { action: "list" })).toBe(false);
