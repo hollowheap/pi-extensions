@@ -668,6 +668,7 @@ describe("extension registration", () => {
       }),
       registerCommand: vi.fn(),
       registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
     };
     extension(pi as never);
 
@@ -718,6 +719,7 @@ describe("extension registration", () => {
         commands[name] = def;
       }),
       registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
     };
     extension(pi as never);
     expect(pi.registerCommand).toHaveBeenCalledWith(
@@ -951,6 +953,32 @@ describe("extension registration", () => {
     expect(rendered.join("\n")).toContain('"query": "lil bro"');
   });
 
+  it("keeps the full codemode script preview expanded", () => {
+    const pi = {
+      on: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+    };
+    extension(pi as never);
+
+    const resolver = pi.registerToolRenderer.mock.calls[0]?.[0] as (
+      toolName: string,
+      next: () => unknown,
+    ) => { renderCall: (...args: unknown[]) => unknown };
+    const renderCall = vi.fn(() => "component");
+    const wrapped = resolver("codemode", () => ({ renderCall }));
+    wrapped.renderCall({}, {}, { expanded: false });
+    expect(renderCall).toHaveBeenCalledWith(
+      {},
+      {},
+      expect.objectContaining({ expanded: true }),
+    );
+
+    const other = resolver("bash", () => ({ renderCall }));
+    expect(other.renderCall).toBe(renderCall);
+  });
+
   it("bypasses registration when UI is missing", () => {
     const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
     const pi = {
@@ -959,6 +987,7 @@ describe("extension registration", () => {
       }),
       registerCommand: vi.fn(),
       registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
     };
     extension(pi as never);
 

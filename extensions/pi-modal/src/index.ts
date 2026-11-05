@@ -28,6 +28,18 @@ function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
 }
 
 export default function (pi: ExtensionAPI): void {
+  pi.registerToolRenderer?.((toolName, next) => {
+    const base = next();
+    const renderCall = base?.renderCall;
+    if (toolName !== "codemode" || renderCall === undefined) return base;
+    return {
+      ...base,
+      renderCall(args, theme, context) {
+        return renderCall(args, theme, { ...context, expanded: true });
+      },
+    };
+  });
+
   pi.registerCommand("expand", {
     description:
       "Expand or collapse tool output, including codemode scripts and nested calls",
