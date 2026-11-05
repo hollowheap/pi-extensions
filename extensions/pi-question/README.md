@@ -33,12 +33,6 @@ Interactive TUI and RPC sessions get sequential dialogs. Print and JSON sessions
 - **Pages and branching:** pages are answered in ascending order with Next/Back navigation; conditions evaluate against prior answers by source question number.
 - **One message per set:** all questions from one assistant message are answered sequentially, then one `hollowheap.question.answers` follow-up is sent.
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-question
-```
-
 ## Try it locally
 
 ```bash

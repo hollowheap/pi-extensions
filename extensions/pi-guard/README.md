@@ -8,12 +8,6 @@ Checks tool calls against tagged allow/ask/deny rules and the active mode. Anyth
 pi -e ./extensions/pi-guard
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-guard
-```
-
 ## Rules
 
 Rules live in `<agentDir>/permissions.json` (default `~/.pi/agent/permissions.json`):

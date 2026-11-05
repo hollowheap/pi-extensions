@@ -10,12 +10,6 @@ registers no UI, command, or edit tool.
 pi -e ./extensions/pi-language-tools
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-language-tools
-```
-
 ## Tool exposure
 
 `lang` is codemode-only. The extension always registers it with `exposure: "codemode"` and activates the registered `codemode` tool on `session_start` when it is available and inactive. `/reload` re-activates `codemode` if it was deactivated. There is no direct or hidden mode.

@@ -38,8 +38,3 @@ task({
 })
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-tasks
-```

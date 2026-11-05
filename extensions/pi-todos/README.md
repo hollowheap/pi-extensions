@@ -9,12 +9,6 @@ registered.
 pi -e ./extensions/pi-todos
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-todos
-```
-
 ## Block format
 
 Create tasks with exactly one ordered list:

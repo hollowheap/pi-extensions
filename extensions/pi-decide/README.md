@@ -8,12 +8,6 @@ Advisory decision tool for the Pi coding agent. `decide` asks a configured decid
 pi -e ./extensions/pi-decide
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-decide
-```
-
 ## Configure
 
 Create `<agent-dir>/decide.json`:

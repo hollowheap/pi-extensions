@@ -9,12 +9,6 @@ model tools.
 pi -e ./extensions/pi-tools
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-tools
-```
-
 ## /cd
 
 `/cd <path>` changes the effective working directory for file tools. The path

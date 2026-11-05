@@ -10,12 +10,6 @@ The dashboard owns the custom header, so Pi's built-in startup header is replace
 pi -e ./extensions/pi-dashboard
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-dashboard
-```
-
 ## Configure
 
 Create `<agentDir>/dashboard.json` (`~/.pi/agent/dashboard.json`). Missing file shows the built-in banner; problems are reported once per session with field fallbacks.

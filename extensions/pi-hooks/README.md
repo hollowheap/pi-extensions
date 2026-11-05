@@ -8,12 +8,6 @@ Lifecycle hooks for pi: commands that run at session start, before a tool call (
 pi -e ./extensions/pi-hooks
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-hooks
-```
-
 ## Configure
 
 Hooks live in `<agent-dir>/hooks.json` (default `~/.pi/agent/hooks.json`; the `PI_CODING_AGENT_DIR` environment variable moves the agent directory). A project may add `<project>/.pi/hooks.json`, which is loaded only when the project is trusted. Project hooks run after the agent-directory hooks.

@@ -8,12 +8,6 @@ Lualine-style configurable statusline footer for the Pi coding agent. Define `se
 pi -e ./extensions/pi-statusline
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-statusline
-```
-
 Do not enable another footer extension at the same time; the last one to load wins.
 
 ## Configure

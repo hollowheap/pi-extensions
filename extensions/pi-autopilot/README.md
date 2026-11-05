@@ -12,10 +12,4 @@ Composition: `pi-guard` enforces the mode when loaded; `pi-usage` budget caps ar
 pi -e ./extensions/pi-guard -e ./extensions/pi-autopilot
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-autopilot
-```
-
 Switching to `autopilot` shows a chat warning but never requires a cap. Set an optional dollar cap with `/usage cap $5`; `pi-usage` warns at 80% and aborts the next run at 100%. Without this package `/mode autopilot` is an unknown mode.

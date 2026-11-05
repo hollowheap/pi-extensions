@@ -46,15 +46,7 @@ Install the entire suite directly into Pi:
 pi install git:github.com/hollowheap/pi-extensions
 ```
 
-The git suite installs each extension from `extensions/pi-<name>/`; startup labels stay short because Pi strips the `extensions/` prefix. Install individual npm packages below when you want to enable or disable extensions separately.
-
-### Pick and choose individual packages
-Want only the statusline or the safety guardrails? Install them separately from npm:
-
-```bash
-pi install npm:@hollowheap/pi-statusline
-pi install npm:@hollowheap/pi-guard
-```
+The git suite installs each extension from `extensions/pi-<name>/`; startup labels stay short because Pi strips the `extensions/` prefix. Enable or disable individual extensions with `pi config` after installing the suite.
 
 ### Manage your installed extensions
 ```bash

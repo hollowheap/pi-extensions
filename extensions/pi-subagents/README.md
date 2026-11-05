@@ -8,12 +8,6 @@ Durable child Pi agents for the Pi coding agent. The `subagent` tool starts one 
 pi -e ./extensions/pi-subagents
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-subagents
-```
-
 ## Configuration
 
 Create `<agentDir>/subagents.json`:

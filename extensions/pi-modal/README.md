@@ -8,12 +8,6 @@ pi-modal Pi coding agent extension.
 pi -e ./extensions/pi-modal
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-modal
-```
-
 ## Expand tool output
 
 `/expand [on|off|toggle]` toggles tool output expansion. Expanded mode reveals

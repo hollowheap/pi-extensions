@@ -12,12 +12,6 @@ inactive, so the web tools stay reachable without a manual `/tools` change.
 pi -e ./extensions/pi-web
 ```
 
-## Install
-
-```bash
-pi install npm:@hollowheap/pi-web
-```
-
 ## Providers
 
 | Provider | Search | Fetch | Key |
