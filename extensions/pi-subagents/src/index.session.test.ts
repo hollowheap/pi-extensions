@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { SUBAGENT_DEFINITION_TYPE } from "./definitions.js";
+import {
+  SUBAGENT_DEFINITION_DELETE_TYPE,
+  SUBAGENT_DEFINITION_TYPE,
+} from "./definitions.js";
 import { createSubagentsExtension } from "./index.js";
 
 const toolMocks = vi.hoisted(() => ({
@@ -7,6 +10,7 @@ const toolMocks = vi.hoisted(() => ({
     | {
         getSessionAgents?: () => Array<Record<string, unknown>>;
         defineSessionAgent?: (definition: Record<string, unknown>) => void;
+        deleteSessionAgent?: (name: string) => boolean;
       }
     | undefined,
 }));
@@ -81,6 +85,76 @@ describe("pi-subagents session definitions", () => {
     ]);
 
     branch = [];
+    handler(pi, "session_tree")?.({}, ctx);
+    expect(options?.getSessionAgents?.()).toEqual([]);
+  });
+
+  it("deletes session agents with tombstones and restores branch order", () => {
+    const pi = createMockPi();
+    const ext = createSubagentsExtension({
+      getAgentDir: () => "/tmp/agent",
+      listSubagents: vi.fn().mockResolvedValue([]),
+    });
+    ext(pi as never);
+
+    const options = toolMocks.options;
+    const definition = {
+      name: "reviewer",
+      description: "Reviews changes",
+      systemPrompt: "One",
+    };
+    options?.defineSessionAgent?.(definition);
+    pi.appendEntry.mockClear();
+
+    expect(options?.deleteSessionAgent?.("file-only")).toBe(false);
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(options?.getSessionAgents?.()).toHaveLength(1);
+
+    expect(options?.deleteSessionAgent?.("reviewer")).toBe(true);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      SUBAGENT_DEFINITION_DELETE_TYPE,
+      { name: "reviewer" },
+    );
+    expect(options?.getSessionAgents?.()).toEqual([]);
+
+    const ctx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "custom",
+            customType: SUBAGENT_DEFINITION_TYPE,
+            data: definition,
+          },
+          {
+            type: "custom",
+            customType: SUBAGENT_DEFINITION_DELETE_TYPE,
+            data: { name: "reviewer" },
+          },
+          {
+            type: "custom",
+            customType: SUBAGENT_DEFINITION_TYPE,
+            data: { ...definition, systemPrompt: "Two" },
+          },
+        ],
+      },
+    };
+    handler(pi, "session_start")?.({}, ctx);
+    expect(options?.getSessionAgents?.()).toEqual([
+      expect.objectContaining({ name: "reviewer", systemPrompt: "Two" }),
+    ]);
+
+    ctx.sessionManager.getBranch = () => [
+      {
+        type: "custom",
+        customType: SUBAGENT_DEFINITION_TYPE,
+        data: definition,
+      },
+      {
+        type: "custom",
+        customType: SUBAGENT_DEFINITION_DELETE_TYPE,
+        data: { name: "reviewer" },
+      },
+    ];
     handler(pi, "session_tree")?.({}, ctx);
     expect(options?.getSessionAgents?.()).toEqual([]);
   });

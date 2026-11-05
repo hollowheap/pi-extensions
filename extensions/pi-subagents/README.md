@@ -18,6 +18,8 @@ Create `<agentDir>/subagents.json`:
   "maxDepth": 1,
   "defaultTimeoutMs": 1800000,
   "writeLockTimeoutMs": 30000,
+  "maxSessionAgents": 32,
+  "maxSessionAgentBytes": 65536,
   "harnesses": {
     "claude": {
       "command": "claude",
@@ -37,6 +39,8 @@ Create `<agentDir>/subagents.json`:
 - `maxDepth`: 1–3, default 1. Children cannot recurse beyond this depth.
 - `defaultTimeoutMs`: default 30 minutes; `0` disables; max 24 hours.
 - `writeLockTimeoutMs`: 1–300000, default 30 seconds.
+- `maxSessionAgents`: 1–128, default 32. Maximum session definitions on one branch; redefining an existing name does not count.
+- `maxSessionAgentBytes`: 1024–1048576, default 65536. Maximum serialized size of one session definition.
 - `harnesses`: optional named generic CLI commands. `input` is `stdin` or `arg`; `arg` appends the prompt unless an argument contains `{prompt}`. `env` adds variables.
 
 Invalid values diagnose and fall back. The file is optional.
@@ -82,7 +86,17 @@ A session definition persists in the session JSONL, restores from the active bra
 { "action": "start", "agent": "reviewer", "task": "Review the working tree" }
 ```
 
-Session definitions are branch-local. Navigating to a branch without the definition removes it from the available set. Defining an agent does not start a child or ask for shell approval; `start` keeps the normal project-trust and permission checks.
+Delete a session definition without touching a same-named file agent:
+
+```json
+{ "action": "delete", "name": "reviewer" }
+```
+
+Deletion appends a tombstone entry, so the definition stays removed when the branch restores. `delete` fails for names that are only file agents. If a file agent has the same name, it becomes visible again after the session definition is deleted.
+
+`maxSessionAgents` and `maxSessionAgentBytes` bound new definitions. Existing definitions already stored in a session remain available when a limit is lowered.
+
+Session definitions are branch-local. Navigating to a branch without the definition removes it from the available set. Defining or deleting an agent does not start a child or ask for shell approval; `start` keeps the normal project-trust and permission checks.
 
 ## Harnesses
 
@@ -103,6 +117,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 | Action | Input | Result |
 | --- | --- | --- |
 | `define` | `name`, `systemPrompt`; optional `description`, `tools`, `model`, `thinking`, `agentMode`, `effort`, `harness` | Stores a session-only agent definition; no file is written. |
+| `delete` | `name` | Removes a session-only definition; file agents cannot be deleted. |
 | `start` | `agent`, `task` | Starts a child and sends the task prompt. `agent` can name a file agent or a session definition. |
 | `list` | none | Summaries of persisted children. |
 | `status` | `id` | State plus bounded log output. |
@@ -156,4 +171,4 @@ When `PI_ACP` is set, `pi-subagents` registers no tool and starts no children. A
 - No scheduling or missions.
 - Children run built-in tools plus headless policy and the lock extension; other suite tools are not loaded.
 - Prompts, logs, and results are stored locally under the agent directory.
-- Session definitions are not global agents. They exist only in the session branch that created them and never appear in `<agentDir>/agents` or `.pi/agents`.
+- Session definitions are not global agents. They exist only in the session branch that created them, never appear in `<agentDir>/agents` or `.pi/agents`, and are bounded by `maxSessionAgents` and `maxSessionAgentBytes`.

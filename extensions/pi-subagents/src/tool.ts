@@ -37,6 +37,7 @@ export interface SubagentToolOptions {
   onSubagentsChange?: () => void;
   getSessionAgents?: () => readonly AgentConfig[];
   defineSessionAgent?: (definition: SessionAgentDefinition) => void;
+  deleteSessionAgent?: (name: string) => boolean;
 }
 
 interface ChildSpec {
@@ -184,11 +185,12 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
     name: "subagent",
     label: "subagent",
     description:
-      "Start and manage one durable child agent (define, start, list, status, send, wait, cancel).",
+      "Start and manage one durable child agent (define, delete, start, list, status, send, wait, cancel).",
     exposure: "direct",
     parameters: Type.Object({
       action: Type.Union([
         Type.Literal("define"),
+        Type.Literal("delete"),
         Type.Literal("start"),
         Type.Literal("list"),
         Type.Literal("status"),
@@ -198,7 +200,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         Type.Literal("resume"),
       ]),
       name: Type.Optional(
-        Type.String({ description: "Agent name for define" }),
+        Type.String({ description: "Agent name for define or delete" }),
       ),
       description: Type.Optional(
         Type.String({ description: "Agent description for define" }),
@@ -257,10 +259,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           : new Text("", 0, 0);
       const action = args?.action ?? "subagent";
       let line = `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("accent", action)}`;
-      if (action === "define") {
+      if (action === "define" || action === "delete") {
         const name = args?.name ?? args?.agent;
         if (name) line += ` ${theme.fg("toolTitle", name)}`;
-        if (args?.systemPrompt) {
+        if (action === "define" && args?.systemPrompt) {
           line += ` ${theme.fg("muted", `${args.systemPrompt.length} chars`)}`;
         }
       } else if (action === "start") {
@@ -303,6 +305,13 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       if (typeof details.defined === "string") {
         text.setText(
           `${theme.fg("success", "✓")} ${theme.fg("muted", "session agent")} ${theme.fg("toolTitle", details.defined)}`,
+        );
+        return text;
+      }
+
+      if (typeof details.deleted === "string") {
+        text.setText(
+          `${theme.fg("success", "✓")} ${theme.fg("muted", "removed session agent")} ${theme.fg("toolTitle", details.deleted)}`,
         );
         return text;
       }
@@ -396,6 +405,18 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       const agentDir = getAgentDir();
       const action = params.action;
       try {
+        if (action === "delete") {
+          const name = (params.name ?? params.agent ?? "").trim();
+          if (name === "") return errorResult("delete requires name");
+          if (options.deleteSessionAgent === undefined) {
+            return errorResult("session agent definitions are unavailable");
+          }
+          if (!options.deleteSessionAgent(name)) {
+            return errorResult(`unknown session agent "${name}"`);
+          }
+          return textResult({ deleted: name, source: "session" });
+        }
+
         if (action === "define") {
           const name = (params.name ?? params.agent ?? "").trim();
           const systemPrompt = params.systemPrompt?.trim() ?? "";
@@ -408,7 +429,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           const tools = params.tools
             ?.map((tool) => tool.trim())
             .filter(Boolean);
-          options.defineSessionAgent({
+          const definition: SessionAgentDefinition = {
             name,
             description: params.description?.trim() || `Session agent ${name}`,
             systemPrompt,
@@ -424,7 +445,24 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             ...(params.harness?.trim()
               ? { harness: params.harness.trim() }
               : {}),
-          });
+          };
+          const config = loadSubagentsConfig(agentDir);
+          const bytes = Buffer.byteLength(JSON.stringify(definition), "utf8");
+          if (bytes > config.maxSessionAgentBytes) {
+            return errorResult(
+              `session agent definition is ${bytes} bytes; maxSessionAgentBytes is ${config.maxSessionAgentBytes}`,
+            );
+          }
+          const sessionAgents = options.getSessionAgents?.() ?? [];
+          if (
+            !sessionAgents.some((agent) => agent.name === name) &&
+            sessionAgents.length >= config.maxSessionAgents
+          ) {
+            return errorResult(
+              `maxSessionAgents ${config.maxSessionAgents} reached`,
+            );
+          }
+          options.defineSessionAgent(definition);
           return textResult({ defined: name, source: "session" });
         }
 

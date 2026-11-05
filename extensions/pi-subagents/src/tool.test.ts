@@ -95,6 +95,8 @@ beforeEach(() => {
     maxDepth: 1,
     defaultTimeoutMs: 30 * 60 * 1_000,
     writeLockTimeoutMs: 30_000,
+    maxSessionAgents: 32,
+    maxSessionAgentBytes: 65_536,
     harnesses: {},
     path: "/tmp/subagents.json",
     diagnostics: [],
@@ -263,6 +265,134 @@ describe("subagent tool", () => {
     );
   });
 
+  it("deletes session agents and refuses unknown names", async () => {
+    const deleteSessionAgent = vi.fn().mockReturnValue(true);
+    const tool = createSubagentTool({ deleteSessionAgent });
+    const theme = {
+      fg: (_token: string, text: string) => text,
+    } as never;
+
+    const deleted = await tool.execute(
+      "1",
+      { action: "delete", name: " reviewer " },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(detailsOf(deleted)).toEqual({
+      deleted: "reviewer",
+      source: "session",
+    });
+    expect(deleteSessionAgent).toHaveBeenCalledWith("reviewer");
+    const component = tool.renderResult?.(
+      deleted as never,
+      { expanded: false, isPartial: false },
+      theme,
+      {} as never,
+    );
+    expect(component?.render(80).join("\n")).toContain(
+      "removed session agent reviewer",
+    );
+
+    deleteSessionAgent.mockReturnValue(false);
+    const unknown = await tool.execute(
+      "2",
+      { action: "delete", name: "file-only" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(unknown)).toContain('unknown session agent "file-only"');
+
+    const missing = await tool.execute(
+      "3",
+      { action: "delete" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(missing)).toContain("delete requires name");
+
+    const unavailable = await createTool().execute(
+      "4",
+      { action: "delete", name: "reviewer" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(unavailable)).toContain(
+      "session agent definitions are unavailable",
+    );
+  });
+
+  it("enforces session definition size and count bounds", async () => {
+    const defineSessionAgent = vi.fn();
+    const config = {
+      maxConcurrent: 4,
+      maxDepth: 1,
+      defaultTimeoutMs: 30 * 60 * 1_000,
+      writeLockTimeoutMs: 30_000,
+      maxSessionAgents: 32,
+      maxSessionAgentBytes: 65_536,
+      harnesses: {},
+      path: "/tmp/subagents.json",
+      diagnostics: [],
+    };
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...config,
+      maxSessionAgentBytes: 1024,
+    });
+    const tool = createSubagentTool({ defineSessionAgent });
+
+    const oversized = await tool.execute(
+      "1",
+      {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "x".repeat(2_000),
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(oversized)).toContain("maxSessionAgentBytes is 1024");
+    expect(defineSessionAgent).not.toHaveBeenCalled();
+
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...config,
+      maxSessionAgents: 1,
+    });
+    const full = createSubagentTool({
+      defineSessionAgent,
+      getSessionAgents: () => [agent],
+    });
+    const overflow = await full.execute(
+      "2",
+      {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "You review.",
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(overflow)).toContain("maxSessionAgents 1 reached");
+
+    const redefined = await full.execute(
+      "3",
+      {
+        action: "define",
+        name: "scout",
+        systemPrompt: "You review.",
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(detailsOf(redefined).defined).toBe("scout");
+  });
+
   it("starts session agents and prefers them over file agents", async () => {
     const sessionAgent: AgentConfig = {
       name: "scout",
@@ -411,6 +541,8 @@ describe("subagent tool", () => {
       maxDepth: 1,
       defaultTimeoutMs: 30 * 60 * 1_000,
       writeLockTimeoutMs: 30_000,
+      maxSessionAgents: 32,
+      maxSessionAgentBytes: 65_536,
       harnesses: {
         claude: { command: "claude", args: ["-p"], input: "stdin" },
       },
@@ -465,6 +597,8 @@ describe("subagent tool", () => {
       maxDepth: 1,
       defaultTimeoutMs: 30 * 60 * 1_000,
       writeLockTimeoutMs: 30_000,
+      maxSessionAgents: 32,
+      maxSessionAgentBytes: 65_536,
       harnesses: {
         codex: {
           command: "codex",
@@ -501,6 +635,8 @@ describe("subagent tool", () => {
       maxDepth: 1,
       defaultTimeoutMs: 30 * 60 * 1_000,
       writeLockTimeoutMs: 30_000,
+      maxSessionAgents: 32,
+      maxSessionAgentBytes: 65_536,
       harnesses: {
         claude: { command: "claude", args: ["-p"], input: "stdin" },
       },
@@ -538,6 +674,8 @@ describe("subagent tool", () => {
       maxDepth: 1,
       defaultTimeoutMs: 30 * 60 * 1_000,
       writeLockTimeoutMs: 30_000,
+      maxSessionAgents: 32,
+      maxSessionAgentBytes: 65_536,
       harnesses: {
         claude: { command: "claude", args: ["-p"], input: "stdin" },
       },

@@ -504,6 +504,9 @@ describe("pi-guard extension", () => {
         systemPrompt: "Review changes.",
       }),
     ).resolves.toBeUndefined();
+    await expect(
+      call("subagent", { action: "delete", name: "reviewer" }),
+    ).resolves.toBeUndefined();
     await expect(call("subagent", { action: "list" })).resolves.toBeUndefined();
     await expect(
       call("subagent", { action: "status", id: "sub-1" }),

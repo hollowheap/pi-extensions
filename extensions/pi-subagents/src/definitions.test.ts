@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  SUBAGENT_DEFINITION_DELETE_TYPE,
   SUBAGENT_DEFINITION_TYPE,
   definitionsFromEntries,
 } from "./definitions.js";
 
 function entry(data: unknown) {
   return { type: "custom", customType: SUBAGENT_DEFINITION_TYPE, data };
+}
+
+function deletion(data: unknown) {
+  return { type: "custom", customType: SUBAGENT_DEFINITION_DELETE_TYPE, data };
 }
 
 describe("definitionsFromEntries", () => {
@@ -73,5 +78,39 @@ describe("definitionsFromEntries", () => {
       description: "Second",
       systemPrompt: "Two",
     });
+  });
+
+  it("removes definitions at their delete entry and allows later redefinition", () => {
+    const definition = {
+      name: "scout",
+      description: "Scout",
+      systemPrompt: "One",
+    };
+    const deleted = definitionsFromEntries([
+      entry(definition),
+      deletion({ name: "scout" }),
+    ]);
+    expect(deleted.size).toBe(0);
+
+    const restored = definitionsFromEntries([
+      entry(definition),
+      deletion({ name: "scout" }),
+      entry({ ...definition, systemPrompt: "Two" }),
+    ]);
+    expect(restored.get("scout")?.systemPrompt).toBe("Two");
+  });
+
+  it("ignores malformed delete entries", () => {
+    const definition = {
+      name: "scout",
+      description: "Scout",
+      systemPrompt: "One",
+    };
+    const agents = definitionsFromEntries([
+      entry(definition),
+      deletion({ name: " " }),
+      deletion({}),
+    ]);
+    expect(agents.has("scout")).toBe(true);
   });
 });

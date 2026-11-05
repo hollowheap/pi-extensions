@@ -20,6 +20,8 @@ describe("loadSubagentsConfig", () => {
     expect(config.maxDepth).toBe(1);
     expect(config.defaultTimeoutMs).toBe(30 * 60 * 1000);
     expect(config.writeLockTimeoutMs).toBe(30 * 1000);
+    expect(config.maxSessionAgents).toBe(32);
+    expect(config.maxSessionAgentBytes).toBe(65_536);
     expect(config.path).toBe(join(dir, CONFIG_FILE_NAME));
     expect(config.harnesses).toEqual({});
     expect(config.diagnostics).toEqual([]);
@@ -34,6 +36,8 @@ describe("loadSubagentsConfig", () => {
         maxDepth: 3,
         defaultTimeoutMs: 0,
         writeLockTimeoutMs: 300000,
+        maxSessionAgents: 64,
+        maxSessionAgentBytes: 131072,
       }),
     );
     const config = loadSubagentsConfig(dir);
@@ -41,6 +45,8 @@ describe("loadSubagentsConfig", () => {
     expect(config.maxDepth).toBe(3);
     expect(config.defaultTimeoutMs).toBe(0);
     expect(config.writeLockTimeoutMs).toBe(300000);
+    expect(config.maxSessionAgents).toBe(64);
+    expect(config.maxSessionAgentBytes).toBe(131072);
     expect(config.diagnostics).toEqual([]);
   });
 
@@ -64,6 +70,18 @@ describe("loadSubagentsConfig", () => {
     expect(config.defaultTimeoutMs).toBe(30 * 60 * 1000);
     expect(config.writeLockTimeoutMs).toBe(30 * 1000);
     expect(diagnostics).toHaveLength(4);
+  });
+
+  it("defaults invalid session definition bounds with diagnostics", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({ maxSessionAgents: 0, maxSessionAgentBytes: 1 }),
+    );
+    const config = loadSubagentsConfig(dir);
+    expect(config.maxSessionAgents).toBe(32);
+    expect(config.maxSessionAgentBytes).toBe(65_536);
+    expect(config.diagnostics).toHaveLength(2);
   });
 
   it("parses generic harness definitions", () => {

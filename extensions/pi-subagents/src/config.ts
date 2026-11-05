@@ -15,6 +15,8 @@ export interface SubagentsConfig {
   readonly maxDepth: number;
   readonly defaultTimeoutMs: number;
   readonly writeLockTimeoutMs: number;
+  readonly maxSessionAgents: number;
+  readonly maxSessionAgentBytes: number;
   readonly harnesses: Readonly<Record<string, SubagentHarnessConfig>>;
   readonly path: string;
   readonly diagnostics: readonly string[];
@@ -31,6 +33,11 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_WRITE_LOCK_TIMEOUT_MS = 30 * 1000;
 const MAX_WRITE_LOCK_TIMEOUT_MS = 300_000;
+const DEFAULT_MAX_SESSION_AGENTS = 32;
+const MAX_MAX_SESSION_AGENTS = 128;
+const DEFAULT_MAX_SESSION_AGENT_BYTES = 64 * 1024;
+const MIN_MAX_SESSION_AGENT_BYTES = 1024;
+const MAX_MAX_SESSION_AGENT_BYTES = 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -173,6 +180,41 @@ function parseWriteLockTimeoutMs(
   return DEFAULT_WRITE_LOCK_TIMEOUT_MS;
 }
 
+function parseMaxSessionAgents(value: unknown, diagnostics: string[]): number {
+  if (value === undefined) return DEFAULT_MAX_SESSION_AGENTS;
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 1 &&
+    value <= MAX_MAX_SESSION_AGENTS
+  ) {
+    return Math.trunc(value);
+  }
+  diagnostics.push(
+    `"maxSessionAgents" must be between 1 and ${MAX_MAX_SESSION_AGENTS}; using ${DEFAULT_MAX_SESSION_AGENTS}`,
+  );
+  return DEFAULT_MAX_SESSION_AGENTS;
+}
+
+function parseMaxSessionAgentBytes(
+  value: unknown,
+  diagnostics: string[],
+): number {
+  if (value === undefined) return DEFAULT_MAX_SESSION_AGENT_BYTES;
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= MIN_MAX_SESSION_AGENT_BYTES &&
+    value <= MAX_MAX_SESSION_AGENT_BYTES
+  ) {
+    return Math.trunc(value);
+  }
+  diagnostics.push(
+    `"maxSessionAgentBytes" must be between ${MIN_MAX_SESSION_AGENT_BYTES} and ${MAX_MAX_SESSION_AGENT_BYTES}; using ${DEFAULT_MAX_SESSION_AGENT_BYTES}`,
+  );
+  return DEFAULT_MAX_SESSION_AGENT_BYTES;
+}
+
 export function loadSubagentsConfig(
   agentDir: string,
   onDiagnostic?: (message: string) => void,
@@ -196,6 +238,8 @@ export function loadSubagentsConfig(
       maxDepth: DEFAULT_MAX_DEPTH,
       defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
       writeLockTimeoutMs: DEFAULT_WRITE_LOCK_TIMEOUT_MS,
+      maxSessionAgents: DEFAULT_MAX_SESSION_AGENTS,
+      maxSessionAgentBytes: DEFAULT_MAX_SESSION_AGENT_BYTES,
       harnesses: EMPTY_HARNESSES,
       path,
       diagnostics: Object.freeze(diagnostics),
@@ -229,6 +273,14 @@ export function loadSubagentsConfig(
     ),
     writeLockTimeoutMs: parseWriteLockTimeoutMs(
       isRecord(parsed) ? parsed.writeLockTimeoutMs : undefined,
+      diagnostics,
+    ),
+    maxSessionAgents: parseMaxSessionAgents(
+      isRecord(parsed) ? parsed.maxSessionAgents : undefined,
+      diagnostics,
+    ),
+    maxSessionAgentBytes: parseMaxSessionAgentBytes(
+      isRecord(parsed) ? parsed.maxSessionAgentBytes : undefined,
       diagnostics,
     ),
     harnesses: parseHarnesses(

@@ -1,6 +1,8 @@
 import type { AgentConfig } from "./agents.js";
 
 export const SUBAGENT_DEFINITION_TYPE = "hollowheap.subagent.definition";
+export const SUBAGENT_DEFINITION_DELETE_TYPE =
+  "hollowheap.subagent.definition.delete";
 
 export interface SessionAgentDefinition {
   name: string;
@@ -52,12 +54,17 @@ export function definitionsFromEntries(
     };
     if (
       typed.type !== "custom" ||
-      typed.customType !== SUBAGENT_DEFINITION_TYPE ||
       typeof typed.data !== "object" ||
       typed.data === null
     ) {
       continue;
     }
+    if (typed.customType === SUBAGENT_DEFINITION_DELETE_TYPE) {
+      const name = trimmed((typed.data as { name?: unknown }).name);
+      if (name !== undefined) agents.delete(name);
+      continue;
+    }
+    if (typed.customType !== SUBAGENT_DEFINITION_TYPE) continue;
     const data = typed.data as Partial<SessionAgentDefinition>;
     const name = trimmed(data.name);
     const description = trimmed(data.description);

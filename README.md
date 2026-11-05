@@ -29,7 +29,7 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-question`](./extensions/pi-question) | `0.3.0` | Single-question prompt tool for guided user input |
 | [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.3.0` | Tool-free todo blocks with branch-local state and `/todos` |
 | [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.3.0` | Durable background shell tasks |
-| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.3.0` | Durable child agents with live reattach, write locking, explicit resume, generic CLI harnesses, and session-only definitions |
+| [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.3.0` | Durable child agents with live reattach, write locking, explicit resume, generic CLI harnesses, and bounded, deletable session-only definitions |
 | [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.3.0` | Advisory decision tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.3.0` | Codemode `web_search` and `web_fetch` tools for current docs and web results |
 | [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.3.0` | Usage presentation, optional `/usage cap`, and statusline usage |

@@ -8,6 +8,7 @@ import { showFuzzyPicker } from "@hollowheap/tui/picker";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {
+  SUBAGENT_DEFINITION_DELETE_TYPE,
   SUBAGENT_DEFINITION_TYPE,
   type SessionAgentDefinition,
   definitionToAgent,
@@ -68,6 +69,13 @@ export function createSubagentsExtension(
     const defineSessionAgent = (definition: SessionAgentDefinition): void => {
       pi.appendEntry(SUBAGENT_DEFINITION_TYPE, definition);
       sessionAgents.set(definition.name, definitionToAgent(definition));
+    };
+
+    const deleteSessionAgent = (name: string): boolean => {
+      if (!sessionAgents.has(name)) return false;
+      pi.appendEntry(SUBAGENT_DEFINITION_DELETE_TYPE, { name });
+      sessionAgents.delete(name);
+      return true;
     };
 
     const stopTicker = () => {
@@ -184,6 +192,7 @@ export function createSubagentsExtension(
       },
       getSessionAgents: () => [...sessionAgents.values()],
       defineSessionAgent,
+      deleteSessionAgent,
     });
     pi.registerTool(tool);
 
