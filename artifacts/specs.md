@@ -1171,3 +1171,9 @@
   - Seam: `definitions.ts` branch parser, `tool.ts` define/start resolution, and `index.ts` session restore/persistence.
   - Behavior: `define` validates name and system prompt; optional tools/model/thinking/mode/effort/harness are trimmed; entries restore on session start and tree navigation; session definitions shadow file agents; define passes guard/policy without a shell prompt while start keeps the existing gate; shutdown clears the map.
   - Failures: writing files, accepting invalid definitions, stale definitions after branch switch, file agents winning the name collision, or losing the definition on resume.
+
+- [x] S171 [R80] [D174]: `delete` appends a session tombstone for session-defined names only, and `maxSessionAgents`/`maxSessionAgentBytes` bound new definitions.
+  - Verify: `npx vitest run extensions/pi-subagents/src extensions/pi-guard/src packages/policy/src`
+  - Seam: `definitions.ts` definition/tombstone parser, `tool.ts` delete and bound checks, `index.ts` delete persistence, and `config.ts` session bounds.
+  - Behavior: delete removes a session definition and fails for file-only names; tombstones are order-sensitive with later definitions; redefinition does not consume a new slot; serialized definitions over the byte limit or new names over the count limit are rejected; invalid config values diagnose and fall back; delete passes guard/policy.
+  - Failures: deleting file agents, resurrecting deleted definitions on restore, rejecting redefinitions at the count limit, bypassing bounds through define, or accepting invalid config silently.

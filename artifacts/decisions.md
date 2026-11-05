@@ -895,3 +895,9 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: write agent files on define; accept a full inline agent during start only; add a separate definition tool.
   - Consequences: `define` requires name and system prompt; optional fields match agent frontmatter; definitions persist in the session JSONL and never touch `<agentDir>/agents` or `.pi/agents`; branch navigation removes definitions absent from the new branch.
   - Supersedes: none
+
+- [x] D174 [R80]: Session definitions are deleted with an order-sensitive `hollowheap.subagent.definition.delete` tombstone, and `subagents.json` bounds new definitions with `maxSessionAgents` (default 32) and `maxSessionAgentBytes` (default 65536).
+  - Context: Long sessions can accumulate definitions, and branch restore must not resurrect a deleted definition.
+  - Alternatives: delete by removing the session entry; allow deleting file agents; impose fixed limits without config; bound only the system prompt.
+  - Consequences: delete only succeeds for names in the session map and never touches files; a later define after a tombstone restores the name; redefining an existing name does not consume another slot; limits apply to new definitions while existing session entries stay readable; invalid config values diagnose and fall back.
+  - Supersedes: none

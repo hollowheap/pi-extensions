@@ -441,3 +441,9 @@
   - Acceptance: `define` requires `name` and `systemPrompt`; the definition persists as a session custom entry; session start and tree navigation restore it from the active branch; a session definition shadows a file agent with the same name; no agent file is written; invalid entries are ignored.
   - Constraints: Definitions are branch-local and stored only in session history.
   - Non-goals: Global definitions, definition file editing, or a definition management UI.
+
+- [x] R80: A caller can delete session definitions without touching file agents, and new definitions are bounded by config.
+  - Verify: `npx vitest run extensions/pi-subagents/src extensions/pi-guard/src packages/policy/src`
+  - Acceptance: `delete` removes only names present in the session map and appends a tombstone that survives branch restore; file-only names fail; `maxSessionAgents` and `maxSessionAgentBytes` reject new over-limit definitions; redefining an existing name does not consume another slot; invalid config values diagnose and fall back.
+  - Constraints: Limits apply to new definitions; existing session entries remain readable.
+  - Non-goals: Deleting file agents, editing agent files, or global definition management.
