@@ -15,5 +15,8 @@
   },
   "dependencies": {
     "@hollowheap/runtime": "^0.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
