@@ -43,6 +43,27 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
     let activeAgent: AgentConfig | undefined;
     let lastCwd = process.cwd();
     let lastTrusted = false;
+    let baseActiveTools: string[] | undefined;
+
+    const captureBaseActiveTools = (): void => {
+      if (
+        baseActiveTools !== undefined ||
+        typeof pi.getActiveTools !== "function"
+      ) {
+        return;
+      }
+      baseActiveTools = [...pi.getActiveTools()];
+    };
+
+    const restoreBaseActiveTools = (piApi: ExtensionAPI): void => {
+      captureBaseActiveTools();
+      if (
+        baseActiveTools !== undefined &&
+        typeof piApi.setActiveTools === "function"
+      ) {
+        piApi.setActiveTools([...baseActiveTools]);
+      }
+    };
     const syncTitle = (
       ctx: ExtensionCommandContext | ExtensionContext,
     ): void => {
@@ -116,14 +137,12 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       if (agent.tools?.length) {
+        captureBaseActiveTools();
         if (typeof piApi.setActiveTools === "function") {
           piApi.setActiveTools(agent.tools);
         }
-      } else if (
-        typeof piApi.getAllTools === "function" &&
-        typeof piApi.setActiveTools === "function"
-      ) {
-        piApi.setActiveTools(piApi.getAllTools().map((t) => t.name));
+      } else {
+        restoreBaseActiveTools(piApi);
       }
 
       if (options.notify) {
@@ -149,12 +168,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         enterMode(ctx.sessionManager, "ask");
       }
 
-      if (
-        typeof piApi.getAllTools === "function" &&
-        typeof piApi.setActiveTools === "function"
-      ) {
-        piApi.setActiveTools(piApi.getAllTools().map((t) => t.name));
-      }
+      restoreBaseActiveTools(piApi);
 
       if (options.notify) {
         ctx.ui?.notify?.("Reset to default agent", "info");
@@ -257,7 +271,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       await applyDefault(ctx, pi, { persist: false, notify: false });
     };
 
-    pi.on("session_start", (_event, ctx) => restore(ctx));
+    pi.on("session_start", (_event, ctx) => {
+      captureBaseActiveTools();
+      return restore(ctx);
+    });
     pi.on("session_tree", (_event, ctx) => restore(ctx));
     pi.on("project_trust", (event) => {
       lastCwd = event.cwd;
