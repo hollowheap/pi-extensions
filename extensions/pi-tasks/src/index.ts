@@ -108,6 +108,28 @@ export default function (pi: ExtensionAPI) {
     }),
   );
 
+  let alertTicker: ReturnType<typeof setInterval> | undefined;
+
+  const stopAlertTicker = (): void => {
+    if (alertTicker === undefined) return;
+    clearInterval(alertTicker);
+    alertTicker = undefined;
+  };
+
+  const startAlertTicker = (): void => {
+    if (alertTicker !== undefined) return;
+    alertTicker = setInterval(() => {
+      try {
+        const tasks = reconcileAllTasks(getAgentDir());
+        void taskAlertTracker.observe(tasks);
+        void taskWorkspaceTracker.cleanupTerminal(tasks);
+      } catch {
+        // Alert and cleanup observation must not affect tasks.
+      }
+    }, 1000);
+    alertTicker.unref?.();
+  };
+
   pi.registerCommand("task", {
     description: "Task management: /task [logs] [id]",
     getArgumentCompletions: (prefix: string) => {
@@ -165,21 +187,11 @@ export default function (pi: ExtensionAPI) {
         );
       }
     }
+    startAlertTicker();
   });
 
-  const alertTicker = setInterval(() => {
-    try {
-      const tasks = reconcileAllTasks(getAgentDir());
-      void taskAlertTracker.observe(tasks);
-      void taskWorkspaceTracker.cleanupTerminal(tasks);
-    } catch {
-      // Alert and cleanup observation must not affect tasks.
-    }
-  }, 1000);
-  alertTicker.unref?.();
-
   pi.on("session_shutdown", () => {
-    clearInterval(alertTicker);
+    stopAlertTicker();
     // Durable shell tasks intentionally survive session shutdown.
   });
 }
