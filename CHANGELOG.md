@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- `pi-web`: `web_search` and `web_fetch` forward the tool abort signal to provider requests, so cancelling a call stops the network work and provider fallback chain.
 - `pi-subagents`: `define` results render as a named session agent instead of an empty child row.
 - `pi-subagents`: a failed or malformed branch read clears session definitions instead of leaving definitions from the previous branch active.
 

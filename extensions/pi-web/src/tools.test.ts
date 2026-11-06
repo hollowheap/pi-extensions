@@ -67,6 +67,24 @@ describe("web_search", () => {
     );
   });
 
+  it("forwards the abort signal to the search request", async () => {
+    const search = vi.fn().mockResolvedValue([]);
+    const tool = createWebSearchTool({ search });
+    const controller = new AbortController();
+
+    await tool.execute(
+      "1",
+      { query: "q" },
+      controller.signal,
+      undefined,
+      {} as never,
+    );
+
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "q", signal: controller.signal }),
+    );
+  });
+
   it("caps max_results at 10", async () => {
     const search = vi
       .fn()
@@ -169,6 +187,36 @@ describe("web_fetch", () => {
       "*Redirected to: [https://example.com/final](https://example.com/final)*",
     );
     expect(textOf(result)).not.toContain("provider");
+  });
+
+  it("forwards the abort signal to the fetch request", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      finalUrl: "https://example.com",
+      provider: "raw",
+      contentType: "text/plain",
+      content: "ok",
+      links: [],
+      media: [],
+      truncated: false,
+    });
+    const tool = createWebFetchTool({ fetch });
+    const controller = new AbortController();
+
+    await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      controller.signal,
+      undefined,
+      {} as never,
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://example.com",
+        signal: controller.signal,
+      }),
+    );
   });
 
   it("returns a direct image block from web_fetch", async () => {

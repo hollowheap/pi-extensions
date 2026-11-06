@@ -357,6 +357,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
     async execute(
       _toolCallId,
       params: { query: string; max_results?: number },
+      signal?: AbortSignal,
     ) {
       const query = typeof params.query === "string" ? params.query.trim() : "";
       if (query === "") return errorResult("web_search", "query is required");
@@ -377,6 +378,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
         const results = await (deps.search ?? defaultSearch)({
           query,
           maxResults: limit,
+          signal,
         });
         const capped = results.slice(0, limit).map(normalizeSearch);
         rememberWebLinks(capped);
@@ -554,7 +556,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
         FETCH_MAX_CHARS,
       );
       try {
-        const result = await (deps.fetch ?? defaultFetch)({ url });
+        const result = await (deps.fetch ?? defaultFetch)({ url, signal });
         const content = result.content.slice(0, limit);
         const safeLinks = result.links.filter((link) => !isDataUrl(link.url));
         const safeMedia = result.media.filter((item) => !isDataUrl(item.url));
