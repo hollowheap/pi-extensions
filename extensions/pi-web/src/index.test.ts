@@ -66,6 +66,30 @@ describe("pi-web extension", () => {
     expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
   });
 
+  it("removes web_search and web_fetch from the active tool set", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue([
+      "read",
+      "web_search",
+      "web_fetch",
+      "codemode",
+    ]);
+    extension(pi as never);
+
+    pi.handlers.session_start?.({}, {});
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+  });
+
+  it("removes direct web tools even when codemode is unavailable", () => {
+    const pi = createMockPi();
+    pi.getActiveTools.mockReturnValue(["read", "web_search"]);
+    extension(pi as never);
+
+    pi.handlers.session_start?.({}, {});
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
+  });
+
   it("does not duplicate an already-active codemode", () => {
     const pi = createMockPi();
     pi.getAllTools.mockReturnValue([{ name: "codemode" }]);

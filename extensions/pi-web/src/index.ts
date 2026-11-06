@@ -15,10 +15,19 @@ export default function (pi: ExtensionAPI): void {
   pi.registerTool(createWebFetchTool());
 
   pi.on("session_start", () => {
-    if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
     const active = pi.getActiveTools();
-    if (active.includes("codemode")) return;
-    pi.setActiveTools([...active, "codemode"]);
+    const next = active.filter(
+      (name) => name !== "web_search" && name !== "web_fetch",
+    );
+    if (pi.getAllTools().some((tool) => tool.name === "codemode")) {
+      if (!next.includes("codemode")) next.push("codemode");
+    }
+    if (
+      next.length !== active.length ||
+      next.some((name, index) => name !== active[index])
+    ) {
+      pi.setActiveTools(next);
+    }
   });
   pi.registerCommand("web", {
     description:

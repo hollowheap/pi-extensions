@@ -52,7 +52,17 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       ) {
         return;
       }
-      baseActiveTools = [...pi.getActiveTools()];
+      const exposures = new Map(
+        pi.getAllTools().map((tool) => [tool.name, tool.exposure]),
+      );
+      baseActiveTools = pi.getActiveTools().filter((name) => {
+        const exposure = exposures.get(name);
+        return (
+          exposure === undefined ||
+          exposure === "direct" ||
+          exposure === "model-only"
+        );
+      });
     };
 
     const restoreBaseActiveTools = (piApi: ExtensionAPI): void => {

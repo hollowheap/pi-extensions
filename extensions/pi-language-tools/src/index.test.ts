@@ -75,6 +75,27 @@ describe("pi-language-tools extension", () => {
     expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
   });
 
+  it("removes lang from the active tool set", () => {
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue([{ name: "codemode" }]);
+    pi.getActiveTools.mockReturnValue(["read", "lang", "codemode"]);
+    extension(pi as never);
+
+    start(pi);
+
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+  });
+
+  it("removes lang even when codemode is unavailable", () => {
+    const pi = createMockPi();
+    pi.getActiveTools.mockReturnValue(["read", "lang"]);
+    extension(pi as never);
+
+    start(pi);
+
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
+  });
+
   it("does not duplicate an active codemode", () => {
     const active = createMockPi();
     active.getAllTools.mockReturnValue([{ name: "codemode" }]);

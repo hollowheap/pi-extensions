@@ -20,10 +20,17 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(`pi-language-tools: ${message}`, "warning");
       }
     }
-    if (!pi.getAllTools().some((tool) => tool.name === "codemode")) return;
     const active = pi.getActiveTools();
-    if (active.includes("codemode")) return;
-    pi.setActiveTools([...active, "codemode"]);
+    const next = active.filter((name) => name !== "lang");
+    if (pi.getAllTools().some((tool) => tool.name === "codemode")) {
+      if (!next.includes("codemode")) next.push("codemode");
+    }
+    if (
+      next.length !== active.length ||
+      next.some((name, index) => name !== active[index])
+    ) {
+      pi.setActiveTools(next);
+    }
   });
 
   pi.on("session_shutdown", () => {

@@ -468,6 +468,19 @@ describe("pi-agent extension", () => {
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
   });
 
+  it("filters codemode-only tools out of the restored default set", async () => {
+    const pi = createMockPi();
+    pi.getActiveTools.mockReturnValue(["read", "web_search", "codemode"]);
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("default", ctx);
+
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith(["read", "codemode"]);
+  });
+
   it("does not overwrite session mode on session_start when no agent is active", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();

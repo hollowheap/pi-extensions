@@ -11,6 +11,8 @@
 ### Fixed
 
 - `pi-web`: `web_search` and `web_fetch` forward the tool abort signal to provider requests, so cancelling a call stops the network work and provider fallback chain.
+- `pi-agent`: restoring the default tool set no longer activates codemode-only, deferred, or hidden tools.
+- `pi-web` and `pi-language-tools`: session start removes `web_search`, `web_fetch`, and `lang` from the active tool set, keeping codemode as the only model-visible route.
 - `pi-subagents`: `define` results render as a named session agent instead of an empty child row.
 - `pi-subagents`: a failed or malformed branch read clears session definitions instead of leaving definitions from the previous branch active.
 
