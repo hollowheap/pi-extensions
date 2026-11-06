@@ -222,6 +222,9 @@ describe("pi-agent extension", () => {
     const pi = createMockPi();
     const ext = createAgentExtension();
     ext(pi as never);
+    // The host loads a fresh extension instance for the forked session.
+    const forkedPi = createMockPi();
+    createAgentExtension()(forkedPi as never);
 
     const ctx = createMockContext();
     // Add history
@@ -230,6 +233,19 @@ describe("pi-agent extension", () => {
       type: "message",
       message: { role: "user", content: "hello" },
     });
+    const forkCtx = createMockContext({ branch: ctx.branch });
+    ctx.fork = vi.fn(async (_id, opts) => {
+      for (const method of ["setSessionName", "setLabel", "appendEntry"]) {
+        (pi as Record<string, unknown>)[method] = vi.fn(() => {
+          throw new Error("This extension ctx is stale");
+        });
+      }
+      await Promise.all(
+        forkedPi.emit("session_start", { reason: "fork" }, forkCtx),
+      );
+      await opts?.withSession?.(forkCtx);
+      return { cancelled: false };
+    }) as never;
 
     const cmd = pi.getCommand("agent");
     await cmd.handler("scout", ctx);
@@ -238,20 +254,24 @@ describe("pi-agent extension", () => {
       "msg-1",
       expect.objectContaining({ position: "at" }),
     );
-    expect(pi.setLabel).toHaveBeenCalledWith("msg-1", "agent: scout");
-    expect(pi.setSessionName).toHaveBeenCalledWith("[scout] session-1");
+    expect(forkedPi.setLabel).toHaveBeenCalledWith("msg-1", "agent: scout");
+    expect(forkedPi.setSessionName).toHaveBeenCalledWith("[scout] session-1");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
-    expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
+    expect(forkCtx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+    expect(forkedPi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
       name: "scout",
     });
-    expect(pi.setModel).toHaveBeenCalledWith({
+    expect(forkedPi.setModel).toHaveBeenCalledWith({
       provider: "opencode-go",
       id: "beam-free",
     });
-    expect(pi.setThinkingLevel).toHaveBeenCalledWith("low");
-    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "grep"]);
-    expect(ctx.ui.custom).toHaveBeenCalled();
+    expect(forkedPi.setThinkingLevel).toHaveBeenCalledWith("low");
+    expect(forkedPi.setActiveTools).toHaveBeenCalledWith(["read", "grep"]);
+    expect(forkCtx.ui.custom).toHaveBeenCalled();
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("failed"),
+      "error",
+    );
   });
 
   it("does not fall back to an in-place switch when the fork callback fails", async () => {
@@ -278,7 +298,7 @@ describe("pi-agent extension", () => {
     const cmd = pi.getCommand("agent");
     await cmd.handler("scout", ctx);
 
-    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).not.toHaveBeenCalled();
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("Agent switch failed after fork"),
       "error",
@@ -305,7 +325,7 @@ describe("pi-agent extension", () => {
     const cmd = pi.getCommand("agent");
     await cmd.handler("scout", ctx);
 
-    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).not.toHaveBeenCalled();
     expect(forkCtx.ui.custom).toHaveBeenCalled();
   });
 
@@ -476,9 +496,74 @@ describe("pi-agent extension", () => {
 
     const ctx = createMockContext();
     const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx);
     await cmd.handler("default", ctx);
 
     expect(pi.setActiveTools).toHaveBeenLastCalledWith(["read", "codemode"]);
+  });
+
+  it("restores the host default tool set on /agent default after reload or resume with a restricted agent active (T210)", async () => {
+    const pi = createMockPi();
+    // Simulate a session resumed/reloaded while scout was active with restricted tools:
+    pi.getActiveTools.mockReturnValue(["read", "grep"]);
+    pi.getAllTools.mockReturnValue([
+      { name: "read", exposure: "direct", defaultActive: true },
+      { name: "edit", exposure: "direct", defaultActive: true },
+      { name: "bash", exposure: "direct", defaultActive: true },
+      { name: "grep", exposure: "direct", defaultActive: true },
+      { name: "powershell", exposure: "direct", defaultActive: false },
+      { name: "web_search", exposure: "codemode", defaultActive: true },
+      { name: "codemode", exposure: "model-only", defaultActive: true },
+    ] as never);
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "custom-1",
+      type: "custom",
+      customType: ACTIVE_AGENT_TYPE,
+      data: { name: "scout" },
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith(["read", "grep"]);
+
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("default", ctx);
+
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith([
+      "read",
+      "edit",
+      "bash",
+      "grep",
+      "codemode",
+    ]);
+  });
+
+  it("snapshots the live base tool set on first switch away from default so later-enabled tools survive (T211)", async () => {
+    const pi = createMockPi();
+    // At session_start, codemode has not yet swapped active tools:
+    pi.getActiveTools.mockReturnValue(["read", "edit", "bash", "grep"]);
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    // Later (after session_start), codemode swaps active tools or user disables bash:
+    pi.getActiveTools.mockReturnValue(["read", "edit", "codemode"]);
+
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx);
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith(["read", "grep"]);
+
+    await cmd.handler("default", ctx);
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith([
+      "read",
+      "edit",
+      "codemode",
+    ]);
   });
 
   it("does not overwrite session mode on session_start when no agent is active", async () => {

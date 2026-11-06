@@ -5,12 +5,27 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode } from "@hollowheap/core/modes";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { showAgentPicker } from "./picker.js";
 import { showAgentSwitchPopup } from "./popup.js";
 
 export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
+
+interface PendingFork {
+  agent: AgentConfig;
+  sessionName: string;
+  labelId: string;
+}
+
+const PENDING_FORK = Symbol.for("@hollowheap/pi-agent/pending-fork");
+
+// The slot lives on globalThis so it survives the extension reload that
+// ctx.fork performs.
+const pendingForkSlot = globalThis as unknown as {
+  [PENDING_FORK]?: PendingFork;
+};
 
 const VALID_THINKING_LEVELS = new Set<string>([
   "off",
@@ -45,17 +60,14 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
     let lastTrusted = false;
     let baseActiveTools: string[] | undefined;
 
-    const captureBaseActiveTools = (): void => {
-      if (
-        baseActiveTools !== undefined ||
-        typeof pi.getActiveTools !== "function"
-      ) {
-        return;
-      }
+    const filterDirectTools = (
+      piApi: ExtensionAPI,
+      names: readonly string[],
+    ): string[] => {
       const exposures = new Map(
-        pi.getAllTools().map((tool) => [tool.name, tool.exposure]),
+        piApi.getAllTools().map((tool) => [tool.name, tool.exposure]),
       );
-      baseActiveTools = pi.getActiveTools().filter((name) => {
+      return names.filter((name) => {
         const exposure = exposures.get(name);
         return (
           exposure === undefined ||
@@ -65,19 +77,51 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       });
     };
 
-    const restoreBaseActiveTools = (piApi: ExtensionAPI): void => {
-      captureBaseActiveTools();
-      if (
-        baseActiveTools !== undefined &&
-        typeof piApi.setActiveTools === "function"
-      ) {
-        piApi.setActiveTools([...baseActiveTools]);
+    const deriveDefaultTools = (piApi: ExtensionAPI): string[] =>
+      piApi
+        .getAllTools()
+        .filter((tool) => {
+          const defaultActive = (tool as { defaultActive?: unknown })
+            .defaultActive;
+          if (defaultActive === false) return false;
+          const exposure = tool.exposure;
+          return (
+            exposure === undefined ||
+            exposure === "direct" ||
+            exposure === "model-only"
+          );
+        })
+        .map((tool) => tool.name);
+
+    const captureBaseActiveTools = (piApi: ExtensionAPI = pi): void => {
+      if (baseActiveTools !== undefined) {
+        return;
       }
+      if (typeof piApi.getActiveTools === "function") {
+        baseActiveTools = filterDirectTools(piApi, piApi.getActiveTools());
+        return;
+      }
+      if (typeof piApi.getAllTools === "function") {
+        baseActiveTools = deriveDefaultTools(piApi);
+      }
+    };
+
+    const restoreBaseActiveTools = (piApi: ExtensionAPI): void => {
+      if (typeof piApi.setActiveTools !== "function") return;
+      const tools =
+        baseActiveTools !== undefined
+          ? baseActiveTools
+          : typeof piApi.getAllTools === "function"
+            ? deriveDefaultTools(piApi)
+            : [];
+      piApi.setActiveTools([...tools]);
     };
     const syncTitle = (
       ctx: ExtensionCommandContext | ExtensionContext,
     ): void => {
-      ctx.ui?.setTitle?.(activeAgent ? `Pi — ${activeAgent.name}` : "Pi");
+      ctx.ui?.setTitle?.(
+        activeAgent ? `Pi — ${sanitizeTerminalText(activeAgent.name)}` : "Pi",
+      );
     };
 
     const resolveAgentDiscovery = (cwd: string, trusted: boolean) =>
@@ -93,12 +137,15 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       piApi: ExtensionAPI,
       options: { persist?: boolean; notify?: boolean } = {},
     ): Promise<void> => {
+      if (activeAgent === undefined && options.persist) {
+        captureBaseActiveTools(piApi);
+      }
       activeAgent = agent;
       if (options.persist) {
         piApi.appendEntry(ACTIVE_AGENT_TYPE, { name: agent.name });
       }
 
-      ctx.ui?.setStatus?.("agent", agent.name);
+      ctx.ui?.setStatus?.("agent", sanitizeTerminalText(agent.name));
       syncTitle(ctx);
 
       if (agent.mode && ctx.sessionManager) {
@@ -147,7 +194,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       if (agent.tools?.length) {
-        captureBaseActiveTools();
         if (typeof piApi.setActiveTools === "function") {
           piApi.setActiveTools(agent.tools);
         }
@@ -203,39 +249,43 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       if (hasHistory && branch.length > 0 && typeof ctx.fork === "function") {
         const lastEntry = branch[branch.length - 1];
-        let forkStarted = false;
+        let forkCtx: ExtensionCommandContext | undefined;
+        // ctx.fork invalidates this `pi`; the replacement instance applies
+        // the agent from its own session_start (reason "fork").
+        pendingForkSlot[PENDING_FORK] = {
+          agent,
+          sessionName,
+          labelId: lastEntry.id,
+        };
         try {
           await ctx.fork(lastEntry.id, {
             position: "at",
-            withSession: async (forkCtx) => {
-              forkStarted = true;
-              pi.setSessionName(sessionName);
-              if (typeof pi.setLabel === "function") {
-                pi.setLabel(lastEntry.id, `agent: ${agent.name}`);
-              }
-              await applyAgent(agent, forkCtx, pi, {
-                persist: true,
-                notify: false,
-              });
-              await showAgentSwitchPopup(agent, forkCtx, {
+            withSession: async (replacedCtx) => {
+              forkCtx = replacedCtx;
+              await showAgentSwitchPopup(agent, replacedCtx, {
                 sessionName,
                 forked: true,
               });
             },
           });
-          if (forkStarted) {
+          if (forkCtx) {
             return;
           }
         } catch (error) {
-          if (forkStarted) {
-            ctx.ui?.notify?.(
+          if (forkCtx) {
+            forkCtx.ui?.notify?.(
               `Agent switch failed after fork: ${error instanceof Error ? error.message : String(error)}`,
               "error",
             );
             return;
           }
+          // A consumed slot means the replacement session started, so this
+          // `pi` is stale and an in-place switch would throw again.
+          if (pendingForkSlot[PENDING_FORK] === undefined) throw error;
           // If forking fails before the replacement session starts, fall back
           // to an in-place switch.
+        } finally {
+          pendingForkSlot[PENDING_FORK] = undefined;
         }
       }
 
@@ -278,12 +328,30 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         }
       }
 
-      await applyDefault(ctx, pi, { persist: false, notify: false });
+      if (activeAgent !== undefined) {
+        await applyDefault(ctx, pi, { persist: false, notify: false });
+        return;
+      }
+
+      ctx.ui?.setStatus?.("agent", undefined);
+      syncTitle(ctx);
     };
 
-    pi.on("session_start", (_event, ctx) => {
-      captureBaseActiveTools();
-      return restore(ctx);
+    pi.on("session_start", async (event, ctx) => {
+      const pending =
+        event?.reason === "fork" ? pendingForkSlot[PENDING_FORK] : undefined;
+      if (pending === undefined) return restore(ctx);
+      pendingForkSlot[PENDING_FORK] = undefined;
+      lastCwd = ctx.cwd;
+      lastTrusted = ctx.isProjectTrusted();
+      pi.setSessionName(pending.sessionName);
+      if (typeof pi.setLabel === "function") {
+        pi.setLabel(pending.labelId, `agent: ${pending.agent.name}`);
+      }
+      await applyAgent(pending.agent, ctx, pi, {
+        persist: true,
+        notify: false,
+      });
     });
     pi.on("session_tree", (_event, ctx) => restore(ctx));
     pi.on("project_trust", (event) => {
