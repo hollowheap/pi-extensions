@@ -35,7 +35,10 @@ function detailsOf(result: unknown): Record<string, unknown> {
     {}) as Record<string, unknown>;
 }
 
-function classifierResult(answer: Record<string, unknown>): unknown {
+function classifierResult(
+  answer: Record<string, unknown>,
+  usage?: Record<string, unknown>,
+): unknown {
   return {
     api: "classifier",
     provider: "typesafe",
@@ -43,6 +46,7 @@ function classifierResult(answer: Record<string, unknown>): unknown {
     answers: { answer },
     stopReason: "stop",
     timestamp: 1_000,
+    ...(usage === undefined ? {} : { usage }),
   };
 }
 
@@ -82,12 +86,28 @@ describe("decide", () => {
   it("answers a choice question", async () => {
     agentDir();
     const classify = vi.fn(async () =>
-      classifierResult({
-        type: "choice",
-        choice: "allow",
-        probabilities: { allow: 0.9, ask: 0.1 },
-        confidence: 0.9,
-      }),
+      classifierResult(
+        {
+          type: "choice",
+          choice: "allow",
+          probabilities: { allow: 0.9, ask: 0.1 },
+          confidence: 0.9,
+        },
+        {
+          input: 10,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 12,
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0.001,
+          },
+        },
+      ),
     );
     const tool = createDecideTool();
 
@@ -115,6 +135,7 @@ describe("decide", () => {
       model: "typesafe/jev-latest",
     });
     expect(classify).toHaveBeenCalledTimes(1);
+    expect((result as { usage?: { input?: number } }).usage?.input).toBe(10);
   });
 
   it("answers score and bool questions", async () => {

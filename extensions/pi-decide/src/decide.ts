@@ -5,6 +5,7 @@ import type {
   ClassifierContext,
   ClassifierQuestion,
   ClassifierResult,
+  Usage,
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -255,6 +256,7 @@ export function createDecideTool() {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],
         details: output,
+        ...(result.usage === undefined ? {} : { usage: result.usage }),
       };
     })();
 
@@ -430,6 +432,7 @@ export function createDecideTool() {
 type DecideToolResult = {
   content: { type: "text"; text: string }[];
   details: Record<string, unknown>;
+  usage?: Usage;
 };
 
 export function defaultDecide(
