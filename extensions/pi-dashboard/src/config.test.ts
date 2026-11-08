@@ -170,7 +170,7 @@ describe("normalizeConfig", () => {
       readFileSync(join(dir, "dashboard.json"), "utf8"),
     ) as Record<string, unknown>;
     expect(saved.sections).toEqual([
-      { type: "version", gap: 1 },
+      { type: "version", ascii: ["custom"], gap: 1 },
       { type: "terminal", command: "echo hi", intervalMs: 5000 },
     ]);
 
@@ -179,6 +179,56 @@ describe("normalizeConfig", () => {
       readFileSync(join(dir, "dashboard.json"), "utf8"),
     ) as Record<string, unknown>;
     expect(hidden.sections).toEqual([
+      { type: "terminal", command: "echo hi", intervalMs: 5000 },
+    ]);
+  });
+
+  it("throws when existing config is invalid JSON and leaves the file unchanged", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
+    const path = join(dir, "dashboard.json");
+    const broken = "{\ninvalid json";
+    writeFileSync(path, broken);
+
+    expect(() =>
+      saveDashboardSettings(dir, { header: "banner", gap: 0 }),
+    ).toThrow();
+
+    expect(readFileSync(path, "utf8")).toBe(broken);
+  });
+
+  it("keeps existing header ascii and other header fields when changing gap or preset", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
+    const path = join(dir, "dashboard.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        width: 80,
+        sections: [
+          {
+            type: "header",
+            ascii: ["custom1", "custom2"],
+            color: "cyan",
+            gap: 0,
+          },
+          { type: "terminal", command: "echo hi", intervalMs: 5000 },
+        ],
+      }),
+    );
+
+    saveDashboardSettings(dir, { header: "banner", gap: 3 });
+    let result = JSON.parse(readFileSync(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(result.sections).toEqual([
+      { type: "header", ascii: ["custom1", "custom2"], color: "cyan", gap: 3 },
+      { type: "terminal", command: "echo hi", intervalMs: 5000 },
+    ]);
+
+    saveDashboardSettings(dir, { header: "version", gap: 2 });
+    result = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    expect(result.sections).toEqual([
+      { type: "version", ascii: ["custom1", "custom2"], color: "cyan", gap: 2 },
       { type: "terminal", command: "echo hi", intervalMs: 5000 },
     ]);
   });

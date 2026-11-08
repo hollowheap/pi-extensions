@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { updateJsonConfig } from "@hollowheap/core/config";
 
 export const CONFIG_FILE_NAME = "dashboard.json";
 
@@ -235,43 +236,38 @@ export interface DashboardSettings {
   gap: number;
 }
 
-function readRoot(path: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 /** Persist the startup header preset while preserving terminal sections. */
 export function saveDashboardSettings(
   agentDir: string,
   settings: DashboardSettings,
 ): string {
   const path = join(agentDir, CONFIG_FILE_NAME);
-  const root = readRoot(path);
-  const sections = Array.isArray(root.sections)
-    ? root.sections
-    : defaultConfig().sections;
-  const terminals = sections.filter(
-    (section) => isRecord(section) && section.type === "terminal",
-  );
-  root.sections =
-    settings.header === "none"
-      ? terminals
-      : [
-          settings.header === "version"
-            ? { type: "version", gap: settings.gap }
-            : { type: "header", gap: settings.gap },
-          ...terminals,
-        ];
-  mkdirSync(agentDir, { recursive: true });
-  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(root, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
+  const res = updateJsonConfig(path, (root) => {
+    const sections = Array.isArray(root.sections) ? root.sections : [];
+    const existingHeader = sections.find(
+      (section) =>
+        isRecord(section) &&
+        (section.type === "header" ||
+          section.type === "version" ||
+          section.type === undefined),
+    );
+    const terminals = sections.filter(
+      (section) => isRecord(section) && section.type === "terminal",
+    );
+    if (settings.header === "none") {
+      root.sections = terminals;
+    } else {
+      const baseHeader = isRecord(existingHeader) ? { ...existingHeader } : {};
+      const nextHeader: Record<string, unknown> = {
+        ...baseHeader,
+        type: settings.header === "version" ? "version" : "header",
+        gap: settings.gap,
+      };
+      root.sections = [nextHeader, ...terminals];
+    }
   });
-  renameSync(temporary, path);
-  return path;
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+  return res.path;
 }

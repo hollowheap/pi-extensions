@@ -245,6 +245,30 @@ describe("createDashboard", () => {
     controller.stop();
   });
 
+  it("sanitizes command output containing OSC, DCS, APC, or \\r before fitLines", async () => {
+    const dirtyOutput =
+      "hello\x1b]0;title\x07world\r\n\x1b_apc\x1b\\line2\x1bPraw\x1b\\end";
+    const deps = fakeDeps(dirtyOutput);
+    const controller = createDashboard(
+      {
+        width: 20,
+        sections: [
+          {
+            type: "terminal",
+            command: "test-cmd",
+            args: [],
+            intervalMs: 50,
+            gap: 0,
+          },
+        ],
+      },
+      deps,
+    );
+    await controller.refresh();
+    const lines = controller.lines();
+    expect(lines).toEqual(["helloworld          ", "line2end            "]);
+  });
+
   it("passes the render width to the terminal section", async () => {
     const deps = fakeDeps("a\n");
     const controller = createDashboard(

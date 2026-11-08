@@ -3,6 +3,7 @@ import {
   VERSION,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { effectiveCwd } from "@hollowheap/core/state";
 import {
   type DashboardConfig,
@@ -93,7 +94,11 @@ function terminalSection(
       if (controller.signal.aborted || stopped) {
         aborted = true;
       } else {
-        lines = [error instanceof Error ? error.message : String(error)];
+        lines = [
+          sanitizeTerminalText(
+            error instanceof Error ? error.message : String(error),
+          ),
+        ];
         if (!warned) {
           warned = true;
           deps.notify(lines[0]);

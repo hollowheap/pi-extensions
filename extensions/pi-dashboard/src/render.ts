@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export function fitLines(
   lines: string[],
@@ -18,7 +19,8 @@ export function fitLines(
 }
 
 export function splitOutput(stdout: string): string[] {
-  const lines = stdout.split("\n");
+  const sanitized = sanitizeTerminalText(stdout);
+  const lines = sanitized.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
