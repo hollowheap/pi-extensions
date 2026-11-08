@@ -956,10 +956,10 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Consequences: autopilot prompts for destructive commands; non-interactive modes block them; the list is heuristic and does not replace an outer sandbox.
   - Resolves: Q15
 
-- [ ] D182 [R85]: A shared core `sanitizeTerminalText` removes every escape sequence and C0/C1 control byte except newline and tab from untrusted text before rendering. This includes model, task, command, config, and agent-name text. Extension styling is applied after sanitizing, so its colors remain. Text sent to the model is not changed.
+- [ ] D182 [R85]: A shared core `sanitizeTerminalText` removes every escape sequence and C0/C1 control byte except newline and tab from untrusted text before rendering, with an `allowSgr` option to preserve SGR color sequences where commands render formatted output. This covers model, task, command, config, and agent-name text. Extension styling is applied after sanitizing; `pi-dashboard` command output keeps its SGR colors. Text sent to the model is not changed.
   - Context: Seven owners render raw control bytes, which allows title, clipboard, and screen changes.
-  - Alternatives: keep SGR color codes from task and command output; escape bytes visibly instead of removing them.
-  - Consequences: task and command output lose their own colors in previews; approval dialogs show what will run.
+  - Alternatives: keep SGR color codes everywhere; strip SGR unconditionally even in dashboard commands; escape bytes visibly instead of removing them.
+  - Consequences: task previews lose raw colors while dashboard commands preserve SGR colors; approval dialogs show what will run.
   - Resolves: Q21
 
 - [ ] D183 [R86]: Every child that must die with its owner runs in its own process group and is killed by group with SIGTERM, then SIGKILL after a grace period, including when the leader already exited. TypeScript owners use the runtime primitive. The plain-`node` shims inline the same Node built-in calls (`spawn` with `detached: true` and `process.kill(-pid, signal)`) without importing workspace packages. A user cancel records `cancelled`.

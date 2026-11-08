@@ -1144,8 +1144,8 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 - [x] T185 [S186] [T180]: pi-dashboard command output is sanitized before render.
   - Verify: `npx vitest run extensions/pi-dashboard/src`
   - Files: `extensions/pi-dashboard/src/index.ts`, `extensions/pi-dashboard/src/render.ts`, `extensions/pi-dashboard/src/index.test.ts`
-  - Notes: apply in `splitOutput` before `fitLines`.
-  - Risk: dashboard output loses SGR colors that the user configured through the command.
+  - Notes: apply in `splitOutput` before `fitLines` with `allowSgr: true` to preserve SGR colors while stripping OSC and non-SGR control sequences.
+  - Risk: non-SGR sequences could corrupt rendering if not stripped.
 
 - [x] T186 [S12] [T180]: the pi-guard approval dialog shows the full sanitized command, without the 500-character cut.
   - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts`

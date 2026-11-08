@@ -1289,7 +1289,7 @@
 - [ ] S186 [R85] [D182]: Untrusted text is sanitized before it reaches the terminal.
   - Verify: `npx vitest run packages/core/src extensions/pi-guard/src extensions/pi-todos/src extensions/pi-question/src extensions/pi-tasks/src extensions/pi-agent/src extensions/pi-dashboard/src`
   - Seam: `sanitizeTerminalText` in `packages/core/src/format.ts` and its render-path callers.
-  - Behavior: ESC, CSI, OSC, and C0/C1 bytes other than newline and tab are removed from model, task, command, config, and agent-name text before rendering; approval dialogs show the full sanitized command; extension styling applied after sanitizing keeps its colors; text sent to the model is unchanged.
+  - Behavior: ESC, CSI, OSC, and C0/C1 bytes other than newline and tab are removed from model, task, command, config, and agent-name text before rendering; approval dialogs show the full sanitized command; extension styling applied after sanitizing keeps its colors; pi-dashboard command output preserves valid SGR color sequences via allowSgr; text sent to the model is unchanged.
   - Failures: OSC title or clipboard sequences reaching the terminal, an approval dialog hiding part of the command, or sanitizing model-bound text.
 
 - [ ] S187 [R86] [D183]: Owned children die with their owner as a process group.
