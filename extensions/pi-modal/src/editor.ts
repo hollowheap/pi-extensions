@@ -22,6 +22,18 @@ import {
   resolveEffectiveKeymaps,
 } from "./keymap.js";
 
+function getGraphemeEnd(text: string, col: number): number {
+  if (col < 0) return 0;
+  if (col >= text.length) return text.length;
+  const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+  for (const seg of segmenter.segment(text)) {
+    if (col >= seg.index && col < seg.index + seg.segment.length) {
+      return seg.index + seg.segment.length;
+    }
+  }
+  return col + 1;
+}
+
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
@@ -134,14 +146,17 @@ export class ModalEditor extends CustomEditor {
     let text = "";
     if (start.line === end.line) {
       const line = lines[start.line] ?? "";
-      text = line.slice(start.col, end.col + 1);
+      const endCol = getGraphemeEnd(line, end.col);
+      text = line.slice(start.col, endCol);
     } else {
       const parts: string[] = [];
       parts.push((lines[start.line] ?? "").slice(start.col));
       for (let l = start.line + 1; l < end.line; l++) {
         parts.push(lines[l] ?? "");
       }
-      parts.push((lines[end.line] ?? "").slice(0, end.col + 1));
+      const lastLine = lines[end.line] ?? "";
+      const endCol = getGraphemeEnd(lastLine, end.col);
+      parts.push(lastLine.slice(0, endCol));
       text = parts.join("\n");
     }
 
@@ -178,7 +193,8 @@ export class ModalEditor extends CustomEditor {
     if (start.line === end.line) {
       const line = lines[start.line] ?? "";
       const before = line.slice(0, start.col);
-      const after = line.slice(end.col + 1);
+      const endCol = getGraphemeEnd(line, end.col);
+      const after = line.slice(endCol);
       newLines = [
         ...lines.slice(0, start.line),
         before + after,
@@ -188,7 +204,8 @@ export class ModalEditor extends CustomEditor {
       const firstLine = lines[start.line] ?? "";
       const lastLine = lines[end.line] ?? "";
       const before = firstLine.slice(0, start.col);
-      const after = lastLine.slice(end.col + 1);
+      const endCol = getGraphemeEnd(lastLine, end.col);
+      const after = lastLine.slice(endCol);
       const merged = before + after;
       newLines = [
         ...lines.slice(0, start.line),
@@ -261,6 +278,62 @@ export class ModalEditor extends CustomEditor {
   override handleInput(data: string): void {
     const printable = printableKey(data);
     const input = printable ?? data;
+
+    // Search mode handling
+    if (this.searchMode) {
+      if (matchesKey(data, "enter")) {
+        this.searchMode = false;
+        this.lastSearchQuery = this.searchQuery;
+        this.moveToMatch(this.searchQuery, 1);
+        return;
+      }
+      if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+        this.searchMode = false;
+        this.searchQuery = "";
+        return;
+      }
+      if (printable !== undefined) {
+        this.searchQuery += printable;
+        return;
+      }
+      return;
+    }
+
+    // Command mode handling
+    if (this.commandMode) {
+      if (matchesKey(data, "enter")) {
+        this.commandMode = false;
+        const cmd = this.commandBuffer;
+        this.commandBuffer = "";
+        // Handle :%s/old/new/g
+        const subMatch = cmd.match(/^:%s\/([^/]*)\/([^/]*)\/(g?)$/);
+        if (subMatch && subMatch[1] !== "") {
+          const from = subMatch[1];
+          const to = subMatch[2] ?? "";
+          const text = this.getText();
+          const next =
+            subMatch[3] === "g"
+              ? text.split(from).join(to)
+              : text.replace(from, to);
+          if (next !== text) {
+            const cursor = this.getCursor();
+            this.setText(next);
+            this.moveCursorTo(cursor.line, cursor.col);
+          }
+        }
+        return;
+      }
+      if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+        this.commandMode = false;
+        this.commandBuffer = "";
+        return;
+      }
+      if (printable !== undefined) {
+        this.commandBuffer += printable;
+        return;
+      }
+      return;
+    }
 
     // Escape key handling
     if (matchesKey(data, "escape")) {
@@ -357,26 +430,6 @@ export class ModalEditor extends CustomEditor {
       return;
     }
 
-    // Search mode handling
-    if (this.searchMode) {
-      if (matchesKey(data, "enter")) {
-        this.searchMode = false;
-        this.lastSearchQuery = this.searchQuery;
-        this.moveToMatch(this.searchQuery, 1);
-        return;
-      }
-      if (matchesKey(data, "escape")) {
-        this.searchMode = false;
-        this.searchQuery = "";
-        return;
-      }
-      if (printable !== undefined) {
-        this.searchQuery += printable;
-        return;
-      }
-      return;
-    }
-
     // Command mode for substitution
     if (this.mode === "normal" && input === ":") {
       // Enter command mode - collect until enter
@@ -384,41 +437,6 @@ export class ModalEditor extends CustomEditor {
       // For simplicity, handle :%s in handleInput via a separate flag
       this.commandMode = true;
       this.commandBuffer = ":";
-      return;
-    }
-
-    if (this.commandMode) {
-      if (matchesKey(data, "enter")) {
-        this.commandMode = false;
-        const cmd = this.commandBuffer;
-        this.commandBuffer = "";
-        // Handle :%s/old/new/g
-        const subMatch = cmd.match(/^:%s\/([^/]*)\/([^/]*)\/(g?)$/);
-        if (subMatch && subMatch[1] !== "") {
-          const from = subMatch[1];
-          const to = subMatch[2] ?? "";
-          const text = this.getText();
-          const next =
-            subMatch[3] === "g"
-              ? text.split(from).join(to)
-              : text.replace(from, to);
-          if (next !== text) {
-            const cursor = this.getCursor();
-            this.setText(next);
-            this.moveCursorTo(cursor.line, cursor.col);
-          }
-        }
-        return;
-      }
-      if (matchesKey(data, "escape")) {
-        this.commandMode = false;
-        this.commandBuffer = "";
-        return;
-      }
-      if (printable !== undefined) {
-        this.commandBuffer += printable;
-        return;
-      }
       return;
     }
 

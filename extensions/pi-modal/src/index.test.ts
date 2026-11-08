@@ -999,4 +999,114 @@ describe("extension registration", () => {
 
     handlers.session_start?.({}, ctx);
   });
+
+  it("modal visual d, x, and y act on whole graphemes at selection boundaries", () => {
+    // 1. Combining character case: "cafe\u0301" with combining acute accent
+    const { editor: yankEditor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "cafe\u0301 au lait" },
+    );
+    yankEditor.handleInput("0");
+    yankEditor.handleInput("v");
+    yankEditor.handleInput("l");
+    yankEditor.handleInput("l");
+    yankEditor.handleInput("l");
+    yankEditor.handleInput("y");
+    expect(yankEditor.getMode()).toBe("normal");
+    expect(yankEditor.getYankedText()).toBe("cafe\u0301");
+    expect(yankEditor.getText()).toBe("cafe\u0301 au lait");
+
+    const { editor: delEditor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "cafe\u0301 au lait" },
+    );
+    delEditor.handleInput("0");
+    delEditor.handleInput("v");
+    delEditor.handleInput("l");
+    delEditor.handleInput("l");
+    delEditor.handleInput("l");
+    delEditor.handleInput("d");
+    expect(delEditor.getMode()).toBe("normal");
+    expect(delEditor.getYankedText()).toBe("cafe\u0301");
+    expect(delEditor.getText()).toBe(" au lait");
+
+    const { editor: xEditor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "cafe\u0301 au lait" },
+    );
+    xEditor.handleInput("0");
+    xEditor.handleInput("v");
+    xEditor.handleInput("l");
+    xEditor.handleInput("l");
+    xEditor.handleInput("l");
+    xEditor.handleInput("x");
+    expect(xEditor.getMode()).toBe("normal");
+    expect(xEditor.getYankedText()).toBe("cafe\u0301");
+    expect(xEditor.getText()).toBe(" au lait");
+
+    // 2. Emoji case: "👍🏽 world"
+    const { editor: emojiEditor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "👍🏽 world" },
+    );
+    emojiEditor.handleInput("0");
+    emojiEditor.handleInput("v");
+    emojiEditor.handleInput("y");
+    expect(emojiEditor.getYankedText()).toBe("👍🏽");
+
+    const { editor: emojiDelEditor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "👍🏽 world" },
+    );
+    emojiDelEditor.handleInput("0");
+    emojiDelEditor.handleInput("v");
+    emojiDelEditor.handleInput("x");
+    expect(emojiDelEditor.getYankedText()).toBe("👍🏽");
+    expect(emojiDelEditor.getText()).toBe(" world");
+  });
+
+  it("Esc and Ctrl-C in / and : prompts cancel prompt and do not reach the agent", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "first line\nsecond line" },
+    );
+    const superHandleSpy = vi.spyOn(
+      Object.getPrototypeOf(Object.getPrototypeOf(editor)),
+      "handleInput",
+    );
+
+    // Open search prompt with '/'
+    editor.handleInput("/");
+    superHandleSpy.mockClear();
+
+    // Escape closes search prompt without reaching host
+    editor.handleInput("\x1b");
+    expect(superHandleSpy).not.toHaveBeenCalled();
+    expect(editor.getMode()).toBe("normal");
+
+    // Open search prompt again and test Ctrl+C
+    editor.handleInput("/");
+    superHandleSpy.mockClear();
+    editor.handleInput("\x03"); // Ctrl+C
+    expect(superHandleSpy).not.toHaveBeenCalled();
+    expect(editor.getMode()).toBe("normal");
+
+    // Open command prompt with ':'
+    editor.handleInput(":");
+    superHandleSpy.mockClear();
+
+    // Escape closes command prompt without reaching host
+    editor.handleInput("\x1b");
+    expect(superHandleSpy).not.toHaveBeenCalled();
+    expect(editor.getMode()).toBe("normal");
+
+    // Open command prompt and test Ctrl+C
+    editor.handleInput(":");
+    superHandleSpy.mockClear();
+    editor.handleInput("\x03"); // Ctrl+C
+    expect(superHandleSpy).not.toHaveBeenCalled();
+    expect(editor.getMode()).toBe("normal");
+
+    superHandleSpy.mockRestore();
+  });
 });
