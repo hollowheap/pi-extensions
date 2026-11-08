@@ -149,6 +149,16 @@ export async function observeConversation(
     },
   );
 
+  const stopReason = (
+    response as { stopReason?: string; errorMessage?: string }
+  ).stopReason;
+  const errorMessage = (
+    response as { stopReason?: string; errorMessage?: string }
+  ).errorMessage;
+  if (stopReason === "error" || stopReason === "aborted") {
+    throw new Error(errorMessage || stopReason);
+  }
+
   const text = response.content
     .filter(
       (item): item is { type: "text"; text: string } => item.type === "text",
@@ -160,6 +170,9 @@ export async function observeConversation(
     options.existing,
     options.remaining,
   );
+  if (stopReason === "length" && observations.length === 0) {
+    throw new Error(errorMessage || "length");
+  }
   return {
     observations: observations.map((observation) => ({
       ...observation,

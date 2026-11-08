@@ -81,6 +81,7 @@ function createCtx(branch: unknown[]) {
       getApiKeyAndHeaders: vi
         .fn()
         .mockResolvedValue({ ok: true, apiKey: "key", headers: { x: "y" } }),
+      complete: vi.fn(),
     },
     model: { id: "main-model" },
     ui: { notify: vi.fn(), confirm: vi.fn().mockResolvedValue(true) },
@@ -219,6 +220,33 @@ describe("pi-memory extension", () => {
       MEMORY_OBSERVATION_TYPE,
       expect.anything(),
     );
+    expect(pi.appendEntry).not.toHaveBeenCalledWith(
+      MEMORY_CONSUMED_TYPE,
+      expect.anything(),
+    );
+  });
+
+  it("leaves messages unconsumed when the model response has stopReason error", async () => {
+    const pi = createMockPi();
+    const dir = configDir({ notifyErrors: true });
+    createMemoryExtension({
+      getAgentDir: () => dir,
+    })(pi as never);
+
+    const ctx = createCtx([messageEntry("m1", "x".repeat(5_000))]);
+    ctx.modelRegistry.complete = vi.fn().mockResolvedValue({
+      content: [],
+      stopReason: "error",
+      errorMessage: "429 rate limited",
+    });
+
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "pi-memory: 429 rate limited",
+        "warning",
+      );
+    });
     expect(pi.appendEntry).not.toHaveBeenCalledWith(
       MEMORY_CONSUMED_TYPE,
       expect.anything(),

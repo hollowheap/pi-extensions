@@ -97,4 +97,61 @@ describe("observeConversation", () => {
     };
     expect(prompt.messages[0]?.content[0]?.text).not.toContain("abcdefghijk");
   });
+
+  it("throws when stopReason is error, aborted, or length with no parsed observation", async () => {
+    const model = { id: "model" } as never;
+    const signal = new AbortController().signal;
+
+    await expect(
+      observeConversation({
+        registry: {
+          complete: vi.fn().mockResolvedValue({
+            content: [],
+            stopReason: "error",
+            errorMessage: "429 rate limited",
+          }),
+        } as never,
+        model,
+        conversation: "hello",
+        existing: [],
+        remaining: 5,
+        redact: true,
+        signal,
+      }),
+    ).rejects.toThrow("429 rate limited");
+
+    await expect(
+      observeConversation({
+        registry: {
+          complete: vi.fn().mockResolvedValue({
+            content: [],
+            stopReason: "aborted",
+          }),
+        } as never,
+        model,
+        conversation: "hello",
+        existing: [],
+        remaining: 5,
+        redact: true,
+        signal,
+      }),
+    ).rejects.toThrow("aborted");
+
+    await expect(
+      observeConversation({
+        registry: {
+          complete: vi.fn().mockResolvedValue({
+            content: [{ type: "text", text: '{"observations":[{"text":"cut' }],
+            stopReason: "length",
+          }),
+        } as never,
+        model,
+        conversation: "hello",
+        existing: [],
+        remaining: 5,
+        redact: true,
+        signal,
+      }),
+    ).rejects.toThrow("length");
+  });
 });
