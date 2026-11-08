@@ -105,6 +105,20 @@ describe("parseQuestionBlock", () => {
     expect(parseQuestionBlock("## Q\n1. Alpha\n2. Alpha")).toBeUndefined();
     expect(parseQuestionBlock("## Q\n1. Done")).toBeUndefined();
   });
+
+  it("sanitizes prompt and option text and detects duplicates after sanitizing", () => {
+    expect(
+      parseQuestionBlock(
+        "## \x1b[31mChoose\x1b[0m\n1. \x1b[32mAlpha\x1b[0m\n2. Beta",
+      ),
+    ).toEqual([
+      { prompt: "Choose", mode: "single", options: ["Alpha", "Beta"] },
+    ]);
+    // Differ only by terminal escape sequence -> collision after sanitize -> reject block
+    expect(
+      parseQuestionBlock("## Choose\n1. Alpha\n2. \x1b[31mAlpha\x1b[0m"),
+    ).toBeUndefined();
+  });
 });
 
 describe("evaluateCondition", () => {
@@ -129,6 +143,22 @@ describe("formatAnswers", () => {
       ]),
     ).toBe(
       "1. Beta\n2. Alpha, Gamma, Write-in: custom\n3. none selected\n4. no answer",
+    );
+  });
+
+  it("numbers answers by source position and includes question text with skipped slots", () => {
+    const questions = [
+      { prompt: "Ship?", mode: "single" as const, options: ["Yes", "No"] },
+      { prompt: "Env?", mode: "single" as const, options: ["Prod", "Staging"] },
+      { prompt: "Notify?", mode: "single" as const, options: ["a", "b"] },
+    ];
+    const answers = [
+      { mode: "single" as const, value: "No" },
+      undefined,
+      { mode: "single" as const, value: "b" },
+    ];
+    expect(formatAnswers(answers, questions)).toBe(
+      "1. Ship?: No\n2. Env?: skipped\n3. Notify?: b",
     );
   });
 

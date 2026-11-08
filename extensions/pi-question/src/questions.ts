@@ -2,6 +2,7 @@ import {
   type ListItemNode,
   parseMarkdownBlocks,
 } from "@hollowheap/core/blocks";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export const MAX_ANSWER = 500;
 export const WRITE_IN_LABEL = "Write-in answer";
@@ -54,10 +55,11 @@ function toQuestion(
   prompt: string,
   items: readonly ListItemNode[],
 ): Question | undefined {
-  const { cleanPrompt, page, condition } = parseQuestionMeta(prompt);
+  const { cleanPrompt: rawPrompt, page, condition } = parseQuestionMeta(prompt);
+  const cleanPrompt = sanitizeTerminalText(rawPrompt);
   if (cleanPrompt.length === 0 || items.length > 8) return undefined;
 
-  const options = items.map((item) => item.text.trim());
+  const options = items.map((item) => sanitizeTerminalText(item.text.trim()));
   const seen = new Set<string>();
   for (const option of options) {
     if (
@@ -180,8 +182,22 @@ export function evaluateCondition(
   return false;
 }
 
-export function formatAnswers(answers: readonly QuestionAnswer[]): string {
-  return answers
-    .map((answer, index) => `${index + 1}. ${formatAnswer(answer)}`)
-    .join("\n");
+export function formatAnswers(
+  answers: readonly ((QuestionAnswer & { prompt?: string }) | undefined)[],
+  questions?: readonly Question[],
+): string {
+  if (answers.length === 0) return "";
+  const count = questions !== undefined ? questions.length : answers.length;
+  const lines: string[] = [];
+  for (let index = 0; index < count; index++) {
+    const answer = answers[index];
+    const prompt = questions?.[index]?.prompt ?? answer?.prompt;
+    const ansText = answer !== undefined ? formatAnswer(answer) : "skipped";
+    if (prompt !== undefined) {
+      lines.push(`${index + 1}. ${prompt}: ${ansText}`);
+    } else {
+      lines.push(`${index + 1}. ${ansText}`);
+    }
+  }
+  return lines.join("\n");
 }

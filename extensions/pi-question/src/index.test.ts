@@ -1,10 +1,23 @@
 import { withPromptLock } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
-import extension from "./index.js";
+import extension, { askQuestionFlow, askSingleQuestion } from "./index.js";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
+  return {
+    ...actual,
+    withPromptLock: vi.fn(
+      (
+        fn: () => unknown,
+        opts?: { signal?: AbortSignal; timeoutMs?: number },
+      ) => {
+        if (opts?.signal?.aborted) {
+          throw new Error("prompt lock: aborted");
+        }
+        return fn();
+      },
+    ),
+  };
 });
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
@@ -663,7 +676,14 @@ describe("pi-question extension", () => {
     component()?.handleInput?.("\x1b");
 
     await pending;
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringContaining("Question dialog cancelled"),
+        details: expect.objectContaining({ cancelled: true }),
+      }),
+      { deliverAs: "followUp" },
+    );
   });
 
   it("toggles RPC multi-select rows through select until Done", async () => {
@@ -764,7 +784,14 @@ describe("pi-question extension", () => {
     );
 
     expect(select).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringContaining("Question dialog cancelled"),
+        details: expect.objectContaining({ cancelled: true }),
+      }),
+      { deliverAs: "followUp" },
+    );
   });
 
   it("cancels the RPC multi-select set when write-in is dismissed", async () => {
@@ -782,7 +809,14 @@ describe("pi-question extension", () => {
 
     expect(select).toHaveBeenCalledTimes(1);
     expect(input).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringContaining("Question dialog cancelled"),
+        details: expect.objectContaining({ cancelled: true }),
+      }),
+      { deliverAs: "followUp" },
+    );
   });
 
   it("falls back to the select loop when TUI custom is unavailable", async () => {
@@ -866,7 +900,7 @@ describe("pi-question extension", () => {
     );
   });
 
-  it("sends nothing when a dialog is cancelled", async () => {
+  it("sends a cancelled follow-up message when a dialog is cancelled", async () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const select = vi.fn(async () => undefined);
@@ -878,7 +912,87 @@ describe("pi-question extension", () => {
       ctx,
     );
 
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringContaining("Question dialog cancelled"),
+        display: true,
+        details: expect.objectContaining({
+          cancelled: true,
+        }),
+      }),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("preserves partial answers and sends cancelled message on mid-flow cancellation", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("Alpha")
+      .mockResolvedValueOnce(undefined);
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      assistant(
+        "'''question\n## Q1\n1. Alpha\n2. Beta\n## Q2\n1. Gamma\n2. Delta\n'''",
+      ),
+      ctx,
+    );
+
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringMatching(
+          /1\.\s+Alpha[\s\S]*Question dialog cancelled/,
+        ),
+        display: true,
+        details: expect.objectContaining({
+          cancelled: true,
+          answers: expect.arrayContaining([
+            expect.objectContaining({ mode: "single", value: "Alpha" }),
+          ]),
+        }),
+      }),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("preserves partial answers across pages when cancelled during page navigation", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("Alpha")
+      .mockResolvedValueOnce(undefined);
+    const ctx = context(select);
+
+    await emit(
+      handlers.message_end,
+      assistant(
+        "'''question\n## Q1 [page: 1]\n1. Alpha\n## Q2 [page: 2]\n1. Beta\n'''",
+      ),
+      ctx,
+    );
+
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "hollowheap.question.answers",
+        content: expect.stringMatching(
+          /1\.\s+Alpha[\s\S]*Question dialog cancelled/,
+        ),
+        display: true,
+        details: expect.objectContaining({
+          cancelled: true,
+          answers: expect.arrayContaining([
+            expect.objectContaining({ mode: "single", value: "Alpha" }),
+          ]),
+        }),
+      }),
+      { deliverAs: "followUp" },
+    );
   });
 
   it("renders numbered details and falls back to content", () => {
@@ -977,5 +1091,47 @@ describe("pi-question extension", () => {
     await emit(handlers.message_end, message, ctx);
 
     expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("exports askSingleQuestion and askQuestionFlow", () => {
+    expect(typeof askSingleQuestion).toBe("function");
+    expect(typeof askQuestionFlow).toBe("function");
+  });
+
+  it("passes signal and timeout to withPromptLock and cancels when aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const select = vi.fn();
+    const ctx = context(select, undefined, { signal: controller.signal });
+
+    const result = await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["Alpha"] },
+      ctx as never,
+      { signal: controller.signal, timeoutMs: 5000 },
+    );
+    expect(result).toBeUndefined();
+    expect(withPromptLock).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ signal: controller.signal, timeoutMs: 5000 }),
+    );
+  });
+
+  it("does not send a follow-up message when the session/turn signal aborts", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const controller = new AbortController();
+    const select = vi.fn(async () => {
+      controller.abort();
+      return undefined;
+    });
+    const ctx = context(select, undefined, { signal: controller.signal });
+
+    await emit(
+      handlers.message_end,
+      assistant("'''question\n## Pick\n1. Alpha\n'''"),
+      ctx,
+    );
+
+    expect(pi.sendMessage).not.toHaveBeenCalled();
   });
 });

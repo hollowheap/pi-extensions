@@ -38,7 +38,8 @@ Use one H2 per question; multiple questions are asked in source order. Every opt
 
 interface AnswerDetails {
   questions: Question[];
-  answers: QuestionAnswer[];
+  answers: (QuestionAnswer | undefined)[];
+  cancelled?: boolean;
 }
 
 interface MultiResult {
@@ -55,129 +56,160 @@ function printableKey(data: string): string | undefined {
   return code >= 32 && code !== 127 ? data : undefined;
 }
 
+export interface QuestionDialogOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+function isAbortOrTimeout(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return true;
+    if (
+      error.message.includes("aborted") ||
+      error.message.includes("timeout")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function askMulti(
   question: Question,
   ctx: ExtensionContext,
+  options?: QuestionDialogOptions,
 ): Promise<MultiResult | undefined> {
+  const lockOptions = {
+    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
+    timeoutMs: options?.timeoutMs,
+  };
   if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
-    return withPromptLock(() =>
-      ctx.ui.custom<MultiResult>((tui, _theme, _keybindings, done) => {
-        const writeInRow = question.options.length;
-        const doneRow = writeInRow + 1;
-        const selected = new Set<number>();
-        let cursor = 0;
-        let editing = false;
-        let writeIn = "";
-        let draft = "";
-        let finished = false;
+    try {
+      return await withPromptLock(
+        () =>
+          ctx.ui.custom<MultiResult>((tui, _theme, _keybindings, done) => {
+            const writeInRow = question.options.length;
+            const doneRow = writeInRow + 1;
+            const selected = new Set<number>();
+            let cursor = 0;
+            let editing = false;
+            let writeIn = "";
+            let draft = "";
+            let finished = false;
 
-        const refresh = () => tui.requestRender();
+            const refresh = () => tui.requestRender();
 
-        const finish = (result: MultiResult) => {
-          if (finished) return;
-          finished = true;
-          done(result);
-        };
+            const finish = (result: MultiResult) => {
+              if (finished) return;
+              finished = true;
+              done(result);
+            };
 
-        const submit = () => {
-          finish({
-            selected: question.options.filter((_, index) =>
-              selected.has(index),
-            ),
-            writeIn: writeIn.length === 0 ? undefined : writeIn,
-            cancelled: false,
-          });
-        };
+            const submit = () => {
+              finish({
+                selected: question.options.filter((_, index) =>
+                  selected.has(index),
+                ),
+                writeIn: writeIn.length === 0 ? undefined : writeIn,
+                cancelled: false,
+              });
+            };
 
-        const startEditing = () => {
-          editing = true;
-          cursor = writeInRow;
-          draft = writeIn;
-          refresh();
-        };
-
-        const toggle = (index: number) => {
-          if (selected.has(index)) selected.delete(index);
-          else selected.add(index);
-          refresh();
-        };
-
-        const handleInput = (data: string) => {
-          if (editing) {
-            if (matchesKey(data, Key.escape)) {
-              editing = false;
+            const startEditing = () => {
+              editing = true;
+              cursor = writeInRow;
+              draft = writeIn;
               refresh();
-              return;
-            }
-            if (matchesKey(data, Key.enter)) {
-              writeIn = capAnswer(draft);
-              editing = false;
-              cursor = doneRow;
-              refresh();
-              return;
-            }
-            if (matchesKey(data, Key.backspace)) {
-              draft = draft.slice(0, -1);
-              refresh();
-              return;
-            }
-            const printable = printableKey(data);
-            if (printable !== undefined) {
-              draft = capAnswer(draft + printable);
-              refresh();
-            }
-            return;
-          }
+            };
 
-          if (matchesKey(data, Key.escape)) {
-            finish({ selected: [], writeIn: undefined, cancelled: true });
-            return;
-          }
-          if (matchesKey(data, Key.up)) {
-            cursor = Math.max(0, cursor - 1);
-            refresh();
-            return;
-          }
-          if (matchesKey(data, Key.down)) {
-            cursor = Math.min(doneRow, cursor + 1);
-            refresh();
-            return;
-          }
-          if (matchesKey(data, Key.space)) {
-            if (cursor < writeInRow) toggle(cursor);
-            else if (cursor === writeInRow) startEditing();
-            return;
-          }
-          if (matchesKey(data, Key.enter)) {
-            if (cursor === doneRow) submit();
-            else if (cursor === writeInRow) startEditing();
-            else toggle(cursor);
-          }
-        };
+            const toggle = (index: number) => {
+              if (selected.has(index)) selected.delete(index);
+              else selected.add(index);
+              refresh();
+            };
 
-        const render = (width: number): string[] => {
-          const lines = [question.prompt];
-          question.options.forEach((option, index) => {
-            const pointer = cursor === index ? ">" : " ";
-            const mark = selected.has(index) ? "x" : " ";
-            lines.push(`${pointer} [${mark}] ${option}`);
-          });
-          const pointer = cursor === writeInRow ? ">" : " ";
-          const suffix = writeIn.length === 0 ? "" : `: ${writeIn}`;
-          lines.push(`${pointer} [ ] ${WRITE_IN_LABEL}${suffix}`);
-          if (editing) lines.push(`  ${draft}█`);
-          lines.push(`${cursor === doneRow ? ">" : " "} Done`);
-          lines.push("Space toggles • Enter selects • Esc cancels");
-          return new Text(lines.join("\n"), 0, 0).render(width);
-        };
+            const handleInput = (data: string) => {
+              if (editing) {
+                if (matchesKey(data, Key.escape)) {
+                  editing = false;
+                  refresh();
+                  return;
+                }
+                if (matchesKey(data, Key.enter)) {
+                  writeIn = capAnswer(draft);
+                  editing = false;
+                  cursor = doneRow;
+                  refresh();
+                  return;
+                }
+                if (matchesKey(data, Key.backspace)) {
+                  draft = draft.slice(0, -1);
+                  refresh();
+                  return;
+                }
+                const printable = printableKey(data);
+                if (printable !== undefined) {
+                  draft = capAnswer(draft + printable);
+                  refresh();
+                }
+                return;
+              }
 
-        return {
-          render,
-          invalidate: () => {},
-          handleInput,
-        };
-      }),
-    );
+              if (matchesKey(data, Key.escape)) {
+                finish({ selected: [], writeIn: undefined, cancelled: true });
+                return;
+              }
+              if (matchesKey(data, Key.up)) {
+                cursor = Math.max(0, cursor - 1);
+                refresh();
+                return;
+              }
+              if (matchesKey(data, Key.down)) {
+                cursor = Math.min(doneRow, cursor + 1);
+                refresh();
+                return;
+              }
+              if (matchesKey(data, Key.space)) {
+                if (cursor < writeInRow) toggle(cursor);
+                else if (cursor === writeInRow) startEditing();
+                return;
+              }
+              if (matchesKey(data, Key.enter)) {
+                if (cursor === doneRow) submit();
+                else if (cursor === writeInRow) startEditing();
+                else toggle(cursor);
+              }
+            };
+
+            const render = (width: number): string[] => {
+              const lines = [question.prompt];
+              question.options.forEach((option, index) => {
+                const pointer = cursor === index ? ">" : " ";
+                const mark = selected.has(index) ? "x" : " ";
+                lines.push(`${pointer} [${mark}] ${option}`);
+              });
+              const pointer = cursor === writeInRow ? ">" : " ";
+              const suffix = writeIn.length === 0 ? "" : `: ${writeIn}`;
+              lines.push(`${pointer} [ ] ${WRITE_IN_LABEL}${suffix}`);
+              if (editing) lines.push(`  ${draft}█`);
+              lines.push(`${cursor === doneRow ? ">" : " "} Done`);
+              lines.push("Space toggles • Enter selects • Esc cancels");
+              return new Text(lines.join("\n"), 0, 0).render(width);
+            };
+
+            return {
+              render,
+              invalidate: () => {},
+              handleInput,
+            };
+          }),
+        lockOptions,
+      );
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      throw error;
+    }
   }
 
   if (typeof ctx.ui?.select !== "function") return undefined;
@@ -193,9 +225,16 @@ async function askMulti(
       WRITE_IN_LABEL,
       DONE_LABEL,
     ];
-    const picked = await withPromptLock(() =>
-      ctx.ui.select(question.prompt, rows),
-    );
+    let picked: string | undefined;
+    try {
+      picked = await withPromptLock(
+        () => ctx.ui.select(question.prompt, rows),
+        lockOptions,
+      );
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      throw error;
+    }
     if (picked === undefined) return undefined;
 
     if (picked === DONE_LABEL) {
@@ -207,7 +246,12 @@ async function askMulti(
     }
 
     if (picked === WRITE_IN_LABEL) {
-      const answer = await askWriteIn(ctx, question.prompt, "Custom answer");
+      const answer = await askWriteIn(
+        ctx,
+        question.prompt,
+        "Custom answer",
+        options,
+      );
       if (answer === undefined) return undefined;
       writeIn = capAnswer(answer);
       continue;
@@ -224,31 +268,53 @@ async function askWriteIn(
   ctx: ExtensionContext,
   title: string,
   placeholder?: string,
+  options?: QuestionDialogOptions,
 ): Promise<string | undefined> {
+  const lockOptions = {
+    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
+    timeoutMs: options?.timeoutMs,
+  };
   if (ctx.mode === "tui" && typeof ctx.ui?.editor === "function") {
-    return withPromptLock(() => ctx.ui.editor(title));
+    try {
+      return await withPromptLock(() => ctx.ui.editor(title), lockOptions);
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      throw error;
+    }
   }
   if (typeof ctx.ui?.input !== "function") return undefined;
-  return withPromptLock(() =>
-    placeholder === undefined
-      ? ctx.ui.input(title)
-      : ctx.ui.input(title, placeholder),
-  );
+  try {
+    return await withPromptLock(
+      () =>
+        placeholder === undefined
+          ? ctx.ui.input(title)
+          : ctx.ui.input(title, placeholder),
+      lockOptions,
+    );
+  } catch (error) {
+    if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+    throw error;
+  }
 }
 
-async function askQuestion(
+export async function askQuestion(
   question: Question,
   ctx: ExtensionContext,
+  options?: QuestionDialogOptions,
 ): Promise<QuestionAnswer | undefined> {
+  const lockOptions = {
+    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
+    timeoutMs: options?.timeoutMs,
+  };
   if (question.mode === "free") {
-    const answer = await askWriteIn(ctx, question.prompt);
+    const answer = await askWriteIn(ctx, question.prompt, undefined, options);
     return answer === undefined
       ? undefined
       : { mode: "free", value: capAnswer(answer) };
   }
 
   if (question.mode === "multi") {
-    const result = await askMulti(question, ctx);
+    const result = await askMulti(question, ctx, options);
     if (result === undefined || result.cancelled) return undefined;
     return {
       mode: "multi",
@@ -258,32 +324,56 @@ async function askQuestion(
   }
 
   if (typeof ctx.ui?.select !== "function") return undefined;
-  const picked = await withPromptLock(() =>
-    ctx.ui.select(question.prompt, [...question.options, WRITE_IN_LABEL]),
-  );
+  let picked: string | undefined;
+  try {
+    picked = await withPromptLock(
+      () =>
+        ctx.ui.select(question.prompt, [...question.options, WRITE_IN_LABEL]),
+      lockOptions,
+    );
+  } catch (error) {
+    if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+    throw error;
+  }
   if (picked === undefined) return undefined;
   if (picked !== WRITE_IN_LABEL) {
     return { mode: "single", value: picked };
   }
 
-  const answer = await askWriteIn(ctx, question.prompt, "Custom answer");
+  const answer = await askWriteIn(
+    ctx,
+    question.prompt,
+    "Custom answer",
+    options,
+  );
   return answer === undefined
     ? undefined
     : { mode: "single", value: capAnswer(answer) };
 }
 
+export const askSingleQuestion = askQuestion;
+
 const NEXT_PAGE_LABEL = "Next page";
 const BACK_LABEL = "Back";
 
-async function askQuestions(
+export type AskQuestionsResult = (QuestionAnswer | undefined)[] & {
+  cancelled?: boolean;
+};
+
+export async function askQuestions(
   questions: readonly Question[],
   ctx: ExtensionContext,
-): Promise<QuestionAnswer[] | undefined> {
-  const answers: (QuestionAnswer | undefined)[] = [];
+  options?: QuestionDialogOptions,
+): Promise<AskQuestionsResult | undefined> {
+  const answers: AskQuestionsResult = [];
   const pages = [
     ...new Set(questions.map((question) => question.page ?? 1)),
   ].sort((a, b) => a - b);
   let pageIndex = 0;
+  const lockOptions = {
+    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
+    timeoutMs: options?.timeoutMs,
+  };
 
   while (pageIndex < pages.length) {
     const page = pages[pageIndex];
@@ -294,20 +384,40 @@ async function askQuestions(
 
     for (const { question, index } of pageQuestions) {
       if (!evaluateCondition(question.condition, answers)) continue;
-      const answer = await askQuestion(question, ctx);
-      if (answer === undefined) return undefined;
+      const answer = await askQuestion(question, ctx, options);
+      if (answer === undefined) {
+        answers.cancelled = true;
+        return answers;
+      }
       answers[index] = answer;
     }
 
     if (pageIndex === pages.length - 1) break;
-    if (typeof ctx.ui?.select !== "function") return undefined;
-    const choice = await withPromptLock(() =>
-      ctx.ui.select(`Question page ${page} complete`, [
-        NEXT_PAGE_LABEL,
-        BACK_LABEL,
-      ]),
-    );
-    if (choice === undefined) return undefined;
+    if (typeof ctx.ui?.select !== "function") {
+      answers.cancelled = true;
+      return answers;
+    }
+    let choice: string | undefined;
+    try {
+      choice = await withPromptLock(
+        () =>
+          ctx.ui.select(`Question page ${page} complete`, [
+            NEXT_PAGE_LABEL,
+            BACK_LABEL,
+          ]),
+        lockOptions,
+      );
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) {
+        answers.cancelled = true;
+        return answers;
+      }
+      throw error;
+    }
+    if (choice === undefined) {
+      answers.cancelled = true;
+      return answers;
+    }
     if (choice === BACK_LABEL) {
       const previousPage = pages[pageIndex - 1];
       for (let index = 0; index < questions.length; index += 1) {
@@ -325,10 +435,10 @@ async function askQuestions(
     }
   }
 
-  return answers.filter(
-    (answer): answer is QuestionAnswer => answer !== undefined,
-  );
+  return answers;
 }
+
+export const askQuestionFlow = askQuestions;
 
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -349,7 +459,14 @@ function detailsText(details: unknown): string | undefined {
   const answers = (details as { answers?: unknown }).answers;
   if (!Array.isArray(answers)) return undefined;
   try {
-    return formatAnswers(answers as QuestionAnswer[]) || undefined;
+    const formatted = formatAnswers(answers as QuestionAnswer[]);
+    const cancelled = Boolean((details as { cancelled?: unknown }).cancelled);
+    if (cancelled) {
+      return formatted
+        ? `${formatted}\n(Question dialog cancelled)`
+        : "Question dialog cancelled";
+    }
+    return formatted || undefined;
   } catch {
     return undefined;
   }
@@ -413,8 +530,30 @@ export default function (pi: ExtensionAPI) {
       handled.add(event.message);
       alertQuestion();
 
-      const answers = await askQuestions(questions, ctx);
-      if (answers === undefined || answers.length === 0) return;
+      const answers = await askQuestions(questions, ctx, {
+        signal: (ctx as { signal?: AbortSignal }).signal,
+      });
+      if ((ctx as { signal?: AbortSignal }).signal?.aborted) return;
+      if (answers === undefined) return;
+
+      if (answers.cancelled) {
+        const partialText = formatAnswers(answers);
+        const content = partialText
+          ? `${partialText}\n(Question dialog cancelled)`
+          : "Question dialog cancelled";
+        pi.sendMessage(
+          {
+            customType: ANSWERS_TYPE,
+            content,
+            display: true,
+            details: { questions, answers, cancelled: true },
+          },
+          { deliverAs: "followUp" },
+        );
+        return;
+      }
+
+      if (!answers.some((a) => a !== undefined)) return;
 
       pi.sendMessage(
         {
