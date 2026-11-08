@@ -108,4 +108,22 @@ describe("withCancellableProgress", () => {
     expect(result).toEqual({ status: "completed", value: "done" });
     expect(operationSignal).toBe(controller.signal);
   });
+
+  it("resolves cancelled and releases the prompt lock when disposed without calling done", async () => {
+    const env = progressContext();
+    let operationSignal: AbortSignal | undefined;
+    const result = withCancellableProgress(
+      env.ctx as never,
+      "Working",
+      (signal) => {
+        operationSignal = signal;
+        return new Promise<number>(() => {});
+      },
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    (env.component() as unknown as { dispose?: () => void })?.dispose?.();
+    await expect(result).resolves.toEqual({ status: "cancelled" });
+    expect(operationSignal?.aborted).toBe(true);
+  });
 });

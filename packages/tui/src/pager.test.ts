@@ -95,4 +95,50 @@ describe("showMarkdownPager", () => {
     });
     expect(notify).toHaveBeenCalledWith("output", "info");
   });
+
+  it("resolves and releases the prompt lock when disposed without calling done", async () => {
+    let component:
+      | {
+          render(width: number): string[];
+          handleInput(data: string): void;
+          dispose?: () => void;
+        }
+      | undefined;
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => {
+              render(width: number): string[];
+              handleInput(data: string): void;
+              dispose?: () => void;
+            },
+          ) =>
+            new Promise<void>((resolve) => {
+              component = factory(
+                { terminal: { rows: 12 }, requestRender: vi.fn() },
+                theme,
+                {},
+                resolve,
+              );
+            }),
+        ),
+      },
+    };
+
+    const first = showMarkdownPager(ctx as never, {
+      title: "Task 1",
+      markdown: "hello",
+    });
+    await vi.waitFor(() => expect(component).toBeDefined());
+    component?.dispose?.();
+    await expect(first).resolves.toBeUndefined();
+  });
 });

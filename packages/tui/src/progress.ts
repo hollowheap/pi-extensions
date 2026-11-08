@@ -112,6 +112,7 @@ export async function withCancellableProgress<T>(
           handleInput: (data: string) => state.component?.handleInput(data),
           invalidate: () => state.component?.invalidate(),
           dispose: () => {
+            if (!settled) cancel();
             cleanup();
             state.component?.dispose();
           },

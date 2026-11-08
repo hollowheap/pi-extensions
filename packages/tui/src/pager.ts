@@ -57,6 +57,13 @@ export async function showMarkdownPager(
           let width = 80;
           let cachedWidth = -1;
           let content: string[] = [];
+          let settled = false;
+
+          const finish = (): void => {
+            if (settled) return;
+            settled = true;
+            done();
+          };
 
           const contentLines = (renderWidth: number): string[] => {
             if (cachedWidth !== renderWidth) {
@@ -114,7 +121,7 @@ export async function showMarkdownPager(
                 matchesKey(data, Key.ctrl("c")) ||
                 data === "q"
               ) {
-                done();
+                finish();
                 return;
               }
               if (matchesKey(data, Key.up) || data === "k") {
@@ -144,6 +151,9 @@ export async function showMarkdownPager(
               if (matchesKey(data, Key.end) || data === "G") {
                 scrollTo(maxOffset());
               }
+            },
+            dispose(): void {
+              finish();
             },
           };
         },

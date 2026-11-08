@@ -143,6 +143,9 @@ export async function showFuzzyPicker(
             }
             list.handleInput(data);
           },
+          dispose(): void {
+            finish(undefined);
+          },
         };
       },
       {

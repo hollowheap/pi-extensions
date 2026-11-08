@@ -90,4 +90,25 @@ describe("showFuzzyPicker", () => {
     );
     expect(result).toBeUndefined();
   });
+
+  it("resolves undefined and releases the prompt lock when disposed without calling done", async () => {
+    const env = pickerContext();
+    const first = showFuzzyPicker(env.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    (env.component() as unknown as { dispose?: () => void })?.dispose?.();
+    await expect(first).resolves.toBeUndefined();
+
+    const env2 = pickerContext();
+    const second = showFuzzyPicker(env2.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env2.component()).toBeDefined());
+    env2.component()?.handleInput("\x1b");
+    await expect(second).resolves.toBeUndefined();
+  });
 });
