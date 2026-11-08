@@ -6,11 +6,13 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
+import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
 import { formatVimKeys } from "./vimkeys.js";
 import { crushWorkingIndicator } from "./working.js";
 
 export { ModalEditor } from "./editor.js";
 export * from "./keymap.js";
+export * from "./skills.js";
 
 function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   let code: string | undefined;
@@ -118,7 +120,14 @@ export default function (pi: ExtensionAPI): void {
     handler: showVimKeys,
   });
 
+  pi.on("input", (event, _ctx) => {
+    return handleSkillInput(event, pi);
+  });
+
   pi.on("session_start", (_event, ctx) => {
+    if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === "function") {
+      registerSkillAutocomplete(pi, ctx);
+    }
     if (!ctx.hasUI || typeof ctx.ui.setEditorComponent !== "function") return;
     const config = loadModalConfig(getAgentDir(), (message) =>
       ctx.ui.notify(`pi-modal: ${message}`, "warning"),

@@ -1,7 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { rgbColor, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type AutocompleteProvider,
+  rgbColor,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "./editor.js";
 import extension from "./index.js";
@@ -485,6 +489,24 @@ describe("ModalEditor modal behavior", () => {
 
     editor.handleInput("\x1b");
     expect(editor.getMode()).toBe("insert");
+  });
+
+  it("bypasses insert-mode keymaps when autocomplete is showing", () => {
+    const { editor } = createMockEditor({
+      initialMode: "insert",
+      keymaps: { insert: { "\r": "normal" } },
+    });
+    vi.spyOn(editor, "isShowingAutocomplete").mockReturnValue(true);
+    const superHandleSpy = vi.spyOn(
+      Object.getPrototypeOf(Object.getPrototypeOf(editor)),
+      "handleInput",
+    );
+
+    editor.handleInput("\r");
+    expect(editor.getMode()).toBe("insert");
+    expect(superHandleSpy).toHaveBeenCalledWith("\r");
+
+    superHandleSpy.mockRestore();
   });
 
   it("executes string sequence override on i in normal mode instead of switching to insert", () => {
@@ -1108,5 +1130,499 @@ describe("extension registration", () => {
     expect(editor.getMode()).toBe("normal");
 
     superHandleSpy.mockRestore();
+  });
+});
+
+describe("skill autocomplete and multiple prompt expansion", () => {
+  it("provides skill autocomplete suggestions at start of line and after whitespace", async () => {
+    const commands: Array<{
+      name: string;
+      description?: string;
+      source: string;
+    }> = [
+      {
+        name: "skill:git-commit",
+        description: "Commit staged changes",
+        source: "skill",
+      },
+      {
+        name: "skill:git-push",
+        description: "Push changes to remote",
+        source: "skill",
+      },
+      {
+        name: "skill:review",
+        description: "Review pull request",
+        source: "skill",
+      },
+      {
+        name: "help",
+        description: "Help command",
+        source: "builtin",
+      },
+    ];
+
+    const pi = {
+      getCommands: vi.fn(() => commands),
+      on: vi.fn(),
+    };
+
+    const baseProvider = {
+      triggerCharacters: ["/"],
+      getSuggestions: vi.fn(async () => ({ items: [], prefix: "" })),
+      applyCompletion: vi.fn(
+        (lines: string[], cursorLine: number, cursorCol: number) => ({
+          lines,
+          cursorLine,
+          cursorCol,
+        }),
+      ),
+    };
+
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const fullPi = {
+      ...pi,
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+    };
+    extension(fullPi as never);
+
+    let wrappedProvider: AutocompleteProvider | undefined;
+    const ctx = {
+      hasUI: true,
+      ui: {
+        addAutocompleteProvider: vi.fn((factory) => {
+          wrappedProvider = factory(baseProvider);
+        }),
+      },
+    };
+
+    handlers.session_start?.({}, ctx);
+    expect(ctx.ui.addAutocompleteProvider).toHaveBeenCalledTimes(1);
+    if (!wrappedProvider) {
+      throw new Error("wrappedProvider was not created");
+    }
+    expect(wrappedProvider.triggerCharacters).toEqual(["/", "$"]);
+
+    // At start of line ($)
+    const suggestionsStart = await wrappedProvider.getSuggestions(["$"], 0, 1, {
+      signal: new AbortController().signal,
+    });
+    expect(suggestionsStart).toEqual({
+      items: [
+        {
+          value: "$git-commit",
+          label: "$git-commit",
+          description: "Commit staged changes",
+        },
+        {
+          value: "$git-push",
+          label: "$git-push",
+          description: "Push changes to remote",
+        },
+        {
+          value: "$review",
+          label: "$review",
+          description: "Review pull request",
+        },
+      ],
+      prefix: "$",
+    });
+
+    // After whitespace ($gi)
+    const suggestionsWs = await wrappedProvider.getSuggestions(
+      ["please run $gi"],
+      0,
+      14,
+      { signal: new AbortController().signal },
+    );
+    expect(suggestionsWs).toEqual({
+      items: [
+        {
+          value: "$git-commit",
+          label: "$git-commit",
+          description: "Commit staged changes",
+        },
+        {
+          value: "$git-push",
+          label: "$git-push",
+          description: "Push changes to remote",
+        },
+      ],
+      prefix: "$gi",
+    });
+
+    // Substring vs prefix sorting: prefix matches first, then alphabetical
+    const sortCommands = [
+      { name: "skill:git-commit", source: "skill" },
+      { name: "skill:commit-msg", source: "skill" },
+      { name: "skill:commit-lint", source: "skill" },
+    ];
+    pi.getCommands.mockReturnValue(sortCommands);
+
+    const sortSuggestions = await wrappedProvider.getSuggestions(
+      ["$commit"],
+      0,
+      7,
+      { signal: new AbortController().signal },
+    );
+    expect(
+      sortSuggestions?.items.map((i: { value: string }) => i.value),
+    ).toEqual(["$commit-lint", "$commit-msg", "$git-commit"]);
+
+    // When not on a $ token: delegates to base
+    const nonDollar = await wrappedProvider.getSuggestions(
+      ["hello world"],
+      0,
+      11,
+      { signal: new AbortController().signal },
+    );
+    expect(baseProvider.getSuggestions).toHaveBeenCalledWith(
+      ["hello world"],
+      0,
+      11,
+      expect.any(Object),
+    );
+    expect(nonDollar).toEqual({ items: [], prefix: "" });
+
+    // When on $ token but no skills match: returns null
+    const noMatch = await wrappedProvider.getSuggestions(
+      ["$nonexistent"],
+      0,
+      12,
+      { signal: new AbortController().signal },
+    );
+    expect(noMatch).toBeNull();
+  });
+
+  it("applies completion with trailing space and cursor positioning for chaining", () => {
+    const pi = {
+      getCommands: vi.fn(() => []),
+    };
+
+    const baseProvider = {
+      applyCompletion: vi.fn(
+        (lines: string[], cursorLine: number, cursorCol: number) => ({
+          lines,
+          cursorLine,
+          cursorCol,
+        }),
+      ),
+      shouldTriggerFileCompletion: vi.fn(() => true),
+    };
+
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const fullPi = {
+      ...pi,
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+    };
+    extension(fullPi as never);
+
+    let wrappedProvider: AutocompleteProvider | undefined;
+    const ctx = {
+      hasUI: true,
+      ui: {
+        addAutocompleteProvider: vi.fn((factory) => {
+          wrappedProvider = factory(baseProvider);
+        }),
+      },
+    };
+
+    handlers.session_start?.({}, ctx);
+
+    // Case 1: Complete at end of line -> inserts trailing space and moves cursor past it
+    const completed1 = wrappedProvider?.applyCompletion(
+      ["$g"],
+      0,
+      2,
+      { value: "$git", label: "$git" },
+      "$g",
+    );
+    expect(completed1).toEqual({
+      lines: ["$git "],
+      cursorLine: 0,
+      cursorCol: 5,
+    });
+
+    // Chaining test: typing $ after this completion starts a new token
+    const chainedLine = `${completed1?.lines[0]}$`;
+    const beforeChained = chainedLine.slice(0, 6);
+    expect(/(?:^|[\s])(\$[^\s]*)$/.test(beforeChained)).toBe(true);
+
+    // Case 2: Whitespace already follows cursor -> does not insert extra space
+    const completed2 = wrappedProvider?.applyCompletion(
+      ["$g next"],
+      0,
+      2,
+      { value: "$git", label: "$git" },
+      "$g",
+    );
+    expect(completed2).toEqual({
+      lines: ["$git next"],
+      cursorLine: 0,
+      cursorCol: 4,
+    });
+
+    // Case 3: Non-$ prefix delegates to base
+    wrappedProvider?.applyCompletion(
+      ["/he"],
+      0,
+      3,
+      { value: "/help", label: "/help" },
+      "/he",
+    );
+    expect(baseProvider.applyCompletion).toHaveBeenCalledWith(
+      ["/he"],
+      0,
+      3,
+      { value: "/help", label: "/help" },
+      "/he",
+    );
+
+    // Forwarding shouldTriggerFileCompletion
+    expect(wrappedProvider?.shouldTriggerFileCompletion?.(["test"], 0, 4)).toBe(
+      true,
+    );
+    expect(baseProvider.shouldTriggerFileCompletion).toHaveBeenCalledWith(
+      ["test"],
+      0,
+      4,
+    );
+  });
+
+  it("does not double-wrap provider on repeated session_start calls", () => {
+    const baseProvider = {
+      triggerCharacters: ["/"],
+      getSuggestions: vi.fn(async () => null),
+      applyCompletion: vi.fn(
+        (lines: string[], cursorLine: number, cursorCol: number) => ({
+          lines,
+          cursorLine,
+          cursorCol,
+        }),
+      ),
+    };
+
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      getCommands: vi.fn(() => []),
+    };
+    extension(pi as never);
+
+    let wrappedFirst: AutocompleteProvider | undefined;
+    const ctx = {
+      hasUI: true,
+      ui: {
+        addAutocompleteProvider: vi.fn((factory) => {
+          wrappedFirst = factory(baseProvider);
+        }),
+      },
+    };
+
+    handlers.session_start?.({}, ctx);
+    handlers.session_start?.({}, ctx);
+
+    // Repeated call with the same wrapped provider returns the provider without double-wrapping
+    const factory = ctx.ui.addAutocompleteProvider.mock.calls[0][0];
+    const reWrapped = factory(wrappedFirst);
+    expect(reWrapped).toBe(wrappedFirst);
+  });
+
+  it("expands single and multiple $skill-name invocations in input event", () => {
+    const tempDir = createTempDir();
+    const skillOnePath = join(tempDir, "skill-one.md");
+    const skillTwoPath = join(tempDir, "skill-two.md");
+
+    writeFileSync(
+      skillOnePath,
+      `---
+name: skill-one
+description: First test skill
+---
+
+# Skill One
+Perform operation one.`,
+    );
+
+    writeFileSync(
+      skillTwoPath,
+      `---
+name: skill-two
+description: Second test skill
+---
+
+# Skill Two
+Perform operation two.`,
+    );
+
+    const commands = [
+      {
+        name: "skill:skill-one",
+        source: "skill",
+        sourceInfo: {
+          path: skillOnePath,
+          baseDir: tempDir,
+        },
+      },
+      {
+        name: "skill:skill-two",
+        source: "skill",
+        sourceInfo: {
+          path: skillTwoPath,
+          baseDir: tempDir,
+        },
+      },
+    ];
+
+    const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
+      {};
+    const pi = {
+      on: vi.fn(
+        (event: string, fn: (event: unknown, ctx: unknown) => unknown) => {
+          handlers[event] = fn;
+        },
+      ),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      getCommands: vi.fn(() => commands),
+    };
+    extension(pi as never);
+
+    const inputHandler = handlers.input;
+    expect(inputHandler).toBeDefined();
+
+    // 1. Single skill without prompt text
+    const res1 = inputHandler(
+      { text: "$skill-one", type: "input", source: "user" },
+      {},
+    );
+    expect(res1).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>`,
+    });
+
+    // 2. Single skill with prompt text
+    const res2 = inputHandler(
+      { text: "$skill-one please review this", type: "input", source: "user" },
+      {},
+    );
+    expect(res2).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease review this`,
+    });
+
+    // 3. Multiple skills without prompt text
+    const res3 = inputHandler(
+      { text: "$skill-one $skill-two", type: "input", source: "user" },
+      {},
+    );
+    expect(res3).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>`,
+    });
+
+    // 4. Multiple skills with prompt text
+    const res4 = inputHandler(
+      {
+        text: "$skill-one $skill-two please review this",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res4).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\nplease review this`,
+    });
+
+    // 5. Skills inline inside prompt text
+    const res5 = inputHandler(
+      {
+        text: "please use $skill-one and $skill-two",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res5).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\nplease use and`,
+    });
+
+    // 6. Deduplicating repeated mentions of the same skill
+    const res6 = inputHandler(
+      {
+        text: "$skill-one please test with $skill-one",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res6).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease test with`,
+    });
+
+    // 7. Ignoring unknown variables like $HOME
+    const res7 = inputHandler(
+      {
+        text: "$skill-one echo $HOME",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res7).toEqual({
+      action: "transform",
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\necho $HOME`,
+    });
+
+    // 8. No known skills -> returns undefined
+    const res8 = inputHandler(
+      {
+        text: "echo $HOME and $UNKNOWN",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res8).toBeUndefined();
+
+    // 9. Commands starting with / or ! -> returns undefined
+    const res9a = inputHandler(
+      {
+        text: "/custom $skill-one",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res9a).toBeUndefined();
+
+    const res9b = inputHandler(
+      {
+        text: "!echo $skill-one",
+        type: "input",
+        source: "user",
+      },
+      {},
+    );
+    expect(res9b).toBeUndefined();
   });
 });

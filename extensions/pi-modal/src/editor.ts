@@ -357,6 +357,10 @@ export class ModalEditor extends CustomEditor {
 
     // Insert mode handling
     if (this.mode === "insert") {
+      if (this.isShowingAutocomplete()) {
+        super.handleInput(data);
+        return;
+      }
       if (data in this.keymaps.insert) {
         const seq = this.keymaps.insert[data];
         if (seq === null || seq === "normal") {
