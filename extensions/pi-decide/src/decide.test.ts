@@ -10,6 +10,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   getAgentDir: () => state.agentDir,
 }));
 
+import { USAGE_ENTRY_TYPE, getSessionUsage } from "@hollowheap/core/usage";
 import { CONFIG_FILE_NAME } from "./config.js";
 import { createDecideTool } from "./decide.js";
 
@@ -883,5 +884,271 @@ describe("decide", () => {
       },
       { signal: expect.any(AbortSignal), temperature: 0 },
     );
+  });
+
+  it("records billed classifier calls once to the shared usage ledger (including failed calls)", async () => {
+    agentDir();
+    const usage = {
+      input: 100,
+      output: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 110,
+      cost: {
+        input: 0.001,
+        output: 0.0005,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0.0015,
+      },
+    };
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 0.8 }, usage),
+    );
+    const sessionManager = {
+      appendCustomEntry: vi.fn(),
+    };
+    const pi = {
+      appendEntry: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    const tool = createDecideTool(pi as never);
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(classify, sessionManager) as never,
+    );
+
+    expect(result.usage).toEqual(usage);
+    expect(detailsOf(result).usage).toEqual(usage);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      USAGE_ENTRY_TYPE,
+      expect.objectContaining({
+        totalTokens: 110,
+        totalCost: 0.0015,
+      }),
+    );
+    expect(pi.events.emit).toHaveBeenCalledWith("usage:refresh", undefined);
+    expect(sessionManager.appendCustomEntry).toHaveBeenCalledWith(
+      USAGE_ENTRY_TYPE,
+      expect.objectContaining({
+        totalTokens: 110,
+        totalCost: 0.0015,
+      }),
+    );
+    expect(getSessionUsage(sessionManager)).toEqual(
+      expect.objectContaining({
+        totalTokens: 110,
+        totalCost: 0.0015,
+      }),
+    );
+
+    // Failed classifier call with billed usage
+    const failedUsage = {
+      input: 50,
+      output: 5,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 55,
+      cost: {
+        input: 0.0005,
+        output: 0.0002,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0.0007,
+      },
+    };
+    const failedClassify = vi.fn(async () => ({
+      api: "classifier",
+      provider: "typesafe",
+      model: "jev-latest",
+      answers: {},
+      stopReason: "error" as const,
+      errorMessage: "provider rate limited",
+      timestamp: 1_000,
+      usage: failedUsage,
+    }));
+
+    const failedResult = await tool.execute(
+      "2",
+      {
+        kind: "bool",
+        input: "failed-input",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(failedClassify, sessionManager) as never,
+    );
+
+    expect(detailsOf(failedResult).error).toContain("provider rate limited");
+    expect(pi.appendEntry).toHaveBeenCalledTimes(2);
+    expect(pi.appendEntry).toHaveBeenLastCalledWith(
+      USAGE_ENTRY_TYPE,
+      expect.objectContaining({
+        totalTokens: 165,
+        totalCost: 0.0022,
+      }),
+    );
+  });
+
+  it("reports zero new usage on cache hits and does not record duplicate ledger entries", async () => {
+    agentDir();
+    const usage = {
+      input: 100,
+      output: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 110,
+      cost: {
+        input: 0.001,
+        output: 0.0005,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0.0015,
+      },
+    };
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 0.8 }, usage),
+    );
+    const pi = {
+      appendEntry: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    const sessionManager = { appendCustomEntry: vi.fn() };
+    const tool = createDecideTool(pi as never);
+    const context = ctx(classify, sessionManager);
+
+    const first = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "cached-call",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      context as never,
+    );
+
+    expect(first.usage).toEqual(usage);
+    expect(detailsOf(first).usage).toEqual(usage);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+
+    const second = await tool.execute(
+      "2",
+      {
+        kind: "bool",
+        input: "cached-call",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      context as never,
+    );
+
+    const zeroUsage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    expect(second.usage).toEqual(zeroUsage);
+    expect(detailsOf(second).usage).toEqual(zeroUsage);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports zero new usage on joined concurrent calls and records billed usage only once", async () => {
+    agentDir();
+    const usage = {
+      input: 100,
+      output: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 110,
+      cost: {
+        input: 0.001,
+        output: 0.0005,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0.0015,
+      },
+    };
+    let finishClassify!: (value: unknown) => void;
+    const classify = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finishClassify = resolve;
+        }),
+    );
+    const pi = {
+      appendEntry: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    const sessionManager = { appendCustomEntry: vi.fn() };
+    const tool = createDecideTool(pi as never);
+    const context = ctx(classify, sessionManager);
+
+    const params = {
+      kind: "bool" as const,
+      input: "in-flight-input",
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    };
+
+    const firstPromise = tool.execute(
+      "1",
+      params,
+      undefined,
+      undefined,
+      context as never,
+    );
+    const secondPromise = tool.execute(
+      "2",
+      params,
+      undefined,
+      undefined,
+      context as never,
+    );
+
+    finishClassify(classifierResult({ type: "bool", probability: 0.8 }, usage));
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+
+    expect(first.usage).toEqual(usage);
+    expect(detailsOf(first).usage).toEqual(usage);
+
+    const zeroUsage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    expect(second.usage).toEqual(zeroUsage);
+    expect(detailsOf(second).usage).toEqual(zeroUsage);
   });
 });

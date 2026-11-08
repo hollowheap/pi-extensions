@@ -7,10 +7,22 @@ import type {
   ClassifierResult,
   Usage,
 } from "@earendil-works/pi-ai";
-import type { ExtensionContext as PiExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext as PiExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { messageCost } from "@hollowheap/core/pricing";
 import { getSessionCache } from "@hollowheap/core/session-cache";
+import {
+  USAGE_ENTRY_TYPE,
+  getSessionUsage,
+  persistUsage,
+  recordTurnUsage,
+  restoreSessionUsage,
+  setSessionUsage,
+} from "@hollowheap/core/usage";
 import { loadDecideConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";
@@ -59,13 +71,75 @@ const MAX_CACHE_ENTRIES = 128;
 const RESULT_CACHE_NAMESPACE = "pi-decide/results";
 const INFLIGHT_CACHE_NAMESPACE = "pi-decide/inflight";
 
+const ZERO_USAGE: Usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  },
+};
+
+function recordBilledClassifierUsage(
+  ctx: PiExtensionContext,
+  modelId: string,
+  usage: Usage,
+  pi?: ExtensionAPI,
+): void {
+  const sessionManager = ctx.sessionManager;
+  const current = sessionManager
+    ? restoreSessionUsage(sessionManager)
+    : getSessionUsage(ctx);
+
+  const slash = modelId.indexOf("/");
+  const provider = slash > 0 ? modelId.slice(0, slash) : "";
+  const id = slash > 0 ? modelId.slice(slash + 1) : modelId;
+  const modelObj = ctx.modelRegistry?.getModelOfType?.(
+    "classifier",
+    provider,
+    id,
+  );
+  const cost = messageCost({ usage, model: modelId }, modelObj ?? modelId);
+
+  const next = recordTurnUsage(
+    current,
+    {
+      input: usage.input,
+      output: usage.output,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+    },
+    cost,
+    modelId,
+  );
+
+  if (sessionManager) {
+    setSessionUsage(sessionManager, next);
+    persistUsage(sessionManager, next);
+  }
+  if (pi) {
+    try {
+      pi.appendEntry(USAGE_ENTRY_TYPE, next);
+    } catch {
+      // Optional if pi session is not open
+    }
+    pi.events?.emit?.("usage:refresh", undefined);
+  }
+}
+
 interface Inflight {
   promise: Promise<DecideToolResult>;
   controller: AbortController;
   waiters: number;
 }
 
-export function createDecideTool() {
+export function createDecideTool(pi?: ExtensionAPI) {
   const fallbackOwner = {};
 
   function ownerFor(ctx: PiExtensionContext): object {
@@ -205,11 +279,38 @@ export function createDecideTool() {
     const key = cacheKey(config.model, params, question);
     const cached = results.get(key);
     if (cached !== undefined) {
-      return cached;
+      if (cached.details.error !== undefined) {
+        return cached;
+      }
+      const hasUsage =
+        cached.usage !== undefined || cached.details.usage !== undefined;
+      if (!hasUsage) {
+        return cached;
+      }
+      const details = { ...cached.details, usage: ZERO_USAGE };
+      return {
+        content: [{ type: "text", text: JSON.stringify(details) }],
+        details,
+        usage: ZERO_USAGE,
+      };
     }
     const existing = inflight.get(key);
     if (existing !== undefined) {
-      return waitForResult(existing, signal);
+      const result = await waitForResult(existing, signal);
+      if (result.details.error !== undefined) {
+        return result;
+      }
+      const hasUsage =
+        result.usage !== undefined || result.details.usage !== undefined;
+      if (!hasUsage) {
+        return result;
+      }
+      const details = { ...result.details, usage: ZERO_USAGE };
+      return {
+        content: [{ type: "text", text: JSON.stringify(details) }],
+        details,
+        usage: ZERO_USAGE,
+      };
     }
 
     const controller = new AbortController();
@@ -229,6 +330,14 @@ export function createDecideTool() {
       } catch (error) {
         return errorResult(
           error instanceof Error ? error.message : String(error),
+        );
+      }
+      if (result.usage !== undefined) {
+        recordBilledClassifierUsage(
+          ctx,
+          config.model as string,
+          result.usage,
+          pi,
         );
       }
       if (result.stopReason !== "stop") {
