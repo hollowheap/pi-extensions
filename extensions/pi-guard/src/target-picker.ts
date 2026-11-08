@@ -7,9 +7,9 @@ import {
   decodeKittyPrintable,
   fuzzyFilter,
   matchesKey,
-  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "@hollowheap/tui/frame";
 
 function selectTheme(theme: Theme): SelectListTheme {
   return {
@@ -77,13 +77,13 @@ export async function showTargetPicker(
         rebuild();
         return {
           render(width: number): string[] {
+            const innerWidth = Math.max(1, width - 4);
             const lines = [
-              theme.fg("accent", theme.bold("Grant temporary permission")),
               theme.fg(
                 "muted",
                 query === "" ? "Filter: (type to search)" : `Filter: ${query}`,
               ),
-              ...list.render(width),
+              ...list.render(innerWidth),
               "",
               theme.fg("dim", `target: ${selected?.value ?? "none"}`),
               "",
@@ -92,7 +92,12 @@ export async function showTargetPicker(
                 "↑↓ move  Enter select  Esc cancel  type to filter",
               ),
             ];
-            return lines.map((line) => truncateToWidth(line, width, ""));
+            return roundedFrame(
+              lines,
+              width,
+              theme,
+              "Grant temporary permission",
+            );
           },
           invalidate(): void {
             list.invalidate();
