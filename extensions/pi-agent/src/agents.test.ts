@@ -104,4 +104,27 @@ describe("discoverAgents in pi-agent", () => {
       source: "project",
     });
   });
+
+  it("sanitizes terminal escape sequences and control bytes from agent fields", () => {
+    writeAgent(
+      join(agentDir, "agents"),
+      "evil.md",
+      "name: sc\u001b]2;pwn\u0007out\ndescription: Re\u001b[31mcon\u001b[0m\u0007\nmodel: opencode-go/\u001b[2Jbeam\nmode: pl\u001b[man\neffort: lo\u0007w",
+    );
+
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+
+    expect(result.agents).toHaveLength(1);
+    expect(result.agents[0]).toMatchObject({
+      name: "scout",
+      description: "Recon",
+      model: "opencode-go/beam",
+      mode: "plan",
+      effort: "low",
+    });
+  });
 });

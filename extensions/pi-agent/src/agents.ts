@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export interface AgentConfig {
   name: string;
@@ -46,7 +47,7 @@ function parseList(value: unknown): string[] | undefined {
       : [];
   const items = values
     .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
+    .map((item) => sanitizeTerminalText(item).trim())
     .filter(Boolean);
   return items.length > 0 ? items : undefined;
 }
@@ -71,17 +72,19 @@ function loadDirectory(
       if (!statSync(filePath).isFile()) continue;
       const content = readFileSync(filePath, "utf8");
       const { frontmatter } = parseFrontmatter<AgentFrontmatter>(content);
-      if (
-        typeof frontmatter.name !== "string" ||
-        frontmatter.name.trim() === ""
-      ) {
+      const cleanName =
+        typeof frontmatter.name === "string"
+          ? sanitizeTerminalText(frontmatter.name).trim()
+          : "";
+      if (cleanName === "") {
         diagnostics.push(`${filePath}: missing or invalid "name" field`);
         continue;
       }
-      if (
-        typeof frontmatter.description !== "string" ||
-        frontmatter.description.trim() === ""
-      ) {
+      const cleanDescription =
+        typeof frontmatter.description === "string"
+          ? sanitizeTerminalText(frontmatter.description).trim()
+          : "";
+      if (cleanDescription === "") {
         diagnostics.push(`${filePath}: missing or invalid "description" field`);
         continue;
       }
@@ -101,27 +104,31 @@ function loadDirectory(
       }
       const tools = parseList(frontmatter.tools);
       const skills = parseList(frontmatter.skills);
+      const cleanModel =
+        typeof frontmatter.model === "string"
+          ? sanitizeTerminalText(frontmatter.model).trim()
+          : "";
+      const cleanThinking =
+        typeof frontmatter.thinking === "string"
+          ? sanitizeTerminalText(frontmatter.thinking).trim()
+          : "";
+      const cleanMode =
+        typeof frontmatter.mode === "string"
+          ? sanitizeTerminalText(frontmatter.mode).trim()
+          : "";
+      const cleanEffort =
+        typeof frontmatter.effort === "string"
+          ? sanitizeTerminalText(frontmatter.effort).trim()
+          : "";
       agents.push({
-        name: frontmatter.name.trim(),
-        description: frontmatter.description.trim(),
+        name: cleanName,
+        description: cleanDescription,
         ...(tools ? { tools } : {}),
         ...(skills ? { skills } : {}),
-        ...(typeof frontmatter.model === "string" &&
-        frontmatter.model.trim() !== ""
-          ? { model: frontmatter.model.trim() }
-          : {}),
-        ...(typeof frontmatter.thinking === "string" &&
-        frontmatter.thinking.trim() !== ""
-          ? { thinking: frontmatter.thinking.trim() }
-          : {}),
-        ...(typeof frontmatter.mode === "string" &&
-        frontmatter.mode.trim() !== ""
-          ? { mode: frontmatter.mode.trim() }
-          : {}),
-        ...(typeof frontmatter.effort === "string" &&
-        frontmatter.effort.trim() !== ""
-          ? { effort: frontmatter.effort.trim() }
-          : {}),
+        ...(cleanModel !== "" ? { model: cleanModel } : {}),
+        ...(cleanThinking !== "" ? { thinking: cleanThinking } : {}),
+        ...(cleanMode !== "" ? { mode: cleanMode } : {}),
+        ...(cleanEffort !== "" ? { effort: cleanEffort } : {}),
         source,
         filePath,
       });
