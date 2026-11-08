@@ -14,12 +14,19 @@ import {
   readToolTarget,
 } from "./targets.js";
 
+function notifyDiagnostic(ctx: ExtensionContext) {
+  if (typeof ctx.ui?.notify !== "function") return undefined;
+  return (message: string) => {
+    ctx.ui.notify(`pi-policy: ${message}`, "warning");
+  };
+}
+
 function rulesFor(ctx: ExtensionContext) {
   return loadPermissions({
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
-    onDiagnostic: () => {},
+    onDiagnostic: notifyDiagnostic(ctx),
   });
 }
 
@@ -28,7 +35,7 @@ function tagsFor(ctx: ExtensionContext) {
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
-    onDiagnostic: () => {},
+    onDiagnostic: notifyDiagnostic(ctx),
   });
 }
 
@@ -39,7 +46,15 @@ async function handleToolCall(
   if (isPassthroughTaskCall(event.toolName, event.input)) {
     return undefined;
   }
-  const tag = TOOL_TAGS[event.toolName] ?? tagsFor(ctx)[event.toolName];
+  const builtinTag = Object.hasOwn(TOOL_TAGS, event.toolName)
+    ? TOOL_TAGS[event.toolName]
+    : undefined;
+  const userTags = tagsFor(ctx);
+  const tag =
+    builtinTag ??
+    (Object.hasOwn(userTags, event.toolName)
+      ? userTags[event.toolName]
+      : undefined);
   if (tag === undefined) {
     return {
       block: true,

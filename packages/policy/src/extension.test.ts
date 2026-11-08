@@ -93,4 +93,47 @@ describe("headless policy extension", () => {
       reason: expect.stringContaining("no permission category"),
     });
   });
+
+  it("fails closed to ask (blocking in headless mode) and emits a notice when permissions.json is unparseable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-policy-"));
+    dirs.push(root);
+    mkdirSync(join(root, ".pi"), { recursive: true });
+    writeFileSync(join(root, ".pi", "permissions.json"), "{ invalid json");
+    state.agentDir = join(root, "agent");
+
+    let handler: Handler | undefined;
+    const pi = {
+      on: (event: string, fn: Handler) => {
+        if (event === "tool_call") handler = fn;
+      },
+    };
+    extension(pi as never);
+
+    const notify = vi.fn();
+    const ctx = {
+      cwd: root,
+      sessionManager: {},
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: { notify },
+    };
+
+    const res = await handler?.(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "read",
+        input: { path: "src/x.ts" },
+      } as never,
+      ctx as never,
+    );
+    expect(res).toEqual({
+      block: true,
+      reason: expect.stringContaining("needs approval"),
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("not valid JSON"),
+      "warning",
+    );
+  });
 });
