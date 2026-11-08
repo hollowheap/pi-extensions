@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
   type TodoState,
@@ -297,5 +298,49 @@ describe("todo formatting", () => {
 
   it("starts from a fresh state", () => {
     expect(emptyTodoState()).toEqual({ todos: [], nextId: 1 });
+  });
+
+  it("sanitizes task command and subagent id and activeTool fields before rendering", () => {
+    const lines = formatTodoWidget(
+      [],
+      [
+        {
+          id: "sub\x1b[31m-1\x1b[0m",
+          state: "running",
+          activeTool: "edit\x1b[2K",
+          startedAt: 1000,
+          activeToolStartedAt: 1000,
+        },
+      ],
+      [
+        {
+          id: "task-1",
+          command: "npm run build\x1b]0;title\x07",
+          status: "running",
+        },
+      ],
+      { now: 2000 },
+    );
+    expect(lines).toBeDefined();
+    for (const line of lines ?? []) {
+      expect(line).not.toContain("\x1b[31m");
+      expect(line).not.toContain("\x1b[0m");
+      expect(line).not.toContain("\x1b[2K");
+      expect(line).not.toContain("\x1b]0;");
+      expect(line).not.toContain("\x07");
+    }
+    expect(lines?.some((l) => l.includes("@sub-1"))).toBe(true);
+    expect(lines?.some((l) => l.includes("edit 1s"))).toBe(true);
+    expect(lines?.some((l) => l.includes("npm run build"))).toBe(true);
+  });
+
+  it("truncates non-split widget lines to terminal width with long todo", () => {
+    const longText = "A".repeat(150);
+    const longTodos = [{ id: 1, text: longText, done: false }];
+    const lines = formatTodoWidget(longTodos, [], [], { width: 80 });
+    expect(lines).toBeDefined();
+    for (const line of lines ?? []) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+    }
   });
 });

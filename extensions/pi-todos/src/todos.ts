@@ -3,6 +3,7 @@ import {
   type ListItemNode,
   parseMarkdownBlocks,
 } from "@hollowheap/core/blocks";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export type TodoPriority = "high" | "medium" | "low";
 
@@ -269,8 +270,8 @@ export function formatTodoWidget(
   if (runningTasks.length > 0) {
     const items: string[] = [];
     for (const t of runningTasks) {
-      const cmdInfo = t.command ? ` (${t.command})` : "";
-      items.push(`${t.id} ●${cmdInfo}`);
+      const cmdInfo = t.command ? ` (${sanitizeTerminalText(t.command)})` : "";
+      items.push(`${sanitizeTerminalText(t.id)} ●${cmdInfo}`);
     }
     sections.push({
       title: `Tasks (${runningTasks.length} running)`,
@@ -282,10 +283,11 @@ export function formatTodoWidget(
     const items: string[] = [];
     const now = opts?.now ?? Date.now();
     for (const sub of subagents) {
+      const subId = sanitizeTerminalText(sub.id);
       if (sub.startedAt !== undefined) {
         const elapsed = formatDuration(now - sub.startedAt);
         const normalizedTask = sub.task
-          ? sub.task.replace(/\s+/g, " ").trim()
+          ? sanitizeTerminalText(sub.task).replace(/\s+/g, " ").trim()
           : "";
         const taskText = normalizedTask
           ? normalizedTask.length > 25
@@ -299,14 +301,16 @@ export function formatTodoWidget(
             sub.activeToolStartedAt !== undefined
               ? ` ${formatToolDuration(now - sub.activeToolStartedAt)}`
               : "";
-          toolPart = ` · ${sub.activeTool}${toolTime}`;
+          toolPart = ` · ${sanitizeTerminalText(sub.activeTool)}${toolTime}`;
         }
         items.push(
-          `@${sub.id} ${elapsed}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
+          `@${subId} ${elapsed}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
         );
       } else {
-        const agentInfo = sub.agent ? ` (${sub.agent})` : "";
-        items.push(`@${sub.id} ${stateIcon(sub.state)}${agentInfo}`);
+        const agentInfo = sub.agent
+          ? ` (${sanitizeTerminalText(sub.agent)})`
+          : "";
+        items.push(`@${subId} ${stateIcon(sub.state)}${agentInfo}`);
       }
     }
     sections.push({
@@ -408,26 +412,37 @@ export function formatTodoWidget(
     return lines;
   }
 
-  const boxWidth = Math.max(opts?.width ?? 0, maxInner);
-  const contentWidth = boxWidth - 4;
+  const boxWidth =
+    opts?.width !== undefined && opts.width > 0 ? opts.width : maxInner;
+  const contentWidth = Math.max(0, boxWidth - 4);
 
   sections.forEach((s, idx) => {
-    const titleWidth = visibleWidth(s.title);
+    const rawTitle = s.title;
+    const maxTitleW = Math.max(0, boxWidth - 5);
+    const fitTitle =
+      visibleWidth(rawTitle) > maxTitleW
+        ? `${truncateToWidth(rawTitle, Math.max(0, maxTitleW - 1), "")}…`
+        : rawTitle;
+    const titleWidth = visibleWidth(fitTitle);
     const fillCount = Math.max(0, boxWidth - 5 - titleWidth);
     const fill = "─".repeat(fillCount);
     if (idx === 0) {
-      lines.push(`${b("╭─ ")}${s.title}${b(` ${fill}╮`)}`);
+      lines.push(`${b("╭─ ")}${fitTitle}${b(` ${fill}╮`)}`);
     } else {
-      lines.push(`${b("├─ ")}${s.title}${b(` ${fill}┤`)}`);
+      lines.push(`${b("├─ ")}${fitTitle}${b(` ${fill}┤`)}`);
     }
     for (const item of s.items) {
-      const itemW = visibleWidth(item);
+      const fit =
+        visibleWidth(item) > contentWidth
+          ? `${truncateToWidth(item, Math.max(0, contentWidth - 1), "")}…`
+          : item;
+      const itemW = visibleWidth(fit);
       const pad = " ".repeat(Math.max(0, contentWidth - itemW));
-      lines.push(`${b("│ ")}${item}${pad}${b(" │")}`);
+      lines.push(`${b("│ ")}${fit}${pad}${b(" │")}`);
     }
   });
 
-  lines.push(`${b("╰")}${b("─".repeat(boxWidth - 2))}${b("╯")}`);
+  lines.push(`${b("╰")}${b("─".repeat(Math.max(0, boxWidth - 2)))}${b("╯")}`);
   return lines;
 }
 
