@@ -4,15 +4,15 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { loadModesConfig } from "@hollowheap/core/config";
+import { displayTarget } from "@hollowheap/core/format";
 import {
-  type Tag,
-  displayTarget,
   enterMode,
   evaluate,
-  loadModesConfig,
   modeLayers,
   replaceConfigModes,
-} from "@hollowheap/core";
+} from "@hollowheap/core/modes";
+import type { Tag } from "@hollowheap/core/types";
 import { RequestTracker, attachWireHandler } from "../socket.js";
 import { type ClientCaps, SOCKET_ENV, readCaps } from "./client.js";
 import { loadPermissions } from "./permissions.js";

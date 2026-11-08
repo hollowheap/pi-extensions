@@ -7,13 +7,13 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import {
-  type Tag,
-  checkPath,
   displayPath,
   displayTarget,
-  evaluate,
   truncateText,
-} from "@hollowheap/core";
+} from "@hollowheap/core/format";
+import { evaluate } from "@hollowheap/core/modes";
+import { checkPath } from "@hollowheap/core/policy";
+import type { Tag } from "@hollowheap/core/types";
 import { clampMaxResults, runBinary } from "@hollowheap/runtime/exec";
 import type { ClientCaps } from "./client.js";
 import { loadPermissions } from "./permissions.js";

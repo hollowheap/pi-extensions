@@ -2,10 +2,8 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import {
-  type Rule,
-  loadPermissions as loadCorePermissions,
-} from "@hollowheap/core";
+import { loadPermissions as loadCorePermissions } from "@hollowheap/core/config";
+import type { Rule } from "@hollowheap/core/types";
 
 export function loadPermissions(ctx: ExtensionContext): Rule[] {
   return loadCorePermissions({
