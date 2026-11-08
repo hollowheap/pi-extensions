@@ -1,7 +1,6 @@
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Type } from "@earendil-works/pi-ai";
 import {
   type ExtensionContext,
   type Theme,
@@ -15,6 +14,7 @@ import { checkPath } from "@hollowheap/core/policy";
 import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
 import { clampMaxResults } from "@hollowheap/runtime/exec";
+import { Type } from "typebox";
 import {
   type LanguageToolsConfig,
   findServer,
@@ -22,12 +22,19 @@ import {
   missingCommandHint,
   noServerHint,
 } from "./config.js";
-import {
-  type LspClient,
-  type LspClientOptions,
-  type LspPosition,
-  getLspClient,
-} from "./lsp.js";
+import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
+
+const LSP_LOADED_KEY = Symbol.for("@hollowheap/pi-language-tools/lsp-loaded");
+
+export function isLspLoaded(): boolean {
+  return Boolean(
+    (globalThis as unknown as Record<symbol, boolean>)[LSP_LOADED_KEY],
+  );
+}
+
+export function setLspLoaded(loaded = true): void {
+  (globalThis as unknown as Record<symbol, boolean>)[LSP_LOADED_KEY] = loaded;
+}
 
 export interface LangToolDeps {
   loadConfig: (
@@ -35,7 +42,7 @@ export interface LangToolDeps {
     onDiagnostic?: (message: string) => void,
   ) => LanguageToolsConfig;
   loadRules: (ctx: ExtensionContext) => Rule[];
-  getClient: (options: LspClientOptions) => LspClient;
+  getClient: (options: LspClientOptions) => LspClient | Promise<LspClient>;
   getAgentDir: () => string;
 }
 
@@ -601,7 +608,11 @@ function defaultLoadRules(ctx: ExtensionContext): Rule[] {
 const defaultDeps: LangToolDeps = {
   loadConfig: loadLanguageToolsConfig,
   loadRules: defaultLoadRules,
-  getClient: getLspClient,
+  getClient: async (options) => {
+    setLspLoaded(true);
+    const { getLspClient } = await import("./lsp.js");
+    return getLspClient(options);
+  },
   getAgentDir,
 };
 
@@ -752,7 +763,7 @@ async function executeLang(
   const { server, languageId } = match;
 
   try {
-    const client = deps.getClient({
+    const client = await deps.getClient({
       name: server.name,
       command: server.command,
       args: server.args,

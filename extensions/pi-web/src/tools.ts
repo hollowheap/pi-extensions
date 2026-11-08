@@ -1,4 +1,3 @@
-import { Type } from "@earendil-works/pi-ai";
 import {
   type Theme,
   defineTool,
@@ -14,24 +13,20 @@ import {
   getCapabilities,
   hyperlink,
 } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 import { loadWebConfig } from "./config.js";
-import { fetchUrl } from "./fetch.js";
-import { searchKeyless } from "./keyless.js";
 import {
   type MediaPreview,
   fetchMediaPreview,
   getMediaPreview,
   setMediaPreview,
 } from "./media.js";
-import { createExaAdapter } from "./providers/exa.js";
-import { createFirecrawlAdapter } from "./providers/firecrawl.js";
 import {
   providerSignal,
   resolveFetchOrder,
   resolveSearchOrder,
   withProviderFallback,
 } from "./providers/selection.js";
-import { createTavilyAdapter } from "./providers/tavily.js";
 import type {
   FetchProvider,
   FetchRequest,
@@ -121,14 +116,27 @@ export interface WebFetchDeps {
   ) => Promise<MediaPreview | undefined>;
 }
 
-function adapterFor(provider: ProviderId): ProviderAdapter {
-  if (provider === "exa") return createExaAdapter();
-  if (provider === "tavily") return createTavilyAdapter();
+async function adapterFor(provider: ProviderId): Promise<ProviderAdapter> {
+  if (provider === "exa") {
+    const { createExaAdapter } = await import("./providers/exa.js");
+    return createExaAdapter();
+  }
+  if (provider === "tavily") {
+    const { createTavilyAdapter } = await import("./providers/tavily.js");
+    return createTavilyAdapter();
+  }
+  const { createFirecrawlAdapter } = await import("./providers/firecrawl.js");
   return createFirecrawlAdapter();
 }
 
-function fetchAdapterFor(provider: FetchProvider): ProviderAdapter {
-  if (provider === "exa") return createExaAdapter();
+async function fetchAdapterFor(
+  provider: FetchProvider,
+): Promise<ProviderAdapter> {
+  if (provider === "exa") {
+    const { createExaAdapter } = await import("./providers/exa.js");
+    return createExaAdapter();
+  }
+  const { createTavilyAdapter } = await import("./providers/tavily.js");
   return createTavilyAdapter();
 }
 
@@ -139,16 +147,19 @@ async function defaultSearch(
   const order = resolveSearchOrder(config.searchOrder);
   const signal = providerSignal(request.signal);
   if (order.length === 0) {
+    const { searchKeyless } = await import("./keyless.js");
     return searchKeyless({ ...request, signal });
   }
   try {
     return await withProviderFallback(
       order,
-      (provider) => adapterFor(provider).search({ ...request, signal }),
+      async (provider) =>
+        (await adapterFor(provider)).search({ ...request, signal }),
       signal,
     );
   } catch (error) {
     if (signal.aborted) throw error;
+    const { searchKeyless } = await import("./keyless.js");
     return searchKeyless({ ...request, signal });
   }
 }
@@ -158,9 +169,12 @@ async function defaultFetch(
 ): Promise<NormalizedFetchResult> {
   const config = loadWebConfig(getAgentDir());
   const order = resolveFetchOrder(config.fetchOrder);
-  const providers = order
-    .filter((provider) => provider !== "raw")
-    .map((provider) => fetchAdapterFor(provider));
+  const providers = await Promise.all(
+    order
+      .filter((provider) => provider !== "raw")
+      .map((provider) => fetchAdapterFor(provider)),
+  );
+  const { fetchUrl } = await import("./fetch.js");
   return fetchUrl(request.url, {
     apiKey: request.apiKey,
     signal: request.signal,

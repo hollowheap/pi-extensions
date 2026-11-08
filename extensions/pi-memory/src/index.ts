@@ -19,7 +19,6 @@ import {
   recordTurnUsage,
   restoreSessionUsage,
 } from "@hollowheap/core/usage";
-import { showMarkdownPager } from "@hollowheap/tui/pager";
 import {
   type MemoryConfig,
   isMemoryActive,
@@ -445,6 +444,7 @@ export function createMemoryExtension(
         return;
       }
       const markdown = renderView(ledger);
+      const { showMarkdownPager } = await import("@hollowheap/tui/pager");
       await showMarkdownPager(ctx, {
         title: "Memory",
         markdown,

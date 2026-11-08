@@ -42,7 +42,6 @@ import {
   checkPathTrust,
   persistDecision,
 } from "./rules.js";
-import { showTargetPicker } from "./target-picker.js";
 
 interface TempGrant {
   target: string;
@@ -197,6 +196,7 @@ async function pickGrantTarget(
     return undefined;
   }
   if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
+    const { showTargetPicker } = await import("./target-picker.js");
     return showTargetPicker(ctx, targets);
   }
   if (ctx.hasUI) {

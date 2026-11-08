@@ -3,8 +3,6 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { showMarkdownPager } from "@hollowheap/tui/pager";
-import { showFuzzyPicker } from "@hollowheap/tui/picker";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {
@@ -142,6 +140,7 @@ export function createSubagentsExtension(
     ): Promise<void> => {
       const log = readSubagentLog(resolveAgentDir(), id);
       const text = log.trim() === "" ? "(no output)" : log;
+      const { showMarkdownPager } = await import("@hollowheap/tui/pager");
       await showMarkdownPager(ctx, {
         title: `Subagent ${id}`,
         markdown: `~~~~text\n${text}\n~~~~`,
@@ -156,6 +155,7 @@ export function createSubagentsExtension(
         return;
       }
       if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
+        const { showFuzzyPicker } = await import("@hollowheap/tui/picker");
         const picked = await showFuzzyPicker(ctx, {
           title: "Select a subagent",
           items: all.map((state) => ({

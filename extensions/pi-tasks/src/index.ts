@@ -4,8 +4,6 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { showMarkdownPager } from "@hollowheap/tui/pager";
-import { showFuzzyPicker } from "@hollowheap/tui/picker";
 import { taskAlertTracker } from "./alerts.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
@@ -13,9 +11,6 @@ import { createTaskTool } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
 export * from "@hollowheap/runtime/lifecycle";
-export * from "@hollowheap/tui/pager";
-export * from "@hollowheap/tui/picker";
-export * from "@hollowheap/tui/progress";
 export * from "./registry.js";
 export * from "./runner.js";
 export * from "@hollowheap/runtime/store";
@@ -38,6 +33,7 @@ async function openTaskLog(ctx: ExtensionContext, id: string): Promise<void> {
   const log = sanitizeTerminalText(readTaskLog(getAgentDir(), id));
   const safeId = sanitizeTerminalText(id);
   const text = log.trim() === "" ? "(no output)" : log;
+  const { showMarkdownPager } = await import("@hollowheap/tui/pager");
   await showMarkdownPager(ctx, {
     title: `Task ${safeId}`,
     markdown: `~~~~text\n${text}\n~~~~`,
@@ -78,6 +74,7 @@ async function pickTask(ctx: ExtensionContext): Promise<string | undefined> {
     return undefined;
   }
   if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
+    const { showFuzzyPicker } = await import("@hollowheap/tui/picker");
     return showFuzzyPicker(ctx, {
       title: "Select a task",
       items: taskPickerItems(tasks),

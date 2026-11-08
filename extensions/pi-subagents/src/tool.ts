@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Type } from "@earendil-works/pi-ai";
 import {
   type Theme,
   defineTool,
@@ -12,7 +11,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { truncateText } from "@hollowheap/core/format";
 import { session } from "@hollowheap/core/state";
 import { isProcessAlive } from "@hollowheap/runtime/process";
-import { withCancellableProgress } from "@hollowheap/tui/progress";
+import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
 import type { SessionAgentDefinition } from "./definitions.js";
@@ -627,6 +626,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         }
         if (action === "wait") {
           const timeoutMs = Math.min(params.timeoutMs ?? 30_000, 600_000);
+          const { withCancellableProgress } = await import(
+            "@hollowheap/tui/progress"
+          );
           const waited = await withCancellableProgress(
             ctx,
             `Waiting for subagent ${id}`,

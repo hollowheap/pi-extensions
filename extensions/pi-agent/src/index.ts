@@ -8,8 +8,6 @@ import {
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode } from "@hollowheap/core/modes";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import { showAgentPicker } from "./picker.js";
-import { showAgentSwitchPopup } from "./popup.js";
 
 export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
 
@@ -262,6 +260,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             position: "at",
             withSession: async (replacedCtx) => {
               forkCtx = replacedCtx;
+              const { showAgentSwitchPopup } = await import("./popup.js");
               await showAgentSwitchPopup(agent, replacedCtx, {
                 sessionName,
                 forked: true,
@@ -293,6 +292,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         pi.setSessionName(sessionName);
       }
       await applyAgent(agent, ctx, pi, { persist: true, notify: false });
+      const { showAgentSwitchPopup } = await import("./popup.js");
       await showAgentSwitchPopup(agent, ctx, { sessionName, forked: false });
     };
 
@@ -436,6 +436,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         }
 
         if (ctx.mode === "tui" && typeof ctx.ui?.custom === "function") {
+          const { showAgentPicker } = await import("./picker.js");
           const picked = await showAgentPicker(ctx, agents);
           if (picked === undefined) return;
           if (picked === "default") {

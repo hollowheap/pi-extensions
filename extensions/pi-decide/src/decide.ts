@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
 import type {
   ClassifierAnswer,
   ClassifierContext,
@@ -23,6 +22,7 @@ import {
   restoreSessionUsage,
   setSessionUsage,
 } from "@hollowheap/core/usage";
+import { Type } from "typebox";
 import { loadDecideConfig } from "./config.js";
 
 export type DecideKind = "choice" | "score" | "bool";

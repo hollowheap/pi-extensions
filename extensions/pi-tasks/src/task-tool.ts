@@ -1,4 +1,3 @@
-import { Type } from "@earendil-works/pi-ai";
 import {
   type ExtensionContext,
   defineTool,
@@ -7,7 +6,7 @@ import { loadPermissions } from "@hollowheap/core/config";
 import { displayTarget, truncateText } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
 import { effectiveCwd } from "@hollowheap/core/state";
-import { withCancellableProgress } from "@hollowheap/tui/progress";
+import { Type } from "typebox";
 import { taskAlertTracker } from "./alerts.js";
 import { generateTaskId } from "./registry.js";
 import { type TaskRecord, taskLogPath } from "./registry.js";
@@ -395,6 +394,9 @@ export function createTaskTool(deps: TaskToolDeps) {
           Number.isFinite(params.timeoutMs)
             ? params.timeoutMs
             : 30_000;
+        const { withCancellableProgress } = await import(
+          "@hollowheap/tui/progress"
+        );
         const waited = await withCancellableProgress(
           ctx,
           `Waiting for task ${id}`,

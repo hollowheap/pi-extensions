@@ -19,6 +19,7 @@ vi.mock("./lsp.js", () => ({
 }));
 
 import extension from "./index.js";
+import { setLspLoaded } from "./tool.js";
 
 function createMockPi() {
   const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
@@ -44,6 +45,7 @@ function start(pi: ReturnType<typeof createMockPi>): void {
 
 beforeEach(() => {
   disposeAll.mockClear();
+  setLspLoaded(false);
 });
 
 afterEach(() => {
@@ -112,14 +114,22 @@ describe("pi-language-tools extension", () => {
     expect(missing.setActiveTools).not.toHaveBeenCalled();
   });
 
-  it("disposes servers on session start and shutdown", () => {
+  it("disposes servers on session start and shutdown only when lsp was loaded", async () => {
     const pi = createMockPi();
     extension(pi as never);
 
     start(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(disposeAll).not.toHaveBeenCalled();
+
+    setLspLoaded(true);
+    start(pi);
+    await new Promise((r) => setTimeout(r, 10));
     expect(disposeAll).toHaveBeenCalledTimes(1);
 
+    setLspLoaded(true);
     pi.handlers.session_shutdown({}, {});
+    await new Promise((r) => setTimeout(r, 10));
     expect(disposeAll).toHaveBeenCalledTimes(2);
   });
 });

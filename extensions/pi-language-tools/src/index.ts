@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadLanguageToolsConfig } from "./config.js";
-import { disposeAllLspClients } from "./lsp.js";
-import { createLangTool } from "./tool.js";
+import { createLangTool, isLspLoaded, setLspLoaded } from "./tool.js";
 
 export default function (pi: ExtensionAPI) {
   const diagnostics: string[] = [];
@@ -11,9 +10,21 @@ export default function (pi: ExtensionAPI) {
   );
   pi.registerTool(createLangTool({ loadConfig: () => config }));
 
+  const disposeIfLoaded = async () => {
+    if (!isLspLoaded()) return;
+    try {
+      const { disposeAllLspClients } = await import("./lsp.js");
+      await disposeAllLspClients();
+    } catch {
+      // ignore
+    } finally {
+      setLspLoaded(false);
+    }
+  };
+
   let reported = false;
   pi.on("session_start", (_event, ctx) => {
-    void disposeAllLspClients().catch(() => undefined);
+    void disposeIfLoaded();
     if (!reported && diagnostics.length > 0) {
       reported = true;
       for (const message of diagnostics) {
@@ -34,6 +45,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
-    void disposeAllLspClients().catch(() => undefined);
+    void disposeIfLoaded();
   });
 }

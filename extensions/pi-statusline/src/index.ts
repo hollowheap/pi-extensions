@@ -23,8 +23,6 @@ import {
   saveOptions,
 } from "./config.js";
 import { renderStatusline } from "./render.js";
-import { showStatuslineSettings } from "./settings.js";
-import { showThemePicker } from "./theme-picker.js";
 
 const DEFAULT_CLICK_ACTIONS: Record<string, string> = {
   mode: "/mode",
@@ -256,6 +254,7 @@ export default function (pi: ExtensionAPI) {
         }
         return;
       }
+      const { showThemePicker } = await import("./theme-picker.js");
       const picked = await showThemePicker(ctx);
       if (picked !== undefined && ctx.hasUI) {
         ctx.ui.notify(`Theme: ${picked}`, "info");
@@ -329,6 +328,7 @@ export default function (pi: ExtensionAPI) {
             );
           return;
         }
+        const { showStatuslineSettings } = await import("./settings.js");
         await showStatuslineSettings(ctx, config, (next) => {
           config = next;
           try {

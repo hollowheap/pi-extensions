@@ -3,7 +3,6 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { type WebSettings, loadWebConfig, saveWebSettings } from "./config.js";
-import { showWebSettings } from "./settings.js";
 import {
   createWebFetchTool,
   createWebSearchTool,
@@ -107,6 +106,7 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`pi-web: ${diagnostic}`, "warning");
       }
       let saved = false;
+      const { showWebSettings } = await import("./settings.js");
       await showWebSettings(ctx, config, (settings: WebSettings) => {
         try {
           saveWebSettings(getAgentDir(), settings);
