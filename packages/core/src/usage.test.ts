@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { USAGE_ENTRY_TYPE, restoreSessionUsage } from "./usage.js";
+import {
+  USAGE_ENTRY_TYPE,
+  clearSessionUsage,
+  getSessionUsage,
+  restoreSessionUsage,
+  setSessionUsage,
+} from "./usage.js";
 
 describe("restoreSessionUsage", () => {
   it("reads the active branch before all session entries across two branches", () => {
@@ -70,5 +76,29 @@ describe("restoreSessionUsage", () => {
     const restored = restoreSessionUsage({ getEntries });
     expect(getEntries).toHaveBeenCalledTimes(1);
     expect(restored.totalCost).toBe(0.25);
+  });
+});
+
+describe("activeUsage", () => {
+  it("shares active usage WeakMap via Symbol.for('@hollowheap/core/usage') on globalThis", () => {
+    const key = Symbol.for("@hollowheap/core/usage");
+    const target = globalThis as unknown as Record<symbol, unknown>;
+    const owner = {};
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalCost: 0.05,
+      byModel: {},
+    };
+    setSessionUsage(owner, usage);
+    const map = target[key] as WeakMap<object, unknown>;
+    expect(map).toBeInstanceOf(WeakMap);
+    expect(map.get(owner)).toEqual(usage);
+    expect(getSessionUsage(owner)).toEqual(usage);
+    clearSessionUsage(owner);
+    expect(map.has(owner)).toBe(false);
   });
 });

@@ -272,7 +272,19 @@ export function recordTurnUsage(
   };
 }
 
-const activeUsage = new WeakMap<object, CumulativeUsage>();
+const USAGE_KEY = Symbol.for("@hollowheap/core/usage");
+
+function getActiveUsage(): WeakMap<object, CumulativeUsage> {
+  const target = globalThis as unknown as Record<
+    symbol,
+    WeakMap<object, CumulativeUsage> | undefined
+  >;
+  const existing = target[USAGE_KEY];
+  if (existing !== undefined) return existing;
+  const created = new WeakMap<object, CumulativeUsage>();
+  target[USAGE_KEY] = created;
+  return created;
+}
 
 function ownerKey(owner: unknown): object | undefined {
   return typeof owner === "object" && owner !== null ? owner : undefined;
@@ -280,17 +292,19 @@ function ownerKey(owner: unknown): object | undefined {
 
 export function setSessionUsage(owner: unknown, usage: CumulativeUsage): void {
   const key = ownerKey(owner);
-  if (key !== undefined) activeUsage.set(key, usage);
+  if (key !== undefined) getActiveUsage().set(key, usage);
 }
 
 export function clearSessionUsage(owner: unknown): void {
   const key = ownerKey(owner);
-  if (key !== undefined) activeUsage.delete(key);
+  if (key !== undefined) getActiveUsage().delete(key);
 }
 
 export function getSessionUsage(owner: unknown): CumulativeUsage {
   const key = ownerKey(owner);
-  return (key !== undefined ? activeUsage.get(key) : undefined) ?? emptyUsage();
+  return (
+    (key !== undefined ? getActiveUsage().get(key) : undefined) ?? emptyUsage()
+  );
 }
 
 export function setSessionBudgetCap(

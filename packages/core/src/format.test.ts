@@ -48,4 +48,22 @@ describe("sanitizeTerminalText", () => {
       "line2\r\x00\x07\x08\x1b[2J\x9b32mok\x85\x9fend";
     expect(sanitizeTerminalText(dirty)).toBe("hello\tred\nline2okend");
   });
+
+  it("preserves 16-color, 256-color, and TrueColor SGR sequences when allowSgr is true while stripping control sequences", async () => {
+    const { sanitizeTerminalText } = await import("./format.js");
+    const input =
+      "\x1b[31m16-color\x1b[0m " +
+      "\x1b[38;5;208m256-color\x1b[0m " +
+      "\x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "\x1b]52;c;ZXZpbA==\x07" +
+      "\x1b]2;title\x07" +
+      "\x1b[2J\x1b[H\x1b[?25l" +
+      "\x00\x07\x08clean";
+    const expected =
+      "\x1b[31m16-color\x1b[0m " +
+      "\x1b[38;5;208m256-color\x1b[0m " +
+      "\x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "clean";
+    expect(sanitizeTerminalText(input, { allowSgr: true })).toBe(expected);
+  });
 });

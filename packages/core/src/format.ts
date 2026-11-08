@@ -67,7 +67,15 @@ function skipControlString(text: string, start: number): number {
   return index;
 }
 
-export function sanitizeTerminalText(text: string): string {
+export interface SanitizeTerminalOptions {
+  allowSgr?: boolean;
+}
+
+export function sanitizeTerminalText(
+  text: string,
+  options?: SanitizeTerminalOptions,
+): string {
+  const allowSgr = options?.allowSgr === true;
   let out = "";
   let index = 0;
   while (index < text.length) {
@@ -75,6 +83,22 @@ export function sanitizeTerminalText(text: string): string {
     if (code === 0x1b) {
       const next = text.charCodeAt(index + 1);
       if (next === 0x5b) {
+        if (allowSgr) {
+          let sgrIdx = index + 2;
+          while (sgrIdx < text.length) {
+            const p = text.charCodeAt(sgrIdx);
+            if ((p >= 0x30 && p <= 0x39) || p === 0x3b || p === 0x3a) {
+              sgrIdx += 1;
+            } else {
+              break;
+            }
+          }
+          if (sgrIdx < text.length && text.charCodeAt(sgrIdx) === 0x6d) {
+            out += text.slice(index, sgrIdx + 1);
+            index = sgrIdx + 1;
+            continue;
+          }
+        }
         index = skipCsi(text, index + 2);
         continue;
       }
