@@ -970,3 +970,357 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Notes: allow PNG/JPEG/GIF/WebP under the byte cap; fall back to text for unsupported/oversized images.
   - Risk: unbounded payload, wrong MIME, or breaking terminal previews.
 
+
+## Spec: review remediation
+
+### Core primitives
+
+- [x] T158 [S180]: `withPromptLock` accepts optional `signal` and `timeoutMs`; an aborted or timed-out waiter rejects and leaves the queue.
+  - Verify: `npx vitest run packages/core/src/prompt-lock.test.ts`
+  - Files: `packages/core/src/prompt-lock.ts`, `packages/core/src/prompt-lock.test.ts`
+  - Notes: calls without options keep their current behavior; an aborted holder releases the lock; nested acquisition still throws.
+  - Risk: a hung waiter that never rejects, or a lock left held after abort.
+
+- [x] T159 [S182]: core `messageCost` returns the provider `usage.cost.total` when finite and above 0, else the price-table cost.
+  - Verify: `npx vitest run packages/core/src/pricing.test.ts`
+  - Files: `packages/core/src/pricing.ts`, `packages/core/src/pricing.test.ts`
+  - Notes: one exported function; no caller changes in this task.
+  - Risk: unpriced models with provider cost become visible spend.
+
+- [x] T160 [S111] [T159]: usage restore reads the active branch before all session entries.
+  - Verify: `npx vitest run packages/core/src/usage.test.ts extensions/pi-usage/src/index.test.ts`
+  - Files: `packages/core/src/usage.ts`, `packages/core/src/usage.test.ts` (new), `extensions/pi-usage/src/index.test.ts`
+  - Notes: `getBranch` runs first; `getEntries` runs only when `getBranch` is absent. Add a two-branch test.
+  - Risk: a session without a leaf entry restores zero usage.
+
+- [x] T161 [S182] [T159]: pi-usage prices turns and subagent rows with `messageCost`.
+  - Verify: `npx vitest run extensions/pi-usage/src`
+  - Files: `extensions/pi-usage/src/index.ts`, `extensions/pi-usage/src/subagents.ts`
+  - Notes: remove the table-only pricing path at `index.ts:224-236`; `subagents.ts:84-93` uses the same function.
+  - Risk: changed totals in existing usage tests; update expected values only with a stated reason.
+
+- [x] T162 [S182] [T159]: the pi-statusline cost sum uses `messageCost`.
+  - Verify: `npx vitest run extensions/pi-statusline/src`
+  - Files: `extensions/pi-statusline/src/index.ts`, `extensions/pi-statusline/src/components.ts`
+  - Notes: remove the table-without-cache fallback at `index.ts:71-78`.
+  - Risk: statusline and `/usage` disagree if one caller keeps the old rule.
+
+- [x] T163 [S182] [T159]: pi-decide records each billed classifier call once, including failed calls, and reports zero new usage for cache hits and joined calls.
+  - Verify: `npx vitest run extensions/pi-decide/src`
+  - Files: `extensions/pi-decide/src/decide.ts`, `extensions/pi-decide/src/decide.test.ts`
+  - Notes: the ledger write path needs Q26. Do not start until Q26 is resolved.
+  - Risk: double counting a cached result; dropping spend on provider errors.
+
+- [x] T164 [S183]: `updateJsonConfig(path, mutate)` refuses to write a file that exists and does not parse to an object, and writes through a temp file and rename.
+  - Verify: `npx vitest run packages/core/src/config.test.ts`
+  - Files: `packages/core/src/config.ts`, `packages/core/src/config.test.ts`
+  - Notes: a missing file is created; an unparseable file stays byte-identical and the call returns an error.
+  - Risk: a leftover temp file after a failed rename.
+
+- [x] T165 [S183] [T164]: the pi-web settings save uses `updateJsonConfig`.
+  - Verify: `npx vitest run extensions/pi-web/src/config.test.ts`
+  - Files: `extensions/pi-web/src/config.ts`, `extensions/pi-web/src/config.test.ts`
+  - Notes: replace `readRoot` and the direct write at `config.ts:123-162`.
+  - Risk: losing unrelated `web.json` fields if `mutate` does not spread the parsed object.
+
+- [x] T166 [S183] [T164]: the pi-statusline settings save uses `updateJsonConfig`.
+  - Verify: `npx vitest run extensions/pi-statusline/src/config.test.ts`
+  - Files: `extensions/pi-statusline/src/config.ts`, `extensions/pi-statusline/src/config.test.ts`
+  - Notes: replace `readConfigRoot` and `saveOptions` at `config.ts:422-456`.
+  - Risk: the existing "treat parse error as empty" test must change to expect a refusal.
+
+- [x] T167 [S183] [T164]: pi-guard config and persisted-decision writes use `updateJsonConfig`.
+  - Verify: `npx vitest run extensions/pi-guard/src`
+  - Files: `extensions/pi-guard/src/config.ts`, `extensions/pi-guard/src/rules.ts`, `extensions/pi-guard/src/index.test.ts`
+  - Notes: `config.ts:21-22, 39-40` and the persisted write near `rules.ts:198`.
+  - Risk: a refused save must still apply the session-scope decision in memory.
+
+- [x] T168 [S183] [T164]: the pi-dashboard settings save uses `updateJsonConfig`.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Files: `extensions/pi-dashboard/src/config.ts`, `extensions/pi-dashboard/src/config.test.ts`
+  - Notes: replace `readRoot` and the write in `saveDashboardSettings` at `config.ts:238-275`.
+  - Risk: the same as T166.
+
+- [x] T169 [S179] [T168]: dashboard settings save keeps the existing header section's `ascii` and other fields.
+  - Verify: `npx vitest run extensions/pi-dashboard/src/config.test.ts`
+  - Files: `extensions/pi-dashboard/src/config.ts`, `extensions/pi-dashboard/src/config.test.ts`
+  - Notes: change only `gap` and the preset; rebuild the section only when the header is absent.
+  - Risk: a custom preset that needs the default art.
+
+### Permissions and shell
+
+- [x] T170 [S184]: core policy evaluates hard deny, persistent deny, session deny, most specific allow, trusted root, then mode default, first match wins.
+  - Verify: `npx vitest run packages/core/src/policy.test.ts packages/core/src/modes.test.ts`
+  - Files: `packages/core/src/policy.ts`, `packages/core/src/policy.test.ts`, `packages/core/src/modes.ts`
+  - Notes: encodes D180; trusted roots no longer override earlier denies.
+  - Risk: some prompts that were silent now ask.
+
+- [x] T171 [S184] [T170]: core policy expands `~/` and a leading `@` before matching targets.
+  - Verify: `npx vitest run packages/core/src/policy.test.ts`
+  - Files: `packages/core/src/policy.ts`, `packages/core/src/policy.test.ts`
+  - Notes: replace the path handling at `policy.ts:51-57`; use the host home directory.
+  - Risk: a literal `~` directory name inside a workspace.
+
+- [x] T172 [S184] [T170]: a pi-guard deny holds when its parent directory is trusted or allowed.
+  - Verify: `npx vitest run extensions/pi-guard/src/rules.test.ts extensions/pi-guard/src/index.test.ts`
+  - Files: `extensions/pi-guard/src/rules.ts`, `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/rules.test.ts`
+  - Notes: fix the order at `index.ts:267` and the specificity compare at `rules.ts:136-152`.
+  - Risk: a file deny that previously worked through a broader allow now asks.
+
+- [x] T173 [S184] [T170]: a read approval never allows edit or write for the same target.
+  - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts`
+  - Files: `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`
+  - Notes: the check sits at `index.ts:267-273` and `rules.ts:187-189`.
+  - Risk: the write prompt appears on every read until a write decision is saved.
+
+- [x] T174 [S184] [T170]: an unparseable permissions file makes gated tools ask in interactive mode and block in headless mode, with a notice in both.
+  - Verify: `npx vitest run packages/policy/src packages/core/src/config.test.ts`
+  - Files: `packages/policy/src/extension.ts`, `packages/policy/src/extension.test.ts`, `packages/core/src/config.ts`
+  - Notes: the `onDiagnostic: () => {}` stub at `extension.ts:22` gets a real handler.
+  - Risk: headless children that depend on a broken file stop running.
+
+- [x] T175 [S185]: core shell safety asks for destructive commands in every mode, including autopilot.
+  - Verify: `npx vitest run packages/core/src/shell.test.ts packages/core/src/modes.test.ts`
+  - Files: `packages/core/src/shell.ts`, `packages/core/src/shell.test.ts`, `packages/core/src/modes.ts`, `packages/core/src/modes.test.ts`
+  - Notes: list: recursive delete of `~` or `/`, `find` with `-delete` or `-exec rm`, forced `git push`. Mode overrides cannot weaken it.
+  - Risk: heuristic matching misses variants; the list is not a sandbox.
+
+- [x] T176 [S185] [T175]: wrappers and separators do not hide a listed command.
+  - Verify: `npx vitest run packages/core/src/shell.test.ts`
+  - Files: `packages/core/src/shell.ts`, `packages/core/src/shell.test.ts`
+  - Notes: cover `timeout`, `nohup`, `command`, `env`, and `;`, `&&`, `|`.
+  - Risk: false positives on read-only commands with similar names.
+
+- [x] T177 [S185] [T175]: pi-autopilot tests cover the listed destructive commands and a headless block.
+  - Verify: `npx vitest run extensions/pi-autopilot/src/index.test.ts`
+  - Files: `extensions/pi-autopilot/src/index.test.ts`
+  - Notes: five cases from V38-F2: `rm -rf /`, `rm -rf ~`, `find / -delete`, `git push --force origin main`, and `ls; rm -rf /`.
+  - Risk: none beyond T175.
+
+- [x] T178 [S14]: the pi-tools README and tests state that `/cd` changes file tools only with `pi-guard` loaded.
+  - Verify: `npx vitest run extensions/pi-tools/src`
+  - Files: `extensions/pi-tools/README.md`, `extensions/pi-tools/src/index.test.ts`
+  - Notes: rename the test at `index.test.ts:84-92` to assert state and status only. Do not add a rewrite in pi-tools.
+  - Risk: users who run pi-tools alone expect file tools to follow `/cd`.
+
+- [x] T179 [S34]: a malformed hook condition fails closed for `preTool` hooks and reports one diagnostic.
+  - Verify: `npx vitest run extensions/pi-hooks/src`
+  - Files: `extensions/pi-hooks/src/hooks.ts`, `extensions/pi-hooks/src/hooks.test.ts`, `extensions/pi-hooks/src/config.ts`
+  - Notes: `hooks.ts:54` returns false today. Relative-command resolution is not part of this task (Q24).
+  - Risk: a bad condition blocks every matching tool call until the user fixes it.
+
+### Terminal text
+
+- [x] T180 [S186]: core `sanitizeTerminalText` removes escape sequences and C0/C1 control bytes except newline and tab.
+  - Verify: `npx vitest run packages/core/src/format.test.ts`
+  - Files: `packages/core/src/format.ts`, `packages/core/src/format.test.ts`
+  - Notes: text sent to the model is not passed through this function.
+  - Risk: a caller that applies it to model-bound text.
+
+- [x] T181 [S186] [T180]: pi-todos widget text is sanitized before render.
+  - Verify: `npx vitest run extensions/pi-todos/src`
+  - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/todos.test.ts`
+  - Notes: task `command`, subagent `id` and `activeTool` at `todos.ts:266-316`.
+  - Risk: IDs that contain a newline break the row layout, which the sanitizer also fixes.
+
+- [x] T182 [S186] [T180]: pi-question prompt and option text is sanitized before render.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Files: `extensions/pi-question/src/questions.ts`, `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/index.test.ts`
+  - Notes: apply in the multi-select render at `index.ts:159-171` and to labels passed to `ctx.ui.select`.
+  - Risk: option labels that look different after sanitizing; duplicate-label checks must run after sanitizing.
+
+- [x] T183 [S186] [T180]: pi-tasks previews and pager output are sanitized before render.
+  - Verify: `npx vitest run extensions/pi-tasks/src`
+  - Files: `extensions/pi-tasks/src/index.ts`, `extensions/pi-tasks/src/index.test.ts`
+  - Notes: raw task output at `index.ts:36-43`.
+  - Risk: task output loses its own colors in previews.
+
+- [x] T184 [S186] [T180]: pi-agent name, description, and title text are sanitized.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Files: `extensions/pi-agent/src/agents.ts`, `extensions/pi-agent/src/index.ts`, `extensions/pi-agent/src/agents.test.ts`
+  - Notes: sanitize in `loadDirectory` and the title write at `index.ts:80`.
+  - Risk: an agent name that becomes ambiguous after sanitizing.
+
+- [x] T185 [S186] [T180]: pi-dashboard command output is sanitized before render.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Files: `extensions/pi-dashboard/src/index.ts`, `extensions/pi-dashboard/src/render.ts`, `extensions/pi-dashboard/src/index.test.ts`
+  - Notes: apply in `splitOutput` before `fitLines`.
+  - Risk: dashboard output loses SGR colors that the user configured through the command.
+
+- [x] T186 [S12] [T180]: the pi-guard approval dialog shows the full sanitized command, without the 500-character cut.
+  - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts`
+  - Files: `extensions/pi-guard/src/index.ts`, `extensions/pi-guard/src/index.test.ts`
+  - Notes: `displayTarget` is at `index.ts:140`. Long commands wrap; they do not truncate.
+  - Risk: a very long command makes the dialog tall; the host dialog height limit is unverified.
+
+### TUI and widgets
+
+- [x] T187 [S177]: every todo widget line fits the render width when the todo text is long and no sections are shown.
+  - Verify: `npx vitest run extensions/pi-todos/src/todos.test.ts`
+  - Files: `extensions/pi-todos/src/todos.ts`, `extensions/pi-todos/src/todos.test.ts`
+  - Notes: truncate the item in the non-split branch (`todos.ts:411-412, 425`) with `truncateToWidth`; add a width-80 case with a 150-character todo.
+  - Risk: the box width stops growing past the terminal width; check the layout tests.
+
+- [x] T188 [S175]: statusline type lookup uses own properties only.
+  - Verify: `npx vitest run extensions/pi-statusline/src/config.test.ts extensions/pi-statusline/src/render.test.ts`
+  - Files: `extensions/pi-statusline/src/config.ts`, `extensions/pi-statusline/src/render.ts`, tests in the same directories
+  - Notes: `Object.hasOwn` at `config.ts:372` and `render.ts:36-38`; test `__proto__`, `constructor`, `toString`.
+  - Risk: none beyond rejecting these names.
+
+- [x] T189 [S175] [T188]: a statusline component that throws renders as empty and the rest of the line still renders.
+  - Verify: `npx vitest run extensions/pi-statusline/src/render.test.ts`
+  - Files: `extensions/pi-statusline/src/render.ts`, `extensions/pi-statusline/src/render.test.ts`
+  - Notes: wrap each component call; report one diagnostic per component type.
+  - Risk: masking real bugs; the diagnostic keeps them visible.
+
+- [x] T190 [S176]: modal visual `d`, `x`, and `y` act on whole graphemes at selection boundaries.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/index.test.ts`
+  - Notes: `resolveSelection` and `deleteSelection` at `editor.ts:137` and `:181` extend the end column to the grapheme end, using `Intl.Segmenter`.
+  - Risk: selection positions shift for combining characters; cover one combining case.
+
+- [x] T191 [S176]: Esc and Ctrl-C in the `/` and `:` prompts cancel the prompt and do not reach the agent.
+  - Verify: `npx vitest run extensions/pi-modal/src/index.test.ts`
+  - Files: `extensions/pi-modal/src/editor.ts`, `extensions/pi-modal/src/index.test.ts`
+  - Notes: route the prompt branches before the global Esc branch at `editor.ts:266-281`; Ctrl-C clears the prompt.
+  - Risk: a user who expects Esc to interrupt during a prompt loses that path.
+
+- [x] T192 [S180] [T158]: pi-question dialogs pass the session signal and a timeout, and cancel when either fires.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Files: `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/index.test.ts`
+  - Notes: pass options at `index.ts:63-64, 196-197, 261-262, 303-305`.
+  - Risk: a timeout that cancels a question the user is still reading. No accepted decision sets the value, so do not add a default timeout until one exists.
+
+- [x] T193 [S180] [T158]: TUI picker, pager, and progress helpers release the prompt lock when disposed without `done`.
+  - Verify: `npx vitest run packages/tui/src`
+  - Files: `packages/tui/src/picker.ts`, `packages/tui/src/pager.ts`, `packages/tui/src/progress.ts`, and their tests
+  - Notes: wrap the overlay handle; call the release on dispose (`picker.ts:52`, `pager.ts:47`, `progress.ts:68`).
+  - Risk: a double release if both `done` and dispose run.
+
+### Process lifecycle
+
+- [x] T194 [S187]: `cancelProcessGroup` signals the process group after the leader has exited.
+  - Verify: `npx vitest run packages/runtime/src/process.test.ts`
+  - Files: `packages/runtime/src/process.ts`, `packages/runtime/src/process.test.ts` (new)
+  - Notes: remove the early return at `process.ts:178` when group members can still exist; return true only when a signal is delivered.
+  - Risk: signaling a reused group id; the group id is the leader's pid, so check the group exists first.
+
+- [x] T195 [S187] [T194]: runtime exec kills the child group on timeout and abort.
+  - Verify: `npx vitest run packages/runtime/src/exec.test.ts`
+  - Files: `packages/runtime/src/exec.ts`, `packages/runtime/src/exec.test.ts`
+  - Notes: spawn with `detached: true` and signal `-pid` at `exec.ts:64-70`; add `sh -c "sleep 60 & wait"` as the test case.
+  - Risk: a detached child stops receiving terminal Ctrl-C; the owner must dispose it.
+
+- [x] T196 [S72] [T194]: the pi-tasks shim kills its child group when the shell exits, and a user cancel records `cancelled`.
+  - Verify: `npx vitest run extensions/pi-tasks/src`
+  - Files: `extensions/pi-tasks/src/shim.cjs`, `extensions/pi-tasks/src/runner.ts`, `extensions/pi-tasks/src/runner.test.ts`
+  - Notes: inline the Node calls (D183); the shim does not import workspace packages. Fix `shim.cjs:89-96` and the status at `runner.ts:173-178`.
+  - Risk: a shim that exits before its group is gone leaves orphans.
+
+- [x] T197 [S96] [T194]: the pi-subagents runner shim kills its child group before it exits.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Files: `extensions/pi-subagents/runner-shim.mjs`, `extensions/pi-subagents/src/runner.ts`
+  - Notes: change `finish()` at `runner-shim.mjs:124-127` and `:297-300` to signal the group first.
+  - Risk: a `finish` call that races with the child's own exit.
+
+- [x] T198 [S96] [T197]: a live subagent with an unreachable socket stays running, and `resume` refuses while its child is live.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Files: `extensions/pi-subagents/src/runner.ts`, `extensions/pi-subagents/src/tool.ts`, `extensions/pi-subagents/src/runner.test.ts`
+  - Notes: remove the failed-state write at `runner.ts:288-292`; check liveness before `resume` at `tool.ts`.
+  - Risk: a truly dead child stays "running" until reconciliation runs; reconciliation must still mark it.
+
+- [x] T199 [S187] [T194]: the language-server client kills the server's process group on dispose and fail.
+  - Verify: `npx vitest run extensions/pi-language-tools/src`
+  - Files: `extensions/pi-language-tools/src/lsp.ts`, `extensions/pi-language-tools/src/lsp.test.ts`
+  - Notes: spawn detached; replace `child.kill()` at `lsp.ts:304-311, 677` with a group signal and KILL after the grace period.
+  - Risk: servers that rely on terminal Ctrl-C; none known.
+
+- [x] T200 [S187] [T194]: the pi-acp RPC child runs in its own process group and is killed as a group.
+  - Verify: `npx vitest run packages/pi-acp/src`
+  - Files: `packages/pi-acp/src/pi-rpc.ts`, `packages/pi-acp/src/adapter.ts`
+  - Notes: replace `proc.kill()` at `pi-rpc.ts:40` and `adapter.ts:417, 991`.
+  - Risk: ACP child sessions that outlive the server if the group signal fails; log the failure.
+
+- [x] T201 [S64]: the LSP client rejects a frame longer than the cap and fails after consecutive request timeouts.
+  - Verify: `npx vitest run extensions/pi-language-tools/src`
+  - Files: `extensions/pi-language-tools/src/lsp.ts`, `extensions/pi-language-tools/src/lsp.test.ts`
+  - Notes: cap `Content-Length` at `lsp.ts:580-582` (64 MiB); fail the client after two timeouts in a row (`lsp.ts:478-491`).
+  - Risk: a slow server that legitimately times out twice loses its session state.
+
+- [x] T202 [S172]: pi-memory observer error responses do not mark messages consumed.
+  - Verify: `npx vitest run extensions/pi-memory/src`
+  - Files: `extensions/pi-memory/src/observer.ts`, `extensions/pi-memory/src/index.ts`, `extensions/pi-memory/src/index.test.ts`
+  - Notes: throw when `stopReason` is `error` or `aborted`, or when `length` yields no observation (`observer.ts:152-157`); the catch leaves the chunk unconsumed (`index.ts:277-278`).
+  - Risk: a permanently failing model retries on every settled turn; the repeated-failure policy is separate (V19-F3).
+
+- [x] T203 [S173]: the ACP server handles a `session/cancel` notification that has no `id`.
+  - Verify: `npx vitest run packages/pi-acp/src`
+  - Files: `packages/pi-acp/src/main.ts`, `packages/pi-acp/src/acp.ts`, `packages/pi-acp/src/acp.test.ts`
+  - Notes: `isRequest` at `acp.ts:41-49` requires `id`; route id-less messages with a method to the notification path at `main.ts:100`.
+  - Risk: a notification handler that replies, which spec-compliant clients reject.
+
+- [x] T204 [S173]: a `sessions.json` that does not parse logs a diagnostic, starts with an empty store, and never crashes the server.
+  - Verify: `npx vitest run packages/pi-acp/src`
+  - Files: `packages/pi-acp/src/sessions.ts`, `packages/pi-acp/src/sessions.test.ts` (new)
+  - Notes: guard the `JSON.parse` at `sessions.ts:20`; write through temp file and rename at `sessions.ts:34`.
+  - Risk: an empty store after a corrupt file drops session IDs that the user needs; the diagnostic must name the file.
+
+- [x] T205 [S20]: `acp_edit` and `acp_write` fail closed when the editor read fails.
+  - Verify: `npx vitest run packages/pi-acp/src`
+  - Files: `packages/pi-acp/src/extension/tools.ts`, `packages/pi-acp/src/extension/tools.test.ts`
+  - Notes: a failed read at `tools.ts:312` and `:362` returns an error, not "file absent" or "no conflict".
+  - Risk: a client that has no editor buffer for a file that exists on disk; the error must say so.
+
+- [x] T206 [S116]: a child subagent's effective mode cannot be more permissive than the parent's `ask` mode.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Files: `extensions/pi-subagents/src/tool.ts`, `extensions/pi-subagents/src/tool.test.ts`
+  - Notes: change the mode selection at `tool.ts:535-545, 568` so `ask` from the parent wins.
+  - Risk: subagents that expected the definition's `edit` mode now ask.
+
+- [x] T207 [S51]: `formatAnswers` numbers answers by source position and includes the question text.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Files: `extensions/pi-question/src/questions.ts`, `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/questions.test.ts`
+  - Notes: keep the source-indexed array; emit `skipped` for skipped questions (`questions.ts:183-186`, `index.ts:328, 421-424`).
+  - Risk: model prompts that parse the old numbering; the README already promises source order.
+
+- [x] T208 [S174]: `htmlToMarkdown` runs in linear time on hostile input.
+  - Verify: `npx vitest run extensions/pi-web/src/extract.test.ts`
+  - Files: `extensions/pi-web/src/extract.ts`, `extensions/pi-web/src/extract.test.ts`
+  - Notes: replace the `<[^>]+>` and lazy paired-tag regexes at `extract.ts:37, 221-226, 233`; keep output for well-formed pages unchanged.
+  - Risk: a regex rewrite that changes tag stripping on real pages; add fixtures from existing tests.
+
+- [x] T209 [S79]: image preview fetches use a timeout and the caller's abort signal.
+  - Verify: `npx vitest run extensions/pi-web/src`
+  - Files: `extensions/pi-web/src/media.ts`, `extensions/pi-web/src/tools.ts`, `extensions/pi-web/src/tools.test.ts`
+  - Notes: pass the signal and timeout at `media.ts:80-84` and `tools.ts:571-590`.
+  - Risk: a slow but valid image is dropped; use the existing 15 s timeout style.
+
+- [x] T210 [S178]: `/agent default` restores the host default tool set after `/reload` or resume.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Files: `extensions/pi-agent/src/index.ts`, `extensions/pi-agent/src/index.test.ts`
+  - Notes: stop capturing the live set at `session_start` (`index.ts:48-54, 284-287`); derive the default from the registered tools with `defaultActive !== false`.
+  - Risk: the default set differs from what the user saw before the change; state it in the commit message.
+
+- [x] T211 [S178] [T210]: the base tool set refreshes at the first switch away from the default agent.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Files: `extensions/pi-agent/src/index.ts`, `extensions/pi-agent/src/index.test.ts`
+  - Notes: snapshot when `activeAgent` is first set (V32-F4); tools registered later and tools the user disabled are kept.
+  - Risk: a snapshot taken after the agent already changed tools.
+
+- [x] T212 [S178] [T211]: verify and commit the fork path already in the working tree.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Files: `extensions/pi-agent/src/index.ts`, `extensions/pi-agent/src/index.test.ts`
+  - Notes: the replacement instance applies the agent from `session_start` with reason `fork`; `withSession` uses only the replaced context. This fixes the `Extension runtime is stale` error reported in the session.
+  - Risk: the commit must not include the other uncommitted files.
+
+- [x] T213 [S181]: relative hook commands resolve against the declaring config directory and never against the session cwd.
+  - Verify: `npx vitest run extensions/pi-hooks/src`
+  - Files: `extensions/pi-hooks/src/config.ts`, `extensions/pi-hooks/src/hooks.ts`, `extensions/pi-hooks/src/config.test.ts`, `extensions/pi-hooks/src/hooks.test.ts`
+  - Notes: resolve relative paths in parseEntry against dirname(filePath); executeHook never resolves relative commands against payload.cwd.
+  - Risk: bare commands like "true" or "node" must remain untouched for PATH lookup.
+
+- [x] T214 [S188]: question flows send a cancelled follow-up message with partial answers on cancellation.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Files: `extensions/pi-question/src/index.ts`, `extensions/pi-question/src/questions.ts`, `extensions/pi-question/src/index.test.ts`
+  - Notes: cancelling dialogs stops remaining questions and sends a follow-up message with partial answers and cancelled: true.
+  - Risk: breaking existing askQuestions callers that expect undefined on cancel; keep direct askQuestions contract consistent while sending the follow-up message on cancellation.

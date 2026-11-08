@@ -12,17 +12,17 @@
   - Acceptance: Effects are `allow|ask|deny`; mode layers are declarative; array order never decides.
   - Rationale: Deterministic, order-independent policy is easier to test and audit.
 
-- [x] R10: Consumer packages delegate policy to core and keep only their UI or transport responsibilities.
+- [ ] R10: Consumer packages delegate policy to core and keep only their UI or transport responsibilities.
   - Verify: Consumer suites pass and no package reimplements rule parsing or shell analysis.
   - Acceptance: `pi-guard` owns prompting, `pi-usage` owns optional caps, tools owns `/cd`, ACP owns transport.
   - Rationale: One owner per concern keeps behavior aligned across harnesses.
 
-- [x] R11: The ACP adapter routes execution through client capabilities and keeps built-ins from bypassing them.
+- [ ] R11: The ACP adapter routes execution through client capabilities and keeps built-ins from bypassing them.
   - Verify: ACP adapter and extension tests pass, including spawn args and lifecycle cases.
   - Acceptance: One pi child per session, socket transport, permission correlation, bounded terminal polling.
   - Rationale: ACP clients must remain the only execution path.
 
-- [x] R12: Statusline and dashboard extend the UI without breaking narrow terminals or shutdown.
+- [ ] R12: Statusline and dashboard extend the UI without breaking narrow terminals or shutdown.
   - Verify: UI package tests pass, including width and abort cases.
   - Acceptance: Extension segments render consistently; in-flight commands stop on shutdown.
   - Rationale: UI regressions are user-visible and hard to catch in logic tests.
@@ -39,7 +39,7 @@
 
 ### Hooks, tools, question, todos, language tools, tasks, and exposure
 
-- [x] R15: `pi-hooks` runs configured commands at session start and around tool calls.
+- [ ] R15: `pi-hooks` runs configured commands at session start and around tool calls.
   - Verify: `extensions/pi-hooks/src` tests pass.
   - Acceptance: Pre-hooks fail closed; post-hooks append output; session hooks warn only; trusted overlay only.
   - Rationale: Hooks let the model install checks without writing an extension.
@@ -49,7 +49,7 @@
   - Acceptance: `pi-tools` registers `/cd` only; `bash` is the search path; `tool_search` stays disabled.
   - Rationale: The direct search schema duplicated built-in capability and was removed.
 
-- [x] R17: Questions are tool-free tagged blocks answered through UI dialogs.
+- [ ] R17: Questions are tool-free tagged blocks answered through UI dialogs.
   - Verify: `pi-question` tests pass.
   - Acceptance: Valid blocks parse, dialogs cancel safely, answers return as one follow-up, print/json stay inert.
   - Rationale: The user wanted questions in the response format, not a tool round trip.
@@ -59,12 +59,12 @@
   - Acceptance: Create appends with stable IDs, complete marks done, state restores, `/todos` and status show progress.
   - Rationale: Branch-local state keeps resume and fork coherent.
 
-- [x] R19: Code intelligence is read-only LSP navigation with trust and path checks.
+- [ ] R19: Code intelligence is read-only LSP navigation with trust and path checks.
   - Verify: `pi-language-tools` tests pass.
   - Acceptance: Navigation, hover, signature help, type/implementation, highlights, and diagnostics use 1-based positions, pooled servers, bounded output, and explanatory failures.
   - Rationale: The model should navigate and inspect code by editor coordinates without gaining write access.
 
-- [x] R20: Durable background shell tasks survive pi exit and stay under shell policy.
+- [ ] R20: Durable background shell tasks survive pi exit and stay under shell policy.
   - Verify: `pi-tasks` tests pass.
   - Acceptance: Start/list/status/wait/cancel; detached runner; PID/start-time reconciliation; trust gate; ACP inert.
   - Rationale: Long-running work must not require a live foreground shell.
@@ -92,12 +92,12 @@
   - Acceptance: Each result has `title`, `url`, `snippet`, and `provider`; failures fall through; results are capped and truncation is reported.
   - Rationale: Provider APIs disagree on field names and nesting, so the model should not branch per provider.
 
-- [x] R03: `web_fetch` returns readable page content for a URL with a normalized result shape.
+- [ ] R03: `web_fetch` returns readable page content for a URL with a normalized result shape.
   - Verify: Tests cover provider extract, raw fallback, caps, and media metadata.
   - Acceptance: Each fetch has `url`, `finalUrl`, `provider`, `contentType`, `content`, `links`, `media`, and `truncated`; no headless-browser mode; media is metadata only; links cap at 50 and media at 20.
   - Rationale: Search snippets are insufficient for API docs and long pages.
 
-- [x] R04: Provider keys and selection are user configurable without editing code.
+- [ ] R04: Provider keys and selection are user configurable without editing code.
   - Verify: Tests cover env keys, `web.json` order arrays, missing keys, and invalid entries.
   - Acceptance: Keys come only from environment variables; `web.json` contains only search/fetch order arrays; unkeyed providers are skipped; configured order wins; errors never include keys.
   - Rationale: Free tiers change and keys differ per machine.
@@ -156,7 +156,7 @@
 
 ### Subagents and durable process
 
-- [x] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
+- [ ] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
   - Verify: Tests cover start/status/send/wait/cancel/resume across parent restart and socket reconnect.
   - Acceptance: Child survives parent exit; `send` steers a running child; `resume` starts from the persisted session; one logical id never has two live children.
   - Rationale: Delegation must survive a parent restart without a central daemon.
@@ -188,7 +188,7 @@
 
 ### Sticky widget, context, access, and budgets
 
-- [x] R36: Todos created by tool-free blocks render as a sticky widget above the prompt box alongside running subagents.
+- [ ] R36: Todos created by tool-free blocks render as a sticky widget above the prompt box alongside running subagents.
   - Verify: Sticky widget renders todos and subagents above the editor; no statusline/dashboard segment required.
   - Acceptance: Tool-free tagged blocks update the sticky widget above the prompt box; displays todos and subagent execution states (running, blocked, complete).
   - Rationale: Sticky rendering keeps active task and subagent state visible without separate dashboard UI.
@@ -203,14 +203,14 @@
   - Acceptance: Untrusted roots fall back to the asking scheme; trusted roots allow access; decisions can be session-only or indefinite.
   - Rationale: Prevents silent out-of-workspace reads while keeping legitimate cross-root workflows usable.
 
-- [x] R39: Budgets and usage are tracked in dollars using provider pricing, surviving compaction.
+- [ ] R39: Budgets and usage are tracked in dollars using provider pricing, surviving compaction.
   - Verify: Budget cap aborts on dollar threshold; usage report shows cost; compaction does not erase cumulative cost.
   - Acceptance: Provider pricing feeds `pi-usage`; optional caps set in $; usage accumulates $ across compaction.
   - Rationale: Dollar tracking matches real cost and survives context compaction.
 
 ### Modal editor, subagent model swap, web codemode, agent switcher, progress, and budget statusline
 
-- [x] R40: A configurable modal editor extension (`pi-modal`) provides Vim navigation with global user keybindings.
+- [ ] R40: A configurable modal editor extension (`pi-modal`) provides Vim navigation with global user keybindings.
   - Verify: Editor handles normal, insert, and visual modes; keys map to Vim defaults and can be overridden via `~/.pi/agent/modal.json`.
   - Acceptance: Switching modes changes cursor and border badge; commands and navigation execute in normal/visual mode; typing inserts in insert mode; custom keymaps load exclusively from global user config.
   - Rationale: Keyboard-driven modal editing improves prompt authoring ergonomics in terminal environments without project pollution.
@@ -225,12 +225,12 @@
   - Acceptance: `web_search` and `web_fetch` are callable only via `tools.*` in `codemode` without prompt declaration overhead; free model tags produce 0 dollar accrual.
   - Rationale: Pure programmatic tool execution eliminates multi-turn latency and prompt bloat while pricing accurately tracks zero-cost models.
 
-- [x] R43: Agent switcher isolates agent profiles with session auto-forking and dynamic skill filtering.
+- [ ] R43: Agent switcher isolates agent profiles with session auto-forking and dynamic skill filtering.
   - Verify: `/agent <name>` forks ongoing session, renames session title, labels branch point, filters declared skills, and injects system prompt.
   - Acceptance: `pi-agent` discovers user and project agent markdown files; switches fork the session tree when history exists and update the title to `[<agent>] ...`; frontmatter `skills` explicitly filters available skills; modal overlay displays agent details; `/agent default` resets profile.
   - Rationale: Agent specialization requires distinct system prompts, skills, and tools without polluting or desynchronizing parent conversation branches.
 
-- [x] R44: Subagents inherit parent mode permissions with frontmatter fallback, and progress displays live execution state and active tool duration.
+- [ ] R44: Subagents inherit parent mode permissions with frontmatter fallback, and progress displays live execution state and active tool duration.
   - Verify: Tests cover mode priority (parent mode overrides frontmatter, ask mode falls back to frontmatter), pi-guard subagent passthrough vs mode gating, and sticky widget subagent format `@<id> <mm:ss> (<task>) <status> · <tool> <tool_duration>`.
   - Acceptance: `subagent` actions `list`, `status`, `wait`, `cancel` are passthrough in `pi-guard`; `start`, `send`, `resume` follow active mode; child process enters parent mode when non-default, else frontmatter `mode`; `pi-subagents` emits state on tick and tool events; `pi-todos` formats active subagent elapsed time and running tool duration.
   - Rationale: Transparent subagent execution tracking and mode enforcement prevent runaway child executions and provide clear progress visibility.
@@ -242,7 +242,7 @@
 
 ### Visual mode, prompt decoration, sandbox, todo management, panel toggle, todo CRUD, task logs/deps, modal search, usage merge, subagent pause/steer, web cache
 
-- [x] R46: Vim visual mode text selection and clipboard operations in modal editor.
+- [ ] R46: Vim visual mode text selection and clipboard operations in modal editor.
   - Verify: Pressing `v` enters visual mode; movements (`h`, `j`, `k`, `l`, `0`, `$`, `w`, `b`) expand or contract highlighted text selection; `y` copies selection to clipboard and returns to normal mode; `d`/`x` cuts selection and returns to normal mode; `c` cuts and enters insert mode.
   - Acceptance: Selected text renders with distinct visual highlight; yank puts text on system/terminal clipboard; delete removes text; escape or `v` cancels selection.
   - Rationale: Full vim visual selection ergonomics allow precise prompt editing without leaving the terminal keyboard layout.
@@ -299,7 +299,7 @@
   - Acceptance: Repeated fetches of the same URL within TTL return cached response; requests exceeding rate limit are queued; `Accept` header negotiates JSON/HTML/text based on tool intent.
   - Rationale: Caching and rate limiting reduce redundant network calls and avoid provider throttling.
 
-- [x] R57: `pi-dashboard` adds error recovery, interactive refresh, and custom renderers.
+- [ ] R57: `pi-dashboard` adds error recovery, interactive refresh, and custom renderers.
   - Verify: `npx vitest run extensions/pi-dashboard/src/index.test.ts extensions/pi-dashboard/src/render.test.ts`
   - Acceptance: Failed sections retry with backoff; pressing a key refreshes a section; custom TS render functions and inline images are supported in sections.
   - Rationale: Dashboard needs resilience and extensibility for real monitoring use.
@@ -450,8 +450,59 @@
 
 ### Observational memory
 
-- [x] R81: An opt-in observer distills durable memory into session entries and carries it through compaction without hiding model spend.
+- [ ] R81: An opt-in observer distills durable memory into session entries and carries it through compaction without hiding model spend.
   - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
   - Acceptance: disabled by default; requires an explicit provider/model; observes only unconsumed messages after the token threshold; stores branch-local observations and consumed markers; restores on session start and tree navigation; injects active memory into `session_before_compact`; supports `/memory status`, `/memory view`, and `/memory clear`; redacts common credentials by default; records observer usage in the shared ledger; ACP registers nothing.
   - Constraints: No dependency on `pi-observational-memory` and no separate memory file. Redaction is best-effort.
   - Non-goals: Reflector, dropper, `recall`, ongoing context injection outside compaction, or global memory across sessions.
+
+### Review remediation
+
+- [ ] R82: Irreversible shell commands always ask for approval in every mode unless a user rule explicitly allows that command.
+  - Verify: `npm test`
+  - Acceptance: recursive deletes under the home or root directory, `find ... -delete`, and forced pushes ask in ask, edit, and autopilot modes; an explicit user allow rule for the exact command runs it without asking; mode overrides cannot remove the approval.
+  - Constraints: Approval must not depend on the interactive UI; non-interactive modes block instead of running.
+  - Non-goals: Full shell semantic analysis or sandboxing of built-in `bash`.
+  - Rationale: V38-F2 shows autopilot runs `rm -rf ~` without a prompt.
+
+- [ ] R83: A permission deny is never overridden by a broader allow, a trusted parent directory, or a read approval.
+  - Verify: `npm test`
+  - Acceptance: a deny on a file holds when its parent directory is allowed for the session, allowed indefinitely, or trusted; a read approval never permits a write; home-relative and `@`-prefixed paths are judged at the path the tool will touch; a permission file that cannot be parsed makes every gated tool ask and shows a notice in every mode.
+  - Constraints: Existing allow rules keep working for paths without a deny.
+  - Non-goals: New rule syntax.
+  - Rationale: V22-F1/F2 and V29-F1/F2/F4 show four deny bypasses.
+
+- [ ] R84: Changing a setting never deletes or rewrites user configuration that the extension could not parse.
+  - Verify: `npm test`
+  - Acceptance: when a settings file exists but does not parse, a settings change is refused, the file stays byte-identical, and the user sees the file path and the reason; a valid file keeps every field the change does not touch.
+  - Constraints: Writes that succeed replace the file atomically.
+  - Non-goals: Automatic repair or backup of broken files.
+  - Rationale: V25-F3, V27-F3, V29-F6, and V34-F7 delete user config.
+
+- [ ] R85: Text from models, tasks, commands, or configuration cannot move the cursor or change the terminal title, clipboard, or screen.
+  - Verify: `npm test`
+  - Acceptance: escape, OSC, and other control bytes in model output, task output, command output, agent names, and approval text render as inert characters or are removed; extension styling still shows its colors.
+  - Constraints: Text sent to the model is unchanged.
+  - Non-goals: Rendering colors that come from untrusted text.
+  - Rationale: Seven reviews found raw control bytes reaching the terminal.
+
+- [ ] R86: Cancelling, timing out, or shutting down never leaves a child process running.
+  - Verify: `npm test`
+  - Acceptance: after cancel, timeout, abort, session shutdown, or reload, no descendant of a task, subagent, hook, language server, dashboard command, or ACP session remains; a child that ignores the terminate signal is force-killed after a grace period; the reported state is `cancelled` for a user cancel.
+  - Constraints: Detached tasks and subagents still survive a normal parent exit by design.
+  - Non-goals: Killing processes that a child intentionally re-parents outside its process group.
+  - Rationale: V21, V24, V26, V31, and V37 leave orphan processes.
+
+- [ ] R87: A dismissed, aborted, or replaced dialog never blocks later prompts.
+  - Verify: `npm test`
+  - Acceptance: when a dialog is hidden by the host, aborted, timed out, or its session is replaced, the next dialog opens; an unanswered dialog with a configured timeout resolves as cancelled.
+  - Constraints: Only one dialog is open at a time (R29).
+  - Non-goals: Parallel dialogs.
+  - Rationale: V20-F1, V22-F4/F5, and V36-F9 show a permanent prompt hang.
+
+- [ ] R88: One model call shows the same dollar cost in every report, and every billed call counts toward the budget cap.
+  - Verify: `npm test`
+  - Acceptance: the usage report, statusline, subagent rows, observer, and classifier totals agree for the same call; classifier and observer calls, including failed billed calls, count toward the cap; a cached result is not counted again; restore uses only the active branch.
+  - Constraints: Pricing stays per message model (R39).
+  - Non-goals: Reconciling with provider invoices.
+  - Rationale: V33-F1/F3 and V35-F1/F3 show inconsistent and double-counted costs.

@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-11-05.
+Last verified: 2026-11-07.
 Scope: `my-pi-agent` workspace.
 
 ## System Shape
@@ -30,6 +30,8 @@ Scope: `my-pi-agent` workspace.
 - `pi-memory` owns opt-in observer calls, branch-local observations, compaction focus, `/memory` commands, and observer usage recording. It does not replace Pi compaction.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
+- Review V19–V38 remediation extracts a shared primitive only when three or more owners share a defect: config update, terminal sanitizing, process-group kill, and prompt-lock cancellation. Single-owner fixes stay local (D176).
+- `withPromptLock` accepts optional `signal` and `timeoutMs`; overlay helpers release the lock on dispose (D177, planned).
 
 ## Dependency Direction
 
@@ -57,11 +59,18 @@ Scope: `my-pi-agent` workspace.
 - Detached processes persist state atomically, stream logs, and speak one JSON object per line over Unix sockets.
 - Task records carry id, kind, status, cwd, timestamps, exit code, output, wait, and cancel. Subagent state adds agent, task, PID, start time, socket, session, attempt, and parent session.
 - Usage pricing is per message model; USD caps are optional and cache read/write tokens count.
+- One core cost function prices every model call: provider `usage.cost.total` when finite and above 0, else the price table. Ledger, statusline, subagent scan, observer, and classifier share it; restore reads the active branch (D178, planned).
+- Settings writers update JSON through one core helper that refuses to overwrite an unparseable file and writes temp+rename (D179, planned).
 
 ## Operations & Security
 
 - Project trust gates hooks, project agents, language servers, durable tasks, and project config overlays.
 - Permission checks apply at the operation boundary, not only in the UI. Unknown tools ask by default.
+- Permission precedence, first match wins: hard deny, persistent deny, session deny, most specific allow, trusted root, mode default. Read approval never covers write; `~/` and `@` expand before matching; an unparseable permission file makes gated tools ask (D180, planned).
+- Core shell safety owns a destructive-command list that asks in every mode, including autopilot; only an explicit user allow opts out (D181, planned).
+- Untrusted text is sanitized of escape and control bytes before rendering; styling is applied afterwards (D182, planned).
+- Owned children run in their own process group and are killed by group, TERM then KILL, even after the leader exits; plain-`node` shims inline the same calls (D183, planned).
+- Relative hook commands resolve against the declaring config directory, never the session cwd; malformed `preTool` conditions block (D184, planned).
 - `web_fetch` accepts only `http`/`https`, rejects loopback/private/link-local/metadata targets on every redirect, and caps redirects.
 - Detached state directories are `0700`; state, log, session, and socket files are `0600`.
 - Dead children reconcile through PID plus process start time to avoid PID reuse.
@@ -73,6 +82,7 @@ Scope: `my-pi-agent` workspace.
 
 ## Known Debt
 
+- Review V19–V38 findings are open until D176–D184 specs S173–S187 land; reopened specs carry a `Regression:` line; see `artifacts/reviews.md` V19–V38. Destructive-shell matching is heuristic and does not replace an outer sandbox.
 - DNS-rebinding hardening for `web_fetch` is deferred.
 - Todo dependency/cycle behavior remains unported; D156 keeps text blocks and adds selected upstream behaviors without a model tool.
 - Durable task cleanup is manual; there is no automatic task garbage collection.
@@ -117,7 +127,7 @@ Scope: `my-pi-agent` workspace.
 
 ## Evidence
 
-- Accepted decisions: `artifacts/decisions.md` D01-D175.
+- Accepted decisions: `artifacts/decisions.md` D01-D184 (D176-D184 accepted; specs S173-S187 pending).
 - Behavioral specs: `artifacts/specs.md` (170 entries, S01-S172; S139-S140 absent).
 - Historical spec prose: `artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `artifacts/context.md`.

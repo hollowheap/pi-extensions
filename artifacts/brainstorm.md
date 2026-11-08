@@ -659,3 +659,125 @@ See `artifacts/questions.md#brainstorm--pi-tools-after-search-removal`.
 - Implementing notifications, sandbox config, or worktrees.
 - Adding OpenCode/OMP feature parity wholesale.
 - Changing `pi-guard`, `pi-tasks`, or `pi-subagents` contracts.
+
+---
+
+# Architectural Exploration: Review V19–V38 Remediation
+
+## Destination
+
+The user can run every extension in the default set without these failures:
+
+- A silent permission bypass.
+- A crash of the TUI.
+- A lost config file.
+- An orphan process.
+- A hung prompt.
+
+Each defect class is fixed once, in the module that owns it. A new extension that uses the shared seam cannot reintroduce the defect.
+
+## References
+
+- Findings: `artifacts/review/` files for V19–V38, as registered in `artifacts/reviews.md`.
+- Module seams: `artifacts/architecture.md` (Module Seams, Dependency Direction).
+- Host contracts: `node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`:
+  - `ReplacedSessionContext` at :329.
+  - `ExtensionUIDialogOptions.signal` and `.timeout` at :36-44.
+- Host width guard: `node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js:474-487`. The TUI stops and throws on an overlong line.
+- No external research was needed. All contracts are local source.
+
+## Defect classes and seam evidence
+
+Each class has the same defect in several owners. Counts come from `rg` over non-test source at `a035b03`.
+
+| Class | Findings | Current owners |
+|---|---|---|
+| Config save overwrites a file that does not parse | V25-F3, V27-F3, V29-F6, V34-F7 | 4 private writers: `pi-web`, `pi-statusline`, `pi-guard`, `pi-dashboard` `src/config.ts`. Core `config.ts` only loads. |
+| Process-tree kill | V21-F2/F4/F5, V24-F1, V26-F2, V31-F2, V37-F3 | 1 primitive (`runtime/process.ts:173`).<br>7 hand-rolled kills: `runner-shim.mjs`, `shim.cjs`, `lsp.ts`, `pi-acp` x3, `exec.ts`. |
+| Terminal control bytes reach render | V24, V29-F3, V30-F12, V31-F5, V32-F9, V34-F10, V36-F3 | No sanitize helper exists. |
+| Prompt lock without abort or timeout | V20-F1, V22-F4/F5, V36-F8/F9 | 1 lock (`core/prompt-lock.ts`), 8 consumer files. |
+| Line wider than the terminal | V30-F1, V28-F9/F17 | Each component truncates by itself. |
+| Cost source split | V33-F3, V35-F1/F3, V19 | 4 readers with different rules. |
+| Permission core | V22-F1/F2/F3, V29-F1/F2/F4, V37-F1, V38-F2 | `core/policy.ts`, `core/shell.ts`, `pi-guard/rules.ts`. |
+
+Constraint: `runner-shim.mjs` and `shim.cjs` run under plain `node` and import only `node:*` modules. They cannot import TypeScript workspace packages without a build or jiti.
+
+## Archetypes
+
+### A. Patch in place, per slice
+
+- Philosophy: fix each finding in the file that the review cites, and add no new shared surface.
+- Structure: only the edits already listed in the review files. For example, add `Object.hasOwn` in `pi-statusline/src/config.ts:372`, `truncateToWidth` in `pi-todos/src/todos.ts:425`, and a parse check in each of the 4 `saveX` functions.
+- Order: highs by slice, then mediums.
+
+### B. Contracts first, in shared packages
+
+- Philosophy: add one primitive per defect class, then migrate every consumer to it.
+- Structure:
+  - `packages/core/src/config.ts`: `updateJsonConfig(path, mutate)`. It refuses to write when the file exists and does not parse. It writes temp+rename.
+  - `packages/core/src/format.ts`: `sanitizeTerminalText(text)`. It strips C0/C1 and OSC, and it keeps or drops SGR.
+  - `packages/runtime/src/process.ts`: `killTree(pid, graceMs)`, used by `exec.ts`, `lsp.ts`, and `pi-acp`. The shims get a generated or copied JS twin.
+  - `packages/core/src/prompt-lock.ts`: `withPromptLock(fn, { signal, timeoutMs })`.
+  - `packages/core/src/usage.ts`: one `messageCost(message, pricing)`.
+  - `packages/core/src/shell.ts`: a destructive-command set (Q15).
+- Order: all contracts, then all consumers, then the single-owner highs.
+
+### C. Severity-gated hybrid with a rule of three
+
+- Philosophy: fix single-owner highs in place now. Extract a shared primitive only when three or more owners have the same defect today. Send policy choices (Q15, Q16) through design before code.
+- Structure:
+  - In-place highs, one owner each:
+    - pi-agent F1.
+    - pi-statusline F1.
+    - pi-todos F1.
+    - pi-modal F1/F2.
+    - pi-question F1.
+    - pi-dashboard F1.
+    - pi-memory F1.
+    - pi-acp F1/F2/F3.
+    - pi-usage F1 (core `usage.ts:329`).
+  - Extractions that meet the rule of three:
+    - `updateJsonConfig`, for 4 owners.
+    - `sanitizeTerminalText`, for 7 owners.
+    - Prompt-lock `signal`/`timeout`, for 8 consumers.
+    - `killTree`, for 7 hand-rolled kills.
+  - Design-gated, with code after a decision:
+    - Permission core: V22-F1/F2/F3 and V29-F1/F2/F4 interact through one precedence order.
+    - Cost source (Q16).
+    - Destructive shell (Q15).
+- Order:
+  1. Permission and exposure highs.
+  2. Crash highs.
+  3. Data-loss highs.
+  4. Extractions.
+  5. Mediums.
+
+## Trade-offs
+
+| Dimension | A. Patch in place | B. Contracts first | C. Hybrid |
+|---|---|---|---|
+| Coupling | Low. No new imports. | High. Every consumer gains a core or runtime import. | Medium. New imports only where 3+ owners share a defect. |
+| Blast radius | Isolated per file. | Broad. One contract change touches 4–8 packages at once. | Isolated for highs. Broad only per extraction, one class at a time. |
+| YAGNI | Clean now, but the same fix is copied 4–8 times. | Premature for classes with 1–2 owners (width, cost). | Clean. Only proven repeats are extracted. |
+| Time to first safe state | Shortest for single-owner highs. | Longest. Highs wait behind contracts. | Short. Highs land first. |
+| Failure mode | Drift: the 5th config writer or the next overlay repeats the bug, and copies diverge (V27-F3 vs V34-F7 already differ). | Big-bang regression: a `withPromptLock` signature change breaks 8 call sites in one commit, and a bad sanitize rule strips colors everywhere. | Interim inconsistency: some owners use the primitive before others migrate. Shims keep a copied kill until Q20 is decided. |
+| Discoverability | Low. The fix is buried in each slice. | High. One named seam per class. | High for extracted classes, low for one-off fixes, which matches their scope. |
+
+## Recommendation
+
+Archetype C fits the repository conventions:
+
+- AGENTS.md assigns shared shell analysis and policy to `packages/core`. It assigns process primitives to `packages/runtime`, and it says to never vendor them in extensions. The four extracted classes already violate that rule by duplication, so extraction removes debt and adds no speculative surface.
+- The worker rules ask for the minimal diff and no premature abstraction. The rule of three keeps width and cost out of shared code until they repeat.
+- Permission and exposure highs go first. Correctness and security findings block completion under the review skill, and they need one precedence decision before code.
+
+## Open Questions
+
+See `artifacts/questions.md`, section `### Brainstorm — review remediation`. Cross-cutting policy questions Q15–Q18 are already registered there under the V19–V38 review heading.
+
+## Out of scope
+
+- Medium and low findings that have a single owner and no shared seam. Those stay in each review file for per-slice work.
+- Host defects reported in reviews, such as `pi-tui` `Editor.render` recursion at width ≤ 2 (V28-F17), and a host cursor setter for pi-modal (V28-F6/F7/F8).
+- Re-running any review slice.
+- Requirements and decisions changes. Design owns those.

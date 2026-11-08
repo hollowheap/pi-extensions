@@ -80,11 +80,12 @@
 
 #### Module Seams
 
-- [x] S12 [R10] [D12]: `pi-guard` asks via `ctx.ui.confirm` on `ask`, blocks on `deny`, keeps `/mode`, `alt+m`, truncation, and the `mode-guard` statusline value, with no local policy module
+- [ ] S12 [R10] [D12]: `pi-guard` asks via `ctx.ui.confirm` on `ask`, blocks on `deny`, keeps `/mode`, `alt+m`, truncation, and the `mode-guard` statusline value, with no local policy module
   - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts`
   - Seam: (not specified)
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V29-F3 — the approval dialog cuts commands at 500 characters and passes ESC and newline bytes through (see S186).
 
 - [x] S13 [R10] [D13]: `pi-budgets` vetoes autopilot entry without a token cap and allows it with a cap; `pi-autopilot` only registers the layer
   - Verify: UNVERIFIED: `npx vitest run extensions/pi-budgets/src/index.test.ts extensions/pi-autopilot/src/index.test.ts`
@@ -92,11 +93,12 @@
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S14 [R10] [D14]: `/cd` works without `pi-guard`; `fd`/`rg` keep `ask` results and drop only `deny`; args use `--glob…--` and `--regexp…--`
+- [ ] S14 [R10] [D14]: `/cd` works without `pi-guard`; `fd`/`rg` keep `ask` results and drop only `deny`; args use `--glob…--` and `--regexp…--`
   - Verify: UNVERIFIED: `npx vitest run extensions/pi-tools/src/index.test.ts extensions/pi-tools/src/fd.test.ts extensions/pi-tools/src/rg.test.ts`
   - Seam: (not specified)
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V38-F1 — without `pi-guard`, `/cd` changes no file tool; the docs and tests claim otherwise.
 
 - [x] S15 [R10] [D15]: ACP `ask` with no connected client resolves to deny and never sends a permission request
   - Verify: `npx vitest run packages/pi-acp/src/extension/index.test.ts`
@@ -132,11 +134,12 @@
 
 #### Data & Contracts
 
-- [x] S20 [R11] [D20]: `acp_write` creates parents, `acp_edit` errors on missing files and buffer drift, `acp_fd`/`acp_rg` terminate flags, `acp_eza` requires a directory
+- [ ] S20 [R11] [D20]: `acp_write` creates parents, `acp_edit` errors on missing files and buffer drift, `acp_fd`/`acp_rg` terminate flags, `acp_eza` requires a directory
   - Verify: `npx vitest run packages/pi-acp/src/extension/tools.test.ts`
   - Seam: (not specified)
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V23-F3 — a failed editor read is treated as a missing file, so `acp_edit` and `acp_write` overwrite unsaved client content.
 
 #### Module Seams
 
@@ -224,11 +227,12 @@
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S34 [R15] [D40]: a pre-hook that fails or times out blocks the call with the failure as the reason
+- [ ] S34 [R15] [D40]: a pre-hook that fails or times out blocks the call with the failure as the reason
   - Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
   - Seam: (not specified)
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V37-F2 — a malformed condition evaluates false and skips a `preTool` guard silently (see S181).
 
 - [x] S35 [R15] [D41]: the bundled skill is disabled by default and contributed through `resources_discover` when `PI_HOOKS_DISCOVER_SKILL=1`
   - Verify: `npx vitest run extensions/pi-hooks/src/index.test.ts`
@@ -312,7 +316,7 @@
   - Seam: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S48 [R17] [D50]: cancelling any dialog cancels the whole set, sends no follow-up, and does not throw; no tool fallback exists
+- [x] S48 [R17] [D50]: (superseded by S188) cancelling any dialog cancels the whole set, sends no follow-up, and does not throw; no tool fallback exists
   - Verify: `npx vitest run extensions/pi-question/src/index.test.ts`
   - Seam: (not specified)
   - Behavior: (not specified)
@@ -330,11 +334,12 @@
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S51 [R17] [D53]: a question accepts 0-8 options, write-in is capped at 500 characters, questions are asked in source order, zero options uses free-text input, and empty/zero-selection answers are represented…
+- [ ] S51 [R17] [D53]: a question accepts 0-8 options, write-in is capped at 500 characters, questions are asked in source order, zero options uses free-text input, and empty/zero-selection answers are represented…
   - Verify: `npx vitest run extensions/pi-question/src/questions.test.ts`
   - Behavior: a question accepts 0-8 options, write-in is capped at 500 characters, questions are asked in source order, zero options uses free-text input, and empty/zero-selection answers are represented explicitly
   - Seam: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V36-F1 — skipped `[if:]` questions compact the answer numbers, so answers no longer follow source order.
 
 ### pi-todos
 
@@ -416,11 +421,12 @@
   - Behavior: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S64 [R19] [D62]: the LSP client uses Node builtins over stdio, frames JSON-RPC with Content-Length, lazily pools one server per command/args/root, applies request timeouts, synchronizes open documents from disk,…
+- [ ] S64 [R19] [D62]: the LSP client uses Node builtins over stdio, frames JSON-RPC with Content-Length, lazily pools one server per command/args/root, applies request timeouts, synchronizes open documents from disk,…
   - Verify: `npx vitest run extensions/pi-language-tools/src/lsp.test.ts`
   - Behavior: the LSP client uses Node builtins over stdio, frames JSON-RPC with Content-Length, lazily pools one server per command/args/root, applies request timeouts, synchronizes open documents from disk, and kills every server on session shutdown
   - Seam: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V26-F1 — a frame with an oversized `Content-Length` wedges the pooled client, and request timeouts never fail it.
 
 - [x] S65 [R19] [D63]: built-in language mappings are overlaid by `<agentDir>/language-tools.json`; malformed entries are diagnosed and dropped; servers spawn only in trusted projects, never auto-install, and missing…
   - Verify: `npx vitest run extensions/pi-language-tools/src/config.test.ts extensions/pi-language-tools/src/tool.test.ts`
@@ -468,11 +474,12 @@
   - Seam: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
 
-- [x] S72 [R20] [D66] [D67] [D68] [D69]: the direct `task` tool supports `action: "start" | "list" | "status" | "wait" | "cancel"`, where `start` requires `ctx.isProjectTrusted()` and a non-empty `command` (checked against core shell…
+- [ ] S72 [R20] [D66] [D67] [D68] [D69]: the direct `task` tool supports `action: "start" | "list" | "status" | "wait" | "cancel"`, where `start` requires `ctx.isProjectTrusted()` and a non-empty `command` (checked against core shell…
   - Verify: `npx vitest run extensions/pi-tasks/src/task-tool.test.ts`
   - Behavior: the direct `task` tool supports `action: "start" | "list" | "status" | "wait" | "cancel"`, where `start` requires `ctx.isProjectTrusted()` and a non-empty `command` (checked against core shell permissions in `effectiveCwd`), spawns the detached runner shim, and returns task `id`/`pid`/log path immediately; `list` returns reconciled tasks; `status` returns metadata and tail output bounded by `truncateText`; `wait` blocks until task exit or `timeoutMs` (including across pi restarts by watching/polling `<id>.json`); `cancel` terminates the process group and marks the task `cancelled`; completion never triggers a model turn
   - Seam: (not specified)
   - Failures: The Verify command and its tests fail when this invariant breaks.
+  - Regression: V31-F1/F2 — shell exit marks the task completed while background children survive, and a cancelled task records `failed`.
 
 - [x] S73 [R20] [D65] [D68] [D69] [D72]: `extensions/pi-tasks/src/index.ts` registers only the direct `task` tool (no `bash` override or `/background` command), updates `ctx.ui.setStatus("tasks", "<n> running")` when non-zero (cleared when…
   - Verify: `npx vitest run extensions/pi-tasks/src/index.test.ts`
@@ -514,11 +521,12 @@
   - Behavior: search `title/url/snippet/provider`, 5 default/10 max; fetch `url/finalUrl/provider/contentType/content/links/media/truncated`, 20k/100k chars, 50 links, 20 media.
   - Failures: missing fields, uncapped output, wrong truncation flag, invalid parameters throwing.
 
-- [x] S79 [R04] [D80]: Provider selection auto-detects env keys, uses the cheapest-first order, and falls through on failure.
+- [ ] S79 [R04] [D80]: Provider selection auto-detects env keys, uses the cheapest-first order, and falls through on failure.
   - Verify: `npx vitest run extensions/pi-web/src/providers/selection.test.ts`
   - Seam: provider resolver behind both tools.
   - Behavior: search Exa, Tavily, Firecrawl; fetch Exa, Tavily, raw; first order entry is default; `web.json` order overrides; 15s timeout.
   - Failures: selecting an unkeyed provider, stopping after a failed provider, ignoring config order.
+  - Regression: V25-F1 — image preview fetches have no timeout, so `web_fetch` hangs on an unresponsive image host.
 
 - [x] S80 [R04] [D81]: `web.json` contains only search/fetch order arrays; keys come only from `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`.
   - Verify: `npx vitest run extensions/pi-web/src/config.test.ts`
@@ -650,11 +658,12 @@
   - Behavior: start detaches; a later parent reattaches and steers; parent exit leaves the child running; no central daemon.
   - Failures: duplicate runner, orphaned child, missing socket, stale state, or a child that cannot be reattached.
 
-- [x] S96 [R30] [D96]: Direct `subagent` actions are start/list/status/send/wait/cancel/resume; one child per start
+- [ ] S96 [R30] [D96]: Direct `subagent` actions are start/list/status/send/wait/cancel/resume; one child per start
   - Verify: `npx vitest run extensions/pi-subagents/src/tool.test.ts`
   - Seam: direct tool schema and action semantics.
   - Behavior: `send` steers a running child or prompts an idle one; `wait` is bounded; `cancel` terminates the group; `resume` is explicit; no parallel-array parameter.
   - Failures: invalid action, unknown id, duplicate live child for one id, or a start that returns before state is durable.
+  - Regression: V24-F1/F2 — the runner exits without killing its child, and a live child with an unreachable socket is marked failed, so `cancel` does nothing and `resume` starts a second child.
 
 - [x] S97 [R31] [D97]: `subagents.json` validates concurrency, depth, timeout, and lock-wait limits with safe defaults
   - Verify: `npx vitest run extensions/pi-subagents/src/config.test.ts`
@@ -758,11 +767,12 @@
   - Behavior: calculates dollar costs from token usage using provider pricing metadata for the configured model, rejecting turns when cumulative cost reaches or exceeds the configured dollar cap.
   - Failures: missing provider pricing, non-numeric price data, zero caps, or token-count overflow.
 
-- [x] S111 [R39] [D111]: `pi-usage` persists token counts and dollar cost in session custom entries across compaction
+- [ ] S111 [R39] [D111]: `pi-usage` persists token counts and dollar cost in session custom entries across compaction
   - Verify: `npx vitest run extensions/pi-usage/src/index.test.ts`
   - Seam: `pi-usage` extension entry and session branch custom entries (`hollowheap.usage`).
   - Behavior: records running token counts and cumulative dollar costs per turn; recovers baseline usage on session start and after context compaction from stored entries.
   - Failures: corrupted custom entries, unrecorded compaction events, concurrent branch updates, or negative usage deltas.
+  - Regression: V33-F1 — restore reads all session entries before the active branch, so `/tree` restores another branch's total (see S182).
 
 ### Modal, agent, and feature expansions
 
@@ -800,11 +810,12 @@
 
 #### Operations & Security
 
-- [x] S116 [R44] [D116]: `pi-guard` gates subagent execution actions by mode while passing read-only actions, subagents inherit parent mode, and `pi-todos` renders elapsed time and active tool duration
+- [ ] S116 [R44] [D116]: `pi-guard` gates subagent execution actions by mode while passing read-only actions, subagents inherit parent mode, and `pi-todos` renders elapsed time and active tool duration
   - Verify: `npx vitest run extensions/pi-guard/src/index.test.ts extensions/pi-subagents/src/tool.test.ts extensions/pi-todos/src/todos.test.ts`
   - Seam: `pi-guard` `TOOL_TAGS` and `PASSTHROUGH_ACTIONS`, `pi-subagents` tool `start` & child `session_start`/tool hooks, and `pi-todos` `formatTodoWidget`.
   - Behavior: `pi-guard` treats `subagent` with `action` in `list`, `status`, `wait`, `cancel` as passthrough; execution actions follow mode permissions; subagent `start` resolves `effectiveMode` prioritizing parent mode != `"ask"`, falling back to frontmatter `mode ?? "ask"`; child tracks `activeTool` and `activeToolStartedAt`; `pi-subagents` emits `subagents:state` with active ticker; `pi-todos` formats `@<id> <elapsed> (<task>) <state> · <tool> <tool_duration>`.
   - Failures: read-only actions blocked in plan/ask mode, parent autopilot overridden by frontmatter ask, missing tool timing on subagent state emission, or ticker leak on shutdown.
+  - Regression: V24-F3 — a parent in ask mode lets the child take the definition's mode, so a model-defined agent can edit without prompts.
 
 #### Module Seams
 
@@ -1182,8 +1193,113 @@
 
 #### Module Seams
 
-- [x] S172 [R81] [D175]: A new `pi-memory` extension owns an opt-in observer, branch-local memory entries, compaction injection, commands, and usage refresh.
+- [ ] S172 [R81] [D175]: A new `pi-memory` extension owns an opt-in observer, branch-local memory entries, compaction injection, commands, and usage refresh.
   - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
   - Seam: `config.ts` for `memory.json`, `ledger.ts` for observations/consumed/clear entries, `observer.ts` for the model call and JSON parse, and `index.ts` for lifecycle, compaction, commands, and usage.
   - Behavior: disabled by default; explicit `provider/model`; pending messages trigger observer after `observeAfterTokens`; observations and empty-result consumed markers append to the session; clear and branch restore are order-sensitive; compaction passes memory as extra focus to the host summarizer; observer usage appends to `hollowheap.usage` and emits `usage:refresh`; redaction defaults on; `/memory status|view|clear` work; ACP registers nothing.
   - Failures: hidden model calls while disabled, repeated calls on consumed messages, stale results after branch navigation, losing usage spend, injecting secrets by default, replacing compaction with a memory-only summary, or writing a separate memory file.
+  - Regression: V19-F1 — a provider error or truncated observer response appends a consumed marker, so that chunk is never observed.
+
+### Review remediation
+
+#### Module Seams
+
+- [ ] S173 [R11] [D176]: The ACP server handles `session/cancel` as a notification and survives a corrupt session store.
+  - Verify: `npx vitest run packages/pi-acp/src`
+  - Seam: ACP JSON-RPC dispatch in `main.ts` and the session store in `sessions.ts`.
+  - Behavior: a message with `method` and no `id` reaches the adapter as a notification, so `session/cancel` stops the running prompt; a `sessions.json` that fails to parse produces a stderr diagnostic and an empty store, and the server keeps running; store writes replace the file atomically.
+  - Failures: dropping notifications without an `id`, exiting on a truncated store, or a half-written store after a crash.
+
+- [ ] S174 [R03] [D176]: HTML-to-markdown conversion runs in linear time on hostile input.
+  - Verify: `npx vitest run extensions/pi-web/src`
+  - Seam: `extract.ts` `htmlToMarkdown` and `stripTags`.
+  - Behavior: 200,000 unmatched `<` characters, and unclosed paired tags, convert in under 1 second; output for well-formed pages is unchanged.
+  - Failures: regex backtracking that grows quadratically, or blocking the main thread for seconds on one page.
+
+- [ ] S175 [R12] [D176]: Statusline component types resolve only to own builtin entries, and a render failure never exits pi.
+  - Verify: `npx vitest run extensions/pi-statusline/src`
+  - Seam: `config.ts` type validation and `render.ts` builtin lookup.
+  - Behavior: `__proto__`, `constructor`, and `toString` are reported as unknown component types and skipped; a component that throws renders as empty and the rest of the line still renders.
+  - Failures: prototype-chain lookups accepted as builtins, or one throwing component crashing the TUI render.
+
+- [ ] S176 [R40] [R46] [D176]: Modal visual operations respect grapheme boundaries, and Esc closes the `/` and `:` prompts.
+  - Verify: `npx vitest run extensions/pi-modal/src`
+  - Seam: `ModalEditor.handleInput` and its selection helpers.
+  - Behavior: visual `d`, `x`, and `y` over an emoji remove or yank whole graphemes; Esc in a `/` or `:` prompt clears the prompt and returns to normal mode without sending the interrupt action; Ctrl-C during a prompt clears the prompt.
+  - Failures: lone surrogates in the buffer or clipboard, Esc triggering an agent interrupt while a prompt is open, or control keys swallowed until Enter.
+
+- [ ] S177 [R36] [D176]: Every todo widget line fits the render width.
+  - Verify: `npx vitest run extensions/pi-todos/src`
+  - Seam: `formatTodoWidget` in `todos.ts`.
+  - Behavior: at widths 20, 40, 80, and 200, every returned line has `visibleWidth` at most the width for ASCII, CJK, and emoji todo text, with and without subagent or task sections; long text is truncated with an ellipsis.
+  - Failures: a line wider than the terminal, which makes the host TUI stop.
+
+- [ ] S178 [R43] [D176]: Agent switching restores the true default tool set and does post-fork work only in the replacement session.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Seam: `/agent` command, `session_start` handler, and the default tool restore in `index.ts`.
+  - Behavior: `/agent default` after `/reload` or resume with an agent active restores the host default tool set, not the agent's restricted set; a switch with history forks, and the forked session gets the agent's name, label, entry, tools, model, and thinking through the replacement instance; the original session is unchanged.
+  - Failures: capturing the restricted set as the default, using the captured `pi` or command ctx after `ctx.fork`, or falling back to an in-place switch on a stale runtime.
+
+- [ ] S179 [R57] [D176]: Dashboard settings changes keep custom header art.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Seam: `saveDashboardSettings` in `config.ts`.
+  - Behavior: changing the header preset or gap keeps an existing `ascii` array and every other field of the header section.
+  - Failures: rebuilding the header section from defaults and dropping user art.
+
+- [ ] S180 [R87] [D177]: The prompt lock accepts an abort signal and a timeout, and overlay helpers release it on dispose.
+  - Verify: `npx vitest run packages/core/src packages/tui/src extensions/pi-question/src`
+  - Seam: `withPromptLock(fn, { signal, timeoutMs })` in `packages/core/src/prompt-lock.ts` and the picker, pager, and progress helpers in `packages/tui`.
+  - Behavior: calls without options behave as before; an aborted or timed-out waiter rejects and leaves the queue; an aborted holder releases the lock; an overlay that the host disposes without `done` resolves as cancelled and releases the lock; question dialogs pass the session signal.
+  - Failures: a hidden overlay that holds the lock forever, a waiter that blocks after abort, or a nested acquisition accepted.
+
+- [ ] S181 [R15] [D184]: Hook commands resolve against the declaring config directory, and malformed conditions fail closed.
+  - Verify: `npx vitest run extensions/pi-hooks/src`
+  - Seam: hook loading and execution in `hooks.ts`.
+  - Behavior: a relative command from `<agentDir>/hooks.json` resolves against `<agentDir>`; a relative command from a trusted project config in `<projectRoot>/.pi/hooks.json` resolves against `<projectRoot>/.pi`; the session cwd never resolves a command path; a condition that does not parse is reported once and blocks the matching `preTool` call.
+  - Failures: a user hook running a file from the project directory, or a malformed condition silently skipping a guard.
+
+#### Data & Contracts
+
+- [ ] S182 [R88] [D178]: One cost function prices every model call, and every billed call reaches the ledger once.
+  - Verify: `npx vitest run packages/core/src extensions/pi-usage/src extensions/pi-statusline/src extensions/pi-memory/src extensions/pi-decide/src`
+  - Seam: the core message-cost function and the usage ledger restore in `packages/core/src/usage.ts`.
+  - Behavior: provider `usage.cost.total` is used when finite and above 0, else the price table; the usage report, statusline, subagent rows, observer, and classifier agree for the same message; classifier and observer calls, including failed billed calls, append to the ledger through pi-usage snapshot persistence (`hollowheap.usage` and `usage:refresh`); cache hits and joined classifier calls report zero new usage; restore reads the active branch, so `/tree` shows that branch's total.
+  - Failures: two dollar totals for one message, double counting a cached classifier result, dropping billed failures, or restoring another branch's total.
+
+- [ ] S183 [R84] [D179]: Settings writers refuse to overwrite a config file that does not parse.
+  - Verify: `npx vitest run packages/core/src extensions/pi-web/src extensions/pi-statusline/src extensions/pi-guard/src extensions/pi-dashboard/src`
+  - Seam: `updateJsonConfig(path, mutate)` in `packages/core/src/config.ts` and its four callers.
+  - Behavior: a missing file is created; a valid file keeps untouched fields; a file that exists and does not parse to an object is left byte-identical, the call returns an error, and the caller notifies with the path; successful writes go through a temp file and rename in the same directory.
+  - Failures: treating a parse failure as `{}`, partial writes, or a leftover temp file after an error.
+
+#### Operations & Security
+
+- [ ] S184 [R83] [D180]: Permission evaluation follows the accepted precedence, and deny always wins over broader grants.
+  - Verify: `npx vitest run packages/core/src packages/policy/src extensions/pi-guard/src`
+  - Seam: core policy evaluation, headless policy in `packages/policy`, and pi-guard rule resolution.
+  - Behavior: hard deny, persistent deny, and session deny are checked before any allow; a deny on a file holds when its parent is allowed for the session, allowed indefinitely, or trusted; a read approval does not permit edit or write; `~/x` and `@x` are judged at the path the host tool touches; an unparseable permission file makes every gated tool ask in interactive mode and block in headless mode, with a notice.
+  - Failures: trusted roots or session allows checked before denies, read grants covering writes, home paths treated as workspace paths, or deny rules dropped silently.
+
+- [ ] S185 [R82] [D181]: Destructive shell commands ask in every mode unless a user rule allows the exact command.
+  - Verify: `npx vitest run packages/core/src extensions/pi-autopilot/src extensions/pi-guard/src`
+  - Seam: core shell safety and mode evaluation.
+  - Behavior: `rm -rf ~`, `rm -rf /`, `find / -delete`, `find . -exec rm -rf {} \;`, `git push --force`, and the same commands behind `timeout`, `nohup`, `command`, `env`, or after `;`, `&&`, or `|` evaluate to `ask` in ask, edit, and autopilot modes; an explicit user `allow shell` rule for the command allows it; a mode override cannot change the result; headless mode blocks.
+  - Failures: autopilot allowing a listed command, wrappers or separators hiding a listed command, or allow-prefix rules covering a destructive argument.
+
+- [ ] S186 [R85] [D182]: Untrusted text is sanitized before it reaches the terminal.
+  - Verify: `npx vitest run packages/core/src extensions/pi-guard/src extensions/pi-todos/src extensions/pi-question/src extensions/pi-tasks/src extensions/pi-agent/src extensions/pi-dashboard/src`
+  - Seam: `sanitizeTerminalText` in `packages/core/src/format.ts` and its render-path callers.
+  - Behavior: ESC, CSI, OSC, and C0/C1 bytes other than newline and tab are removed from model, task, command, config, and agent-name text before rendering; approval dialogs show the full sanitized command; extension styling applied after sanitizing keeps its colors; text sent to the model is unchanged.
+  - Failures: OSC title or clipboard sequences reaching the terminal, an approval dialog hiding part of the command, or sanitizing model-bound text.
+
+- [ ] S187 [R86] [D183]: Owned children die with their owner as a process group.
+  - Verify: `npx vitest run packages/runtime/src extensions/pi-tasks/src extensions/pi-subagents/src extensions/pi-language-tools/src packages/pi-acp/src`
+  - Seam: runtime command execution and group kill, the task and subagent shims, the LSP client, and ACP child sessions.
+  - Behavior: timeout, abort, cancel, dispose, and shutdown send SIGTERM to the whole group, then SIGKILL after the grace period, also when the leader already exited; `sh -c "sleep 60 & wait"` leaves no `sleep` behind; a user cancel records `cancelled`; a shim never exits while its child group is alive.
+  - Failures: grandchildren surviving, a TERM-ignoring child surviving, cancel skipped because the leader exited, or a cancelled task recorded as `failed`.
+
+- [ ] S188 [R17] [D185]: Question flows send a follow-up message on cancellation with any partial answers.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Seam: question flow cancellation handling in `extensions/pi-question/src/index.ts` and `questions.ts`.
+  - Behavior: cancelling a question dialog stops prompting remaining questions, retains partial answers collected before cancellation, and emits a custom `hollowheap.question.answers` follow-up message with `cancelled: true`, a cancellation indicator, and formatted partial answers.
+  - Failures: dropping collected answers on cancellation, sending nothing when partial answers were provided, or continuing to prompt remaining questions after cancellation.

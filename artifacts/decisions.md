@@ -24,7 +24,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D20 [R11]: `acp_write` creates parent dirs, `acp_edit` refuses buffer/disk drift and missing files, `acp_fd`/`acp_rg` terminate flags with `--`, `acp_eza` verifies a directory
+- [ ] D20 [R11]: `acp_write` creates parent dirs, `acp_edit` refuses buffer/disk drift and missing files, `acp_fd`/`acp_rg` terminate flags with `--`, `acp_eza` verifies a directory
   - Context: match `SYSTEM_APPENDIX` promises and block flag injection.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -34,22 +34,22 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D66 [R20]: `task` and the future `subagent` tool are direct tools; `lang` stays codemode
+- [ ] D66 [R20]: `task` and the future `subagent` tool are direct tools; `lang` stays codemode
   - Context: essential orchestration must always be visible and callable, while auxiliary navigation can stay out of the direct schema.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D67 [R20]: `pi-tasks` keeps the built-in `bash` tool untouched (no `/background` or `alt+b` mid-flight detach) and starts background shell commands explicitly through `task({ action: "start", command })`; `pi-guard` gates `task` (`action === "start"` as `tag: "shell"` against `command`, while read-only `list`/`status`/`wait` and `cancel` pass without a shell prompt) and `pi-hooks` sees `task` tool calls
+- [ ] D67 [R20]: `pi-tasks` keeps the built-in `bash` tool untouched (no `/background` or `alt+b` mid-flight detach) and starts background shell commands explicitly through `task({ action: "start", command })`; `pi-guard` gates `task` (`action === "start"` as `tag: "shell"` against `command`, while read-only `list`/`status`/`wait` and `cancel` pass without a shell prompt) and `pi-hooks` sees `task` tool calls
   - Context: deciding up front whether a command runs in the background avoids reimplementing Pi's foreground `bash` tool while preserving full `pi-guard` shell policy and user confirmation on `task.start`.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D68 [R20]: The `task` tool supports `start`, `list`, `status`, `wait`, and `cancel`; `wait` blocks until exit or timeout (including across pi restarts via the task state file); completion does not trigger a turn
+- [ ] D68 [R20]: The `task` tool supports `start`, `list`, `status`, `wait`, and `cancel`; `wait` blocks until exit or timeout (including across pi restarts via the task state file); completion does not trigger a turn
   - Context: explicit `start` on `task` keeps background orchestration on a single tool, the agent stays in control of when to wait, and background work must not inject unsolicited model turns.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D69 [R20]: Durable shell tasks survive pi exit via a detached Node runner shim that streams output to `<agentDir>/tasks/<id>.log` and writes exit state to `<agentDir>/tasks/<id>.json` (both `0600`), start only in trusted projects, and are cleaned up manually; `list`/`status`/`wait` reconcile dead shims using recorded PID plus process start time to prevent PID-reuse false positives, and `session_shutdown` leaves them running
+- [ ] D69 [R20]: Durable shell tasks survive pi exit via a detached Node runner shim that streams output to `<agentDir>/tasks/<id>.log` and writes exit state to `<agentDir>/tasks/<id>.json` (both `0600`), start only in trusted projects, and are cleaned up manually; `list`/`status`/`wait` reconcile dead shims using recorded PID plus process start time to prevent PID-reuse false positives, and `session_shutdown` leaves them running
   - Context: a detached shim records exit status even when pi is closed, start-time checks prevent OS PID reuse bugs, and project trust plus `0600` files bound the risk of outliving the session.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -74,7 +74,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: in-process SDK sessions; central parent-hub daemon; session-scoped children.
   - Consequences: children outlive the parent; live reattach needs socket and state reconciliation; one runner and socket per child; supersedes D71's session-scoped parent-hub design.
 
-- [x] D96 [R30]: Expose one direct `subagent` tool with `start`, `list`, `status`, `send`, `wait`, `cancel`, and `resume` actions; one child per `start`, no parallel-array parameter, and concurrency comes from multiple calls plus config.
+- [ ] D96 [R30]: Expose one direct `subagent` tool with `start`, `list`, `status`, `send`, `wait`, `cancel`, and `resume` actions; one child per `start`, no parallel-array parameter, and concurrency comes from multiple calls plus config.
   - Context: One child per call keeps failure attribution and write-lock ownership clear.
   - Alternatives: a parallel tasks array; single-call-only tool; separate prompt/steer tools.
   - Consequences: the parent model tracks ids; the schema has lifecycle actions; `send` steers a running child and prompts an idle one.
@@ -134,7 +134,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: silent subagent failure, hardcoded static fallback lists, allowing callers to pass arbitrary models in tool inputs.
   - Consequences: Dynamic runtime model list + current session model fallback guarantees usable replacement options; callers cannot override frontmatter models; sequenced as the immediate first vertical task.
 
-- [x] D116 [R44]: Parent session mode takes priority over subagent frontmatter mode, and `pi-todos` renders live subagent progress `@<id> <elapsed> (<task>) <state> · <tool> <duration>` driven by `subagents:state` events.
+- [ ] D116 [R44]: Parent session mode takes priority over subagent frontmatter mode, and `pi-todos` renders live subagent progress `@<id> <elapsed> (<task>) <state> · <tool> <duration>` driven by `subagents:state` events.
   - Context: Parent session intent governs automation scope, while live progress in the sticky prompt widget gives immediate visibility without separate polling.
   - Alternatives: subagent always uses frontmatter mode, child prompts separately, todo widget shows static status text only.
   - Consequences: Non-default parent modes (`autopilot`, `plan`, `edit`) force child into matching constraints/automation; `ask` parents allow frontmatter mode; `pi-guard` treats read-only subagent actions as passthrough; child hooks track active tool and elapsed duration; 1-second interval ticker refreshes widget.
@@ -213,7 +213,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D12 [R10]: `pi-guard` keeps TUI prompting, truncation, `/mode`, `alt+m`, statusline value; all policy code moves to core
+- [ ] D12 [R10]: `pi-guard` keeps TUI prompting, truncation, `/mode`, `alt+m`, statusline value; all policy code moves to core
   - Context: single owner, consumer stays thin.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -223,7 +223,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D14 [R10]: `pi-tools` writes `/cd` and reads effective cwd through core so it works without `pi-guard`; search results keep `ask` paths and drop only `deny`
+- [ ] D14 [R10]: `pi-tools` writes `/cd` and reads effective cwd through core so it works without `pi-guard`; search results keep `ask` paths and drop only `deny`
   - Context: current filtering returns empty results on ask-configured paths.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -268,7 +268,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D40 [R15]: A pre-hook that fails or times out blocks the call, with the failure as the reason
+- [ ] D40 [R15]: A pre-hook that fails or times out blocks the call, with the failure as the reason
   - Context: a broken enforcement hook must not silently allow the call; the reason tells the user what to fix or disable.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -318,7 +318,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D50 [R17]: Cancelling any dialog cancels the whole set, sends no follow-up, and leaves the fence in context; there is no tool fallback
+- [x] D50 [R17]: (superseded by D185) Cancelling any dialog cancels the whole set, sends no follow-up, and leaves the fence in context; there is no tool fallback
   - Context: a partial answer set would be ambiguous, and the user chose silent cancellation.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -333,7 +333,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D53 [R17]: A question has 0–8 options (0 means free-text only), the write-in answer is capped at 500 characters, and multiple H2 questions are asked one after another in source order
+- [ ] D53 [R17]: A question has 0–8 options (0 means free-text only), the write-in answer is capped at 500 characters, and multiple H2 questions are asked one after another in source order
   - Context: the write-in makes 0 options useful, the cap matches the old tool, and sequential order keeps the dialog flow predictable.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -393,7 +393,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: per-provider result shapes; uncapped output; larger defaults; no media metadata.
   - Consequences: adapters may discard provider-specific fields in v1; media is metadata only.
 
-- [x] D80 [R04]: Provider selection is automatic by key presence using a fixed cheapest-first order, with `web.json` able to override each order array; the first entry is the default. Default search order is Exa, Tavily, Firecrawl; default fetch order is Exa, Tavily, then raw HTTP. A provider failure falls through to the next entry.
+- [ ] D80 [R04]: Provider selection is automatic by key presence using a fixed cheapest-first order, with `web.json` able to override each order array; the first entry is the default. Default search order is Exa, Tavily, Firecrawl; default fetch order is Exa, Tavily, then raw HTTP. A provider failure falls through to the next entry.
   - Context: Zero-config when one key is set, deterministic when several are set, cheapest free-tier usage first, and still overridable.
   - Alternatives: explicit provider only; config order only; Tavily-first order.
   - Consequences: a failing primary can add latency before fallback; order must be documented; credit math changes should be handled by config.
@@ -639,6 +639,30 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Consequences: allowed image MIME types under the byte cap become an image block; oversized or unsupported images fall back to text.
   - Supersedes: none
 
+- [ ] D176 [R03] [R11] [R12] [R36] [R40] [R43] [R46] [R57] [R82] [R83] [R84] [R85] [R86] [R87] [R88]: Review V19–V38 remediation follows the severity-gated hybrid. Single-owner high findings are fixed in place. A shared primitive is extracted only when three or more owners share the defect today. Fixes land in this order: permission and exposure highs, crash highs, data-loss highs, shared primitives, then mediums.
+  - Context: Twenty reviews found the same defect classes in many owners. The worker rules ask for minimal diffs without premature abstraction, and AGENTS.md assigns shell analysis, policy, and process primitives to shared packages.
+  - Alternatives: patch every finding in place, which copies the same fix 4–8 times and lets copies drift; build every contract first, which delays highs and breaks up to 8 call sites per change.
+  - Consequences: config update, terminal sanitizing, process-tree kill, and prompt-lock cancellation become shared primitives; width truncation and other single-owner fixes stay local; consumers migrate one class at a time.
+  - Resolves: Q19
+
+- [ ] D177 [R87]: `withPromptLock` gains optional `signal` and `timeoutMs` options in an additive change. Abort and timeout reject the waiter or release the holder. Overlay helpers release the lock when their component is disposed. The eight consumers migrate one at a time.
+  - Context: A held lock blocks every later prompt in the process, and the host can hide an overlay without calling `done`.
+  - Alternatives: a breaking signature change across all eight consumers in one commit; a fixed global timeout with no signal.
+  - Consequences: existing calls keep working unchanged; dialogs that pass a signal close on tool abort or session replacement; the nested-acquisition guard stays.
+  - Resolves: Q17, Q23
+
+- [ ] D184 [R15]: A relative hook command resolves against the directory of the config file that declared it (`<agentDir>` for user hooks in `<agentDir>/hooks.json`, and `<projectRoot>/.pi` for trusted project hooks in `<projectRoot>/.pi/hooks.json`), and the session cwd is never used to resolve a command path. A condition that fails to parse is a config error: it is reported once, and a `preTool` hook with that condition blocks the call.
+  - Context: V37-F1 shows a trusted user hook running a file from an untrusted project, because commands resolve against the session cwd. V37-F2 shows a malformed condition silently skipping a guard.
+  - Alternatives: reject relative commands in user hooks; resolve against the session cwd only for trusted projects; treat malformed conditions as false.
+  - Consequences: user hooks that relied on project-relative scripts must move to project hooks or use absolute paths; malformed guard hooks fail closed.
+  - Resolves: Q24
+
+- [ ] D185 [R17]: Cancelling a question flow sends a follow-up message with `hollowheap.question.answers` including any partial answers collected before cancellation and a cancellation indicator, rather than sending nothing.
+  - Context: V36-F2 shows that when a multi-question flow is cancelled after several questions are answered, dropping all answers forces the model to guess or ask everything again.
+  - Alternatives: drop partial answers and send an empty cancelled message; send nothing (D50).
+  - Consequences: the model receives partial answers and knows the remaining questions were cancelled; `message_end` sends a follow-up message with `cancelled: true` and formatted partial answers.
+  - Resolves: Q25
+
 ### Framework & Library Choices
 
 - [x] D61 [R19]: A new `extensions/pi-language-tools` extension owns code intelligence and registers one `lang` tool with `exposure: "codemode"`; `pi-tools` stays stateless and core gains no host or process code
@@ -646,7 +670,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
 
-- [x] D62 [R19]: `lang` is a dependency-free LSP client over stdio using Node builtins; it lazily starts one server per server command/args plus workspace root, reuses it across queries, applies request timeouts, and kills every server on session shutdown
+- [ ] D62 [R19]: `lang` is a dependency-free LSP client over stdio using Node builtins; it lazily starts one server per server command/args plus workspace root, reuses it across queries, applies request timeouts, and kills every server on session shutdown
   - Context: no other runtime dependency is permitted, and per-query spawning would dominate latency for position-based queries.
   - Alternatives: not recorded.
   - Consequences: see the linked spec and tests.
@@ -744,7 +768,7 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: static price table, token-only caps.
   - Consequences: Budget logic depends on provider pricing availability; fallback to tokens when missing.
 
-- [x] D111 [R39]: A `pi-usage` extension persists cost and token usage across compaction.
+- [ ] D111 [R39]: A `pi-usage` extension persists cost and token usage across compaction.
   - Context: Persistence prevents loss of cumulative cost on compaction.
   - Alternatives: store usage only in pi-budget, recompute after compaction.
   - Consequences: New extension package; shared state with pi-budget.
@@ -778,6 +802,18 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Context: USD is the billing unit users reason about; duplicate token and dollar caps caused conflicting limits.
   - Alternatives: carry token caps into usage; keep dual token/dollar accounting; preserve `pi-budgets` for token limits.
   - Consequences: users set a dollar cap with `/usage cap`; no token-limit command or statusline token ratio remains; autopilot has no mandatory cap.
+
+- [ ] D178 [R88]: One core function computes a message cost. It uses the provider-reported `usage.cost.total` when that value is finite and above 0, and the price table otherwise. The usage ledger, statusline, subagent scan, observer, and classifier all call it. Classifier and observer spend, including failed billed calls, are recorded in the ledger through pi-usage's snapshot persistence (`hollowheap.usage` + `usage:refresh`). Cache hits and joined classifier calls report zero new usage. Restore reads the active branch.
+  - Context: Four readers use different cost rules; classifier usage is double counted on cache hits and dropped on failures; restore reads all branches.
+  - Alternatives: always use the price table; always use provider cost; keep per-reader rules; record classifier calls to a dedicated entry type instead of pi-usage snapshot persistence.
+  - Consequences: totals agree across surfaces; the cap includes background model calls; unpriced models with provider cost become visible spend; pi-decide shares the pi-usage ledger without duplicate entry types.
+  - Resolves: Q16, Q26
+
+- [ ] D179 [R84]: A shared core `updateJsonConfig(path, mutate)` reads the existing file, refuses to write when the file exists and does not parse to an object, and writes through temp file and rename. Callers notify with the path and the parse error. The four settings writers use it.
+  - Context: Four private writers treat an unparseable file as `{}` and overwrite it.
+  - Alternatives: back up the broken file and replace it; keep per-extension checks.
+  - Consequences: settings changes fail visibly on broken files; untouched fields survive; no backup files accumulate.
+  - Resolves: Q18
 
 ### Operations & Security
 
@@ -902,8 +938,32 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Consequences: delete only succeeds for names in the session map and never touches files; a later define after a tombstone restores the name; redefining an existing name does not consume another slot; limits apply to new definitions while existing session entries stay readable; invalid config values diagnose and fall back.
   - Supersedes: none
 
-- [x] D175 [R81]: A new `pi-memory` extension implements observer-only observational memory instead of depending on or vendoring `pi-observational-memory`; it is disabled by default, requires an explicit `provider/model` in `memory.json`, stores observations as branch-local custom entries, and reuses the host compaction path with memory as extra focus.
+- [ ] D175 [R81]: A new `pi-memory` extension implements observer-only observational memory instead of depending on or vendoring `pi-observational-memory`; it is disabled by default, requires an explicit `provider/model` in `memory.json`, stores observations as branch-local custom entries, and reuses the host compaction path with memory as extra focus.
   - Context: The upstream package is MIT and functional, but it adds hidden background spend, unredacted conversation transfer, and a prompt-heavy implementation that does not match this repository's config and usage seams.
   - Alternatives: install upstream; vendor it verbatim; fork it; implement reflector/dropper/recall in the first slice.
   - Consequences: observer calls happen only after `agent_settled` and the configured token threshold; empty observer results append consumed markers; `/memory clear` appends a tombstone; common credentials are redacted by default; observer usage appends to `hollowheap.usage` and emits `usage:refresh`; compaction still uses Pi's normal summarizer; reflector, dropper, recall, and ongoing context injection remain deferred.
   - Supersedes: none
+
+- [ ] D180 [R83]: Permission evaluation uses one precedence order where the first match wins: hard deny, persistent deny, session deny, most specific allow, trusted root, then mode default. A read approval never covers a write. Targets expand `~/` and a leading `@` before matching, as the host tools do. A permission file that fails to parse makes every gated tool ask and shows a notice in every mode.
+  - Context: Trusted roots and session allows are checked before persistent denies, read approvals cover writes, home and `@` paths resolve inside the workspace, and malformed rules silently drop denies.
+  - Alternatives: keep scope-local specificity; fail open on malformed rules; deny everything on malformed rules.
+  - Consequences: some previously silent allows now prompt; headless children block instead of allowing on malformed rules; one shared evaluator serves guard and headless policy.
+  - Resolves: Q22
+
+- [ ] D181 [R82]: Core shell safety owns a destructive-command list: recursive deletes of the home or root directory, `find` with `-delete` or `-exec rm`, forced git push, and wrapper forms such as `timeout`, `nohup`, `command`, and `env` around them. Matching commands ask in every mode, including autopilot. Only an explicit user allow rule for the command opts out. Mode overrides cannot weaken the list.
+  - Context: Autopilot allows all shell commands outside a short interpreter list, and allow-prefix rules trust their arguments.
+  - Alternatives: per-mode overrides in autopilot; a copy of the list inside the autopilot package, which AGENTS.md forbids.
+  - Consequences: autopilot prompts for destructive commands; non-interactive modes block them; the list is heuristic and does not replace an outer sandbox.
+  - Resolves: Q15
+
+- [ ] D182 [R85]: A shared core `sanitizeTerminalText` removes every escape sequence and C0/C1 control byte except newline and tab from untrusted text before rendering. This includes model, task, command, config, and agent-name text. Extension styling is applied after sanitizing, so its colors remain. Text sent to the model is not changed.
+  - Context: Seven owners render raw control bytes, which allows title, clipboard, and screen changes.
+  - Alternatives: keep SGR color codes from task and command output; escape bytes visibly instead of removing them.
+  - Consequences: task and command output lose their own colors in previews; approval dialogs show what will run.
+  - Resolves: Q21
+
+- [ ] D183 [R86]: Every child that must die with its owner runs in its own process group and is killed by group with SIGTERM, then SIGKILL after a grace period, including when the leader already exited. TypeScript owners use the runtime primitive. The plain-`node` shims inline the same Node built-in calls (`spawn` with `detached: true` and `process.kill(-pid, signal)`) without importing workspace packages. A user cancel records `cancelled`.
+  - Context: Seven owners kill only the direct child, and the shims cannot import TypeScript packages.
+  - Alternatives: a copied helper module for the shims; running the shims under jiti; a built runtime artifact.
+  - Consequences: grandchildren and TERM-ignoring children are reaped; group membership replaces leader liveness as the cancel check; detached tasks still survive a normal parent exit.
+  - Resolves: Q20
