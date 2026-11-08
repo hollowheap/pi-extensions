@@ -156,17 +156,40 @@ export async function waitForProcessExit(
   return true;
 }
 
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+function isProcessGroupAlive(pid: number): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EPERM";
+  }
+}
+
+function signalProcessGroup(
+  pid: number,
+  signal: NodeJS.Signals,
+  leaderAlive = true,
+): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
   try {
     process.kill(-pid, signal);
-    return;
+    return true;
   } catch {
     // Fall back to the leader if the process group is gone.
   }
+  if (!leaderAlive) return false;
   try {
     process.kill(pid, signal);
+    return true;
   } catch {
     // Already dead.
+    return false;
   }
 }
 
@@ -175,13 +198,22 @@ export async function cancelProcessGroup(
   startTime?: number,
   graceMs = 250,
 ): Promise<boolean> {
-  if (!isProcessAlive(pid, startTime)) return false;
-  signalProcessGroup(pid, "SIGTERM");
-  if (await waitForProcessExit(pid, startTime, { timeoutMs: graceMs })) {
+  const leaderAlive = isProcessAlive(pid, startTime);
+  if (!signalProcessGroup(pid, "SIGTERM", leaderAlive)) return false;
+  const deadline = Date.now() + Math.max(0, graceMs);
+  while (isProcessAlive(pid, startTime) || isProcessGroupAlive(pid)) {
+    if (Date.now() >= deadline) break;
+    await sleep(Math.min(50, Math.max(1, deadline - Date.now())));
+  }
+  if (!isProcessAlive(pid, startTime) && !isProcessGroupAlive(pid)) {
     return true;
   }
-  signalProcessGroup(pid, "SIGKILL");
-  await waitForProcessExit(pid, startTime, { timeoutMs: 1_000 });
+  signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime));
+  const killDeadline = Date.now() + 1_000;
+  while (isProcessAlive(pid, startTime) || isProcessGroupAlive(pid)) {
+    if (Date.now() >= killDeadline) break;
+    await sleep(Math.min(50, Math.max(1, killDeadline - Date.now())));
+  }
   return true;
 }
 

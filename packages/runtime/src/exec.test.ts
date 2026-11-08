@@ -51,6 +51,41 @@ describe("runCapture", () => {
       ),
     ).rejects.toThrow(/abort/i);
   });
+
+  it("kills child process group on timeout so background sleep does not survive", async () => {
+    const marker = `pi-exec-timeout-${process.pid}-${Date.now()}`;
+    await expect(
+      runCapture("sh", ["-c", "sleep 60 & wait", marker], tmpdir(), undefined, {
+        timeoutMs: 150,
+      }),
+    ).rejects.toThrow(/failed/i);
+
+    const check = await runCapture(
+      "pgrep",
+      ["-f", "^sleep 60$"],
+      tmpdir(),
+      undefined,
+    );
+    expect(check.stdout.trim()).toBe("");
+  });
+
+  it("kills child process group on abort so background sleep does not survive", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 150);
+    await expect(
+      runCapture("sh", ["-c", "sleep 60 & wait"], tmpdir(), controller.signal, {
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/abort|failed/i);
+
+    const check = await runCapture(
+      "pgrep",
+      ["-f", "^sleep 60$"],
+      tmpdir(),
+      undefined,
+    );
+    expect(check.stdout.trim()).toBe("");
+  });
 });
 
 describe("runBinary", () => {

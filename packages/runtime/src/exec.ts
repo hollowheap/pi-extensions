@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
 
@@ -61,46 +61,126 @@ export function runCapture(
       }
     }
 
-    const child = execFile(
-      targetCommand,
-      targetArgs,
-      {
-        cwd,
-        timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
-        signal,
-      },
-      (error, stdout, stderr) => {
-        if (error === null) {
-          resolvePromise({ code: 0, stdout, stderr });
+    if (signal?.aborted) {
+      reject(new Error(`${command} failed: The operation was aborted`));
+      return;
+    }
+
+    const maxBuffer = options.maxBuffer ?? DEFAULT_MAX_BUFFER;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const child = spawn(targetCommand, targetArgs, {
+      cwd,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let settled = false;
+    let stdout = "";
+    let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+
+    const killChildGroup = (sig: NodeJS.Signals = "SIGTERM") => {
+      const pid = child.pid;
+      if (pid === undefined) return;
+      try {
+        process.kill(-pid, sig);
+        return;
+      } catch {
+        // Fall back to the leader if the process group is gone.
+      }
+      try {
+        process.kill(pid, sig);
+      } catch {
+        // Already dead.
+      }
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const onAbort = () => {
+      killChildGroup("SIGTERM");
+      fail(new Error(`${command} failed: The operation was aborted`));
+    };
+
+    const timer = setTimeout(() => {
+      killChildGroup("SIGTERM");
+      fail(
+        new Error(
+          `${command} failed: ${String(stderr || `timed out after ${timeoutMs}ms`).trim()}`,
+        ),
+      );
+    }, timeoutMs);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.byteLength;
+      if (stdoutBytes > maxBuffer) {
+        killChildGroup("SIGTERM");
+        fail(new Error(`${command} failed: stdout maxBuffer length exceeded`));
+        return;
+      }
+      stdout += chunk.toString("utf8");
+    });
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.byteLength;
+      if (stderrBytes > maxBuffer) {
+        killChildGroup("SIGTERM");
+        fail(new Error(`${command} failed: stderr maxBuffer length exceeded`));
+        return;
+      }
+      stderr += chunk.toString("utf8");
+    });
+
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        try {
+          statSync(cwd);
+        } catch {
+          fail(
+            new Error(
+              `${command} failed: working directory does not exist: ${cwd}`,
+            ),
+          );
           return;
         }
-        const code = (error as NodeJS.ErrnoException).code;
-        if (typeof code === "number") {
-          resolvePromise({ code, stdout, stderr });
-          return;
-        }
-        if (code === "ENOENT") {
-          try {
-            statSync(cwd);
-          } catch {
-            reject(
-              new Error(
-                `${command} failed: working directory does not exist: ${cwd}`,
-              ),
-            );
-            return;
-          }
-          reject(new Error(`command not found: ${command}`));
-          return;
-        }
-        reject(
-          new Error(
-            `${command} failed: ${String(stderr || error.message).trim()}`,
-          ),
-        );
-      },
-    );
+        fail(new Error(`command not found: ${command}`));
+        return;
+      }
+      fail(
+        new Error(
+          `${command} failed: ${String(stderr || error.message).trim()}`,
+        ),
+      );
+    });
+
+    child.on("close", (code, exitSignal) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (typeof code === "number") {
+        resolvePromise({ code, stdout, stderr });
+        return;
+      }
+      reject(
+        new Error(
+          `${command} failed: ${String(stderr || `terminated by ${exitSignal ?? "signal"}`).trim()}`,
+        ),
+      );
+    });
+
     // A child that reads stdin must see the end of it, or it waits forever.
     child.stdin?.on("error", () => {});
     child.stdin?.end(options.input ?? "");
