@@ -12,6 +12,9 @@
   "pi": {
     "extensions": ["./index.ts"]
   },
+  "dependencies": {
+    "@hollowheap/tui": "^0.3.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",

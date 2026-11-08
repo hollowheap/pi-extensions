@@ -1,9 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  SettingsList,
-  type SettingsListTheme,
-  truncateToWidth,
-} from "@earendil-works/pi-tui";
+import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
+import { roundedFrame } from "@hollowheap/tui/frame";
 import type { WebConfig, WebSettings } from "./config.js";
 import { FETCH_ORDER, SEARCH_ORDER } from "./providers/selection.js";
 import type { FetchProvider, ProviderId } from "./providers/types.js";
@@ -88,11 +85,9 @@ export async function showWebSettings(
 
       return {
         render(width: number): string[] {
-          return [
-            theme.fg("accent", theme.bold("Web settings")),
-            "",
-            ...list.render(width),
-          ].map((line) => truncateToWidth(line, width, ""));
+          const innerWidth = Math.max(1, width - 4);
+          const lines = [...list.render(innerWidth)];
+          return roundedFrame(lines, width, theme, "Web settings");
         },
         handleInput(data: string): void {
           list.handleInput(data);
