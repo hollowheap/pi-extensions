@@ -40,3 +40,26 @@
 | V36 | pi-question-r2 | `review/pi-question-r2.md` | robust | pi-question re-review |
 | V37 | pi-hooks-r2 | `review/pi-hooks-r2.md` | robust | pi-hooks re-review |
 | V38 | pi-tools-autopilot-r2 | `review/pi-tools-autopilot-r2.md` | robust | pi-tools + pi-autopilot re-review |
+| V39 | pi-agent-r3 | `review/pi-agent-r3.md` | robust | pi-agent re-review r3 |
+| V40 | pi-autopilot-r3 | `review/pi-autopilot-r3.md` | robust | pi-autopilot re-review r3 |
+| V41 | pi-decide-r3 | `review/pi-decide-r3.md` | robust | pi-decide re-review r3 |
+| V42 | pi-dashboard-r3 | `review/pi-dashboard-r3.md` | robust | pi-dashboard re-review r3 |
+| V43 | pi-guard-r3 | `review/pi-guard-r3.md` | robust | pi-guard re-review r3 |
+| V44 | pi-hooks-r3 | `review/pi-hooks-r3.md` | robust | pi-hooks re-review r3 |
+| V45 | pi-language-tools-r3 | `review/pi-language-tools-r3.md` | robust | pi-language-tools re-review r3 |
+| V46 | pi-modal-r3 | `review/pi-modal-r3.md` | robust | pi-modal re-review r3 |
+| V47 | pi-question-r3 | `review/pi-question-r3.md` | robust | pi-question re-review r3 |
+| V48 | pi-statusline-r3 | `review/pi-statusline-r3.md` | robust | pi-statusline re-review r3 |
+| V49 | pi-subagents-r3 | `review/pi-subagents-r3.md` | robust | pi-subagents re-review r3 |
+| V50 | pi-tasks-r3 | `review/pi-tasks-r3.md` | robust | pi-tasks re-review r3 |
+| V51 | pi-todos-r3 | `review/pi-todos-r3.md` | robust | pi-todos re-review r3 |
+| V52 | pi-tools-r3 | `review/pi-tools-r3.md` | robust | pi-tools re-review r3 |
+| V53 | pi-usage-r3 | `review/pi-usage-r3.md` | robust | pi-usage re-review r3 |
+| V54 | pi-web-r3 | `review/pi-web-r3.md` | robust | pi-web re-review r3 |
+| V55 | ui-upgrades-r3 | `review/ui-upgrades-r3.md` | robust | ui-upgrades re-review r3 |
+| V56 | session-definitions-r3 | `review/session-definitions-r3.md` | robust | session-definitions re-review r3 |
+| V57 | pi-memory-r3 | `review/pi-memory-r3.md` | robust | pi-memory re-review r3 |
+| V58 | packages-tui-r3 | `review/packages-tui-r3.md` | robust | packages/tui re-review r3 |
+| V59 | packages-runtime-r3 | `review/packages-runtime-r3.md` | robust | packages/runtime re-review r3 |
+| V60 | packages-core-r3 | `review/packages-core-r3.md` | robust | packages/core re-review r3 |
+| V61 | packages-pi-acp-r3 | `review/packages-pi-acp-r3.md` | robust | packages/pi-acp re-review r3 |
