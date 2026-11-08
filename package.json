@@ -38,6 +38,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "clean": "tsc -b --clean && rm -rf node_modules packages/*/node_modules",
+    "publish:workspaces": "npm publish --workspaces --access public",
     "new": "node scripts/new-extension.mjs"
   },
   "devDependencies": {
