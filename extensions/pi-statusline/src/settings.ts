@@ -1,10 +1,7 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  SettingsList,
-  type SettingsListTheme,
-  truncateToWidth,
-} from "@earendil-works/pi-tui";
+import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "@hollowheap/tui/frame";
 import type { StatuslineConfig } from "./config.js";
 
 const SEPARATORS = [
@@ -102,11 +99,9 @@ export async function showStatuslineSettings(
 
         return {
           render(width: number): string[] {
-            return [
-              theme.fg("accent", theme.bold("Statusline settings")),
-              "",
-              ...list.render(width),
-            ].map((line) => truncateToWidth(line, width, ""));
+            const innerWidth = Math.max(1, width - 4);
+            const lines = [...list.render(innerWidth)];
+            return roundedFrame(lines, width, theme, "Statusline settings");
           },
           handleInput(data: string): void {
             list.handleInput(data);

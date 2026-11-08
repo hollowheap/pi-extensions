@@ -1,9 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  SelectList,
-  type SelectListTheme,
-  truncateToWidth,
-} from "@earendil-works/pi-tui";
+import { SelectList, type SelectListTheme } from "@earendil-works/pi-tui";
+import { roundedFrame } from "@hollowheap/tui/frame";
 
 function pickerTheme(theme: Theme): SelectListTheme {
   return {
@@ -57,15 +54,20 @@ export async function showThemePicker(
       };
       return {
         render(width: number): string[] {
+          const innerWidth = Math.max(1, width - 4);
           const lines = [
-            theme.fg("accent", theme.bold("Select theme")),
             theme.fg("muted", `Preview: ${selected}`),
             "",
-            ...list.render(width),
+            ...list.render(innerWidth),
             "",
             theme.fg("dim", "↑↓ move  Enter select  Esc cancel"),
           ];
-          return lines.map((line) => truncateToWidth(line, width, ""));
+          return roundedFrame(
+            lines,
+            width,
+            theme,
+            "Select a statusline preset",
+          );
         },
         handleInput(data: string): void {
           list.handleInput(data);
