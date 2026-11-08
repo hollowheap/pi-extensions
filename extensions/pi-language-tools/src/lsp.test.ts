@@ -335,4 +335,104 @@ describe("LSP client", () => {
     );
     expect(entries.some((entry) => entry.method === "shutdown")).toBe(true);
   });
+
+  it("fails and evicts the client after two consecutive request timeouts", async () => {
+    const dir = root();
+    const logPath = join(dir, "log.jsonl");
+    const file = source(dir, "slow.ts", "const x = 1;\n");
+    const client = getLspClient(options(dir, logPath, 200));
+
+    await expect(
+      client.definition(file, "typescript", { line: 0, character: 6 }),
+    ).rejects.toThrow(/timed out/);
+    expect(client.disposed).toBe(false);
+
+    await expect(
+      client.definition(file, "typescript", { line: 0, character: 6 }),
+    ).rejects.toThrow(/timed out/);
+    expect(client.disposed).toBe(true);
+    expect(getLspClient(options(dir, logPath, 200))).not.toBe(client);
+  });
+
+  it("fails immediately when Content-Length exceeds 64 MiB", async () => {
+    const dir = root();
+    const file = source(dir, "index.ts", "const x = 1;\n");
+    const script = `
+      process.stdin.on("data", () => {
+        process.stdout.write("Content-Length: 70000000\\r\\n\\r\\n{}");
+      });
+      setInterval(() => {}, 1000);
+    `;
+    const client = getLspClient({
+      name: "huge-frame",
+      command: process.execPath,
+      args: ["-e", script],
+      root: dir,
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.definition(file, "typescript", { line: 0, character: 6 }),
+    ).rejects.toThrow(/Content-Length/i);
+    expect(client.disposed).toBe(true);
+  });
+
+  it("kills TERM-ignoring server and child process group on dispose", async () => {
+    const dir = root();
+    const pidFile = join(dir, "bg.pid");
+    const script = `
+      const { spawn } = require("node:child_process");
+      const { writeFileSync } = require("node:fs");
+      process.on("SIGTERM", () => {});
+      const bg = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      writeFileSync(${JSON.stringify(pidFile)}, String(bg.pid));
+      process.stdin.on("data", (chunk) => {
+        const text = chunk.toString("utf8");
+        const m = /"id":(\\d+)/.exec(text);
+        if (m && text.includes('"initialize"')) {
+          const body = JSON.stringify({ jsonrpc: "2.0", id: Number(m[1]), result: { capabilities: {} } });
+          process.stdout.write("Content-Length: " + Buffer.byteLength(body) + "\\r\\n\\r\\n" + body);
+        }
+      });
+      setInterval(() => {}, 1000);
+    `;
+    const file = source(dir, "index.ts", "const x = 1;\n");
+    const client = getLspClient({
+      name: "term-ignore",
+      command: process.execPath,
+      args: ["-e", script],
+      root: dir,
+      timeoutMs: 300,
+    });
+
+    await expect(
+      client.definition(file, "typescript", { line: 0, character: 6 }),
+    ).rejects.toThrow(/timed out/);
+    const serverPid = client.pid;
+    const bgPid = Number(readFileSync(pidFile, "utf8").trim());
+    expect(serverPid).toBeTypeOf("number");
+    expect(bgPid).toBeGreaterThan(0);
+
+    await client.dispose();
+
+    const isAlive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      expect(isAlive(serverPid as number)).toBe(false);
+      expect(isAlive(bgPid)).toBe(false);
+    } finally {
+      try {
+        process.kill(serverPid as number, "SIGKILL");
+      } catch {}
+      try {
+        process.kill(bgPid, "SIGKILL");
+      } catch {}
+    }
+  });
 });

@@ -8,6 +8,8 @@ const MAX_TIMEOUT_MS = 60_000;
 const STDERR_LIMIT = 4_096;
 const SHUTDOWN_GRACE_MS = 250;
 const MAX_CACHE_ENTRIES = 32;
+const MAX_CONTENT_LENGTH_BYTES = 64 * 1024 * 1024;
+const MAX_CONSECUTIVE_TIMEOUTS = 2;
 
 export interface LspPosition {
   line: number;
@@ -84,6 +86,7 @@ export class LspClient {
   private initialized = false;
   private closed = false;
   private stopping = false;
+  private consecutiveTimeouts = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private readonly onExit: (client: LspClient) => void;
 
@@ -302,13 +305,39 @@ export class LspClient {
       new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS)),
     ]);
     if (child.exitCode === null && child.signalCode === null) {
-      child.kill();
+      this.killChildGroup(child, "SIGTERM");
       await Promise.race([
         exited,
         new Promise<void>((resolve) => setTimeout(resolve, 100)),
       ]);
+      if (child.exitCode === null && child.signalCode === null) {
+        this.killChildGroup(child, "SIGKILL");
+        await Promise.race([
+          exited,
+          new Promise<void>((resolve) => setTimeout(resolve, 100)),
+        ]);
+      }
     }
     this.onExit(this);
+  }
+
+  private killChildGroup(
+    child: ChildProcessWithoutNullStreams,
+    signal: NodeJS.Signals,
+  ): void {
+    const pid = child.pid;
+    if (pid !== undefined && pid > 0) {
+      try {
+        process.kill(-pid, signal);
+      } catch {
+        // Ignore if group already exited.
+      }
+    }
+    try {
+      child.kill(signal);
+    } catch {
+      // Ignore if child already exited.
+    }
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -381,7 +410,7 @@ export class LspClient {
           },
         },
       },
-      this.timeoutMs,
+      Math.max(this.timeoutMs, 5_000),
     );
     this.capabilities =
       isRecord(result) && isRecord(result.capabilities)
@@ -404,6 +433,7 @@ export class LspClient {
     try {
       child = spawn(this.command, [...this.args], {
         cwd: this.root,
+        detached: true,
         stdio: ["pipe", "pipe", "pipe"],
         env: process.env,
       });
@@ -477,6 +507,7 @@ export class LspClient {
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        this.consecutiveTimeouts += 1;
         const error = new Error(
           this.describe(`${method} timed out after ${timeoutMs}ms`),
         );
@@ -484,6 +515,9 @@ export class LspClient {
           this.sendNotification("$/cancelRequest", { id });
         } catch {
           // The process may already be gone.
+        }
+        if (this.consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
+          this.fail(error);
         }
         reject(error);
       }, timeoutMs);
@@ -578,6 +612,14 @@ export class LspClient {
         return;
       }
       const length = Number(match[1]);
+      if (!Number.isSafeInteger(length) || length > MAX_CONTENT_LENGTH_BYTES) {
+        this.fail(
+          new Error(
+            this.describe(`Content-Length ${match[1]} exceeds maximum limit`),
+          ),
+        );
+        return;
+      }
       const bodyStart = headerEnd + 4;
       if (this.stdout.length < bodyStart + length) return;
       const body = this.stdout
@@ -606,6 +648,7 @@ export class LspClient {
       const pending = this.pending.get(id);
       if (pending === undefined) return;
       this.pending.delete(id);
+      this.consecutiveTimeouts = 0;
       clearTimeout(pending.timer);
       if (isRecord(message.error)) {
         const text =
@@ -674,7 +717,15 @@ export class LspClient {
     this.pending.clear();
     this.rejectDiagnostics(error);
 
-    if (child !== undefined && child.exitCode === null) child.kill();
+    if (child !== undefined && child.exitCode === null) {
+      this.killChildGroup(child, "SIGTERM");
+      const timer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          this.killChildGroup(child, "SIGKILL");
+        }
+      }, 100);
+      timer.unref?.();
+    }
     this.onExit(this);
   }
 
