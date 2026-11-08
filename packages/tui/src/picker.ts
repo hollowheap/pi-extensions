@@ -7,9 +7,9 @@ import {
   decodeKittyPrintable,
   fuzzyFilter,
   matchesKey,
-  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "./frame.js";
 
 export interface FuzzyPickerItem extends SelectItem {
   preview?: string[];
@@ -105,13 +105,13 @@ export async function showFuzzyPicker(
         rebuild();
         return {
           render(width: number): string[] {
+            const innerWidth = Math.max(1, width - 4);
             const lines = [
-              theme.fg("accent", theme.bold(options.title)),
               theme.fg(
                 "muted",
                 query === "" ? "Filter: (type to search)" : `Filter: ${query}`,
               ),
-              ...list.render(width),
+              ...list.render(innerWidth),
               "",
               ...preview(),
               "",
@@ -120,7 +120,7 @@ export async function showFuzzyPicker(
                 "↑↓ move  Enter select  Esc cancel  type to filter",
               ),
             ];
-            return lines.map((line) => truncateToWidth(line, width, ""));
+            return roundedFrame(lines, width, theme, options.title);
           },
           invalidate(): void {
             list.invalidate();

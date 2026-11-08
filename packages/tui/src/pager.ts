@@ -7,6 +7,7 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "./frame.js";
 
 export interface MarkdownPagerOptions {
   title: string;
@@ -77,7 +78,10 @@ export async function showMarkdownPager(
             return Math.max(3, Math.min(rows - 4, Math.floor(rows * 0.8) - 2));
           };
           const maxOffset = (): number =>
-            Math.max(0, contentLines(width).length - pageSize());
+            Math.max(
+              0,
+              contentLines(Math.max(1, width - 4)).length - pageSize(),
+            );
           const scrollTo = (next: number): void => {
             offset = clamp(next, 0, maxOffset());
             tui.requestRender();
@@ -89,17 +93,13 @@ export async function showMarkdownPager(
           return {
             render(renderWidth: number): string[] {
               width = renderWidth;
-              const lines = contentLines(renderWidth);
+              const innerWidth = Math.max(1, renderWidth - 4);
+              const lines = contentLines(innerWidth);
               const size = pageSize();
               offset = clamp(offset, 0, Math.max(0, lines.length - size));
               const visible = lines
                 .slice(offset, offset + size)
-                .map((line) => truncateToWidth(line, renderWidth, ""));
-              const header = truncateToWidth(
-                theme.fg("accent", theme.bold(options.title)),
-                renderWidth,
-                "",
-              );
+                .map((line) => truncateToWidth(line, innerWidth, ""));
               const first = lines.length === 0 ? 0 : offset + 1;
               const last = Math.min(lines.length, offset + size);
               const footer = truncateToWidth(
@@ -107,10 +107,15 @@ export async function showMarkdownPager(
                   "muted",
                   `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
                 ),
-                renderWidth,
+                innerWidth,
                 "",
               );
-              return [header, ...visible, footer];
+              return roundedFrame(
+                [...visible, footer],
+                renderWidth,
+                theme,
+                options.title,
+              );
             },
             invalidate(): void {
               cachedWidth = -1;

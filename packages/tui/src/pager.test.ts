@@ -67,7 +67,8 @@ describe("showMarkdownPager", () => {
     const component = env.component();
     expect(component).toBeDefined();
     const first = component?.render(60) ?? [];
-    expect(first[0]).toBe("Task task-1");
+    expect(first[0]).toContain("Task task-1");
+    expect(first[0]).toContain("╭");
     expect(first.join("\n")).toContain("line 1");
     expect(first.join("\n")).toContain("1-7/40");
 

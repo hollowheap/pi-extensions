@@ -6,6 +6,7 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "./frame.js";
 
 export type CancellableProgressResult<T> =
   | { status: "completed"; value: T }
@@ -28,7 +29,12 @@ function progressComponent(
   return {
     loader,
     render(width: number): string[] {
-      return [...loader.render(width), ...hint.render(width)];
+      const innerWidth = Math.max(1, width - 4);
+      return roundedFrame(
+        [...loader.render(innerWidth), ...hint.render(innerWidth)],
+        width,
+        theme,
+      );
     },
     handleInput(data: string): void {
       if (matchesKey(data, Key.escape)) {

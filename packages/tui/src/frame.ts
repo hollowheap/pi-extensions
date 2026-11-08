@@ -10,9 +10,14 @@ export function roundedFrame(
 ): string[] {
   const safeWidth = Math.max(4, width);
   const innerWidth = safeWidth - 4;
-  const border = (value: string) => theme.fg("border", value);
+  const border = (value: string) =>
+    typeof theme?.fg === "function" ? theme.fg("border", value) : value;
+  const fg = (token: string, value: string) =>
+    typeof theme?.fg === "function" ? theme.fg(token as never, value) : value;
+  const bold = (value: string) =>
+    typeof theme?.bold === "function" ? theme.bold(value) : value;
 
-  const rawLabel = title ? ` ${theme.fg("accent", theme.bold(title))} ` : "";
+  const rawLabel = title ? ` ${fg("accent", bold(title))} ` : "";
   const label = truncateToWidth(rawLabel, Math.max(0, safeWidth - 3), "");
   const labelWidth = visibleWidth(label);
   const topFill = Math.max(0, safeWidth - 3 - labelWidth);
