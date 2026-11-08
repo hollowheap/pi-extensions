@@ -4,6 +4,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
 import { scanTaggedBlocks } from "@hollowheap/core/blocks";
+import { roundedFrame } from "@hollowheap/tui/frame";
 import {
   type SubagentStateItem,
   type TaskStateItem,
@@ -417,27 +418,34 @@ export default function (pi: ExtensionAPI) {
       const text = formatTodoList(displayTodos);
 
       if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
-        await ctx.ui.custom<void>((_tui, _theme, _keybindings, done) => ({
-          render: (width) =>
-            new Text(
-              ["Todos", "", text, "", "Esc, Enter, q, or Ctrl+C to close"].join(
-                "\n",
-              ),
-              0,
-              0,
-            ).render(width),
-          invalidate: () => {},
-          handleInput: (data) => {
-            if (
-              matchesKey(data, Key.escape) ||
-              matchesKey(data, Key.enter) ||
-              matchesKey(data, Key.ctrl("c")) ||
-              data === "q"
-            ) {
-              done(undefined);
-            }
+        await ctx.ui.custom<void>(
+          (_tui, theme, _keybindings, done) => ({
+            render: (width) => {
+              const innerWidth = Math.max(1, width - 4);
+              const lines = new Text(
+                [text, "", "Esc, Enter, q, or Ctrl+C to close"].join("\n"),
+                0,
+                0,
+              ).render(innerWidth);
+              return roundedFrame(lines, width, theme, "Todos");
+            },
+            invalidate: () => {},
+            handleInput: (data) => {
+              if (
+                matchesKey(data, Key.escape) ||
+                matchesKey(data, Key.enter) ||
+                matchesKey(data, Key.ctrl("c")) ||
+                data === "q"
+              ) {
+                done(undefined);
+              }
+            },
+          }),
+          {
+            overlay: true,
+            overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
           },
-        }));
+        );
         return;
       }
 
