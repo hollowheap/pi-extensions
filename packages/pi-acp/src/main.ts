@@ -1,7 +1,12 @@
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LineSplitter, encodeMessage, isRequest } from "./acp.js";
+import {
+  LineSplitter,
+  encodeMessage,
+  isNotification,
+  isRequest,
+} from "./acp.js";
 import { Adapter } from "./adapter.js";
 import type { ClientRequest } from "./client-requests.js";
 import { spawnPiRpc } from "./pi-rpc.js";
@@ -115,6 +120,14 @@ export async function main(
             },
           }),
       );
+      return;
+    }
+    if (isNotification(message)) {
+      void adapter.handle(message.method, message.params).catch((error) => {
+        process.stderr.write(
+          `[pi-acp] notification ${message.method} failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      });
       return;
     }
     if (

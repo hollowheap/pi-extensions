@@ -218,14 +218,33 @@ describe("acp_write", () => {
     ).rejects.toThrow("already exists");
   });
 
-  it("creates through the client when declared", async () => {
+  it("fails closed when the client fs-read fails", async () => {
     const { ctx } = project(["allow edit *"]);
     const written: { method: string; params: unknown }[] = [];
     const { deps } = scriptedDeps(
       { fs: { readTextFile: true, writeTextFile: true } },
       (method, params) => {
         written.push({ method, params });
-        if (method === "fs-read") throw new Error("not found");
+        if (method === "fs-read") throw new Error("editor read failed");
+        return {};
+      },
+    );
+    const [write] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_write",
+    );
+    await expect(
+      run(write, "1", { path: "n.txt", content: "new" }, ctx),
+    ).rejects.toThrow("editor read failed");
+    expect(written.map((call) => call.method)).toEqual(["fs-read"]);
+  });
+
+  it("creates through the client when writeTextFile is declared", async () => {
+    const { ctx } = project(["allow edit *"]);
+    const written: { method: string; params: unknown }[] = [];
+    const { deps } = scriptedDeps(
+      { fs: { writeTextFile: true } },
+      (method, params) => {
+        written.push({ method, params });
         return {};
       },
     );
@@ -235,7 +254,7 @@ describe("acp_write", () => {
     expect(
       await run(write, "1", { path: "n.txt", content: "new" }, ctx),
     ).toContain("n.txt");
-    expect(written.map((call) => call.method)).toEqual(["fs-read", "fs-write"]);
+    expect(written.map((call) => call.method)).toEqual(["fs-write"]);
   });
 });
 
@@ -257,6 +276,27 @@ describe("acp_edit", () => {
         ctx,
       ),
     ).rejects.toThrow("differs from disk");
+  });
+
+  it("fails closed when the client fs-read fails", async () => {
+    const { dir, ctx } = project(["allow edit *"]);
+    writeFileSync(join(dir, "a.txt"), "disk");
+    const { deps } = scriptedDeps({ fs: { readTextFile: true } }, (method) => {
+      if (method === "fs-read") throw new Error("no editor buffer");
+      return { decision: "allow_once" };
+    });
+    const [edit] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_edit",
+    );
+    await expect(
+      run(
+        edit,
+        "1",
+        { path: "a.txt", edits: [{ oldText: "disk", newText: "new" }] },
+        ctx,
+      ),
+    ).rejects.toThrow("no editor buffer");
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("disk");
   });
 
   it("edits locally when the client has no fs", async () => {

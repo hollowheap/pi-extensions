@@ -130,4 +130,47 @@ describe("pi rpc spawn args", () => {
     });
     expect(args[args.indexOf("--session") + 1]).toBe("/tmp/session.jsonl");
   });
+
+  it("spawns in its own process group and kills the group on kill()", async () => {
+    const events: unknown[] = [];
+    let bgPid = 0;
+    const rpc = PiRpc.spawn(
+      "sh",
+      ["-c", 'sleep 60 & echo \'{"type":"bg","pid":\'$!\'}\' && wait'],
+      { cwd: "/tmp", env: {} },
+      {
+        onEvent: (event) => {
+          events.push(event);
+          if (
+            typeof event === "object" &&
+            event !== null &&
+            (event as { type?: unknown }).type === "bg" &&
+            typeof (event as { pid?: unknown }).pid === "number"
+          ) {
+            bgPid = (event as { pid: number }).pid;
+          }
+        },
+      },
+    );
+    const deadline = Date.now() + 2000;
+    while (bgPid === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(bgPid).toBeGreaterThan(0);
+    rpc.kill();
+    await new Promise((r) => setTimeout(r, 250));
+    let alive = true;
+    try {
+      process.kill(bgPid, 0);
+    } catch {
+      alive = false;
+    }
+    try {
+      expect(alive).toBe(false);
+    } finally {
+      try {
+        process.kill(bgPid, "SIGKILL");
+      } catch {}
+    }
+  });
 });

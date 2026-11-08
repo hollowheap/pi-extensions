@@ -1,5 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 export interface SessionRecord {
   sessionId: string;
@@ -17,7 +23,15 @@ export function loadStore(path: string): SessionRecord[] {
   } catch {
     return [];
   }
-  const parsed: unknown = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    process.stderr.write(
+      `[pi-acp] failed to parse ${path}: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    return [];
+  }
   if (!Array.isArray(parsed)) return [];
   return parsed.filter(
     (entry): entry is SessionRecord =>
@@ -30,6 +44,19 @@ export function loadStore(path: string): SessionRecord[] {
 }
 
 export function saveStore(path: string, records: SessionRecord[]): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(records, null, 2)}\n`);
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  const tmpPath = join(
+    dir,
+    `.sessions.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`,
+  );
+  try {
+    writeFileSync(tmpPath, `${JSON.stringify(records, null, 2)}\n`);
+    renameSync(tmpPath, path);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {}
+    throw error;
+  }
 }

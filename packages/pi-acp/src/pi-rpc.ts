@@ -33,11 +33,31 @@ export class PiRpc {
     const proc = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: options.cwd,
+      detached: true,
       env: { ...process.env, ...options.env },
     });
+    const killGroup = (signal: NodeJS.Signals) => {
+      const pid = proc.pid;
+      if (pid !== undefined && pid > 0) {
+        try {
+          process.kill(-pid, signal);
+        } catch {}
+      }
+      try {
+        proc.kill(signal);
+      } catch {}
+    };
     const rpc = new PiRpc(
       (line) => proc.stdin.write(`${line}\n`),
-      () => proc.kill(),
+      () => {
+        killGroup("SIGTERM");
+        const timer = setTimeout(() => {
+          if (proc.exitCode === null && proc.signalCode === null) {
+            killGroup("SIGKILL");
+          }
+        }, 100);
+        timer.unref?.();
+      },
       callbacks,
     );
     proc.stdout.on("data", (chunk: Buffer) => rpc.feed(chunk.toString("utf8")));

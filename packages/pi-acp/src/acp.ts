@@ -48,6 +48,16 @@ export function isRequest(value: unknown): value is RpcRequest {
   );
 }
 
+export function isNotification(value: unknown): value is RpcNotification {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.jsonrpc === "2.0" &&
+    record.id === undefined &&
+    typeof record.method === "string"
+  );
+}
+
 export class LineSplitter {
   private rest = "";
 

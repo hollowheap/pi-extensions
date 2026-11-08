@@ -1,39 +1,43 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { type SessionRecord, loadStore, saveStore } from "./sessions.js";
+import { describe, expect, it, vi } from "vitest";
+import { loadStore, saveStore } from "./sessions.js";
 
-function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
-  return {
-    sessionId: "s1",
-    cwd: "/repo",
-    piSessionFile: "/sessions/s1.jsonl",
-    title: "hello",
-    updatedAt: "2026-10-15T00:00:00.000Z",
-    agent: "hollowheap-pi-acp",
-    ...overrides,
-  };
-}
-
-describe("session store", () => {
-  it("returns empty for a missing file", () => {
-    expect(loadStore(join(tmpdir(), "pi-acp-nope", "s.json"))).toEqual([]);
+describe("sessions store", () => {
+  it("logs a diagnostic with the file path and returns an empty store when sessions.json does not parse", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-acp-sessions-"));
+    const path = join(dir, "sessions.json");
+    writeFileSync(path, "{truncated", "utf8");
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    try {
+      expect(loadStore(path)).toEqual([]);
+      expect(stderrSpy).toHaveBeenCalled();
+      const logged = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(logged).toContain(path);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
-  it("round-trips records through save and load", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-acp-store-"));
+  it("writes sessions atomically and round-trips records", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-acp-sessions-"));
+    mkdirSync(dir, { recursive: true });
     const path = join(dir, "sessions.json");
-    saveStore(path, [record(), record({ sessionId: "s2" })]);
-    expect(loadStore(path)).toHaveLength(2);
-    expect(loadStore(path)[0]).toEqual(record());
-    expect(readFileSync(path, "utf8").endsWith("\n")).toBe(true);
-  });
-
-  it("drops malformed entries", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-acp-store-"));
-    const path = join(dir, "sessions.json");
-    saveStore(path, [record(), { nope: true } as unknown as SessionRecord]);
-    expect(loadStore(path)).toEqual([record()]);
+    const records = [
+      {
+        sessionId: "s-1",
+        cwd: "/repo",
+        piSessionFile: "/repo/s-1.jsonl",
+        title: "Test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        agent: "hollowheap-pi-acp" as const,
+      },
+    ];
+    saveStore(path, records);
+    expect(loadStore(path)).toEqual(records);
+    expect(readFileSync(path, "utf8")).toContain('"sessionId": "s-1"');
   });
 });

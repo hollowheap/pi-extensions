@@ -308,8 +308,10 @@ export function createAcpTools(deps: ToolDeps) {
         try {
           await readThroughClient(deps, abs);
           exists = true;
-        } catch {
-          exists = false;
+        } catch (error) {
+          throw new Error(
+            `pi-acp: cannot verify whether ${abs} exists in editor: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
       if (exists) throw new Error(`pi-acp: path already exists: ${abs}`);
@@ -355,13 +357,15 @@ export function createAcpTools(deps: ToolDeps) {
         throw new Error(`pi-acp: file not found: ${abs}`);
       }
       if (caps.fs?.readTextFile === true) {
-        let remote: string | undefined;
+        let remote: string;
         try {
           remote = await readThroughClient(deps, abs);
-        } catch {
-          remote = undefined;
+        } catch (error) {
+          throw new Error(
+            `pi-acp: cannot read editor buffer for ${abs}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-        if (remote !== undefined && remote !== local) {
+        if (remote !== local) {
           throw new Error(
             "pi-acp: editor buffer differs from disk; refusing to edit",
           );
