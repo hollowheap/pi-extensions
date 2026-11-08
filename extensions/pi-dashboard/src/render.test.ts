@@ -32,4 +32,14 @@ describe("splitOutput", () => {
     expect(splitOutput("a\n\nb\n")).toEqual(["a", "", "b"]);
     expect(splitOutput("")).toEqual([]);
   });
+
+  it("preserves 16-color, 256-color, and TrueColor SGR while stripping OSC, non-SGR CSI, and controls", () => {
+    const raw =
+      "\x1b[31m16-color\x1b[0m \x1b[38;5;208m256-color\x1b[0m \x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "\x1b]52;c;ZXZpbA==\x07\x1b]2;title\x07\x1b[2J\x1b[H\x1b[?25l\x00\x07clean\n";
+    expect(splitOutput(raw)).toEqual([
+      "\x1b[31m16-color\x1b[0m \x1b[38;5;208m256-color\x1b[0m \x1b[38;2;255;100;0mTrueColor\x1b[0m",
+      "clean",
+    ]);
+  });
 });

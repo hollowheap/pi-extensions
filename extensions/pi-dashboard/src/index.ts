@@ -13,7 +13,6 @@ import {
 } from "./config.js";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
-import { showDashboardSettings } from "./settings.js";
 
 export interface DashboardDeps {
   run: (
@@ -198,6 +197,7 @@ export default function (pi: ExtensionAPI) {
       notify: (message) => ctx.ui.notify(message, "warning"),
     });
     active = controller;
+    void controller.refresh();
     ctx.ui.setHeader((tui, _theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
@@ -231,6 +231,7 @@ export default function (pi: ExtensionAPI) {
       }
       const loaded = loadConfig(getAgentDir());
       let pending: DashboardSettings | undefined;
+      const { showDashboardSettings } = await import("./settings.js");
       await showDashboardSettings(ctx, loaded.config, (settings) => {
         pending = settings;
       });

@@ -19,7 +19,7 @@ export function fitLines(
 }
 
 export function splitOutput(stdout: string): string[] {
-  const sanitized = sanitizeTerminalText(stdout);
+  const sanitized = sanitizeTerminalText(stdout, { allowSgr: true });
   const lines = sanitized.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines;

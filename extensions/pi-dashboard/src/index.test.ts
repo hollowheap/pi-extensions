@@ -7,6 +7,7 @@ import { setCwd } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "./exec.js";
 import extension, { createDashboard } from "./index.js";
+import { splitOutput } from "./render.js";
 
 const state = vi.hoisted(() => ({
   agentDir: "/nonexistent-pi-agent-dir-for-tests",
@@ -412,5 +413,51 @@ describe("createDashboard", () => {
     );
     await controller.refresh();
     expect(controller.lines()).toEqual(["hi        "]);
+  });
+
+  it("preserves 16-color, 256-color, and TrueColor SGR sequences in terminal sections while stripping control sequences", async () => {
+    const rawOutput =
+      "\x1b[31m16-color\x1b[0m " +
+      "\x1b[38;5;208m256-color\x1b[0m " +
+      "\x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "\x1b]52;c;ZXZpbA==\x07" +
+      "\x1b]2;title\x07" +
+      "\x1b[2J\x1b[H\x1b[?25l" +
+      "\x00\x07\x08line2";
+
+    const controller = createDashboard(
+      {
+        width: 60,
+        sections: [
+          {
+            type: "terminal",
+            command: "echo",
+            args: [],
+            intervalMs: 1000,
+            gap: 0,
+          },
+        ],
+      },
+      {
+        run: async () => rawOutput,
+        notify: () => {},
+      },
+    );
+
+    await controller.refresh();
+    const lines = controller.lines();
+    expect(lines[0]).toContain("\x1b[31m16-color\x1b[0m");
+    expect(lines[0]).toContain("\x1b[38;5;208m256-color\x1b[0m");
+    expect(lines[0]).toContain("\x1b[38;2;255;100;0mTrueColor\x1b[0m");
+    expect(lines[0]).not.toContain("\x1b]52");
+    expect(lines[0]).not.toContain("\x1b]2");
+    expect(lines[0]).not.toContain("\x1b[2J");
+    expect(lines[1]).toContain("line2");
+    expect(lines[1]).not.toContain("\x07");
+
+    expect(splitOutput(rawOutput)).toEqual([
+      "\x1b[31m16-color\x1b[0m \x1b[38;5;208m256-color\x1b[0m \x1b[38;2;255;100;0mTrueColor\x1b[0m",
+      "line2",
+    ]);
   });
 });
