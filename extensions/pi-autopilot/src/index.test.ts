@@ -81,4 +81,67 @@ describe("pi-autopilot extension", () => {
       },
     });
   });
+
+  it("asks for destructive shell commands in autopilot mode and blocks without UI", () => {
+    setup();
+    const owner = {};
+    setMode(owner, "autopilot");
+
+    const destructive = [
+      "rm -rf /",
+      "rm -rf ~",
+      "find / -delete",
+      "git push --force origin main",
+      "ls; rm -rf /",
+    ];
+
+    for (const cmd of destructive) {
+      const verdict = evaluate({
+        owner,
+        cwd: "/work",
+        tag: "shell",
+        target: cmd,
+        rules: [],
+      });
+      expect(verdict).toBe("ask");
+
+      const resolveVerdict = (
+        v: typeof verdict,
+        ctx: { hasUI: boolean },
+      ): { block: boolean; reason?: string } => {
+        if (v === "deny") return { block: true, reason: "denied" };
+        if (v === "ask") {
+          return ctx.hasUI
+            ? { block: false }
+            : { block: true, reason: "needs approval (no UI)" };
+        }
+        return { block: false };
+      };
+
+      expect(resolveVerdict(verdict, { hasUI: true })).toEqual({
+        block: false,
+      });
+      expect(resolveVerdict(verdict, { hasUI: false })).toEqual({
+        block: true,
+        reason: "needs approval (no UI)",
+      });
+    }
+
+    // Explicit user rule can allow a destructive command
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "shell",
+        target: "git push --force origin main",
+        rules: [
+          {
+            tag: "shell",
+            pattern: "git push --force origin main",
+            effect: "allow",
+          },
+        ],
+      }),
+    ).toBe("allow");
+  });
 });
