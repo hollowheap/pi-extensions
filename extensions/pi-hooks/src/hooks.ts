@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import { runCapture } from "@hollowheap/runtime/exec";
 import type { HookEntry } from "./config.js";
 
@@ -39,19 +40,47 @@ export function evaluateCondition(
   payload: HookPayload,
 ): boolean {
   if (!entry.condition) return true;
-  const cond = entry.condition.trim().toLowerCase();
+  const raw = entry.condition.trim();
+  if (raw === "") return true;
+
+  // matches(var, 'pattern')
+  const matchesMatch = raw.match(
+    /^matches\(\s*([a-zA-Z0-9_]+)\s*,\s*['"](.*)['"]\s*\)$/i,
+  );
+  if (matchesMatch) {
+    const varName = matchesMatch[1].toLowerCase();
+    const pattern = matchesMatch[2];
+    const regex = new RegExp(pattern);
+    const target =
+      varName === "toolname" || varName === "tool"
+        ? payload.toolName
+        : String(
+            payload.input?.[varName] ??
+              (varName === "path" ? payload.input?.command : "") ??
+              "",
+          );
+    return regex.test(target);
+  }
+
   // Simple: "tool == 'name'" or "tool != 'name'"
-  const toolMatch = cond.match(/^tool\s*==\s*['"](.+)['"]$/);
-  if (toolMatch) return payload.toolName.toLowerCase() === toolMatch[1];
-  const toolNotMatch = cond.match(/^tool\s*!=\s*['"](.+)['"]$/);
-  if (toolNotMatch) return payload.toolName.toLowerCase() !== toolNotMatch[1];
+  const toolMatch = raw.match(/^(?:tool|toolname)\s*==\s*['"](.+)['"]$/i);
+  if (toolMatch) {
+    return payload.toolName.toLowerCase() === toolMatch[1].toLowerCase();
+  }
+
+  const toolNotMatch = raw.match(/^(?:tool|toolname)\s*!=\s*['"](.+)['"]$/i);
+  if (toolNotMatch) {
+    return payload.toolName.toLowerCase() !== toolNotMatch[1].toLowerCase();
+  }
+
   // "path contains 'str'"
-  const pathContains = cond.match(/^path\s+contains\s+['"](.+)['"]$/);
+  const pathContains = raw.match(/^path\s+contains\s+['"](.+)['"]$/i);
   if (pathContains) {
     const target = String(payload.input?.path ?? payload.input?.command ?? "");
     return target.toLowerCase().includes(pathContains[1].toLowerCase());
   }
-  return false;
+
+  throw new Error(`invalid hook condition: "${entry.condition}"`);
 }
 
 export function matchesTool(entry: HookEntry, toolName: string): boolean {
@@ -112,7 +141,25 @@ async function run(
   entry: HookEntry,
   payload: HookInput,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  return runCapture(entry.command, entry.args, payload.cwd, undefined, {
+  let command = entry.command;
+  const isRelative =
+    !isAbsolute(command) &&
+    (command.includes("/") ||
+      command.includes("\\") ||
+      command === "." ||
+      command === "..");
+  if (isRelative) {
+    if (entry.configDir !== undefined) {
+      command = resolve(entry.configDir, command);
+    } else {
+      return {
+        code: 1,
+        stdout: "",
+        stderr: `cannot execute relative command "${command}" without declaring config directory`,
+      };
+    }
+  }
+  return runCapture(command, entry.args, payload.cwd, undefined, {
     input: JSON.stringify(payload),
     timeoutMs: entry.timeoutMs,
   });

@@ -222,6 +222,30 @@ describe("pi-hooks extension", () => {
     expect(result).toBeUndefined();
   });
 
+  it("fails closed on preTool hook with malformed condition and notifies warning", async () => {
+    writeHooks({
+      preTool: [
+        {
+          matcher: "bash",
+          condition: 'matches(toolName, "[")',
+          command: "true",
+        },
+      ],
+    });
+    const { handlers, ctx } = setup();
+    const result = (await handlers.tool_call(
+      toolCall("bash", { command: "ls" }),
+      ctx,
+    )) as { block: boolean; reason: string } | undefined;
+    expect(result).toBeDefined();
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain("pre-tool hooks failed");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("pre-tool hooks failed"),
+      "warning",
+    );
+  });
+
   it("registers session_start", () => {
     const pi = {
       on: vi.fn(),

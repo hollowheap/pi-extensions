@@ -199,4 +199,60 @@ describe("loadHooks", () => {
     expect(first).toHaveLength(1);
     expect(second).toEqual(first);
   });
+
+  it("maps 'if' property to condition", () => {
+    const dir = agentDir(
+      JSON.stringify({
+        hooks: {
+          preTool: [{ command: "check", if: "tool == 'bash'" }],
+        },
+      }),
+    );
+    const config = loadHooks({
+      agentDir: dir,
+      workspaceRoot: dir,
+      trusted: true,
+    });
+    expect(config.preTool[0]?.condition).toBe("tool == 'bash'");
+  });
+
+  it("resolves relative command paths against declaring config directory while leaving bare commands intact", () => {
+    const dir = agentDir(
+      JSON.stringify({
+        hooks: {
+          preTool: [
+            { command: "./scripts/guard.sh" },
+            { command: "true" },
+            { command: "node" },
+          ],
+        },
+      }),
+    );
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(
+      join(dir, ".pi", "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          preTool: [
+            { command: "./scripts/project-guard.sh" },
+            { command: "echo" },
+          ],
+        },
+      }),
+    );
+
+    const config = loadHooks({
+      agentDir: dir,
+      workspaceRoot: dir,
+      trusted: true,
+    });
+
+    expect(config.preTool.map((h) => h.command)).toEqual([
+      join(dir, "scripts", "guard.sh"),
+      "true",
+      "node",
+      join(dir, ".pi", "scripts", "project-guard.sh"),
+      "echo",
+    ]);
+  });
 });

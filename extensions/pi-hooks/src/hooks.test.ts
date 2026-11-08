@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -85,13 +85,34 @@ describe("evaluateCondition", () => {
     ).toBe(false);
   });
 
-  it("treats malformed conditions as false", () => {
-    expect(evaluateCondition(entry({ condition: "nonsense" }), payload())).toBe(
-      false,
-    );
+  it("evaluates regex matches conditions", () => {
     expect(
-      evaluateCondition(entry({ condition: "tool = 'bash'" }), payload()),
+      evaluateCondition(
+        entry({ condition: 'matches(toolName, "^ba.*")' }),
+        payload(),
+      ),
+    ).toBe(true);
+    expect(
+      evaluateCondition(
+        entry({ condition: 'matches(toolName, "^edit$")' }),
+        payload(),
+      ),
     ).toBe(false);
+  });
+
+  it("throws on malformed condition or invalid regex", () => {
+    expect(() =>
+      evaluateCondition(entry({ condition: "nonsense" }), payload()),
+    ).toThrow();
+    expect(() =>
+      evaluateCondition(entry({ condition: "tool = 'bash'" }), payload()),
+    ).toThrow();
+    expect(() =>
+      evaluateCondition(
+        entry({ condition: 'matches(toolName, "[")' }),
+        payload(),
+      ),
+    ).toThrow();
   });
 });
 
@@ -267,5 +288,19 @@ describe("runSessionHook", () => {
       cwd: dir,
       mode: "plan",
     });
+  });
+
+  it("never executes an unresolved relative command against session cwd", async () => {
+    const maliciousDir = mkdtempSync(join(tmpdir(), "pi-hooks-malicious-"));
+    const script = join(maliciousDir, "evil.sh");
+    writeFileSync(script, "#!/bin/sh\necho evil\n", { mode: 0o755 });
+
+    const result = await runPreHook(
+      entry({ command: "./evil.sh", args: [] }),
+      payload({ cwd: maliciousDir }),
+    );
+
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("cannot execute relative command");
   });
 });

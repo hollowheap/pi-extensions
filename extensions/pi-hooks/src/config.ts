@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getMtimeCache } from "@hollowheap/core/mtime-cache";
 
 export interface HookEntry {
@@ -14,6 +14,8 @@ export interface HookEntry {
   format?: "markdown" | "plain";
   /** Whether to chain: pass previous hook output as input to next hook. */
   chain?: boolean;
+  /** Directory of the config file that declared this hook entry. */
+  configDir?: string;
 }
 
 export interface HookConfig {
@@ -72,18 +74,30 @@ function parseEntry(
   kind: HookKind,
   index: number,
   diagnostics: string[],
+  filePath?: string,
 ): HookEntry | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     diagnostics.push(`ignoring ${kind}[${index}]: must be an object`);
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  const command = record.command;
-  if (typeof command !== "string" || command === "") {
+  const rawCommand = record.command;
+  if (typeof rawCommand !== "string" || rawCommand === "") {
     diagnostics.push(
       `ignoring ${kind}[${index}]: "command" must be a non-empty string`,
     );
     return undefined;
+  }
+  let command = rawCommand;
+  const configDir = filePath !== undefined ? dirname(filePath) : undefined;
+  const isRelative =
+    !isAbsolute(command) &&
+    (command.includes("/") ||
+      command.includes("\\") ||
+      command === "." ||
+      command === "..");
+  if (isRelative && configDir !== undefined) {
+    command = resolve(configDir, command);
   }
   const args = record.args ?? [];
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
@@ -108,8 +122,8 @@ function parseEntry(
     );
     return undefined;
   }
-  const condition =
-    typeof record.condition === "string" ? record.condition : undefined;
+  const rawCondition = record.condition ?? record.if;
+  const condition = typeof rawCondition === "string" ? rawCondition : undefined;
   const format =
     record.format === "markdown" || record.format === "plain"
       ? record.format
@@ -123,6 +137,7 @@ function parseEntry(
     ...(condition ? { condition } : {}),
     ...(format ? { format } : {}),
     ...(chain ? { chain } : {}),
+    ...(isRelative && configDir ? { configDir } : {}),
   };
 }
 
@@ -169,7 +184,7 @@ function parseFile(
       continue;
     }
     list.forEach((entry, index) => {
-      const parsedEntry = parseEntry(entry, kind, index, diagnostics);
+      const parsedEntry = parseEntry(entry, kind, index, diagnostics, path);
       if (parsedEntry !== undefined) config[kind].push(parsedEntry);
     });
   }
