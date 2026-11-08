@@ -764,6 +764,7 @@ describe("subagent tool", () => {
   it("resumes a failed child with the same id and an incremented attempt", async () => {
     const failed: SubagentState = {
       ...running,
+      pid: 999_999_999,
       status: "failed",
       attempt: 1,
       parentSession: "session-1",
@@ -804,6 +805,75 @@ describe("subagent tool", () => {
       ctx as never,
     );
     expect(textOf(notFailed)).toContain("only failed");
+  });
+
+  it("refuses to resume a failed subagent while its old pid is still alive", async () => {
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      pid: process.pid,
+      status: "failed",
+    });
+    const res = await createTool().execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(res)).toContain("still alive");
+    expect(mocks.startSubagent).not.toHaveBeenCalled();
+  });
+
+  it("caps child mode at the parent's ask mode even when session definition sets edit or autopilot", async () => {
+    mocks.discoverAgents.mockReturnValue({ agents: [] });
+    const tool = createSubagentTool({
+      getSessionAgents: () => [
+        {
+          name: "writer",
+          description: "Session writer",
+          systemPrompt: "Write code.",
+          mode: "edit",
+          source: "session",
+        },
+        {
+          name: "auto-writer",
+          description: "Session auto",
+          systemPrompt: "Auto code.",
+          mode: "autopilot",
+          source: "session",
+        },
+      ],
+    });
+
+    await tool.execute(
+      "1",
+      { action: "start", agent: "writer", task: "do edit" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.startSubagent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PI_SUBAGENT_MODE: "ask",
+        }),
+      }),
+    );
+
+    await tool.execute(
+      "2",
+      { action: "start", agent: "auto-writer", task: "do auto" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.startSubagent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          PI_SUBAGENT_MODE: "ask",
+        }),
+      }),
+    );
   });
 
   it("reports validation errors", async () => {

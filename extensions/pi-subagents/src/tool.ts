@@ -11,6 +11,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { truncateText } from "@hollowheap/core/format";
 import { session } from "@hollowheap/core/state";
+import { isProcessAlive } from "@hollowheap/runtime/process";
 import { withCancellableProgress } from "@hollowheap/tui/progress";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
@@ -542,7 +543,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           const effectiveMode =
             parentMode && parentMode !== "ask"
               ? parentMode
-              : (effectiveAgent.mode ?? "ask");
+              : effectiveAgent.mode === "plan"
+                ? "plan"
+                : "ask";
           const parentSession = ctx.sessionManager?.getSessionId?.();
           let state: SubagentState;
           try {
@@ -661,6 +664,14 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               `only failed subagents can resume: ${state.status}`,
             );
           }
+          if (
+            state.pid !== undefined &&
+            isProcessAlive(state.pid, state.startTime)
+          ) {
+            return errorResult(
+              `cannot resume subagent ${id}: process ${state.pid} is still alive`,
+            );
+          }
           const config = loadSubagentsConfig(agentDir);
           if (state.depth > config.maxDepth) {
             return errorResult(
@@ -721,7 +732,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           const effectiveMode =
             parentMode && parentMode !== "ask"
               ? parentMode
-              : (effectiveAgent.mode ?? "ask");
+              : effectiveAgent.mode === "plan"
+                ? "plan"
+                : "ask";
           const resumed = await startSubagent({
             agentDir,
             id,

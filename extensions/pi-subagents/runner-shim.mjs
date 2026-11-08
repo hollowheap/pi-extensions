@@ -117,8 +117,31 @@ if (readState().status === "cancelled") {
 const child = spawn(config.command, config.args || [], {
   cwd: config.cwd,
   env: Object.assign({}, process.env, config.env || {}),
+  detached: true,
   stdio: ["pipe", "pipe", "pipe"],
 });
+
+function signalChildGroup(signal) {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+    return;
+  } catch {}
+  try {
+    process.kill(child.pid, signal);
+  } catch {}
+}
+
+function isChildGroupAlive() {
+  if (child.pid === undefined) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+
 child.stdout.pipe(log, { end: false });
 child.stderr.pipe(log, { end: false });
 child.stdin.on("error", (error) => {
@@ -139,14 +162,10 @@ update({
 });
 if (readState().status === "cancelled") {
   aborting = true;
-  try {
-    child.kill("SIGTERM");
-  } catch {}
+  signalChildGroup("SIGTERM");
   setTimeout(() => {
-    if (!exited) {
-      try {
-        child.kill("SIGKILL");
-      } catch {}
+    if (!exited || isChildGroupAlive()) {
+      signalChildGroup("SIGKILL");
     }
   }, 250);
 } else if (
@@ -212,14 +231,10 @@ const server = net.createServer((socket) => {
       }
       if (action === "abort") {
         aborting = true;
-        try {
-          child.kill("SIGTERM");
-        } catch {}
+        signalChildGroup("SIGTERM");
         setTimeout(() => {
-          if (!exited) {
-            try {
-              child.kill("SIGKILL");
-            } catch {}
+          if (!exited || isChildGroupAlive()) {
+            signalChildGroup("SIGKILL");
           }
         }, 250);
         socket.write(`${JSON.stringify({ id, ok: true })}\n`);
@@ -259,6 +274,7 @@ function closeServer() {
 function finish(status, code) {
   if (exited) return;
   exited = true;
+  signalChildGroup("SIGTERM");
   update({
     status,
     exitCode: typeof code === "number" ? code : null,
@@ -266,7 +282,25 @@ function finish(status, code) {
   });
   log.end();
   closeServer();
-  setTimeout(() => process.exit(0), 50);
+  const exitNow = () => {
+    if (isChildGroupAlive()) {
+      signalChildGroup("SIGKILL");
+    }
+    setTimeout(() => process.exit(0), 25);
+  };
+  if (!isChildGroupAlive()) {
+    exitNow();
+    return;
+  }
+  const deadline = Date.now() + 200;
+  const poll = () => {
+    if (!isChildGroupAlive() || Date.now() >= deadline) {
+      exitNow();
+      return;
+    }
+    setTimeout(poll, 25);
+  };
+  setTimeout(poll, 25);
 }
 
 child.on("error", (error) => {
@@ -279,14 +313,10 @@ child.on("exit", (code) => {
 
 function terminateChild() {
   aborting = true;
-  try {
-    child.kill("SIGTERM");
-  } catch {}
+  signalChildGroup("SIGTERM");
   setTimeout(() => {
-    if (!exited) {
-      try {
-        child.kill("SIGKILL");
-      } catch {}
+    if (!exited || isChildGroupAlive()) {
+      signalChildGroup("SIGKILL");
     }
   }, 250);
 }

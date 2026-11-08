@@ -222,7 +222,15 @@ export async function abortSubagent(
   const store = new SubagentStore(agentDir);
   const state = store.read(id);
   if (state === undefined) throw new Error(`subagent not found: ${id}`);
-  if (state.status !== "running" && state.status !== "starting") return;
+  const childAlive =
+    state.pid !== undefined && isProcessAlive(state.pid, state.startTime);
+  if (
+    state.status !== "running" &&
+    state.status !== "starting" &&
+    !childAlive
+  ) {
+    return;
+  }
   const pid = state.pid;
   const runnerPid = state.runnerPid;
   try {
@@ -232,7 +240,7 @@ export async function abortSubagent(
     if (runnerPid !== undefined) {
       await cancelProcessGroup(runnerPid, state.runnerStartTime, 250);
     }
-    if (pid !== undefined && isProcessAlive(pid, state.startTime)) {
+    if (pid !== undefined) {
       await cancelProcessGroup(pid, state.startTime, 250);
     }
   } finally {
@@ -287,6 +295,7 @@ export async function reconcileSubagent(
   const missingProcess = state.pid === undefined && !withinStartupGrace;
   const deadSocket =
     !withinStartupGrace &&
+    !childAlive &&
     state.socket !== undefined &&
     !(await isSocketConnectable(state.socket));
   if (!deadProcess && !missingProcess && !deadSocket) return state;

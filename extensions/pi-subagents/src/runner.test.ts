@@ -118,7 +118,7 @@ describe("subagent runner", () => {
     expect(done?.status).toBe("cancelled");
   });
 
-  it("keeps a starting runner through the grace period, then fails a stale socket", async () => {
+  it("keeps a starting runner through the grace period, then fails a stale socket when the child is not alive", async () => {
     const root = agentDir();
     const store = new SubagentStore(root);
     const socket = store.socketPath("startup");
@@ -130,7 +130,6 @@ describe("subagent runner", () => {
       depth: 1,
       attempt: 1,
       startedAt: Date.now(),
-      pid: process.pid,
       socket,
     });
 
@@ -145,6 +144,74 @@ describe("subagent runner", () => {
     store.write({ ...existing, startedAt: Date.now() - 10_000 });
     const after = await reconcileSubagent(root, store.read("startup") as never);
     expect(after.status).toBe("failed");
+  });
+
+  it("keeps a live child running even when its socket is unreachable after grace", async () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "live-no-sock",
+      status: "running",
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now() - 10_000,
+      pid: process.pid,
+      socket: store.socketPath("live-no-sock"),
+    });
+
+    const reconciled = await reconcileSubagent(
+      root,
+      store.read("live-no-sock") as never,
+    );
+    expect(reconciled.status).toBe("running");
+  });
+
+  it("kills the child group when the runner fails on server listen error", async () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    const statePath = store.statePath("listen-fail");
+    const logPath = store.logPath("listen-fail");
+    const runnerConfigPath = join(root, "subagents", "listen-fail.runner.json");
+    store.write({
+      id: "listen-fail",
+      status: "starting",
+      agent: "worker",
+      task: "wait",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now(),
+    });
+    const { writeFileSync } = await import("node:fs");
+    const { spawn } = await import("node:child_process");
+    const { fileURLToPath } = await import("node:url");
+    const shimPath = fileURLToPath(
+      new URL("../runner-shim.mjs", import.meta.url),
+    );
+    writeFileSync(
+      runnerConfigPath,
+      JSON.stringify({
+        statePath,
+        logPath,
+        socketPath: join(root, "x".repeat(140), "bad.sock"),
+        command: process.execPath,
+        args: ["-e", "setInterval(() => {}, 1000)"],
+        cwd: process.cwd(),
+      }),
+    );
+
+    await new Promise<void>((resolve) => {
+      const proc = spawn(process.execPath, [shimPath, runnerConfigPath], {
+        stdio: "ignore",
+      });
+      proc.on("exit", () => resolve());
+    });
+
+    const after = store.read("listen-fail");
+    expect(after?.status).toBe("failed");
+    expect(after?.pid).toBeTypeOf("number");
+    expect(isProcessAlive(after?.pid, after?.startTime)).toBe(false);
   });
 
   it("fails a runner whose pid was reused", async () => {
