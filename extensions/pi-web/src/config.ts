@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { updateJsonConfig } from "@hollowheap/core/config";
 import { isFetchProvider, isProviderId } from "./providers/selection.js";
 import type { FetchProvider, ProviderId } from "./providers/types.js";
 
@@ -120,15 +121,6 @@ export interface WebSettings {
   fetchOrder?: readonly FetchProvider[];
 }
 
-function readRoot(path: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function setOrder(
   root: Record<string, unknown>,
   key: "search" | "fetch",
@@ -149,15 +141,12 @@ export function saveWebSettings(
   settings: WebSettings,
 ): string {
   const path = join(agentDir, CONFIG_FILE_NAME);
-  const root = readRoot(path);
-  setOrder(root, "search", settings.searchOrder);
-  setOrder(root, "fetch", settings.fetchOrder);
-  mkdirSync(agentDir, { recursive: true });
-  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(root, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
+  const res = updateJsonConfig(path, (root) => {
+    setOrder(root, "search", settings.searchOrder);
+    setOrder(root, "fetch", settings.fetchOrder);
   });
-  renameSync(temporary, path);
-  return path;
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+  return res.path;
 }

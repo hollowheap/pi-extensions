@@ -145,4 +145,14 @@ describe("loadWebConfig", () => {
     expect(config.fetchOrder).toBeUndefined();
     expect(config.diagnostics).toHaveLength(2);
   });
+
+  it("throws when existing config is invalid JSON and leaves the file unchanged", () => {
+    const dir = agentDir();
+    const broken = "{\ninvalid json";
+    write(dir, broken);
+
+    expect(() => saveWebSettings(dir, { searchOrder: ["exa"] })).toThrow();
+
+    expect(readFileSync(join(dir, CONFIG_FILE_NAME), "utf8")).toBe(broken);
+  });
 });

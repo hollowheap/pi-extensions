@@ -121,4 +121,20 @@ describe("HTML extraction", () => {
     expect(page.links[0]?.url).toBe("https://example.com/x");
     expect(page.media[0]?.url).toBe("https://example.com/i.png");
   });
+
+  it("handles hostile input without regex backtracking in under 100 ms", () => {
+    const unclosedScript = `<script>${"x".repeat(200_000)}`;
+    const startScript = performance.now();
+    const outScript = htmlToMarkdown(unclosedScript);
+    const durationScript = performance.now() - startScript;
+    expect(outScript).toBe("");
+    expect(durationScript).toBeLessThan(100);
+
+    const unclosedTag = `<${"a".repeat(200_000)}`;
+    const startTag = performance.now();
+    const outTag = htmlToMarkdown(unclosedTag);
+    const durationTag = performance.now() - startTag;
+    expect(outTag).toBe(unclosedTag);
+    expect(durationTag).toBeLessThan(100);
+  });
 });

@@ -570,6 +570,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
           safeMedia.length > FETCH_MAX_MEDIA;
         if (getCapabilities().images && !signal?.aborted) {
           const preview = deps.previewMedia ?? fetchMediaPreview;
+          const previewSignal = providerSignal(signal, 15_000);
           await Promise.all(
             media
               .filter(
@@ -578,7 +579,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
               .slice(0, 2)
               .map(async (item) => {
                 try {
-                  const result = await preview(item.url, signal);
+                  const result = await preview(item.url, previewSignal);
                   if (result !== undefined) {
                     setMediaPreview(item.url, result);
                   }

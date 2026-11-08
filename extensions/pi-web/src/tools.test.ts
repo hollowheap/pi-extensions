@@ -530,7 +530,7 @@ describe("tool renderers", () => {
       );
       expect(previewMedia).toHaveBeenCalledWith(
         "https://example.com/pic.png",
-        undefined,
+        expect.any(AbortSignal),
       );
 
       const expandedComp = tool.renderResult?.(
@@ -540,6 +540,63 @@ describe("tool renderers", () => {
         {} as never,
       );
       expect(expandedComp?.render(80).join("\n")).toContain("\x1b_G");
+    } finally {
+      setCapabilities(previous);
+    }
+  });
+
+  it("cancels in-flight image preview fetches when tool signal is aborted", async () => {
+    const previous = getCapabilities();
+    setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+    try {
+      const controller = new AbortController();
+      let previewSignal: AbortSignal | undefined;
+      const previewMedia = vi.fn(async (_url: string, signal?: AbortSignal) => {
+        previewSignal = signal;
+        return new Promise<{ data: string; mimeType: string }>(
+          (_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              const err = new Error("aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          },
+        );
+      });
+      const tool = createWebFetchTool({
+        fetch: vi.fn().mockResolvedValue({
+          url: "https://example.com",
+          finalUrl: "https://example.com",
+          contentType: "text/html",
+          content: "hello",
+          links: [],
+          media: [
+            {
+              url: "https://example.com/abort-pic.png",
+              kind: "image" as const,
+            },
+          ],
+          truncated: false,
+        }),
+        previewMedia,
+      });
+
+      const executePromise = tool.execute(
+        "1",
+        { url: "https://example.com" },
+        controller.signal,
+        undefined,
+        {} as never,
+      );
+
+      await vi.waitFor(() => expect(previewMedia).toHaveBeenCalled());
+      expect(previewSignal).toBeDefined();
+      expect(previewSignal?.aborted).toBe(false);
+
+      controller.abort();
+
+      expect(previewSignal?.aborted).toBe(true);
+      await executePromise;
     } finally {
       setCapabilities(previous);
     }

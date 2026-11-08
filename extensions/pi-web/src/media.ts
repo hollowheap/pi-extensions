@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { providerSignal } from "./providers/selection.js";
 import {
   type HostResolver,
   MAX_REDIRECTS,
@@ -74,12 +75,13 @@ export async function fetchMediaPreview(
   fetchImpl: typeof fetch = globalThis.fetch,
   resolveHost?: HostResolver,
 ): Promise<MediaPreview | undefined> {
+  const timeoutSignal = providerSignal(signal, 15_000);
   let currentUrl = url;
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     assertSafeUrl(currentUrl);
     await assertSafeResolvedUrl(currentUrl, resolveHost);
     const response = await fetchImpl(currentUrl, {
-      signal,
+      signal: timeoutSignal,
       redirect: "manual",
     });
     if (

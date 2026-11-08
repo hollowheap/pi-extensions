@@ -34,7 +34,7 @@ export function decodeEntities(value: string): string {
 }
 
 export function stripTags(value: string): string {
-  return value.replace(/<[^>]+>/g, " ");
+  return value.replace(/<[^>]*>/g, " ");
 }
 
 export function resolveUrl(href: string, base?: string): string {
@@ -217,20 +217,14 @@ export function htmlToMarkdown(html: string, base?: string): string {
   });
   out = out
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(
-      /<li\b[^>]*>([\s\S]*?)<\/li>/gi,
-      (_, text) => `\n- ${stripTags(text).trim()}`,
-    )
+    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(/<\/li>/gi, "\n")
     .replace(/<\/(ul|ol)>/gi, "\n")
-    .replace(
-      /<p\b[^>]*>([\s\S]*?)<\/p>/gi,
-      (_, text) => `\n\n${stripTags(text).trim()}\n\n`,
-    )
-    .replace(
-      /<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi,
-      (_, text) => `\n> ${stripTags(text).trim()}\n\n`,
-    )
-    .replace(/<[^>]+>/g, " ");
+    .replace(/<p\b[^>]*>/gi, "\n\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<blockquote\b[^>]*>/gi, "\n> ")
+    .replace(/<\/blockquote>/gi, "\n\n")
+    .replace(/<[^>]*>/g, " ");
   return decodeEntities(out)
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
