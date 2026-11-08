@@ -124,6 +124,7 @@ function setupUsageExtension() {
         output: number;
         cacheRead?: number;
         cacheWrite?: number;
+        cost?: { total?: number };
       },
       model?: string,
     ) =>
@@ -452,6 +453,52 @@ describe("subagent usage", () => {
       expect.stringContaining("@sub-1 (scout)"),
     );
   });
+
+  it("subagent turns with cost.total === 0 use price table and positive provider cost is kept", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-sub-"));
+    tempDirs.push(dir);
+    const subZero = createSubagentState(dir, "sub-zero", "session-1");
+    writeFileSync(
+      subZero.sessionPath,
+      `${JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          model: "claude-3-5-sonnet",
+          usage: {
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { total: 0 },
+          },
+        },
+      })}\n`,
+    );
+    const subProvider = createSubagentState(dir, "sub-prov", "session-1");
+    writeFileSync(
+      subProvider.sessionPath,
+      `${JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          model: "claude-3-5-sonnet",
+          usage: {
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { total: 25.5 },
+          },
+        },
+      })}\n`,
+    );
+    const rows = scanSubagentUsage(dir, "session-1");
+    const zeroRow = rows.find((r) => r.id === "sub-zero");
+    const provRow = rows.find((r) => r.id === "sub-prov");
+    expect(zeroRow?.cost).toBe(18);
+    expect(provRow?.cost).toBe(25.5);
+  });
 });
 
 describe("formatUsageReport", () => {
@@ -525,6 +572,27 @@ describe("pi-usage extension lifecycle", () => {
       "claude-3-5-sonnet",
     );
     expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(18);
+  });
+
+  it("keeps positive provider cost and falls back to price table when cost.total is 0", () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+
+    // Turn with positive provider cost keeps that value
+    env.messageEnd({
+      input: 1_000_000,
+      output: 500_000,
+      cost: { total: 5.5 },
+    });
+    expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(5.5);
+
+    // Turn with cost.total === 0 falls back to price-table cost (1M * 2 + 0.5M * 8 = 6.0 => 5.5 + 6.0 = 11.5)
+    env.messageEnd({
+      input: 1_000_000,
+      output: 500_000,
+      cost: { total: 0 },
+    });
+    expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(11.5);
   });
 
   it("does not overwrite usage when the session manager lacks branch accessors", () => {
@@ -733,5 +801,39 @@ describe("pi-usage extension lifecycle", () => {
 
     env.sessionShutdown();
     expect(getSessionUsage(env.ctx.sessionManager).totalTokens).toBe(0);
+  });
+
+  it("restores the active branch usage on session_tree when two branches exist", () => {
+    const env = setupUsageExtension();
+    const branchA = [
+      {
+        customType: USAGE_ENTRY_TYPE,
+        data: {
+          inputTokens: 1_000,
+          outputTokens: 500,
+          totalCost: 0.5,
+        },
+      },
+    ];
+    const branchB = [
+      {
+        customType: USAGE_ENTRY_TYPE,
+        data: {
+          inputTokens: 200,
+          outputTokens: 100,
+          totalCost: 0.1,
+        },
+      },
+    ];
+    env.customEntries.push(...branchA, ...branchB);
+    (
+      env.sessionManager as {
+        getBranch?: () => readonly unknown[];
+      }
+    ).getBranch = vi.fn(() => branchA);
+
+    env.sessionTree();
+    expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(0.5);
+    expect(env.sessionManager.getEntries).not.toHaveBeenCalled();
   });
 });

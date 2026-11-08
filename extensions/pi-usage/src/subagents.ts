@@ -1,9 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-  calculateDollarCost,
-  resolveModelPricing,
-} from "@hollowheap/core/pricing";
+import { messageCost } from "@hollowheap/core/pricing";
 import type { CumulativeUsage, ModelUsage } from "./index.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -81,17 +78,7 @@ function readMessageUsage(
   const output = Math.max(0, usage.output);
   const cacheRead = numberOrZero(usage.cacheRead);
   const cacheWrite = numberOrZero(usage.cacheWrite);
-  const costObject = isRecord(usage.cost) ? usage.cost : undefined;
-  let cost = numberOrZero(costObject?.total);
-  if (cost === 0) {
-    const pricing = resolveModelPricing(model);
-    if (pricing) {
-      cost = calculateDollarCost(
-        { input, output, cacheRead, cacheWrite },
-        pricing,
-      );
-    }
-  }
+  const cost = messageCost({ usage, model }, model);
   return { input, output, cacheRead, cacheWrite, cost };
 }
 

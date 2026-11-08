@@ -2,11 +2,7 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import {
-  calculateDollarCost,
-  formatDollarCost,
-  resolveModelPricing,
-} from "@hollowheap/core/pricing";
+import { formatDollarCost, messageCost } from "@hollowheap/core/pricing";
 import {
   type CumulativeUsage,
   type SubagentUsage,
@@ -221,18 +217,7 @@ export default function (pi: ExtensionAPI) {
       modelId === "unknown" || contextModel?.id === modelId
         ? contextModel
         : modelId;
-    const pricing = resolveModelPricing(pricingModel);
-    const turnCost = pricing
-      ? calculateDollarCost(
-          {
-            input: usage.input,
-            output: usage.output,
-            cacheRead: usage.cacheRead,
-            cacheWrite: usage.cacheWrite,
-          },
-          pricing,
-        )
-      : 0;
+    const turnCost = messageCost(event.message, pricingModel);
     const next = recordTurnUsage(
       current,
       {
