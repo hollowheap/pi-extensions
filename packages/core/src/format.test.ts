@@ -37,3 +37,15 @@ describe("displayPath", () => {
     expect(displayPath("/work", "/other/a.ts")).toBe("../other/a.ts");
   });
 });
+
+describe("sanitizeTerminalText", () => {
+  it("removes CSI, OSC, ESC, and C0/C1 control bytes while keeping newline and tab", async () => {
+    const { sanitizeTerminalText } = await import("./format.js");
+    const dirty =
+      "hello\t\x1b[31mred\x1b[0m\n" +
+      "\x1b]0;pwned-title\x07" +
+      "\x1b]52;c;YWJj\x1b\\" +
+      "line2\r\x00\x07\x08\x1b[2J\x9b32mok\x85\x9fend";
+    expect(sanitizeTerminalText(dirty)).toBe("hello\tred\nline2okend");
+  });
+});

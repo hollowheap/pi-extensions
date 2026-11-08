@@ -138,4 +138,71 @@ describe("checkShell", () => {
     expect(checkShell("&&", allow).decision).toBe("deny");
     expect(checkShell("Git status", allow).decision).toBe("ask");
   });
+
+  it("asks for destructive commands even when broad command prefixes are allowed", () => {
+    const broadAllow = rules([
+      "allow shell rm",
+      "allow shell find",
+      "allow shell git",
+      "allow shell git push",
+      "allow shell timeout",
+      "allow shell nohup",
+      "allow shell command",
+      "allow shell ls",
+    ]);
+
+    for (const command of [
+      "rm -rf /",
+      "rm -rf ~",
+      "rm -fr ~/projects",
+      "find / -delete",
+      "find . -exec rm -rf {} \\;",
+      "git push --force origin main",
+      "git push -f origin main",
+    ]) {
+      expect(checkShell(command, broadAllow).decision).toBe("ask");
+    }
+  });
+
+  it("does not let wrappers or separators hide a destructive command", () => {
+    const broadAllow = rules([
+      "allow shell rm",
+      "allow shell find",
+      "allow shell git",
+      "allow shell ls",
+      "allow shell echo",
+    ]);
+
+    for (const command of [
+      "timeout 5 rm -rf /",
+      "timeout -k 2 5 rm -rf ~",
+      "nohup rm -rf /",
+      "command rm -rf ~",
+      "env FOO=1 rm -rf /",
+      "env find / -delete",
+      "timeout 10 find . -exec rm -rf {} \\;",
+      "nohup git push --force origin main",
+      "command git push -f",
+      "ls; rm -rf /",
+      "ls && find / -delete",
+      "echo ok | git push --force",
+    ]) {
+      expect(checkShell(command, broadAllow).decision).toBe("ask");
+    }
+
+    // Explicit allow for the destructive command opts out
+    expect(
+      checkShell("rm -rf /", rules(["allow shell rm -rf /"])).decision,
+    ).toBe("allow");
+    expect(
+      checkShell(
+        "git push --force origin main",
+        rules(["allow shell git push --force"]),
+      ).decision,
+    ).toBe("allow");
+    expect(
+      checkShell("find / -delete", rules(["allow shell find / -delete"]))
+        .decision,
+    ).toBe("allow");
+  });
 });

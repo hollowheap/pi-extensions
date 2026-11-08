@@ -84,15 +84,17 @@ describe("loadPermissions", () => {
     ]);
   });
 
-  it("reports parse diagnostics once per mtime change", () => {
+  it("reports parse diagnostics once per mtime change and fails closed to ask rules", () => {
     const root = workspace();
     const agentDir = join(root, "agent");
     const path = join(agentDir, "permissions.json");
     const diagnostics: string[] = [];
 
     write(path, "{", 1_000);
-    expect(load(agentDir, root, false, diagnostics)).toEqual([]);
-    expect(load(agentDir, root, false, diagnostics)).toEqual([]);
+    const fallbackRules = load(agentDir, root, false, diagnostics);
+    expect(fallbackRules.length).toBeGreaterThan(0);
+    expect(fallbackRules.every((r) => r.effect === "ask")).toBe(true);
+    expect(load(agentDir, root, false, diagnostics)).toEqual(fallbackRules);
     expect(diagnostics).toHaveLength(1);
 
     write(
@@ -104,7 +106,7 @@ describe("loadPermissions", () => {
     expect(diagnostics).toHaveLength(1);
 
     write(path, "{", 1_002);
-    expect(load(agentDir, root, false, diagnostics)).toEqual([]);
+    expect(load(agentDir, root, false, diagnostics)).toEqual(fallbackRules);
     expect(diagnostics).toHaveLength(2);
     expect(diagnostics[1]).toContain("not valid JSON");
   });
@@ -177,11 +179,12 @@ describe("loadPermissions", () => {
     const agentDir = join(root, "agent");
     write(join(agentDir, "permissions.json"), "{", 1_000);
 
-    expect(loadQuiet(agentDir, root, false)).toEqual([]);
+    const quietRules = loadQuiet(agentDir, root, false);
+    expect(quietRules.every((r) => r.effect === "ask")).toBe(true);
     const diagnostics: string[] = [];
-    expect(load(agentDir, root, false, diagnostics)).toEqual([]);
+    expect(load(agentDir, root, false, diagnostics)).toEqual(quietRules);
     expect(diagnostics).toHaveLength(1);
-    expect(load(agentDir, root, false, diagnostics)).toEqual([]);
+    expect(load(agentDir, root, false, diagnostics)).toEqual(quietRules);
     expect(diagnostics).toHaveLength(1);
   });
 
@@ -529,5 +532,79 @@ describe("loadModesConfig", () => {
       ),
     ).toEqual([]);
     expect(diagnostics).toEqual([]);
+  });
+});
+
+describe("updateJsonConfig", () => {
+  it("creates a missing file and writes through temp file and rename", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { updateJsonConfig } = await import("./config.js");
+    const root = workspace();
+    const path = join(root, "nested", "settings.json");
+
+    const result = updateJsonConfig(path, (current) => {
+      current.theme = "dark";
+    });
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ theme: "dark" });
+    expect(
+      readdirSync(dirname(path)).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
+  });
+
+  it("preserves untouched fields on a valid object config", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { updateJsonConfig } = await import("./config.js");
+    const root = workspace();
+    const path = join(root, "settings.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ keep: { nested: 1 }, count: 2 }, null, 2),
+    );
+
+    const result = updateJsonConfig(path, (current) => ({
+      ...current,
+      count: 3,
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      keep: { nested: 1 },
+      count: 3,
+    });
+  });
+
+  it("refuses to overwrite invalid JSON or non-object JSON and leaves file byte-identical", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { updateJsonConfig } = await import("./config.js");
+    const root = workspace();
+    const brokenPath = join(root, "broken.json");
+    const rawBroken = "{ not valid json // keep comment\n";
+    writeFileSync(brokenPath, rawBroken);
+
+    const brokenResult = updateJsonConfig(brokenPath, (current) => {
+      current.overwritten = true;
+    });
+
+    expect(brokenResult.ok).toBe(false);
+    if (!brokenResult.ok) {
+      expect(brokenResult.error).toContain(brokenPath);
+    }
+    expect(readFileSync(brokenPath, "utf8")).toBe(rawBroken);
+
+    const arrayPath = join(root, "array.json");
+    const rawArray = "[1, 2, 3]\n";
+    writeFileSync(arrayPath, rawArray);
+
+    const arrayResult = updateJsonConfig(arrayPath, (current) => {
+      current.overwritten = true;
+    });
+
+    expect(arrayResult.ok).toBe(false);
+    if (!arrayResult.ok) {
+      expect(arrayResult.error).toContain(arrayPath);
+    }
+    expect(readFileSync(arrayPath, "utf8")).toBe(rawArray);
   });
 });

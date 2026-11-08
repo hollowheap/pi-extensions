@@ -120,3 +120,59 @@ describe("calculateDollarCost and formatDollarCost", () => {
     expect(calculateDollarCost({ input: -5, output: 10_000 }, rates)).toBe(0);
   });
 });
+
+describe("messageCost", () => {
+  it("returns provider usage.cost.total when finite and above 0", async () => {
+    const { messageCost } = await import("./pricing.js");
+    expect(
+      messageCost(
+        {
+          input: 100_000,
+          output: 10_000,
+          cost: { total: 0.123 },
+        },
+        "unknown-model",
+      ),
+    ).toBe(0.123);
+  });
+
+  it("falls back to price-table cost when provider total is 0, negative, non-finite, or absent", async () => {
+    const { messageCost } = await import("./pricing.js");
+    const usageZero = {
+      input: 100_000,
+      output: 10_000,
+      cacheRead: 1_000_000,
+      cacheWrite: 1_000_000,
+      cost: { total: 0 },
+    };
+    // claude-3-5-sonnet: 0.30 + 0.15 + 0.30 + 3.75 = 4.50
+    expect(messageCost(usageZero, "anthropic/claude-3-5-sonnet")).toBeCloseTo(
+      4.5,
+    );
+    expect(
+      messageCost(
+        { input: 100_000, output: 10_000, cost: { total: -1 } },
+        "claude-3-5-sonnet",
+      ),
+    ).toBeCloseTo(0.45);
+    expect(
+      messageCost(
+        { input: 100_000, output: 10_000, cost: { total: Number.NaN } },
+        "claude-3-5-sonnet",
+      ),
+    ).toBeCloseTo(0.45);
+    expect(
+      messageCost({
+        usage: { input: 100_000, output: 10_000 },
+        model: "claude-3-5-sonnet",
+      }),
+    ).toBeCloseTo(0.45);
+  });
+
+  it("returns 0 when provider total is absent and model is unpriced", async () => {
+    const { messageCost } = await import("./pricing.js");
+    expect(
+      messageCost({ input: 50_000, output: 5_000 }, "unpriced-model"),
+    ).toBe(0);
+  });
+});

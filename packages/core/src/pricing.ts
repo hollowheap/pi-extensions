@@ -144,3 +144,100 @@ export function formatDollarCost(dollars: number): string {
   if (dollars < 0.01) return `$${dollars.toFixed(4)}`;
   return `$${dollars.toFixed(2)}`;
 }
+
+export interface MessageUsageLike {
+  input?: unknown;
+  output?: unknown;
+  cacheRead?: unknown;
+  cacheWrite?: unknown;
+  cost?: { total?: unknown } | unknown;
+}
+
+export interface MessageWithUsageLike {
+  usage?: MessageUsageLike;
+  model?: unknown;
+}
+
+function finiteNonNegative(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function isPricingRates(value: unknown): value is ModelPricingRates {
+  if (typeof value !== "object" || value === null) return false;
+  const typed = value as { input?: unknown; output?: unknown };
+  return (
+    typeof typed.input === "number" &&
+    Number.isFinite(typed.input) &&
+    typeof typed.output === "number" &&
+    Number.isFinite(typed.output)
+  );
+}
+
+/**
+ * Returns provider usage.cost.total when finite and above 0,
+ * else computes the price-table cost from token usage and model pricing.
+ */
+export function messageCost(
+  usageOrMessage: MessageUsageLike | MessageWithUsageLike | null | undefined,
+  model?: unknown,
+): number {
+  if (typeof usageOrMessage !== "object" || usageOrMessage === null) {
+    return 0;
+  }
+  const hasNestedUsage =
+    "usage" in usageOrMessage &&
+    typeof usageOrMessage.usage === "object" &&
+    usageOrMessage.usage !== null;
+  const usage: MessageUsageLike = hasNestedUsage
+    ? ((usageOrMessage as MessageWithUsageLike).usage ?? {})
+    : (usageOrMessage as MessageUsageLike);
+
+  const costObj =
+    typeof usage.cost === "object" && usage.cost !== null
+      ? (usage.cost as { total?: unknown })
+      : undefined;
+  const reportedTotal = costObj?.total;
+  if (
+    typeof reportedTotal === "number" &&
+    Number.isFinite(reportedTotal) &&
+    reportedTotal > 0
+  ) {
+    return reportedTotal;
+  }
+
+  const messageModel = hasNestedUsage
+    ? (usageOrMessage as MessageWithUsageLike).model
+    : undefined;
+  let rates: ModelPricingRates | undefined;
+  if (isPricingRates(model)) {
+    rates = model;
+  } else if (
+    typeof messageModel === "string" &&
+    messageModel !== "" &&
+    messageModel !== "unknown"
+  ) {
+    const fallbackId =
+      typeof model === "object" && model !== null
+        ? (model as { id?: unknown }).id
+        : undefined;
+    rates =
+      fallbackId === messageModel
+        ? resolveModelPricing(model)
+        : (resolveModelPricing(messageModel) ?? resolveModelPricing(model));
+  } else {
+    rates = resolveModelPricing(model ?? messageModel);
+  }
+  if (rates === undefined) return 0;
+
+  return calculateDollarCost(
+    {
+      input: finiteNonNegative(usage.input),
+      output: finiteNonNegative(usage.output),
+      cacheRead: finiteNonNegative(usage.cacheRead),
+      cacheWrite: finiteNonNegative(usage.cacheWrite),
+    },
+    rates,
+  );
+}

@@ -326,15 +326,15 @@ export function restoreSessionUsage(
   manager: UsageSessionManager,
 ): CumulativeUsage {
   let entries: readonly unknown[] | undefined;
-  if (typeof manager.getEntries === "function") {
+  if (typeof manager.getBranch === "function") {
     try {
-      entries = manager.getEntries();
+      entries = manager.getBranch();
     } catch {
       entries = undefined;
     }
-  } else if (typeof manager.getBranch === "function") {
+  } else if (typeof manager.getEntries === "function") {
     try {
-      entries = manager.getBranch();
+      entries = manager.getEntries();
     } catch {
       entries = undefined;
     }

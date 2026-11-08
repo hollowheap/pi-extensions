@@ -1,4 +1,5 @@
 import { readlinkSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Rule, Tag, Verdict } from "./types.js";
 
@@ -25,6 +26,20 @@ const SEVERITY: Record<Verdict, number> = {
 
 const MAX_SYMLINK_HOPS = 40;
 
+export function normalizePolicyPath(rawPath: string): string {
+  let normalized = rawPath.replace(/[\u00a0\u202f]/g, " ");
+  if (normalized.startsWith("@")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized === "~") {
+    return homedir();
+  }
+  if (normalized.startsWith("~/") || normalized.startsWith(`~${sep}`)) {
+    return join(homedir(), normalized.slice(2));
+  }
+  return normalized;
+}
+
 function globToRegExp(pattern: string): RegExp {
   let source = "";
   for (const char of pattern) {
@@ -48,12 +63,13 @@ function tryRealpath(path: string): string | undefined {
   }
 }
 
-function resolveReal(root: string, path: string): string | undefined {
-  const absolute = isAbsolute(path)
-    ? path
+export function resolveReal(root: string, path: string): string | undefined {
+  const normalized = normalizePolicyPath(path);
+  const absolute = isAbsolute(normalized)
+    ? normalized
     : root.endsWith(sep)
-      ? `${root}${path}`
-      : `${root}${sep}${path}`;
+      ? `${root}${normalized}`
+      : `${root}${sep}${normalized}`;
   const queue = absolute.split(sep).filter((part) => part !== "");
   let current: string = sep;
   let hops = 0;
@@ -82,6 +98,22 @@ function resolveReal(root: string, path: string): string | undefined {
     queue.unshift(...target.split(sep).filter((segment) => segment !== ""));
   }
   return current;
+}
+
+export function isPolicySubpath(
+  candidateRoot: string,
+  targetActual: string,
+  baseRoot: string,
+): { matches: boolean; depth: number } {
+  const rootActual = resolveReal(baseRoot, candidateRoot);
+  if (rootActual === undefined) return { matches: false, depth: -1 };
+  const realCandidate = tryRealpath(rootActual) ?? rootActual;
+  const realTarget = tryRealpath(targetActual) ?? targetActual;
+  const rel = relative(realCandidate, realTarget);
+  const matches =
+    rel === "" ||
+    (!rel.startsWith("..") && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  return { matches, depth: matches ? realCandidate.length : -1 };
 }
 
 export type PathTag = "edit" | "read" | "search";

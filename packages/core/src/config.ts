@@ -1,5 +1,12 @@
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { getModeLayer } from "./modes.js";
 import { getMtimeCache } from "./mtime-cache.js";
 import {
@@ -89,40 +96,50 @@ function parseRuleEntry(
   return undefined;
 }
 
+const FALLBACK_ASK_RULES: readonly Rule[] = Object.freeze(
+  BUILTIN_TAGS.map((tag) =>
+    Object.freeze({ effect: "ask" as const, tag, pattern: "**" }),
+  ),
+);
+
 function parsePermissionsFile(
   content: string,
   path: string,
   diagnostics: string[],
-): { rules: Rule[]; toolTags: Record<string, Tag> } {
+): { rules: Rule[]; toolTags: Record<string, Tag>; failed: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
     diagnostics.push(`permissions file is not valid JSON: ${path}`);
-    return { rules: [], toolTags: {} };
+    return { rules: [], toolTags: {}, failed: true };
   }
 
   let entries: unknown[] = [];
   let toolEntries: unknown;
+  let failed = false;
   if (Array.isArray(parsed)) {
     entries = parsed;
   } else if (isRecord(parsed)) {
     if (parsed.rules !== undefined) {
       if (Array.isArray(parsed.rules)) entries = parsed.rules;
-      else diagnostics.push(`permissions "rules" must be an array: ${path}`);
+      else {
+        diagnostics.push(`permissions "rules" must be an array: ${path}`);
+        failed = true;
+      }
     }
     toolEntries = parsed.tools;
     if (parsed.rules === undefined && parsed.tools === undefined) {
       diagnostics.push(
         `permissions file must be {"rules": [...]} or [...]: ${path}`,
       );
-      return { rules: [], toolTags: {} };
+      return { rules: [], toolTags: {}, failed: true };
     }
   } else {
     diagnostics.push(
       `permissions file must be {"rules": [...]} or [...]: ${path}`,
     );
-    return { rules: [], toolTags: {} };
+    return { rules: [], toolTags: {}, failed: true };
   }
 
   const rules: Rule[] = [];
@@ -147,20 +164,20 @@ function parsePermissionsFile(
       }
     }
   }
-  return { rules, toolTags };
+  return { rules, toolTags, failed };
 }
 
 function readPermissions(
   path: string,
   mtime: number,
   diagnostics: string[],
-): { rules: Rule[]; toolTags: Record<string, Tag> } {
-  if (mtime < 0) return { rules: [], toolTags: {} };
+): { rules: Rule[]; toolTags: Record<string, Tag>; failed: boolean } {
+  if (mtime < 0) return { rules: [], toolTags: {}, failed: false };
   try {
     return parsePermissionsFile(readFileSync(path, "utf8"), path, diagnostics);
   } catch {
     diagnostics.push(`cannot read permissions file: ${path}`);
-    return { rules: [], toolTags: {} };
+    return { rules: [], toolTags: {}, failed: true };
   }
 }
 
@@ -201,18 +218,24 @@ function loadPolicy(options: LoadPermissionsOptions): {
 
   const diagnostics: string[] = [];
   const agent = readPermissions(agentPath, agentMtime, diagnostics);
+  let failed = agent.failed;
   const rules = [...agent.rules];
   const toolTags = { ...agent.toolTags };
   if (options.trusted) {
     const overlay = readPermissions(overlayPath, overlayMtime, diagnostics);
+    failed = failed || overlay.failed;
     rules.push(...overlay.rules);
     Object.assign(toolTags, overlay.toolTags);
   } else if (overlayMtime >= 0) {
     diagnostics.push("ignoring .pi/permissions.json: project is not trusted");
   }
 
+  const effectiveRules = failed
+    ? [...rules.filter((rule) => rule.effect === "deny"), ...FALLBACK_ASK_RULES]
+    : rules;
+
   const entry: PermissionsEntry = {
-    rules: Object.freeze(rules),
+    rules: Object.freeze(effectiveRules),
     toolTags: Object.freeze(toolTags),
     diagnostics: Object.freeze(diagnostics),
     reported: false,
@@ -420,4 +443,78 @@ export function loadModesConfig(
   MODES_CACHE.set(key, signature, entry);
   report(entry, onDiagnostic);
   return [...layers];
+}
+
+export type UpdateJsonConfigResult =
+  | { ok: true; path: string; data: Record<string, unknown>; error?: undefined }
+  | { ok: false; path: string; error: string };
+
+export function updateJsonConfig(
+  path: string,
+  mutate:
+    | ((current: Record<string, unknown>) => Record<string, unknown>)
+    | ((current: Record<string, unknown>) => void),
+): UpdateJsonConfigResult {
+  let root: Record<string, unknown> = {};
+  let raw: string | undefined;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        path,
+        error: `cannot read config file ${path}: ${detail}`,
+      };
+    }
+  }
+
+  if (raw !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        path,
+        error: `config file is not valid JSON (${path}): ${detail}`,
+      };
+    }
+    if (!isRecord(parsed)) {
+      return {
+        ok: false,
+        path,
+        error: `config file must be a JSON object: ${path}`,
+      };
+    }
+    root = { ...parsed };
+  }
+
+  const mutated = mutate(root);
+  const next = isRecord(mutated) ? mutated : root;
+  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      rmSync(temporary, { force: true });
+    } catch {
+      // Ignore temp cleanup failure.
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      path,
+      error: `cannot write config file ${path}: ${detail}`,
+    };
+  }
+
+  return { ok: true, path, data: next };
 }

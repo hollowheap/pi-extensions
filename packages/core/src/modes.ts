@@ -1,12 +1,20 @@
+import { resolve } from "node:path";
 import {
   isPathTag,
+  isPolicySubpath,
   matchExternal,
   matchPath,
   matchPathSpecific,
+  resolveReal,
 } from "./policy.js";
 import type { PathTag } from "./policy.js";
 import { type GateEntry, type ModeGate, getState } from "./registry.js";
-import { matchShellPart, shellPartSafety, splitShellParts } from "./shell.js";
+import {
+  matchShellPart,
+  shellPartDestructive,
+  shellPartSafety,
+  splitShellParts,
+} from "./shell.js";
 import {
   dropSession,
   effectiveCwd,
@@ -81,12 +89,19 @@ export interface ModeEnterResult {
   diagnostic?: string;
 }
 
+export type DecisionMap =
+  | ReadonlyMap<string, Verdict>
+  | Readonly<Record<string, Verdict>>;
+
 export interface EvaluateOptions {
   owner: unknown;
   cwd: string;
   tag: Tag;
   target: string;
   rules: readonly Rule[];
+  trustedRoots?: readonly string[];
+  sessionDecisions?: DecisionMap;
+  persistentDecisions?: DecisionMap;
 }
 
 export function registerMode(
@@ -219,17 +234,79 @@ function strictest(left: Verdict, right: Verdict): Verdict {
   return SEVERITY[right] > SEVERITY[left] ? right : left;
 }
 
+function entriesFromMap(
+  map: DecisionMap | undefined,
+): Array<[string, Verdict]> {
+  if (map === undefined) return [];
+  if (map instanceof Map) return [...map.entries()];
+  return Object.entries(map as Record<string, Verdict>);
+}
+
 function evaluatePath(
   options: EvaluateOptions,
   tag: PathTag,
   layer: ModeLayer | undefined,
   fallback: Effect,
 ): Verdict {
-  const hard = matchPath([], options.target, tag, options.cwd);
-  if (hard.outside) return "deny";
+  const base = resolve(options.cwd);
+  const actual = resolveReal(base, options.target);
+  if (actual === undefined) return "deny";
 
+  const persistentEntries = entriesFromMap(options.persistentDecisions);
+  for (const [decidedPath, effect] of persistentEntries) {
+    if (
+      effect === "deny" &&
+      isPolicySubpath(decidedPath, actual, base).matches
+    ) {
+      return "deny";
+    }
+  }
+
+  const sessionEntries = entriesFromMap(options.sessionDecisions);
+  for (const [decidedPath, effect] of sessionEntries) {
+    if (
+      effect === "deny" &&
+      isPolicySubpath(decidedPath, actual, base).matches
+    ) {
+      return "deny";
+    }
+  }
+
+  const hard = matchPath([], options.target, tag, options.cwd);
   const project = matchPath(options.rules, options.target, tag, options.cwd);
-  if (project.rule?.effect === "deny") return "deny";
+  if (!hard.outside && project.rule?.effect === "deny") return "deny";
+
+  let bestDecision: Verdict | undefined;
+  let bestDepth = -1;
+  for (const [decidedPath, effect] of [
+    ...sessionEntries,
+    ...persistentEntries,
+  ]) {
+    if (effect === "deny") continue;
+    const match = isPolicySubpath(decidedPath, actual, base);
+    if (!match.matches) continue;
+    if (match.depth > bestDepth) {
+      bestDepth = match.depth;
+      bestDecision = effect;
+    } else if (
+      match.depth === bestDepth &&
+      bestDecision !== undefined &&
+      SEVERITY[effect] > SEVERITY[bestDecision]
+    ) {
+      bestDecision = effect;
+    }
+  }
+
+  const inTrustedRoot = (options.trustedRoots ?? []).some(
+    (root) => isPolicySubpath(root, actual, base).matches,
+  );
+
+  if (hard.outside) {
+    if (layer?.name === "plan" && tag === "edit") return "deny";
+    if (bestDecision !== undefined) return bestDecision;
+    if (inTrustedRoot) return "allow";
+    return "deny";
+  }
 
   const tagOverrides = (layer?.overrides ?? []).filter(
     (rule) => rule.tag === tag && rule.effect !== "allow",
@@ -244,16 +321,15 @@ function evaluatePath(
     return override.rule.effect;
   }
   if (override.outside && tagOverrides.length > 0) {
-    // The target escapes the effective cwd, so the layer's own patterns do
-    // not describe it: the layer default decides instead of a project rule.
-    // A project rule may still tighten that default, never loosen it.
-    const projectEffect = project.rule?.effect;
+    const projectEffect = project.rule?.effect ?? bestDecision;
     return projectEffect === undefined
       ? fallback
       : strictest(fallback, projectEffect);
   }
 
+  if (bestDecision !== undefined) return bestDecision;
   if (project.rule !== undefined) return project.rule.effect;
+  if (inTrustedRoot) return "allow";
   return fallback;
 }
 
@@ -274,6 +350,12 @@ function evaluateShell(
     const project = matchShellPart(part, options.rules);
     if (project === "deny") return "deny";
     const override = matchShellPart(part, overrides);
+    if (override === "deny") return "deny";
+    if (shellPartDestructive(part) !== undefined) {
+      const destructiveVerdict: Verdict = project === "allow" ? "allow" : "ask";
+      verdict = strictest(verdict, destructiveVerdict);
+      continue;
+    }
     const partVerdict = override ?? project ?? fallback;
     if (partVerdict === "deny") return "deny";
     verdict = strictest(verdict, partVerdict);

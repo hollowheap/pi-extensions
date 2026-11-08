@@ -188,6 +188,49 @@ describe("built-in modes", () => {
       ]),
     ).toBe("deny");
   });
+
+  it("asks for destructive shell commands in every mode including autopilot unless explicitly allowed", () => {
+    replaceConfigModes([
+      {
+        name: "autopilot",
+        defaults: ALLOW,
+        overrides: [{ tag: "shell", pattern: "rm", effect: "allow" as never }],
+      },
+    ]);
+    for (const mode of ["ask", "edit", "autopilot"]) {
+      for (const cmd of [
+        "rm -rf /",
+        "rm -rf ~",
+        "find / -delete",
+        "find . -exec rm -rf {} \\;",
+        "git push --force origin main",
+        "timeout 5 rm -rf /",
+        "nohup rm -rf ~",
+        "command find / -delete",
+        "env git push --force",
+        "ls; rm -rf /",
+        "ls && git push --force",
+        "echo ok | find / -delete",
+      ]) {
+        expect(evaluateAs(mode, "shell", cmd)).toBe("ask");
+      }
+    }
+
+    // Broad prefix allow does not opt out of destructive check
+    expect(
+      evaluateAs("autopilot", "shell", "git push --force origin main", [
+        rule("allow", "shell", "git"),
+        rule("allow", "shell", "git push"),
+      ]),
+    ).toBe("ask");
+
+    // Explicit allow rule for the destructive command opts out
+    expect(
+      evaluateAs("autopilot", "shell", "git push --force origin main", [
+        rule("allow", "shell", "git push --force"),
+      ]),
+    ).toBe("allow");
+  });
 });
 
 describe("mode overrides", () => {

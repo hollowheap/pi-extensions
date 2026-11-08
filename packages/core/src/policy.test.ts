@@ -200,4 +200,76 @@ describe("evaluate precedence", () => {
       evaluateAs("edit", "shell", "git status && git push", askRules),
     ).toBe("ask");
   });
+
+  it("expands ~/ and leading @ before matching targets", () => {
+    const rules: Rule[] = [{ tag: "edit", pattern: "*", effect: "allow" }];
+    expect(checkPath(rules, "~/.bashrc", "edit", ROOT)).toBe("deny");
+    expect(checkPath(rules, "~/sub/file.txt", "edit", ROOT)).toBe("deny");
+    expect(checkPath(rules, "@/etc/passwd", "edit", ROOT)).toBe("deny");
+    expect(checkPath(rules, "@src/a.ts", "edit", ROOT)).toBe("allow");
+
+    expect(evaluateAs("edit", "edit", "~/.bashrc")).toBe("deny");
+    expect(evaluateAs("edit", "edit", "@/etc/passwd")).toBe("deny");
+    expect(evaluateAs("edit", "edit", "@src/a.ts")).toBe("allow");
+  });
+
+  it("evaluates hard deny, persistent deny, session deny, most specific allow, trusted root, then mode default", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-core-prec-"));
+    const outside = mkdtempSync(join(tmpdir(), "pi-core-ext-"));
+    const owner = {};
+    setMode(owner, "edit");
+
+    // Outside workspace with no trusted root or decision -> hard deny
+    expect(
+      evaluate({
+        owner,
+        cwd: dir,
+        tag: "read",
+        target: join(outside, "file.txt"),
+        rules: [],
+      }),
+    ).toBe("deny");
+
+    // Trusted root allows when no deny exists
+    expect(
+      evaluate({
+        owner,
+        cwd: dir,
+        tag: "read",
+        target: join(outside, "file.txt"),
+        rules: [],
+        trustedRoots: [outside],
+      }),
+    ).toBe("allow");
+
+    // Persistent deny on child beats trusted root and shallower session allow
+    expect(
+      evaluate({
+        owner,
+        cwd: dir,
+        tag: "read",
+        target: join(outside, "secret.txt"),
+        rules: [],
+        trustedRoots: [outside],
+        sessionDecisions: new Map([[outside, "allow"]]),
+        persistentDecisions: { [join(outside, "secret.txt")]: "deny" },
+      }),
+    ).toBe("deny");
+
+    // Session deny on child beats trusted root and shallower persistent allow
+    expect(
+      evaluate({
+        owner,
+        cwd: dir,
+        tag: "read",
+        target: join(outside, "sub", "file.txt"),
+        rules: [],
+        trustedRoots: [outside],
+        persistentDecisions: { [outside]: "allow" },
+        sessionDecisions: new Map([[join(outside, "sub"), "deny"]]),
+      }),
+    ).toBe("deny");
+
+    dropSession(owner);
+  });
 });
