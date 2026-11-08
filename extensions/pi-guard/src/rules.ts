@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { loadGuardConfig, saveGuardConfig } from "./config.js";
 
@@ -113,26 +113,7 @@ export function checkPathTrust(
   const canonicalTarget = resolveCanonicalPath(workspaceRoot, targetPath);
   const inWorkspace = isSubpath(workspaceRoot, canonicalTarget);
 
-  if (inWorkspace) {
-    return {
-      isOutsideWorkspace: false,
-      isTrusted: true,
-      canonicalPath: canonicalTarget,
-    };
-  }
-
-  // Check if inside any configured trusted root
-  for (const root of trustedRoots) {
-    if (isSubpath(root, canonicalTarget, workspaceRoot)) {
-      return {
-        isOutsideWorkspace: true,
-        isTrusted: true,
-        canonicalPath: canonicalTarget,
-      };
-    }
-  }
-
-  // Check cached decisions: exact match first, then the most specific subpath.
+  // Check cached decisions first: exact match, then most specific subpath
   let cachedDecision: DecisionEffect | undefined =
     sessionDecisions?.get(canonicalTarget);
   if (cachedDecision === undefined) {
@@ -153,6 +134,37 @@ export function checkPathTrust(
     );
   }
 
+  // Deny ALWAYS holds, even when parent directory is trusted or allowed!
+  if (cachedDecision === "deny") {
+    return {
+      isOutsideWorkspace: !inWorkspace,
+      isTrusted: false,
+      canonicalPath: canonicalTarget,
+      cachedDecision: "deny",
+    };
+  }
+
+  if (inWorkspace) {
+    return {
+      isOutsideWorkspace: false,
+      isTrusted: true,
+      canonicalPath: canonicalTarget,
+      cachedDecision,
+    };
+  }
+
+  // Check if inside any configured trusted root
+  for (const root of trustedRoots) {
+    if (isSubpath(root, canonicalTarget, workspaceRoot)) {
+      return {
+        isOutsideWorkspace: true,
+        isTrusted: true,
+        canonicalPath: canonicalTarget,
+        cachedDecision: cachedDecision ?? "allow",
+      };
+    }
+  }
+
   return {
     isOutsideWorkspace: true,
     isTrusted: cachedDecision === "allow",
@@ -170,22 +182,33 @@ export function persistDecision(
   effect: DecisionEffect,
   scope: PersistenceScope,
   sessionCache?: Map<string, DecisionEffect>,
+  onNotify?: (message: string, type?: "info" | "warning" | "error") => void,
 ): void {
   if (scope !== "session" && scope !== "indefinite") {
     throw new Error(`Invalid persistence scope: ${String(scope)}`);
   }
 
+  // Always keep decision in memory sessionCache so active session honours it
+  sessionCache?.set(canonicalPath, effect);
+
   if (scope === "session") {
-    sessionCache?.set(canonicalPath, effect);
     return;
   }
+
+  const isDir = (() => {
+    try {
+      return statSync(canonicalPath).isDirectory();
+    } catch {
+      return false;
+    }
+  })();
 
   const config = loadGuardConfig(agentDir);
   const decisions = { ...(config.decisions ?? {}) };
   decisions[canonicalPath] = effect;
 
   const trustedRoots = [...(config.trustedRoots ?? [])];
-  if (effect === "allow" && !trustedRoots.includes(canonicalPath)) {
+  if (effect === "allow" && isDir && !trustedRoots.includes(canonicalPath)) {
     trustedRoots.push(canonicalPath);
   } else if (effect === "deny") {
     // If explicitly denied, remove from trustedRoots if present
@@ -195,9 +218,15 @@ export function persistDecision(
     }
   }
 
-  saveGuardConfig(agentDir, {
+  const res = saveGuardConfig(agentDir, {
     ...config,
     trustedRoots,
     decisions,
   });
+
+  if (!res.ok) {
+    onNotify?.(`pi-guard: ${res.error}`, "error");
+  }
 }
+
+export const persistGuardDecision = persistDecision;

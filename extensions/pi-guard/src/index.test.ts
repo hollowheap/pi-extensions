@@ -436,6 +436,15 @@ describe("pi-guard extension", () => {
     expect(withPromptLock).toHaveBeenCalled();
   });
 
+  it("passes full command without 500-character truncation to confirm dialog", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const longCommand = `echo ${"x".repeat(600)}`;
+    await expect(
+      call("bash", { command: longCommand }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", longCommand);
+  });
+
   it("runs allowlisted bash without asking", async () => {
     const { ctx, call } = setupProject(
       JSON.stringify({ rules: ["allow shell echo"] }),
@@ -689,6 +698,48 @@ describe("pi-guard extension", () => {
       "warning",
     );
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+  });
+
+  it("prompts again for edit or write when out-of-workspace read was approved", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-test-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+
+    await expect(
+      call("edit", { path: externalFile, oldText: "hello", newText: "world" }),
+    ).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks out-of-workspace child path when denied by project rules even if parent is trusted", async () => {
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-deny-"));
+    const secretFile = join(extDir, "secret.txt");
+    writeFileSync(secretFile, "secret");
+
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: [`deny edit ${secretFile}`, "allow edit *"],
+      }),
+    );
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: extDir })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+
+    await expect(
+      call("edit", { path: secretFile, oldText: "secret", newText: "exposed" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
   });
 });
 

@@ -11,7 +11,11 @@ import {
   loadPermissions,
   loadToolTags,
 } from "@hollowheap/core/config";
-import { displayTarget, truncateText } from "@hollowheap/core/format";
+import {
+  displayTarget,
+  sanitizeTerminalText,
+  truncateText,
+} from "@hollowheap/core/format";
 import {
   enterMode,
   evaluate,
@@ -53,6 +57,7 @@ interface GuardRuntime {
   sessionDecisions: Map<unknown, Map<string, DecisionEffect>>;
   sessionGrants: Map<unknown, TempGrant[]>;
   sessionTargets: Map<unknown, Set<string>>;
+  sessionApprovedTags: Map<unknown, Map<string, Set<string>>>;
   eventSink?: EventSink;
   lastOwner?: unknown;
 }
@@ -136,8 +141,9 @@ async function requestApproval(
       reason: `pi-guard: ${toolName} ${displayTarget(target)} needs approval (no UI)`,
     };
   }
+  const sanitizedTarget = sanitizeTerminalText(target);
   const approved = await withPromptLock(() =>
-    ctx.ui.confirm(`Allow ${toolName}?`, displayTarget(target)),
+    ctx.ui.confirm(`Allow ${toolName}?`, sanitizedTarget),
   );
   if (!approved) {
     return {
@@ -213,6 +219,7 @@ export default function (pi: ExtensionAPI) {
     sessionDecisions: new Map(),
     sessionGrants: new Map(),
     sessionTargets: new Map(),
+    sessionApprovedTags: new Map(),
     eventSink: pi.events,
   };
   pi.events.on("statusline:request", () => {
@@ -264,6 +271,12 @@ export default function (pi: ExtensionAPI) {
       );
 
       if (trust.isOutsideWorkspace) {
+        if (trust.cachedDecision === "deny") {
+          return {
+            block: true,
+            reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+          };
+        }
         if (trust.isTrusted) {
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
             return {
@@ -271,13 +284,33 @@ export default function (pi: ExtensionAPI) {
               reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
             };
           }
-          return undefined;
-        }
-        if (trust.cachedDecision === "deny") {
-          return {
-            block: true,
-            reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
-          };
+          const approvedTags = runtime.sessionApprovedTags
+            .get(ctx.sessionManager)
+            ?.get(trust.canonicalPath);
+          if (
+            (tag === "edit" || tag === "write") &&
+            approvedTags !== undefined &&
+            !approvedTags.has(tag) &&
+            !approvedTags.has("write") &&
+            !approvedTags.has("edit")
+          ) {
+            // Read approval never allows edit or write; proceed to ask dialog below
+          } else {
+            const verdict = evaluate({
+              owner: ctx.sessionManager,
+              cwd: ctx.cwd,
+              tag,
+              target,
+              rules: loadContextPermissions(ctx),
+            });
+            if (verdict === "deny") {
+              return {
+                block: true,
+                reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+              };
+            }
+            return undefined;
+          }
         }
 
         if (!ctx.hasUI || typeof ctx.ui.select !== "function") {
@@ -315,6 +348,28 @@ export default function (pi: ExtensionAPI) {
           runtime.sessionDecisions.set(ctx.sessionManager, currentSessionMap);
         }
 
+        if (
+          choice === "Allow (this session)" ||
+          choice === "Allow indefinitely"
+        ) {
+          let currentApprovedTags = runtime.sessionApprovedTags.get(
+            ctx.sessionManager,
+          );
+          if (!currentApprovedTags) {
+            currentApprovedTags = new Map();
+            runtime.sessionApprovedTags.set(
+              ctx.sessionManager,
+              currentApprovedTags,
+            );
+          }
+          let tags = currentApprovedTags.get(trust.canonicalPath);
+          if (!tags) {
+            tags = new Set();
+            currentApprovedTags.set(trust.canonicalPath, tags);
+          }
+          tags.add(tag);
+        }
+
         if (choice === "Allow (this session)") {
           persistDecision(
             getAgentDir(),
@@ -322,6 +377,7 @@ export default function (pi: ExtensionAPI) {
             "allow",
             "session",
             currentSessionMap,
+            (msg, t) => ctx.ui.notify(msg, t),
           );
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
             return {
@@ -338,6 +394,7 @@ export default function (pi: ExtensionAPI) {
             "allow",
             "indefinite",
             currentSessionMap,
+            (msg, t) => ctx.ui.notify(msg, t),
           );
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
             return {
@@ -354,6 +411,7 @@ export default function (pi: ExtensionAPI) {
             "ask",
             "session",
             currentSessionMap,
+            (msg, t) => ctx.ui.notify(msg, t),
           );
           return requestApproval(event.toolName, target, ctx);
         }
@@ -364,6 +422,7 @@ export default function (pi: ExtensionAPI) {
             "deny",
             "session",
             currentSessionMap,
+            (msg, t) => ctx.ui.notify(msg, t),
           );
           return {
             block: true,
@@ -377,6 +436,7 @@ export default function (pi: ExtensionAPI) {
             "deny",
             "indefinite",
             currentSessionMap,
+            (msg, t) => ctx.ui.notify(msg, t),
           );
           return {
             block: true,

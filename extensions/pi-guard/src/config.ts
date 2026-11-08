@@ -1,5 +1,9 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type UpdateJsonConfigResult,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
 
 export interface GuardConfig {
   trustedRoots?: string[];
@@ -18,7 +22,11 @@ export function loadGuardConfig(agentDir: string): GuardConfig {
   try {
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       return { trustedRoots: [], decisions: {} };
     }
     const trustedRoots = Array.isArray(parsed.trustedRoots)
@@ -41,17 +49,13 @@ export function loadGuardConfig(agentDir: string): GuardConfig {
   }
 }
 
-export function saveGuardConfig(agentDir: string, config: GuardConfig): void {
+export function saveGuardConfig(
+  agentDir: string,
+  config: GuardConfig,
+): UpdateJsonConfigResult {
   const path = getGuardConfigPath(agentDir);
-  const data = JSON.stringify(
-    {
-      trustedRoots: config.trustedRoots ?? [],
-      decisions: config.decisions ?? {},
-    },
-    null,
-    2,
-  );
-  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(temporary, data, { encoding: "utf-8", mode: 0o600 });
-  renameSync(temporary, path);
+  return updateJsonConfig(path, (root) => {
+    root.trustedRoots = config.trustedRoots ?? [];
+    root.decisions = config.decisions ?? {};
+  });
 }
