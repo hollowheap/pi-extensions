@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import type { ComponentContext } from "./components.js";
+import { BUILTINS, type ComponentContext } from "./components.js";
 import { defaultConfig, normalizeConfig } from "./config.js";
 import { renderStatusline } from "./render.js";
 
@@ -212,5 +212,53 @@ describe("renderStatusline", () => {
     );
     expect(noBranch).toContain("[][󰘧 ][ IDLE ][]");
     expect(noBranch).not.toContain("");
+  });
+
+  it("ignores __proto__, constructor, and toString component types without throwing", () => {
+    const config = defaultConfig();
+    config.sections = {
+      a: [
+        { type: "__proto__" },
+        { type: "constructor" },
+        { type: "toString" },
+        { type: "text", text: "safe" },
+      ],
+    };
+    expect(() => renderStatusline(40, config, ctx(), theme())).not.toThrow();
+    const line = renderStatusline(40, config, ctx(), theme());
+    expect(line).toBe("safe");
+  });
+
+  it("isolates throwing components, renders siblings, and reports one diagnostic per component type", () => {
+    BUILTINS.throwing_test = () => {
+      throw new Error("simulated render failure");
+    };
+    try {
+      const config = defaultConfig();
+      config.sections = {
+        a: [
+          { type: "throwing_test" },
+          { type: "text", text: "sibling-left" },
+          { type: "throwing_test" },
+        ],
+        z: [{ type: "text", text: "sibling-right" }],
+      };
+      const diagnostics: string[] = [];
+      const line = renderStatusline(
+        40,
+        config,
+        ctx(),
+        theme(),
+        undefined,
+        (msg) => diagnostics.push(msg),
+      );
+      expect(line).toContain("sibling-left");
+      expect(line).toContain("sibling-right");
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toContain("throwing_test");
+      expect(diagnostics[0]).toContain("simulated render failure");
+    } finally {
+      Reflect.deleteProperty(BUILTINS, "throwing_test");
+    }
   });
 });

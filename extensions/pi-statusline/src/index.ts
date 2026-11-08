@@ -5,10 +5,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import {
-  calculateDollarCost,
-  resolveModelPricing,
-} from "@hollowheap/core/pricing";
+import { messageCost } from "@hollowheap/core/pricing";
 import { effectiveCwd } from "@hollowheap/core/state";
 import { alertAgentCompletion } from "./alerts.js";
 import {
@@ -57,7 +54,7 @@ function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
     if (message.role !== "assistant") continue;
     totals.input += message.usage?.input ?? 0;
     totals.output += message.usage?.output ?? 0;
-    totals.cost += message.usage?.cost?.total ?? 0;
+    totals.cost += messageCost(message as never, model ?? ctx.model);
   }
 
   if (
@@ -66,16 +63,6 @@ function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
     customUsageCost > 0
   ) {
     totals.cost = customUsageCost;
-  }
-
-  if (totals.cost === 0 && (totals.input > 0 || totals.output > 0)) {
-    const pricing = resolveModelPricing(model ?? ctx.model);
-    if (pricing) {
-      totals.cost = calculateDollarCost(
-        { input: totals.input, output: totals.output },
-        pricing,
-      );
-    }
   }
 
   return totals;

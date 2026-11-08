@@ -60,6 +60,25 @@ describe("normalizeConfig", () => {
     expect(config.sections.c).toEqual([{ type: "cwd" }]);
   });
 
+  it("rejects prototype-inherited component types as unknown", () => {
+    const { config, diagnostics } = normalizeConfig({
+      sections: {
+        a: [
+          { type: "__proto__" },
+          { type: "constructor" },
+          { type: "toString" },
+          { type: "mode" },
+        ],
+      },
+    });
+    expect(config.sections.a).toEqual([{ type: "mode" }]);
+    expect(diagnostics).toEqual([
+      'ignoring unknown component type "__proto__" in sections.a',
+      'ignoring unknown component type "constructor" in sections.a',
+      'ignoring unknown component type "toString" in sections.a',
+    ]);
+  });
+
   it("falls back to defaults when no usable sections remain", () => {
     const foreign = normalizeConfig({
       sections: { lualine_a: [{ provider: "mode" }] },
@@ -286,5 +305,16 @@ describe("loadConfig", () => {
       componentSeparator: { text: "|", fg: "accent" },
       sectionSeparator: " · ",
     });
+  });
+
+  it("throws when existing config is invalid JSON and leaves the file unchanged", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    const path = join(dir, "statusline.json");
+    const broken = "{\ninvalid json";
+    writeFileSync(path, broken);
+
+    expect(() => saveOptions(dir, defaultConfig().options)).toThrow();
+
+    expect(readFileSync(path, "utf8")).toBe(broken);
   });
 });

@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThemeBg, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Color } from "@earendil-works/pi-tui";
+import { updateJsonConfig } from "@hollowheap/core/config";
 import { parseColorSpec } from "./colors.js";
 import { BUILTINS } from "./components.js";
 
@@ -369,7 +370,10 @@ export function normalizeConfig(input: unknown): {
         );
         continue;
       }
-      if (!(item.type in BUILTINS) && !config.extensions.includes(item.type)) {
+      if (
+        !Object.hasOwn(BUILTINS, item.type) &&
+        !config.extensions.includes(item.type)
+      ) {
         diagnostics.push(
           `ignoring unknown component type "${item.type}" in sections.${key}`,
         );
@@ -419,15 +423,6 @@ export function loadConfig(agentDir: string): {
   return { config, diagnostics, path };
 }
 
-function readConfigRoot(path: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function mergeSeparatorText(value: unknown, text: string): unknown {
   return isRecord(value) ? { ...value, text } : text;
 }
@@ -438,20 +433,22 @@ export function saveOptions(
   options: StatuslineOptions,
 ): string {
   const path = join(agentDir, CONFIG_FILE_NAME);
-  const root = readConfigRoot(path);
-  const currentOptions = isRecord(root.options) ? root.options : {};
-  root.options = {
-    ...currentOptions,
-    componentSeparator: mergeSeparatorText(
-      currentOptions.componentSeparator,
-      options.componentSeparator.text,
-    ),
-    sectionSeparator: mergeSeparatorText(
-      currentOptions.sectionSeparator,
-      options.sectionSeparator.text,
-    ),
-  };
-  mkdirSync(agentDir, { recursive: true });
-  writeFileSync(path, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
-  return path;
+  const res = updateJsonConfig(path, (root) => {
+    const currentOptions = isRecord(root.options) ? root.options : {};
+    root.options = {
+      ...currentOptions,
+      componentSeparator: mergeSeparatorText(
+        currentOptions.componentSeparator,
+        options.componentSeparator.text,
+      ),
+      sectionSeparator: mergeSeparatorText(
+        currentOptions.sectionSeparator,
+        options.sectionSeparator.text,
+      ),
+    };
+  });
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+  return res.path;
 }

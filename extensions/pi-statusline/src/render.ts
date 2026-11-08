@@ -19,6 +19,7 @@ export function renderStatusline(
   ctx: ComponentContext,
   theme: Theme,
   extensions: ReadonlyMap<string, string> = EMPTY_VALUES,
+  onDiagnostic?: (message: string) => void,
 ): string {
   const componentSeparator = applySeparator(
     config.options.componentSeparator,
@@ -28,18 +29,29 @@ export function renderStatusline(
     config.options.sectionSeparator,
     theme,
   );
+  const reportedTypes = new Set<string>();
   const left: string[] = [];
   const right: string[] = [];
   for (const key of Object.keys(config.sections).sort()) {
     const parts: string[] = [];
     for (const spec of config.sections[key]) {
-      const builtin = BUILTINS[spec.type];
-      if (builtin) {
-        const text = builtin(spec, ctx);
-        if (text !== "") parts.push(styleComponent(text, spec, theme));
-      } else if (config.extensions.includes(spec.type)) {
-        const text = extensions.get(spec.type) ?? "";
-        if (text !== "") parts.push(styleComponent(text, spec, theme));
+      try {
+        if (Object.hasOwn(BUILTINS, spec.type)) {
+          const builtin = BUILTINS[spec.type];
+          const text = builtin(spec, ctx);
+          if (text !== "") parts.push(styleComponent(text, spec, theme));
+        } else if (config.extensions.includes(spec.type)) {
+          const text = extensions.get(spec.type) ?? "";
+          if (text !== "") parts.push(styleComponent(text, spec, theme));
+        }
+      } catch (error) {
+        if (!reportedTypes.has(spec.type)) {
+          reportedTypes.add(spec.type);
+          const detail = error instanceof Error ? error.message : String(error);
+          onDiagnostic?.(
+            `component "${spec.type}" failed to render: ${detail}`,
+          );
+        }
       }
     }
     if (parts.length === 0) continue;

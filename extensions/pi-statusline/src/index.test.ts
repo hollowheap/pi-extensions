@@ -317,4 +317,41 @@ describe("pi-statusline extension", () => {
     // 100k input @ $3/M = $0.30; 20k output @ $15/M = $0.30; total = $0.60
     expect(line).toContain("$0.600");
   });
+
+  it("sums messageCost over branch assistant entries including cache tokens and mixed provider costs", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx({
+      model: { id: "anthropic/claude-3-5-sonnet" },
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              usage: {
+                input: 1_000_000,
+                output: 0,
+                cacheRead: 1_000_000,
+                cost: { total: 0 },
+              },
+            },
+          },
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              usage: { input: 500_000, output: 100_000, cost: { total: 2.5 } },
+            },
+          },
+        ],
+      },
+    });
+    const { component } = installFooter(pi, ctx);
+    const line = component.render(120)[0] as string;
+    // Entry 1: 1M input ($3.0) + 1M cacheRead ($0.3) = $3.30
+    // Entry 2: provider cost = $2.50
+    // Total = $5.80
+    expect(line).toContain("$5.800");
+  });
 });
