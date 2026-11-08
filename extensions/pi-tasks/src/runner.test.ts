@@ -161,11 +161,39 @@ describe("pi-tasks runner", () => {
       cwd: process.cwd(),
     });
 
+    await new Promise((r) => setTimeout(r, 200));
+
     const cancelled = await cancelTask(agentDir, task.id);
     expect(cancelled?.status).toBe("cancelled");
     expect(cancelled?.finishedAt).toBeTypeOf("number");
 
     const persisted = readTaskMetadata(agentDir, task.id);
     expect(persisted?.status).toBe("cancelled");
+  });
+
+  it("reaps background children in the task process group when the shell exits", async () => {
+    const task = await spawnShellTask({
+      agentDir,
+      command: "sleep 60 & echo $!; exit 0",
+      cwd: process.cwd(),
+    });
+
+    const finished = await waitForTask(agentDir, task.id, 5_000);
+    expect(finished?.status).toBe("completed");
+    const out = (await finished?.output())?.trim() ?? "";
+    const bgPid = Number.parseInt(out, 10);
+    expect(bgPid).toBeGreaterThan(0);
+
+    let alive = false;
+    try {
+      process.kill(bgPid, 0);
+      alive = true;
+    } catch {
+      alive = false;
+    }
+    try {
+      if (alive) process.kill(bgPid, "SIGKILL");
+    } catch {}
+    expect(alive).toBe(false);
   });
 });

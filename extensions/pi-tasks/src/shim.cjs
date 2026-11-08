@@ -64,13 +64,36 @@ updateMeta({
 
 const child = spawn(shellBin, ["-c", command], {
   cwd,
+  detached: true,
   stdio: ["ignore", logFd, logFd],
 });
 
-const forwardSignal = (signal) => {
+let cancelled = false;
+
+function signalChildGroup(signal) {
+  if (child.pid === undefined) return;
   try {
-    child.kill(signal);
+    process.kill(-child.pid, signal);
+    return;
   } catch {}
+  try {
+    process.kill(child.pid, signal);
+  } catch {}
+}
+
+function isChildGroupAlive() {
+  if (child.pid === undefined) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+
+const forwardSignal = (signal) => {
+  cancelled = true;
+  signalChildGroup(signal);
 };
 process.on("SIGTERM", () => forwardSignal("SIGTERM"));
 process.on("SIGINT", () => forwardSignal("SIGINT"));
@@ -86,12 +109,36 @@ child.on("error", (error) => {
   process.exit(1);
 });
 
-child.on("close", (code) => {
-  try {
-    closeSync(logFd);
-  } catch {}
-  const exitCode = typeof code === "number" ? code : null;
-  const status = exitCode === 0 ? "completed" : "failed";
-  updateMeta({ status, exitCode, finishedAt: Date.now() });
-  process.exit(0);
+child.on("close", (code, sig) => {
+  signalChildGroup("SIGTERM");
+  const finalize = () => {
+    if (isChildGroupAlive()) {
+      signalChildGroup("SIGKILL");
+    }
+    try {
+      closeSync(logFd);
+    } catch {}
+    const exitCode = typeof code === "number" ? code : null;
+    const status =
+      cancelled || sig === "SIGTERM" || sig === "SIGINT"
+        ? "cancelled"
+        : exitCode === 0
+          ? "completed"
+          : "failed";
+    updateMeta({ status, exitCode, finishedAt: Date.now() });
+    process.exit(0);
+  };
+  if (!isChildGroupAlive()) {
+    finalize();
+    return;
+  }
+  const deadline = Date.now() + 200;
+  const poll = () => {
+    if (!isChildGroupAlive() || Date.now() >= deadline) {
+      finalize();
+      return;
+    }
+    setTimeout(poll, 20);
+  };
+  setTimeout(poll, 20);
 });

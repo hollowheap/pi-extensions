@@ -3,6 +3,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { showMarkdownPager } from "@hollowheap/tui/pager";
 import { showFuzzyPicker } from "@hollowheap/tui/picker";
 import { taskAlertTracker } from "./alerts.js";
@@ -34,10 +35,11 @@ function updateTasksStatus(ctx: ExtensionContext, runningCount: number): void {
 }
 
 async function openTaskLog(ctx: ExtensionContext, id: string): Promise<void> {
-  const log = readTaskLog(getAgentDir(), id);
+  const log = sanitizeTerminalText(readTaskLog(getAgentDir(), id));
+  const safeId = sanitizeTerminalText(id);
   const text = log.trim() === "" ? "(no output)" : log;
   await showMarkdownPager(ctx, {
-    title: `Task ${id}`,
+    title: `Task ${safeId}`,
     markdown: `~~~~text\n${text}\n~~~~`,
     plainText: text,
   });
@@ -45,20 +47,25 @@ async function openTaskLog(ctx: ExtensionContext, id: string): Promise<void> {
 
 function taskPickerItems(tasks: readonly TaskRecord[]) {
   return tasks.map((task) => {
+    const safeId = sanitizeTerminalText(task.id);
+    const safeCommand = task.command
+      ? sanitizeTerminalText(task.command)
+      : undefined;
+    const safeCwd = sanitizeTerminalText(task.cwd);
     const exit =
       task.exitCode !== undefined && task.exitCode !== null
         ? ` exit ${task.exitCode}`
         : "";
     return {
       value: task.id,
-      label: task.id,
-      description: `${task.status}${exit}${task.command ? ` — ${task.command}` : ""}`,
+      label: safeId,
+      description: `${task.status}${exit}${safeCommand ? ` — ${safeCommand}` : ""}`,
       preview: [
         `${task.status}${exit}`,
-        ...(task.command ? [`command: ${task.command}`] : []),
-        `cwd: ${task.cwd}`,
+        ...(safeCommand ? [`command: ${safeCommand}`] : []),
+        `cwd: ${safeCwd}`,
         `started: ${new Date(task.startedAt).toISOString()}`,
-        `log: ${taskLogPath(getAgentDir(), task.id)}`,
+        `log: ${sanitizeTerminalText(taskLogPath(getAgentDir(), task.id))}`,
       ],
     };
   });

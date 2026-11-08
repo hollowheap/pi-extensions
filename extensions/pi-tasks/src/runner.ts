@@ -162,7 +162,7 @@ export async function cancelTask(
     return toTaskRecord(agentDir, meta);
   }
 
-  if (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) {
+  if (meta.pid !== undefined) {
     await cancelProcessGroup(meta.pid, meta.startTime, graceMs);
     if (isProcessAlive(meta.pid, meta.startTime)) {
       return toTaskRecord(agentDir, meta);
@@ -172,8 +172,14 @@ export async function cancelTask(
   const store = new LockedProcessStore<TaskMetadata>(agentDir);
   const cancelled = store.updateIf(
     id,
-    (current) => current.status === "running",
+    (current) =>
+      current.status === "running" ||
+      current.status === "cancelled" ||
+      (current.status === "failed" && current.exitCode === null),
     { status: "cancelled", finishedAt: Date.now() },
   );
-  return toTaskRecord(agentDir, cancelled ?? meta);
+  return toTaskRecord(
+    agentDir,
+    cancelled ?? readTaskMetadata(agentDir, id) ?? meta,
+  );
 }

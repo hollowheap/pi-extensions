@@ -164,6 +164,78 @@ describe("pi-tasks extension", () => {
     expect(ctx.ui.notify).not.toHaveBeenCalled();
   });
 
+  it("sanitizes terminal escape sequences in task logs and picker previews", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    createTaskRecord(mockAgentDir, {
+      id: "task-esc",
+      kind: "shell",
+      status: "completed",
+      command: "echo \x1b]52;c;dGVzdA==\x07\x1b[31mpwn\x1b[0m\rhi",
+      cwd: workspaceDir,
+      startedAt: Date.now(),
+    });
+    writeFileSync(
+      taskLogPath(mockAgentDir, "task-esc"),
+      "out \x1b]0;title\x07\x1b[2Jclean\rline\n",
+    );
+
+    const notify = vi.fn();
+    const ctx = {
+      ...createCtx(workspaceDir),
+      mode: "rpc",
+      ui: {
+        notify,
+        setStatus: vi.fn(),
+      },
+    };
+    const command = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    await command.handler("logs task-esc", ctx);
+    expect(notify).toHaveBeenCalledWith("out cleanline\n", "info");
+
+    let pickerRendered = "";
+    const tuiCtx = {
+      ...createCtx(workspaceDir),
+      mode: "tui",
+      ui: {
+        notify: vi.fn(),
+        setStatus: vi.fn(),
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: (value: string | undefined) => void,
+            ) => {
+              render(width: number): string[];
+            },
+          ) => {
+            const comp = factory(
+              { requestRender: vi.fn() },
+              {
+                fg: (_t: string, s: string) => s,
+                bold: (s: string) => s,
+              },
+              {},
+              () => {},
+            );
+            pickerRendered = comp.render(120).join("\n");
+            return Promise.resolve(undefined);
+          },
+        ),
+      },
+    };
+
+    await command.handler("", tuiCtx);
+    expect(pickerRendered).toContain("echo pwnhi");
+    expect(pickerRendered).not.toContain("\x1b");
+    expect(pickerRendered).not.toContain("\r");
+  });
+
   it("completes task log ids", () => {
     const pi = createMockPi();
     extension(pi as never);
