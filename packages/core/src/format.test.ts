@@ -23,9 +23,11 @@ describe("truncateText", () => {
 });
 
 describe("displayTarget", () => {
-  it("truncates past 500 characters with an ellipsis", () => {
+  it("truncates past 500 characters showing head and tail", () => {
     const target = "x".repeat(600);
-    expect(displayTarget(target)).toBe(`${"x".repeat(500)}…`);
+    expect(displayTarget(target)).toBe(
+      `${"x".repeat(250)}\n[… cut 100 characters]\n${"x".repeat(250)}`,
+    );
     expect(displayTarget("x".repeat(500))).toBe("x".repeat(500));
   });
 });
