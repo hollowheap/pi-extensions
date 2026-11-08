@@ -73,6 +73,10 @@ interface ComponentLike {
 function multiCustom() {
   let component: ComponentLike | undefined;
   const tui = { requestRender: vi.fn() };
+  const mockTheme = {
+    fg: (_: string, s: string) => s,
+    bold: (s: string) => s,
+  };
   const custom = vi.fn(
     (
       factory: (
@@ -83,7 +87,30 @@ function multiCustom() {
       ) => ComponentLike,
     ) =>
       new Promise<MultiResult>((resolve) => {
-        component = factory(tui, {}, {}, resolve);
+        component = factory(tui, mockTheme, {}, resolve);
+      }),
+  );
+  return { custom, tui, component: () => component };
+}
+
+function writeInCustom() {
+  let component: ComponentLike | undefined;
+  const tui = { requestRender: vi.fn() };
+  const mockTheme = {
+    fg: (_: string, s: string) => s,
+    bold: (s: string) => s,
+  };
+  const custom = vi.fn(
+    (
+      factory: (
+        tui: unknown,
+        theme: unknown,
+        keybindings: unknown,
+        done: (result: string | undefined) => void,
+      ) => ComponentLike,
+    ) =>
+      new Promise<string | undefined>((resolve) => {
+        component = factory(tui, mockTheme, {}, resolve);
       }),
   );
   return { custom, tui, component: () => component };
@@ -305,7 +332,7 @@ describe("pi-question extension", () => {
     extension(pi as never);
     const select = vi.fn(async () => "Write-in answer");
     const input = vi.fn(async () => "custom");
-    const ctx = context(select, input);
+    const ctx = context(select, input, { mode: "rpc" });
 
     await emit(
       handlers.message_end,
@@ -321,7 +348,7 @@ describe("pi-question extension", () => {
     extension(pi as never);
     const select = vi.fn();
     const input = vi.fn(async () => "because");
-    const ctx = context(select, input);
+    const ctx = context(select, input, { mode: "rpc" });
 
     await emit(
       handlers.message_end,
@@ -333,12 +360,48 @@ describe("pi-question extension", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
-  it("uses the multi-line editor for TUI free-text answers", async () => {
+  it("uses the decorated custom prompt for TUI free-text answers", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const { custom, component } = writeInCustom();
+    const ctx = context(vi.fn(), vi.fn(), {
+      ui: { select: vi.fn(), input: vi.fn(), custom },
+    });
+
+    const pending = emit(
+      handlers.message_end,
+      assistant("'''question\n## Why?\n'''"),
+      ctx,
+    );
+
+    expect(custom).toHaveBeenCalledTimes(1);
+    const view = component();
+    expect(view).toBeDefined();
+    const rendered = view?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Why?");
+    expect(rendered).toContain("╭");
+    expect(rendered).toContain("❯");
+    expect(rendered).toContain("╰");
+    expect(rendered).toContain("Enter submits • Esc cancels");
+
+    for (const char of "a longer answer") {
+      view?.handleInput?.(char);
+    }
+    view?.handleInput?.("\r");
+
+    await pending;
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "1. a longer answer" }),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("falls back to ctx.ui.editor in TUI mode when custom is unavailable", async () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const editor = vi.fn(async () => "a longer answer");
     const ctx = context(vi.fn(), vi.fn(), {
-      ui: { select: vi.fn(), input: vi.fn(), custom: vi.fn(), editor },
+      ui: { select: vi.fn(), input: vi.fn(), editor },
     });
 
     await emit(
@@ -544,7 +607,7 @@ describe("pi-question extension", () => {
     extension(pi as never);
     const select = vi.fn(async () => "Write-in answer");
     const input = vi.fn(async () => undefined);
-    const ctx = context(select, input);
+    const ctx = context(select, input, { mode: "rpc" });
 
     await emit(
       handlers.message_end,
@@ -884,7 +947,7 @@ describe("pi-question extension", () => {
       .fn()
       .mockResolvedValueOnce("custom")
       .mockResolvedValueOnce("x".repeat(600));
-    const ctx = context(select, input);
+    const ctx = context(select, input, { mode: "rpc" });
 
     await emit(
       handlers.message_end,

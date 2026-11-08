@@ -7,9 +7,12 @@ import {
   Text,
   decodeKittyPrintable,
   matchesKey,
+  truncateToWidth,
+  visibleWidth,
 } from "@earendil-works/pi-tui";
 import { scanTaggedBlocks } from "@hollowheap/core/blocks";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { roundedFrame } from "@hollowheap/tui/frame";
 import { alertQuestion } from "./alerts.js";
 import {
   DONE_LABEL,
@@ -88,122 +91,139 @@ async function askMulti(
     try {
       return await withPromptLock(
         () =>
-          ctx.ui.custom<MultiResult>((tui, _theme, _keybindings, done) => {
-            const writeInRow = question.options.length;
-            const doneRow = writeInRow + 1;
-            const selected = new Set<number>();
-            let cursor = 0;
-            let editing = false;
-            let writeIn = "";
-            let draft = "";
-            let finished = false;
+          ctx.ui.custom<MultiResult>(
+            (tui, theme, _keybindings, done) => {
+              const writeInRow = question.options.length;
+              const doneRow = writeInRow + 1;
+              const selected = new Set<number>();
+              let cursor = 0;
+              let editing = false;
+              let writeIn = "";
+              let draft = "";
+              let finished = false;
 
-            const refresh = () => tui.requestRender();
+              const refresh = () => tui.requestRender();
 
-            const finish = (result: MultiResult) => {
-              if (finished) return;
-              finished = true;
-              done(result);
-            };
+              const finish = (result: MultiResult) => {
+                if (finished) return;
+                finished = true;
+                done(result);
+              };
 
-            const submit = () => {
-              finish({
-                selected: question.options.filter((_, index) =>
-                  selected.has(index),
-                ),
-                writeIn: writeIn.length === 0 ? undefined : writeIn,
-                cancelled: false,
-              });
-            };
+              const submit = () => {
+                finish({
+                  selected: question.options.filter((_, index) =>
+                    selected.has(index),
+                  ),
+                  writeIn: writeIn.length === 0 ? undefined : writeIn,
+                  cancelled: false,
+                });
+              };
 
-            const startEditing = () => {
-              editing = true;
-              cursor = writeInRow;
-              draft = writeIn;
-              refresh();
-            };
+              const startEditing = () => {
+                editing = true;
+                cursor = writeInRow;
+                draft = writeIn;
+                refresh();
+              };
 
-            const toggle = (index: number) => {
-              if (selected.has(index)) selected.delete(index);
-              else selected.add(index);
-              refresh();
-            };
+              const toggle = (index: number) => {
+                if (selected.has(index)) selected.delete(index);
+                else selected.add(index);
+                refresh();
+              };
 
-            const handleInput = (data: string) => {
-              if (editing) {
+              const handleInput = (data: string) => {
+                if (editing) {
+                  if (matchesKey(data, Key.escape)) {
+                    editing = false;
+                    refresh();
+                    return;
+                  }
+                  if (matchesKey(data, Key.enter)) {
+                    writeIn = capAnswer(draft);
+                    editing = false;
+                    cursor = doneRow;
+                    refresh();
+                    return;
+                  }
+                  if (matchesKey(data, Key.backspace)) {
+                    draft = Array.from(draft).slice(0, -1).join("");
+                    refresh();
+                    return;
+                  }
+                  const printable = printableKey(data);
+                  if (printable !== undefined) {
+                    draft = capAnswer(draft + printable);
+                    refresh();
+                  }
+                  return;
+                }
+
                 if (matchesKey(data, Key.escape)) {
-                  editing = false;
+                  finish({ selected: [], writeIn: undefined, cancelled: true });
+                  return;
+                }
+                if (matchesKey(data, Key.up)) {
+                  cursor = Math.max(0, cursor - 1);
                   refresh();
+                  return;
+                }
+                if (matchesKey(data, Key.down)) {
+                  cursor = Math.min(doneRow, cursor + 1);
+                  refresh();
+                  return;
+                }
+                if (matchesKey(data, Key.space)) {
+                  if (cursor < writeInRow) toggle(cursor);
+                  else if (cursor === writeInRow) startEditing();
                   return;
                 }
                 if (matchesKey(data, Key.enter)) {
-                  writeIn = capAnswer(draft);
-                  editing = false;
-                  cursor = doneRow;
-                  refresh();
-                  return;
+                  if (cursor === doneRow) submit();
+                  else if (cursor === writeInRow) startEditing();
+                  else toggle(cursor);
                 }
-                if (matchesKey(data, Key.backspace)) {
-                  draft = draft.slice(0, -1);
-                  refresh();
-                  return;
-                }
-                const printable = printableKey(data);
-                if (printable !== undefined) {
-                  draft = capAnswer(draft + printable);
-                  refresh();
-                }
-                return;
-              }
+              };
 
-              if (matchesKey(data, Key.escape)) {
-                finish({ selected: [], writeIn: undefined, cancelled: true });
-                return;
-              }
-              if (matchesKey(data, Key.up)) {
-                cursor = Math.max(0, cursor - 1);
-                refresh();
-                return;
-              }
-              if (matchesKey(data, Key.down)) {
-                cursor = Math.min(doneRow, cursor + 1);
-                refresh();
-                return;
-              }
-              if (matchesKey(data, Key.space)) {
-                if (cursor < writeInRow) toggle(cursor);
-                else if (cursor === writeInRow) startEditing();
-                return;
-              }
-              if (matchesKey(data, Key.enter)) {
-                if (cursor === doneRow) submit();
-                else if (cursor === writeInRow) startEditing();
-                else toggle(cursor);
-              }
-            };
+              const render = (width: number): string[] => {
+                const innerWidth = Math.max(1, width - 4);
+                const lines: string[] = [];
+                question.options.forEach((option, index) => {
+                  const pointer = cursor === index ? ">" : " ";
+                  const mark = selected.has(index) ? "x" : " ";
+                  lines.push(`${pointer} [${mark}] ${option}`);
+                });
+                const pointer = cursor === writeInRow ? ">" : " ";
+                const suffix = writeIn.length === 0 ? "" : `: ${writeIn}`;
+                lines.push(`${pointer} [ ] ${WRITE_IN_LABEL}${suffix}`);
+                if (editing) lines.push(`❯ ${draft}█`);
+                lines.push(`${cursor === doneRow ? ">" : " "} Done`);
+                lines.push("Space toggles • Enter selects • Esc cancels");
+                const body = new Text(lines.join("\n"), 0, 0).render(
+                  innerWidth,
+                );
+                return roundedFrame(body, width, theme, question.prompt);
+              };
 
-            const render = (width: number): string[] => {
-              const lines = [question.prompt];
-              question.options.forEach((option, index) => {
-                const pointer = cursor === index ? ">" : " ";
-                const mark = selected.has(index) ? "x" : " ";
-                lines.push(`${pointer} [${mark}] ${option}`);
-              });
-              const pointer = cursor === writeInRow ? ">" : " ";
-              const suffix = writeIn.length === 0 ? "" : `: ${writeIn}`;
-              lines.push(`${pointer} [ ] ${WRITE_IN_LABEL}${suffix}`);
-              if (editing) lines.push(`  ${draft}█`);
-              lines.push(`${cursor === doneRow ? ">" : " "} Done`);
-              lines.push("Space toggles • Enter selects • Esc cancels");
-              return new Text(lines.join("\n"), 0, 0).render(width);
-            };
-
-            return {
-              render,
-              invalidate: () => {},
-              handleInput,
-            };
-          }),
+              return {
+                render,
+                invalidate: () => {},
+                handleInput,
+                dispose: () => {
+                  finish({ selected: [], writeIn: undefined, cancelled: true });
+                },
+              };
+            },
+            {
+              overlay: true,
+              overlayOptions: {
+                width: "70%",
+                maxHeight: "75%",
+                margin: 1,
+              },
+            },
+          ),
         lockOptions,
       );
     } catch (error) {
@@ -274,6 +294,158 @@ async function askWriteIn(
     signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
     timeoutMs: options?.timeoutMs,
   };
+  if (ctx.mode === "tui" && typeof ctx.ui?.custom === "function") {
+    try {
+      return await withPromptLock(
+        () =>
+          ctx.ui.custom<string | undefined>(
+            (tui, theme, _keybindings, done) => {
+              let draft = "";
+              let settled = false;
+
+              const finish = (value: string | undefined): void => {
+                if (settled) return;
+                settled = true;
+                done(value);
+              };
+
+              const border = (val: string) =>
+                typeof theme?.fg === "function" ? theme.fg("border", val) : val;
+              const fg = (token: string, val: string) =>
+                typeof theme?.fg === "function"
+                  ? theme.fg(token as never, val)
+                  : val;
+              const bold = (val: string) =>
+                typeof theme?.bold === "function" ? theme.bold(val) : val;
+
+              return {
+                render(width: number): string[] {
+                  const safeWidth = Math.max(4, width);
+                  const innerWidth = safeWidth - 4;
+
+                  const rawTitle = ` ${fg("accent", bold(title))} `;
+                  const titleLabel = truncateToWidth(
+                    rawTitle,
+                    Math.max(0, safeWidth - 3),
+                    "",
+                  );
+                  const topFill = Math.max(
+                    0,
+                    safeWidth - 3 - visibleWidth(titleLabel),
+                  );
+                  const top =
+                    border("╭─") +
+                    titleLabel +
+                    border(`${"─".repeat(topFill)}╮`);
+
+                  const hintText = " Enter submits • Esc cancels ";
+                  const hintLabel = truncateToWidth(
+                    fg("muted", hintText),
+                    Math.max(0, safeWidth - 3),
+                    "",
+                  );
+                  const hintFill = Math.max(
+                    0,
+                    safeWidth - 3 - visibleWidth(hintLabel),
+                  );
+                  const bottom =
+                    border("╰─") +
+                    hintLabel +
+                    border(`${"─".repeat(hintFill)}╯`);
+
+                  const fullText =
+                    draft.length === 0 && placeholder
+                      ? `${fg("muted", placeholder)}█`
+                      : `${draft}█`;
+                  const wrappedLines = new Text(fullText, 0, 0).render(
+                    innerWidth,
+                  );
+                  const rawLines =
+                    wrappedLines.length === 0 ? ["█"] : wrappedLines;
+                  const contentLines = rawLines.map((line, idx) => {
+                    const isFirst = idx === 0;
+                    const text = truncateToWidth(
+                      line.trimEnd(),
+                      innerWidth,
+                      "",
+                    );
+                    const padding = Math.max(
+                      0,
+                      innerWidth - visibleWidth(text),
+                    );
+                    const left = isFirst
+                      ? `${fg("accent", "❯")} `
+                      : `${border("│")} `;
+                    const right = ` ${border("│")}`;
+                    return `${left}${text}${" ".repeat(padding)}${right}`;
+                  });
+
+                  return [top, ...contentLines, bottom];
+                },
+                invalidate(): void {},
+                handleInput(data: string): void {
+                  if (
+                    matchesKey(data, "escape") ||
+                    matchesKey(data, "ctrl+c")
+                  ) {
+                    finish(undefined);
+                    return;
+                  }
+                  if (
+                    matchesKey(data, "shift+enter") ||
+                    matchesKey(data, "alt+enter")
+                  ) {
+                    draft += "\n";
+                    tui.requestRender();
+                    return;
+                  }
+                  if (matchesKey(data, "enter")) {
+                    finish(draft);
+                    return;
+                  }
+                  if (matchesKey(data, "backspace")) {
+                    draft = Array.from(draft).slice(0, -1).join("");
+                    tui.requestRender();
+                    return;
+                  }
+                  const kitty = decodeKittyPrintable(data);
+                  if (kitty !== undefined) {
+                    draft += kitty;
+                    tui.requestRender();
+                    return;
+                  }
+                  if (!data.startsWith("\x1b")) {
+                    const validChars = Array.from(data)
+                      .filter((c) => c >= " " || c === "\n")
+                      .join("");
+                    if (validChars.length > 0) {
+                      draft += validChars;
+                      tui.requestRender();
+                      return;
+                    }
+                  }
+                },
+                dispose(): void {
+                  finish(undefined);
+                },
+              };
+            },
+            {
+              overlay: true,
+              overlayOptions: {
+                width: "70%",
+                maxHeight: "75%",
+                margin: 1,
+              },
+            },
+          ),
+        lockOptions,
+      );
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      throw error;
+    }
+  }
   if (ctx.mode === "tui" && typeof ctx.ui?.editor === "function") {
     try {
       return await withPromptLock(() => ctx.ui.editor(title), lockOptions);
