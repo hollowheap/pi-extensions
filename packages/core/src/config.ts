@@ -202,6 +202,23 @@ function loadPolicy(options: LoadPermissionsOptions): {
 } {
   const agentPath = join(options.agentDir, "permissions.json");
   const overlayPath = join(options.workspaceRoot, ".pi", "permissions.json");
+  // Seed a default, editable permissions file on first run so head/tail are
+  // allowed without prompting and users can extend the list.
+  if (mtimeMs(agentPath) < 0) {
+    try {
+      mkdirSync(options.agentDir, { recursive: true });
+      writeFileSync(
+        agentPath,
+        JSON.stringify(
+          { rules: ["allow shell head", "allow shell tail"] },
+          null,
+          2,
+        ),
+      );
+    } catch {
+      // Fall back to in-memory defaults below if seeding fails.
+    }
+  }
   const agentMtime = mtimeMs(agentPath);
   const overlayMtime = mtimeMs(overlayPath);
   const key = `${agentPath}\0${overlayPath}\0${options.trusted ? "1" : "0"}`;
@@ -228,6 +245,21 @@ function loadPolicy(options: LoadPermissionsOptions): {
     Object.assign(toolTags, overlay.toolTags);
   } else if (overlayMtime >= 0) {
     diagnostics.push("ignoring .pi/permissions.json: project is not trusted");
+  }
+
+  // Default read-only helpers that are safe to run without an explicit allow rule.
+  // Injected only when no permissions file exists, so user-authored rules win.
+  if (
+    !failed &&
+    agentMtime < 0 &&
+    (!options.trusted || overlayMtime < 0) &&
+    rules.length === 0
+  ) {
+    for (const command of ["head", "tail"]) {
+      rules.push(
+        Object.freeze({ effect: "allow", tag: "shell", pattern: command }),
+      );
+    }
   }
 
   const effectiveRules = failed

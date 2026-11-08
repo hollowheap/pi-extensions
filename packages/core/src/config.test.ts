@@ -224,10 +224,13 @@ describe("loadPermissions", () => {
     expect(load(agentDir, root, true)).toHaveLength(2);
   });
 
-  it("returns no rules when no files exist", () => {
+  it("returns default safe shell rules when no files exist", () => {
     const root = workspace();
     const diagnostics: string[] = [];
-    expect(load(join(root, "agent"), root, true, diagnostics)).toEqual([]);
+    expect(load(join(root, "agent"), root, true, diagnostics)).toEqual([
+      { effect: "allow", tag: "shell", pattern: "head" },
+      { effect: "allow", tag: "shell", pattern: "tail" },
+    ]);
     expect(diagnostics).toEqual([]);
   });
 
