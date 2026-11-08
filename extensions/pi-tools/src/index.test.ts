@@ -81,7 +81,7 @@ describe("pi-tools extension", () => {
 });
 
 describe("/cd command", () => {
-  it("stores the directory in the core session without pi-guard", async () => {
+  it("updates session state and status without pi-guard", async () => {
     const { dir, ctx, cd } = setupCd();
     await cd("sub");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", "sub");

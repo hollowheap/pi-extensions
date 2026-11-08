@@ -19,7 +19,8 @@ root. Directory names autocomplete against the active working directory and
 omit directories outside the project root or denied by rules.
 
 Pi exposes no API to move the session directory, so `pi-guard` rewrites relative
-`path` arguments to the new directory before the rules verdict. Absolute paths
+`path` arguments to the new directory before the rules verdict; `/cd` changes
+`read`, `write`, and `edit` only when `pi-guard` is loaded. Absolute paths
 are unaffected. The new directory is shown via `setStatus("cwd", …)` plus a
 one-line notification.
 
