@@ -42,13 +42,21 @@ function short(part: string): string {
   return part.length > 200 ? `${part.slice(0, 200)}…` : part;
 }
 
+const SAFE_REDIRECT_RE =
+  /(?:^|(?<=\s))(?:\d*>[&](?:\d+|-)|\d*<&(?:\d+|-)|(?:\d+|&)?>>?\s*\/dev\/null|\d*<\s*\/dev\/null)(?=\s|$)/g;
+
+function stripSafeRedirects(text: string): string {
+  return text.replace(SAFE_REDIRECT_RE, " ").replace(/\s+/g, " ").trim();
+}
+
 export function splitShellParts(command: string): ShellPart[] {
   return command
-    .split(/&&|\|\||[;|&\n]/)
+    .split(/&&|\|\||[;|\n]|(?<![<>])&(?!>)/)
     .map((part) => part.trim())
     .filter((part) => part !== "")
     .map((text) => {
-      const [name, ...rest] = text.split(/\s+/);
+      const cleaned = stripSafeRedirects(text);
+      const [name, ...rest] = (cleaned || text).split(/\s+/);
       return { text, name: basename(name ?? ""), rest: rest.join(" ") };
     });
 }
@@ -61,6 +69,14 @@ function unwrapTokens(tokens: readonly string[]): {
   let wrapped = false;
 
   while (current.length > 0) {
+    if (
+      current.length > 1 &&
+      /^[A-Za-z_][A-Za-z0-9_]*=/.test(current[0] ?? "")
+    ) {
+      wrapped = true;
+      current.shift();
+      continue;
+    }
     const head = basename(current[0] ?? "");
     if (head === "nohup") {
       wrapped = true;
@@ -248,7 +264,7 @@ function detectDestructiveTokens(
 }
 
 export function shellPartDestructive(part: ShellPart): string | undefined {
-  const tokens = part.text.trim().split(/\s+/).filter(Boolean);
+  const tokens = stripSafeRedirects(part.text).split(/\s+/).filter(Boolean);
   return detectDestructiveTokens(tokens);
 }
 
@@ -266,7 +282,8 @@ function ruleMatches(rule: Rule, name: string, rest: string): boolean {
 }
 
 export function shellPartSafety(part: ShellPart): string | undefined {
-  const tokens = part.text.trim().split(/\s+/).filter(Boolean);
+  const withoutSafeRedirects = stripSafeRedirects(part.text);
+  const tokens = withoutSafeRedirects.split(/\s+/).filter(Boolean);
   const { tokens: unwrapped } = unwrapTokens(tokens);
   const unwrappedName = basename(unwrapped[0] ?? "");
   const isDestructive = detectDestructiveTokens(tokens) !== undefined;
@@ -280,7 +297,11 @@ export function shellPartSafety(part: ShellPart): string | undefined {
   if (part.text.includes("<(") || part.text.includes(">(")) {
     return `process substitution in "${short(part.text)}"`;
   }
-  if (part.text.includes(">") || part.text.includes("<")) {
+  if (
+    withoutSafeRedirects === "" ||
+    withoutSafeRedirects.includes(">") ||
+    withoutSafeRedirects.includes("<")
+  ) {
     return `redirect in "${short(part.text)}"`;
   }
   if (part.text.includes("$(") || part.text.includes("`")) {
@@ -293,7 +314,7 @@ export function matchShellPart(
   part: ShellPart,
   rules: readonly Rule[],
 ): Verdict | undefined {
-  const tokens = part.text.trim().split(/\s+/).filter(Boolean);
+  const tokens = stripSafeRedirects(part.text).split(/\s+/).filter(Boolean);
   const { tokens: unwrapped, wrapped } = unwrapTokens(tokens);
   const unwrappedName = basename(unwrapped[0] ?? "");
   const unwrappedRest = unwrapped.slice(1).join(" ");

@@ -500,6 +500,9 @@ export default function (pi: ExtensionAPI) {
     return { content };
   });
   pi.on("session_start", (_event, ctx) => {
+    const notify = (message: string) =>
+      ctx.ui.notify(`pi-guard: ${message}`, "warning");
+    replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
     const restored = resetSession(ctx.sessionManager);
     if (restored.diagnostic !== undefined) {
       ctx.ui.notify(`pi-guard: ${restored.diagnostic}`, "warning");
@@ -507,9 +510,6 @@ export default function (pi: ExtensionAPI) {
     if (restored.veto !== undefined) {
       ctx.ui.notify(`pi-guard: ${restored.veto}`, "error");
     }
-    const notify = (message: string) =>
-      ctx.ui.notify(`pi-guard: ${message}`, "warning");
-    replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
     publishValues(runtime, ctx.sessionManager);
   });
   pi.on("session_shutdown", (_event, ctx) => {

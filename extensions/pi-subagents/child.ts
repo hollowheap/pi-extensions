@@ -1,6 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { enterMode } from "@hollowheap/core/modes";
+import { loadModesConfig } from "@hollowheap/core/config";
+import {
+  enterMode,
+  getModeLayer,
+  registerMode,
+  replaceConfigModes,
+} from "@hollowheap/core/modes";
 import { loadSubagentsConfig } from "./src/config.js";
 import { SubagentStore } from "./src/state.js";
 import { acquireWriteLock } from "./src/write-lock.js";
@@ -32,6 +38,21 @@ export function createChildLockExtension(
     };
 
     pi.on("session_start", (_event, ctx) => {
+      replaceConfigModes(loadModesConfig(resolveAgentDir()));
+      if (!getModeLayer("autopilot")) {
+        registerMode({
+          name: "autopilot",
+          description:
+            "Autonomous mode; read, search, edit, shell, and external are allowed",
+          defaults: {
+            read: "allow",
+            search: "allow",
+            edit: "allow",
+            shell: "allow",
+            external: "allow",
+          },
+        });
+      }
       const mode = process.env.PI_SUBAGENT_MODE;
       if (mode && ctx.sessionManager) {
         enterMode(ctx.sessionManager, mode);

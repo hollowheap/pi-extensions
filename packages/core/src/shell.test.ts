@@ -205,4 +205,39 @@ describe("checkShell", () => {
         .decision,
     ).toBe("allow");
   });
+
+  it("allows safe fd merges and /dev/null redirects while denying file redirects", () => {
+    const allow = rules([
+      "allow shell head",
+      "allow shell tail",
+      "allow shell cat",
+      "allow shell git status",
+    ]);
+
+    for (const command of [
+      "head -n 20 README.md 2>/dev/null",
+      "head -n 20 README.md 2> /dev/null",
+      "tail -n 20 README.md 2>&1",
+      "cat README.md 2>/dev/null | head -n 50",
+      "git status 2>&1 | head -n 20",
+      "git status >/dev/null 2>&1",
+      "cat </dev/null",
+      "LC_ALL=C head -n 10 README.md 2>/dev/null",
+    ]) {
+      expect(checkShell(command, allow)).toEqual({ decision: "allow" });
+    }
+
+    for (const command of [
+      "head -n 20 README.md > out.txt",
+      "head -n 20 README.md 2> err.txt",
+      "head -n 20 README.md >/dev/null_other",
+      "head -n 20 README.md 2>&1 > out.txt",
+      "2>/dev/null",
+    ]) {
+      expect(checkShell(command, allow).decision).toBe("deny");
+      expect(checkShell(command, allow).reason).toContain("redirect");
+    }
+
+    expect(checkShell("FOO=1 bash -c 'echo hi'", allow).decision).toBe("deny");
+  });
 });

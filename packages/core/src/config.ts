@@ -106,22 +106,35 @@ function parsePermissionsFile(
   content: string,
   path: string,
   diagnostics: string[],
-): { rules: Rule[]; toolTags: Record<string, Tag>; failed: boolean } {
+): {
+  rules: Rule[];
+  toolTags: Record<string, Tag>;
+  failed: boolean;
+  hasExplicitRules: boolean;
+} {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
     diagnostics.push(`permissions file is not valid JSON: ${path}`);
-    return { rules: [], toolTags: {}, failed: true };
+    return {
+      rules: [],
+      toolTags: {},
+      failed: true,
+      hasExplicitRules: false,
+    };
   }
 
   let entries: unknown[] = [];
   let toolEntries: unknown;
   let failed = false;
+  let hasExplicitRules = false;
   if (Array.isArray(parsed)) {
     entries = parsed;
+    hasExplicitRules = true;
   } else if (isRecord(parsed)) {
     if (parsed.rules !== undefined) {
+      hasExplicitRules = true;
       if (Array.isArray(parsed.rules)) entries = parsed.rules;
       else {
         diagnostics.push(`permissions "rules" must be an array: ${path}`);
@@ -133,13 +146,23 @@ function parsePermissionsFile(
       diagnostics.push(
         `permissions file must be {"rules": [...]} or [...]: ${path}`,
       );
-      return { rules: [], toolTags: {}, failed: true };
+      return {
+        rules: [],
+        toolTags: {},
+        failed: true,
+        hasExplicitRules: false,
+      };
     }
   } else {
     diagnostics.push(
       `permissions file must be {"rules": [...]} or [...]: ${path}`,
     );
-    return { rules: [], toolTags: {}, failed: true };
+    return {
+      rules: [],
+      toolTags: {},
+      failed: true,
+      hasExplicitRules: false,
+    };
   }
 
   const rules: Rule[] = [];
@@ -164,20 +187,37 @@ function parsePermissionsFile(
       }
     }
   }
-  return { rules, toolTags, failed };
+  return { rules, toolTags, failed, hasExplicitRules };
 }
 
 function readPermissions(
   path: string,
   mtime: number,
   diagnostics: string[],
-): { rules: Rule[]; toolTags: Record<string, Tag>; failed: boolean } {
-  if (mtime < 0) return { rules: [], toolTags: {}, failed: false };
+): {
+  rules: Rule[];
+  toolTags: Record<string, Tag>;
+  failed: boolean;
+  hasExplicitRules: boolean;
+} {
+  if (mtime < 0) {
+    return {
+      rules: [],
+      toolTags: {},
+      failed: false,
+      hasExplicitRules: false,
+    };
+  }
   try {
     return parsePermissionsFile(readFileSync(path, "utf8"), path, diagnostics);
   } catch {
     diagnostics.push(`cannot read permissions file: ${path}`);
-    return { rules: [], toolTags: {}, failed: true };
+    return {
+      rules: [],
+      toolTags: {},
+      failed: true,
+      hasExplicitRules: false,
+    };
   }
 }
 
@@ -236,11 +276,13 @@ function loadPolicy(options: LoadPermissionsOptions): {
   const diagnostics: string[] = [];
   const agent = readPermissions(agentPath, agentMtime, diagnostics);
   let failed = agent.failed;
+  let hasExplicitRules = agent.hasExplicitRules;
   const rules = [...agent.rules];
   const toolTags = { ...agent.toolTags };
   if (options.trusted) {
     const overlay = readPermissions(overlayPath, overlayMtime, diagnostics);
     failed = failed || overlay.failed;
+    hasExplicitRules = hasExplicitRules || overlay.hasExplicitRules;
     rules.push(...overlay.rules);
     Object.assign(toolTags, overlay.toolTags);
   } else if (overlayMtime >= 0) {
@@ -248,13 +290,8 @@ function loadPolicy(options: LoadPermissionsOptions): {
   }
 
   // Default read-only helpers that are safe to run without an explicit allow rule.
-  // Injected only when no permissions file exists, so user-authored rules win.
-  if (
-    !failed &&
-    agentMtime < 0 &&
-    (!options.trusted || overlayMtime < 0) &&
-    rules.length === 0
-  ) {
+  // Injected only when no permissions file defines rules, so user-authored rules win.
+  if (!failed && !hasExplicitRules && rules.length === 0) {
     for (const command of ["head", "tail"]) {
       rules.push(
         Object.freeze({ effect: "allow", tag: "shell", pattern: command }),

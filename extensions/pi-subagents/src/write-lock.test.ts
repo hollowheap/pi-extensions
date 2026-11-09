@@ -7,7 +7,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { session } from "@hollowheap/core/state";
 import { afterEach, describe, expect, it } from "vitest";
+import { createChildLockExtension } from "../child.js";
 import { acquireWriteLock, withWriteLock } from "./write-lock.js";
 
 const dirs: string[] = [];
@@ -23,6 +25,7 @@ function lockPath(dir: string): string {
 }
 
 afterEach(() => {
+  Reflect.deleteProperty(process.env, "PI_SUBAGENT_MODE");
   for (const dir of dirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -87,5 +90,20 @@ describe("write lock", () => {
     controller.abort();
     await expect(waiting).rejects.toThrow(/abort/i);
     first();
+  });
+
+  it("registers and enters autopilot mode in child sessions when PI_SUBAGENT_MODE=autopilot", () => {
+    const dir = agentDir();
+    process.env.PI_SUBAGENT_MODE = "autopilot";
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
+    const ext = createChildLockExtension({ agentDir: () => dir });
+    ext({
+      on: (event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers.set(event, fn);
+      },
+    } as never);
+    const sessionManager = {};
+    handlers.get("session_start")?.({}, { sessionManager });
+    expect(session(sessionManager).mode).toBe("autopilot");
   });
 });
