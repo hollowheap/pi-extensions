@@ -24,7 +24,7 @@ export interface ObserveOptions {
 }
 
 const MAX_OBSERVATION_CHARS = 500;
-const MAX_RESPONSE_TOKENS = 2048;
+const MAX_RESPONSE_TOKENS = 4096;
 
 function parseJson(text: string): unknown {
   const trimmed = text
@@ -43,6 +43,26 @@ function parseJson(text: string): unknown {
       return undefined;
     }
   }
+}
+
+function extractObservationsFallback(text: string): unknown[] {
+  const results: unknown[] = [];
+  const regex = /\{[^{}]*"text"\s*:\s*"((?:\\.|[^"\\])*)"[^{}]*\}/g;
+  for (const match of text.matchAll(regex)) {
+    try {
+      const obj = JSON.parse(match[0]);
+      if (
+        typeof obj === "object" &&
+        obj !== null &&
+        typeof obj.text === "string"
+      ) {
+        results.push(obj);
+      }
+    } catch {
+      // Ignore unparseable fragment
+    }
+  }
+  return results;
 }
 
 function observationArray(value: unknown): unknown[] {
@@ -65,7 +85,12 @@ export function parseObservationResponse(
   if (remaining <= 0) return [];
   const seen = new Set(existing.map((item) => item.trim().toLowerCase()));
   const observations: ObserverObservation[] = [];
-  for (const item of observationArray(parseJson(text))) {
+  const parsed = parseJson(text);
+  const items =
+    observationArray(parsed).length > 0
+      ? observationArray(parsed)
+      : extractObservationsFallback(text);
+  for (const item of items) {
     if (typeof item !== "object" || item === null) continue;
     const raw = item as { text?: unknown; relevance?: unknown };
     if (typeof raw.text !== "string") continue;
@@ -130,6 +155,9 @@ export async function observeConversation(
     options.existing,
     options.redact,
   );
+  const reasoningOptions = (options.model as { reasoning?: unknown }).reasoning
+    ? { reasoningEffort: "low" as const }
+    : {};
   const response = await options.registry.complete(
     options.model,
     {
@@ -143,6 +171,7 @@ export async function observeConversation(
     },
     {
       maxTokens: MAX_RESPONSE_TOKENS,
+      ...reasoningOptions,
       signal: options.signal,
       cacheRetention: "none",
       sessionId: randomUUID(),
@@ -171,7 +200,10 @@ export async function observeConversation(
     options.remaining,
   );
   if (stopReason === "length" && observations.length === 0) {
-    throw new Error(errorMessage || "length");
+    throw new Error(
+      errorMessage ||
+        "response exceeded length limit without completing an observation",
+    );
   }
   return {
     observations: observations.map((observation) => ({

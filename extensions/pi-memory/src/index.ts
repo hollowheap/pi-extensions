@@ -137,6 +137,8 @@ export function createMemoryExtension(
     let observing = false;
     let observerAbort: AbortController | undefined;
     let generation = 0;
+    let consecutiveFailures = 0;
+    let lastNotifiedError: string | undefined;
     let lastUsage:
       | { model: string; input: number; output: number; cost: number }
       | undefined;
@@ -153,6 +155,8 @@ export function createMemoryExtension(
     const restore = (ctx: ExtensionContext): void => {
       abortObserver();
       lastUsage = undefined;
+      consecutiveFailures = 0;
+      lastNotifiedError = undefined;
       try {
         ledger = memoryFromEntries(ctx.sessionManager.getBranch());
       } catch {
@@ -292,22 +296,27 @@ export function createMemoryExtension(
           }
         }
         for (const id of entryIds) ledger.consumedIds.add(id);
+        consecutiveFailures = 0;
+        lastNotifiedError = undefined;
         if (result.usage !== undefined) {
           recordUsage(ctx, model, result.usage);
         }
       } catch (error) {
+        consecutiveFailures += 1;
+        const message = error instanceof Error ? error.message : String(error);
         if (
           startGeneration === generation &&
           config.notifyErrors &&
           ctx.hasUI &&
-          !controller.signal.aborted
+          !controller.signal.aborted &&
+          message !== lastNotifiedError
         ) {
-          ctx.ui.notify(
-            `pi-memory: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-            "warning",
-          );
+          lastNotifiedError = message;
+          ctx.ui.notify(`pi-memory: ${message}`, "warning");
+        }
+        if (consecutiveFailures >= 2) {
+          for (const id of entryIds) ledger.consumedIds.add(id);
+          consecutiveFailures = 0;
         }
       } finally {
         if (observerAbort === controller) {
@@ -329,6 +338,8 @@ export function createMemoryExtension(
       abortObserver();
       ledger = emptyMemoryLedger();
       lastUsage = undefined;
+      consecutiveFailures = 0;
+      lastNotifiedError = undefined;
     });
 
     pi.on("agent_settled", (event, ctx) => {

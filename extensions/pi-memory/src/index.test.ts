@@ -253,6 +253,32 @@ describe("pi-memory extension", () => {
     );
   });
 
+  it("suppresses duplicate error notifications and advances after repeated failures", async () => {
+    const pi = createMockPi();
+    const dir = configDir({ notifyErrors: true });
+    createMemoryExtension({
+      getAgentDir: () => dir,
+    })(pi as never);
+
+    const ctx = createCtx([messageEntry("m1", "x".repeat(5_000))]);
+    ctx.modelRegistry.complete = vi.fn().mockResolvedValue({
+      content: [],
+      stopReason: "length",
+    });
+
+    // First attempt fails and notifies once
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+    });
+
+    // Second consecutive attempt suppresses duplicate notification and advances
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("marks messages consumed when the observer returns no observations", async () => {
     const pi = createMockPi();
     const observe = vi.fn().mockResolvedValue({ observations: [] });

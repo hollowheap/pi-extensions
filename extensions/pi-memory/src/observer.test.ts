@@ -154,4 +154,33 @@ describe("observeConversation", () => {
       }),
     ).rejects.toThrow("length");
   });
+
+  it("salvages completed observations from a truncated length response", async () => {
+    const model = { id: "model", reasoning: true } as never;
+    const signal = new AbortController().signal;
+
+    const result = await observeConversation({
+      registry: {
+        complete: vi.fn().mockResolvedValue({
+          content: [
+            {
+              type: "text",
+              text: '{"observations":[{"text":"User prefers vitest","relevance":4},{"text":"Incomplete',
+            },
+          ],
+          stopReason: "length",
+        }),
+      } as never,
+      model,
+      conversation: "hello",
+      existing: [],
+      remaining: 5,
+      redact: true,
+      signal,
+    });
+
+    expect(result.observations).toEqual([
+      { text: "User prefers vitest", relevance: 4 },
+    ]);
+  });
 });
