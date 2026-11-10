@@ -8,6 +8,7 @@ import {
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode } from "@hollowheap/core/modes";
 import { type AgentConfig, discoverAgents } from "./agents.js";
+import { loadAgentConfig } from "./config.js";
 
 export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
 
@@ -300,10 +301,12 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       lastCwd = ctx.cwd;
       lastTrusted = ctx.isProjectTrusted();
 
+      let hasAgentEntry = false;
       let persistedName: string | undefined;
       const entries = ctx.sessionManager?.getBranch?.() ?? [];
       for (const entry of entries) {
         if (entry.type === "custom" && entry.customType === ACTIVE_AGENT_TYPE) {
+          hasAgentEntry = true;
           const data = entry.data as { name?: unknown } | undefined;
           if (typeof data?.name === "string" && data.name.trim() !== "") {
             persistedName = data.name.trim();
@@ -325,6 +328,36 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         if (matched) {
           await applyAgent(matched, ctx, pi, { persist: false, notify: false });
           return;
+        }
+      }
+
+      if (!hasAgentEntry) {
+        const agentConfig = loadAgentConfig({
+          agentDir: getAgentDir(),
+          cwd: ctx.cwd,
+          trusted: ctx.isProjectTrusted(),
+        });
+        for (const d of agentConfig.diagnostics) {
+          ctx.ui?.notify?.(`pi-agent: ${d}`, "warning");
+        }
+        if (agentConfig.default) {
+          const defaultName = agentConfig.default.toLowerCase();
+          if (defaultName !== "default" && defaultName !== "none") {
+            const matched = discovery.agents.find(
+              (a) => a.name.toLowerCase() === defaultName,
+            );
+            if (matched) {
+              await applyAgent(matched, ctx, pi, {
+                persist: false,
+                notify: false,
+              });
+              return;
+            }
+            ctx.ui?.notify?.(
+              `pi-agent: configured default agent "${agentConfig.default}" not found`,
+              "warning",
+            );
+          }
         }
       }
 

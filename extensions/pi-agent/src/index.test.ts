@@ -580,4 +580,119 @@ describe("pi-agent extension", () => {
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
     expect(enterModeSpy).not.toHaveBeenCalled();
   });
+
+  it("auto-activates configured default agent on clean session_start", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — engineer");
+    expect(pi.setModel).toHaveBeenCalledWith({
+      provider: "opencode-go",
+      id: "deepseek-v4.1-flash",
+    });
+    expect(pi.setThinkingLevel).toHaveBeenCalledWith("high");
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-activate configured default agent when session has an active agent", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "custom-1",
+      type: "custom",
+      customType: ACTIVE_AGENT_TYPE,
+      data: { name: "scout" },
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+  });
+
+  it("does not auto-activate configured default agent when session explicitly reset to default", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "custom-1",
+      type: "custom",
+      customType: ACTIVE_AGENT_TYPE,
+      data: { name: null },
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi");
+  });
+
+  it("notifies warning and falls back to default when configured default agent is not found", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "nonexistent-agent" }),
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'configured default agent "nonexistent-agent" not found',
+      ),
+      "warning",
+    );
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
+  });
+
+  it("prefers trusted project agent.json default over user agent.json", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const projectDir = join(testDir, "proj");
+    mkdirSync(join(projectDir, ".pi"), { recursive: true });
+    writeFileSync(
+      join(projectDir, ".pi", "agent.json"),
+      JSON.stringify({ default: "scout" }),
+    );
+
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext({
+      cwd: projectDir,
+      isProjectTrusted: () => true,
+    });
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
+    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+  });
 });
