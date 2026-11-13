@@ -2,7 +2,7 @@
   "name": "@hollowheap/pi-todos",
   "version": "0.3.0",
   "type": "module",
-  "description": "Manage branch-local todos with tagged blocks in assistant text",
+  "description": "Manage branch-local todos via a codemode tool",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -18,7 +18,8 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "publishConfig": {
     "access": "public"

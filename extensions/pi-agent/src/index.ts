@@ -146,6 +146,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       ctx.ui?.setStatus?.("agent", sanitizeTerminalText(agent.name));
       syncTitle(ctx);
+      piApi.events?.emit?.("statusline:values", {
+        name: "agent",
+        text: sanitizeTerminalText(agent.name),
+      });
 
       if (agent.mode && ctx.sessionManager) {
         const result = enterMode(ctx.sessionManager, agent.mode);
@@ -218,6 +222,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       ctx.ui?.setStatus?.("agent", undefined);
       syncTitle(ctx);
+      piApi.events?.emit?.("statusline:values", {
+        name: "agent",
+        text: "",
+      });
 
       if (options.persist && previousAgent?.mode && ctx.sessionManager) {
         enterMode(ctx.sessionManager, "ask");
@@ -303,11 +311,25 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       let hasAgentEntry = false;
       let persistedName: string | undefined;
-      const entries = ctx.sessionManager?.getBranch?.() ?? [];
+      const entries =
+        (typeof ctx.sessionManager?.getBranch === "function"
+          ? ctx.sessionManager.getBranch()
+          : typeof ctx.sessionManager?.getEntries === "function"
+            ? ctx.sessionManager.getEntries()
+            : []) ?? [];
       for (const entry of entries) {
-        if (entry.type === "custom" && entry.customType === ACTIVE_AGENT_TYPE) {
+        const raw = entry as {
+          type?: string;
+          customType?: string;
+          data?: unknown;
+        };
+        if (
+          (raw.type === "custom" &&
+            raw.customType === ACTIVE_AGENT_TYPE) ||
+          raw.type === ACTIVE_AGENT_TYPE
+        ) {
           hasAgentEntry = true;
-          const data = entry.data as { name?: unknown } | undefined;
+          const data = raw.data as { name?: unknown } | undefined;
           if (typeof data?.name === "string" && data.name.trim() !== "") {
             persistedName = data.name.trim();
           } else if (data?.name === null) {
@@ -368,6 +390,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       ctx.ui?.setStatus?.("agent", undefined);
       syncTitle(ctx);
+      pi.events?.emit?.("statusline:values", {
+        name: "agent",
+        text: "",
+      });
     };
 
     pi.on("session_start", async (event, ctx) => {
@@ -387,10 +413,29 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       });
     });
     pi.on("session_tree", (_event, ctx) => restore(ctx));
+
+    pi.on("session_compact", () => {
+      if (activeAgent) {
+        pi.appendEntry(ACTIVE_AGENT_TYPE, { name: activeAgent.name });
+      } else {
+        pi.appendEntry(ACTIVE_AGENT_TYPE, { name: null });
+      }
+    });
     pi.on("project_trust", (event) => {
       lastCwd = event.cwd;
       lastTrusted = false;
       return { trusted: "undecided" };
+    });
+
+    pi.events?.on?.("statusline:request", (data: unknown) => {
+      if (typeof data === "object" && data !== null) {
+        const names = (data as { names?: unknown }).names;
+        if (Array.isArray(names) && !names.includes("agent")) return;
+      }
+      pi.events?.emit?.("statusline:values", {
+        name: "agent",
+        text: activeAgent ? sanitizeTerminalText(activeAgent.name) : "",
+      });
     });
 
     pi.on("before_agent_start", (event, ctx) => {

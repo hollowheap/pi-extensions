@@ -1,6 +1,7 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  defineTool,
 } from "@earendil-works/pi-coding-agent";
 import {
   Key,
@@ -10,9 +11,10 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { scanTaggedBlocks } from "@hollowheap/core/blocks";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "@hollowheap/tui/frame";
+import { Type } from "typebox";
 import { alertQuestion } from "./alerts.js";
 import {
   DONE_LABEL,
@@ -22,28 +24,9 @@ import {
   capAnswer,
   evaluateCondition,
   formatAnswers,
-  parseQuestionBlock,
 } from "./questions.js";
 
 export const ANSWERS_TYPE = "hollowheap.question.answers";
-
-const QUESTION_FORMAT = `Question blocks are tool-free. Use one only when the code or request cannot decide a choice, then end the turn without calling a tool.
-
-End the turn with a fenced block:
-
-'''question
-## Which option?
-1. First option
-2. Second option
-'''
-
-Use one H2 per question; multiple questions are asked in source order. Every option is an ordered-list item. For multi-select, put [ ] on every option; for single-select, omit checkboxes. A question has 0-8 options; zero options asks for free text. Do not add a write-in option: the UI always appends "Write-in answer". Add [page: N] to group questions into pages with Next/Back navigation, and [if: answer1 == 'Yes'] to show a question only when an earlier answer matches. Answers arrive as a follow-up user message.`;
-
-interface AnswerDetails {
-  questions: Question[];
-  answers: (QuestionAnswer | undefined)[];
-  cancelled?: boolean;
-}
 
 interface MultiResult {
   selected: string[];
@@ -612,136 +595,141 @@ export async function askQuestions(
 
 export const askQuestionFlow = askQuestions;
 
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .flatMap((part) => {
-      if (typeof part !== "object" || part === null) return [];
-      const block = part as { type?: unknown; text?: unknown };
-      return block.type === "text" && typeof block.text === "string"
-        ? [block.text]
-        : [];
-    })
-    .join("\n");
-}
+export function createQuestionTool() {
+  return defineTool({
+    name: "question",
+    label: "question",
+    description:
+      "Ask the user one or more questions with single-select, multi-select, or free-text answers. Returns user responses.",
+    exposure: "codemode",
+    promptGuidelines: [
+      "Use tools.question via codemode when you need clarification, user preferences, or decisions between alternatives instead of making blind assumptions.",
+      "question is codemode-only: call it as tools.question({...}) inside a codemode script, never as a direct top-level tool.",
+    ],
+    parameters: Type.Object({
+      questions: Type.Optional(
+        Type.Array(
+          Type.Object({
+            prompt: Type.String({
+              minLength: 1,
+              description: "Question prompt text",
+            }),
+            options: Type.Optional(
+              Type.Array(Type.String(), {
+                description:
+                  "Available choices. If omitted or empty, asks for free-text input.",
+              }),
+            ),
+            multi: Type.Optional(
+              Type.Boolean({
+                description: "True to allow selecting multiple options.",
+              }),
+            ),
+            page: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                description:
+                  "Optional page number for multi-page questionnaires.",
+              }),
+            ),
+            condition: Type.Optional(
+              Type.String({
+                description:
+                  "Optional condition expression (e.g. \"answer1 == 'Yes'\").",
+              }),
+            ),
+          }),
+        ),
+      ),
+      prompt: Type.Optional(
+        Type.String({ description: "Single question prompt shorthand." }),
+      ),
+      options: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Options for single question shorthand.",
+        }),
+      ),
+      multi: Type.Optional(
+        Type.Boolean({
+          description: "Multi-select flag for single question shorthand.",
+        }),
+      ),
+    }),
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const rawQuestions =
+        params.questions ??
+        (params.prompt
+          ? [
+              {
+                prompt: params.prompt,
+                options: params.options,
+                multi: params.multi,
+              },
+            ]
+          : []);
 
-function detailsText(details: unknown): string | undefined {
-  if (details === null || typeof details !== "object") return undefined;
-  const answers = (details as { answers?: unknown }).answers;
-  if (!Array.isArray(answers)) return undefined;
-  try {
-    const formatted = formatAnswers(answers as QuestionAnswer[]);
-    const cancelled = Boolean((details as { cancelled?: unknown }).cancelled);
-    if (cancelled) {
-      return formatted
-        ? `${formatted}\n(Question dialog cancelled)`
-        : "Question dialog cancelled";
-    }
-    return formatted || undefined;
-  } catch {
-    return undefined;
-  }
-}
+      if (rawQuestions.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: No question prompt provided.",
+            },
+          ],
+          details: { cancelled: true, answers: [] },
+        };
+      }
 
-function stripQuestionBlocks(markdown: string, isStreaming: boolean): string {
-  const blocks = scanTaggedBlocks(markdown);
-  let result = markdown;
+      const questions: Question[] = rawQuestions.map((q) => ({
+        prompt: sanitizeTerminalText(q.prompt),
+        mode:
+          !q.options || q.options.length === 0
+            ? "free"
+            : q.multi
+              ? "multi"
+              : "single",
+        options: (q.options ?? []).map((option) =>
+          sanitizeTerminalText(option),
+        ),
+        page: q.page,
+        condition: q.condition,
+      }));
 
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (block.tag !== "question") continue;
+      alertQuestion();
 
-    const remove = block.closed
-      ? parseQuestionBlock(block.body) !== undefined
-      : isStreaming;
-    if (!remove) continue;
+      const answers = await askQuestions(questions, ctx, { signal });
+      if (signal?.aborted || answers === undefined || answers.cancelled) {
+        return {
+          content: [
+            { type: "text" as const, text: "Question cancelled by user." },
+          ],
+          details: { cancelled: true, answers: answers ?? [] },
+        };
+      }
 
-    const end = result[block.end] === "\n" ? block.end + 1 : block.end;
-    result = result.slice(0, block.start) + result.slice(end);
-  }
-
-  return result;
+      const formatted = formatAnswers(answers);
+      return {
+        content: [{ type: "text" as const, text: formatted }],
+        details: { cancelled: false, answers },
+      };
+    },
+  });
 }
 
 export default function (pi: ExtensionAPI) {
-  const handled = new WeakSet<object>();
+  pi.registerTool(createQuestionTool());
 
-  pi.registerMessageRenderer<AnswerDetails>(
-    ANSWERS_TYPE,
-    (message, options) => {
-      const text = detailsText(message.details) ?? contentText(message.content);
-      return new Text(text, options.outputPad, 0);
-    },
-  );
-
-  pi.registerMarkdownTransformer((markdown, context) => {
-    if (context.messageType !== "assistant") return markdown;
-    return stripQuestionBlocks(markdown, context.isStreaming);
-  });
-
-  pi.on("before_agent_start", (event, ctx) => {
-    if (!ctx.hasUI) return;
-    event.systemPromptOptions.sections.question_format = QUESTION_FORMAT;
-  });
-
-  pi.on("message_end", async (event, ctx) => {
-    if (!ctx.hasUI || event.message.role !== "assistant") return;
-    if (handled.has(event.message)) return;
-
-    try {
-      const markdown = contentText(event.message.content);
-      const questions: Question[] = [];
-      for (const block of scanTaggedBlocks(markdown)) {
-        if (block.tag !== "question" || !block.closed) continue;
-        const parsed = parseQuestionBlock(block.body);
-        if (parsed) questions.push(...parsed);
-      }
-
-      if (questions.length === 0) return;
-      handled.add(event.message);
-      alertQuestion();
-
-      const answers = await askQuestions(questions, ctx, {
-        signal: (ctx as { signal?: AbortSignal }).signal,
-      });
-      if ((ctx as { signal?: AbortSignal }).signal?.aborted) return;
-      if (answers === undefined) return;
-
-      if (answers.cancelled) {
-        const partialText = formatAnswers(answers);
-        const content = partialText
-          ? `${partialText}\n(Question dialog cancelled)`
-          : "Question dialog cancelled";
-        pi.sendMessage(
-          {
-            customType: ANSWERS_TYPE,
-            content,
-            display: true,
-            details: { questions, answers, cancelled: true },
-          },
-          { deliverAs: "followUp" },
-        );
-        return;
-      }
-
-      if (!answers.some((a) => a !== undefined)) return;
-
-      pi.sendMessage(
-        {
-          customType: ANSWERS_TYPE,
-          content: formatAnswers(answers),
-          display: true,
-          details: { questions, answers },
-        },
-        { deliverAs: "followUp" },
-      );
-    } catch (error) {
-      handled.delete(event.message);
-      ctx.ui?.notify?.(
-        `pi-question: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
+  pi.on("session_start", () => {
+    const active = pi.getActiveTools();
+    const next = active.filter((name) => name !== "question");
+    if (pi.getAllTools().some((tool) => tool.name === "codemode")) {
+      if (!next.includes("codemode")) next.push("codemode");
+    }
+    if (
+      next.length !== active.length ||
+      next.some((name, index) => name !== active[index])
+    ) {
+      pi.setActiveTools(next);
     }
   });
 }

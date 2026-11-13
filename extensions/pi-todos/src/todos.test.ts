@@ -7,51 +7,7 @@ import {
   formatTodoConfirmation,
   formatTodoList,
   formatTodoWidget,
-  parseTodoBlock,
 } from "./todos.js";
-
-describe("parseTodoBlock", () => {
-  it("parses create_todos as an ordered list of task texts", () => {
-    expect(
-      parseTodoBlock("create_todos", "1. Write tests\n2. Update docs"),
-    ).toEqual({
-      type: "create",
-      texts: ["Write tests", "Update docs"],
-    });
-  });
-
-  it("parses complete_todos as an ordered list of positive IDs", () => {
-    expect(parseTodoBlock("complete_todos", "1. 1\n2. 3")).toEqual({
-      type: "complete",
-      ids: [1, 3],
-    });
-  });
-
-  it("rejects unknown tags, other nodes, unordered lists, checkboxes, and empty lists", () => {
-    expect(parseTodoBlock("other", "1. A")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "## Heading\n1. A")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "- A")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "1. [ ] A")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "1. A\n\n2. B")).toBeUndefined();
-    expect(parseTodoBlock("create_todos", "1. ")).toBeUndefined();
-  });
-
-  it("rejects malformed complete IDs", () => {
-    for (const body of [
-      "1. 0",
-      "1. 01",
-      "1. -1",
-      "1. abc",
-      "1. 1.5",
-      "1. 9007199254740992",
-      "1. [ ] 1",
-      "- 1",
-    ]) {
-      expect(parseTodoBlock("complete_todos", body)).toBeUndefined();
-    }
-  });
-});
 
 describe("applyTodoCommand", () => {
   it("appends create tasks with monotonic IDs", () => {

@@ -1,10 +1,11 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
-import { scanTaggedBlocks } from "@hollowheap/core/blocks";
 import { roundedFrame } from "@hollowheap/tui/frame";
+import { Type } from "typebox";
 import {
   type SubagentStateItem,
   type TaskStateItem,
@@ -15,51 +16,12 @@ import {
   formatTodoConfirmation,
   formatTodoList,
   formatTodoWidget,
-  parseTodoBlock,
 } from "./todos.js";
 
 const TODOS_TYPE = "hollowheap.todos";
-const UPDATED_TYPE = "hollowheap.todos.updated";
-
-const TODOS_FORMAT = `Todo blocks are tool-free. Do not call a todo tool; none exists.
-
-Create tasks with exactly one ordered list:
-\`\`\`create_todos
-1. First task
-2. Second task
-\`\`\`
-
-Complete tasks by numeric ID with exactly one ordered list:
-\`\`\`complete_todos
-1. 2
-\`\`\`
-
-Delete all completed todos with an empty block:
-\`\`\`delete_todos
-\`\`\`
-
-create_todos appends tasks and assigns stable numeric IDs; it never replaces the list. Do not use checkboxes or unordered lists. complete_todos marks the listed IDs done and reports unknown IDs. delete_todos clears all todos only when every todo is done. After a change, a follow-up message lists every todo with its ID and done marker so you can learn the assigned IDs. /todos shows the current list. Priorities are managed with /todo priority <id> <high|medium|low>; todo blocks cannot set priority.`;
-
-interface TodoDetails {
-  todos: Todo[];
-  unknownIds: number[];
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .flatMap((part) => {
-      if (!isRecord(part)) return [];
-      return part.type === "text" && typeof part.text === "string"
-        ? [part.text]
-        : [];
-    })
-    .join("\n");
 }
 
 function readSubagentItems(value: unknown): SubagentStateItem[] | undefined {
@@ -113,46 +75,6 @@ function readTaskItems(value: unknown): TaskStateItem[] | undefined {
     items.push(item);
   }
   return items;
-}
-
-function detailsText(details: unknown): string | undefined {
-  if (details === null || typeof details !== "object") return undefined;
-  const value = details as { todos?: unknown; unknownIds?: unknown };
-  const todos = readTodos(value.todos);
-  if (!todos) return undefined;
-  const unknownIds = Array.isArray(value.unknownIds)
-    ? value.unknownIds.filter(
-        (id): id is number =>
-          typeof id === "number" && Number.isSafeInteger(id) && id >= 1,
-      )
-    : [];
-  return formatTodoConfirmation(todos, unknownIds);
-}
-
-function stripTodoBlocks(markdown: string, isStreaming: boolean): string {
-  const blocks = scanTaggedBlocks(markdown);
-  let result = markdown;
-
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (
-      block.tag !== "create_todos" &&
-      block.tag !== "complete_todos" &&
-      block.tag !== "delete_todos"
-    ) {
-      continue;
-    }
-
-    const remove = block.closed
-      ? parseTodoBlock(block.tag, block.body) !== undefined
-      : isStreaming;
-    if (!remove) continue;
-
-    const end = result[block.end] === "\n" ? block.end + 1 : block.end;
-    result = result.slice(0, block.start) + result.slice(end);
-  }
-
-  return result;
 }
 
 function readTodos(value: unknown): Todo[] | undefined {
@@ -213,8 +135,213 @@ function readState(data: unknown): TodoState | undefined {
   return { todos, nextId: Math.max(value.nextId, maxId + 1) };
 }
 
+export function createTodoTool(
+  getState: () => TodoState,
+  setState: (next: TodoState, ctx?: ExtensionContext) => void,
+) {
+  return defineTool({
+    name: "todo",
+    label: "todo",
+    description:
+      "Manage branch-local todos: create, complete, delete, edit, priority, or list tasks.",
+    exposure: "codemode",
+    promptGuidelines: [
+      "Use tools.todo via codemode to track multi-step execution plans: create tasks before complex multi-step work, update status/complete as steps finish.",
+      "todo is codemode-only: call it as tools.todo({...}) inside a codemode script, never as a direct top-level tool.",
+    ],
+    parameters: Type.Object({
+      action: Type.Union([
+        Type.Literal("create"),
+        Type.Literal("complete"),
+        Type.Literal("delete"),
+        Type.Literal("list"),
+        Type.Literal("edit"),
+        Type.Literal("priority"),
+      ]),
+      tasks: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Task descriptions for create action.",
+        }),
+      ),
+      text: Type.Optional(
+        Type.String({
+          description: "Single task description for create or edit action.",
+        }),
+      ),
+      ids: Type.Optional(
+        Type.Array(Type.Integer({ minimum: 1 }), {
+          description: "Task IDs for complete or delete action.",
+        }),
+      ),
+      id: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description:
+            "Single task ID for complete, delete, edit, or priority action.",
+        }),
+      ),
+      priority: Type.Optional(
+        Type.Union(
+          [Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")],
+          { description: "Priority level for priority action." },
+        ),
+      ),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const current = getState();
+      if (params.action === "list") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoList(current.todos),
+            },
+          ],
+          details: { todos: current.todos },
+        };
+      }
+
+      if (params.action === "create") {
+        const texts = params.tasks ?? (params.text ? [params.text] : []);
+        if (texts.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: No tasks provided to create.",
+              },
+            ],
+            details: { todos: current.todos },
+          };
+        }
+        const result = applyTodoCommand(current, { type: "create", texts });
+        setState(result.state, ctx);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoList(result.state.todos),
+            },
+          ],
+          details: { todos: result.state.todos, created: texts },
+        };
+      }
+
+      if (params.action === "complete") {
+        const ids = params.ids ?? (params.id !== undefined ? [params.id] : []);
+        if (ids.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: No task IDs provided to complete.",
+              },
+            ],
+            details: { todos: current.todos },
+          };
+        }
+        const result = applyTodoCommand(current, { type: "complete", ids });
+        setState(result.state, ctx);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoConfirmation(
+                result.state.todos,
+                result.unknownIds,
+              ),
+            },
+          ],
+          details: {
+            todos: result.state.todos,
+            unknownIds: result.unknownIds,
+          },
+        };
+      }
+
+      if (params.action === "delete") {
+        const ids =
+          params.ids ?? (params.id !== undefined ? [params.id] : undefined);
+        const result = applyTodoCommand(current, { type: "delete", ids });
+        setState(result.state, ctx);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoList(result.state.todos),
+            },
+          ],
+          details: { todos: result.state.todos },
+        };
+      }
+
+      if (params.action === "edit") {
+        if (params.id === undefined || !params.text) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Both id and text are required for edit.",
+              },
+            ],
+            details: { todos: current.todos },
+          };
+        }
+        const result = applyTodoCommand(current, {
+          type: "edit",
+          id: params.id,
+          text: params.text,
+        });
+        setState(result.state, ctx);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoList(result.state.todos),
+            },
+          ],
+          details: { todos: result.state.todos },
+        };
+      }
+
+      if (params.action === "priority") {
+        if (params.id === undefined || !params.priority) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Both id and priority are required for priority action.",
+              },
+            ],
+            details: { todos: current.todos },
+          };
+        }
+        const result = applyTodoCommand(current, {
+          type: "priority",
+          id: params.id,
+          priority: params.priority,
+        });
+        setState(result.state, ctx);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatTodoList(result.state.todos),
+            },
+          ],
+          details: { todos: result.state.todos },
+        };
+      }
+
+      return {
+        content: [{ type: "text" as const, text: "Error: Unknown action." }],
+        details: { todos: current.todos },
+      };
+    },
+  });
+}
+
 export default function (pi: ExtensionAPI) {
-  const handled = new WeakSet<object>();
   let state: TodoState = emptyTodoState();
   let subagents: SubagentStateItem[] = [];
   let tasks: TaskStateItem[] = [];
@@ -252,6 +379,18 @@ export default function (pi: ExtensionAPI) {
     }));
   };
 
+  pi.registerTool(
+    createTodoTool(
+      () => state,
+      (next, context) => {
+        state = next;
+        pi.appendEntry(TODOS_TYPE, state);
+        if (context) updateUI(context);
+        else if (lastCtx) updateUI(lastCtx);
+      },
+    ),
+  );
+
   pi.events.on("subagents:state", (data: unknown) => {
     const items = readSubagentItems(data);
     if (items === undefined) return;
@@ -280,20 +419,6 @@ export default function (pi: ExtensionAPI) {
     }
     updateUI(ctx);
   };
-
-  pi.registerMessageRenderer<TodoDetails>(UPDATED_TYPE, (message, options) => {
-    const text = detailsText(message.details) ?? contentText(message.content);
-    return new Text(text, options.outputPad, 0);
-  });
-
-  pi.registerMarkdownTransformer((markdown, context) => {
-    if (context.messageType !== "assistant") return markdown;
-    return stripTodoBlocks(markdown, context.isStreaming);
-  });
-
-  pi.on("before_agent_start", (event) => {
-    event.systemPromptOptions.sections.todos_format = TODOS_FORMAT;
-  });
 
   // Prefixed keybinding: Ctrl+X then p toggles panel collapse
   let chordPending = false;
@@ -334,7 +459,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     restore(ctx);
     setupTerminalInput(ctx);
+    const active = pi.getActiveTools();
+    const next = active.filter((name) => name !== "todo");
+    if (pi.getAllTools().some((tool) => tool.name === "codemode")) {
+      if (!next.includes("codemode")) next.push("codemode");
+    }
+    if (
+      next.length !== active.length ||
+      next.some((name, index) => name !== active[index])
+    ) {
+      pi.setActiveTools(next);
+    }
   });
+
   pi.on("session_tree", (_event, ctx) => {
     restore(ctx);
     setupTerminalInput(ctx);
@@ -350,58 +487,6 @@ export default function (pi: ExtensionAPI) {
     if (state.todos.length > 0 || state.nextId > 1) {
       pi.appendEntry(TODOS_TYPE, state);
     }
-  });
-
-  pi.on("message_end", (event, ctx) => {
-    const message = event.message;
-    if (
-      message === undefined ||
-      message === null ||
-      typeof message !== "object" ||
-      message.role !== "assistant"
-    ) {
-      return;
-    }
-
-    const commands = scanTaggedBlocks(contentText(message.content)).flatMap(
-      (block) => {
-        if (!block.closed) return [];
-        const command = parseTodoBlock(block.tag, block.body);
-        return command ? [command] : [];
-      },
-    );
-
-    if (commands.length === 0 || handled.has(message)) return;
-    handled.add(message);
-
-    let next = state;
-    let changed = false;
-    const unknownIds: number[] = [];
-    for (const command of commands) {
-      const result = applyTodoCommand(next, command);
-      next = result.state;
-      changed ||= result.changed;
-      unknownIds.push(...result.unknownIds);
-    }
-
-    state = next;
-    updateUI(ctx);
-    if (changed) {
-      pi.appendEntry(TODOS_TYPE, state);
-    }
-
-    const uniqueUnknownIds = [...new Set(unknownIds)].sort(
-      (left, right) => left - right,
-    );
-    pi.sendMessage(
-      {
-        customType: UPDATED_TYPE,
-        content: formatTodoConfirmation(state.todos, uniqueUnknownIds),
-        display: true,
-        details: { todos: state.todos, unknownIds: uniqueUnknownIds },
-      },
-      { deliverAs: "followUp" },
-    );
   });
 
   pi.registerCommand("todos", {

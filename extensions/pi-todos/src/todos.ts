@@ -1,8 +1,4 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import {
-  type ListItemNode,
-  parseMarkdownBlocks,
-} from "@hollowheap/core/blocks";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export type TodoPriority = "high" | "medium" | "low";
@@ -22,7 +18,9 @@ export interface TodoState {
 export type TodoCommand =
   | { type: "create"; texts: string[] }
   | { type: "complete"; ids: number[] }
-  | { type: "delete" };
+  | { type: "delete"; ids?: number[] }
+  | { type: "edit"; id: number; text: string }
+  | { type: "priority"; id: number; priority: TodoPriority };
 
 export interface TodoUpdate {
   state: TodoState;
@@ -30,61 +28,8 @@ export interface TodoUpdate {
   changed: boolean;
 }
 
-const CREATE_TAG = "create_todos";
-const COMPLETE_TAG = "complete_todos";
-const DELETE_TAG = "delete_todos";
-const POSITIVE_ID = /^[1-9]\d*$/;
-
 export function emptyTodoState(): TodoState {
   return { todos: [], nextId: 1 };
-}
-
-function orderedItems(body: string): ListItemNode[] | undefined {
-  const nodes = parseMarkdownBlocks(body);
-  if (nodes.length !== 1) return undefined;
-
-  const node = nodes[0];
-  if (node.type !== "list" || !node.ordered || node.items.length === 0) {
-    return undefined;
-  }
-
-  return node.items;
-}
-
-export function parseTodoBlock(
-  tag: string,
-  body: string,
-): TodoCommand | undefined {
-  if (tag !== CREATE_TAG && tag !== COMPLETE_TAG && tag !== DELETE_TAG) {
-    return undefined;
-  }
-
-  if (tag === DELETE_TAG) {
-    if (body.trim() !== "") return undefined;
-    return { type: "delete" };
-  }
-
-  const items = orderedItems(body);
-  if (!items || items.some((item) => item.checked !== undefined)) {
-    return undefined;
-  }
-
-  if (tag === CREATE_TAG) {
-    const texts = items.map((item) => item.text.trim());
-    if (texts.some((text) => text.length === 0)) return undefined;
-    return { type: "create", texts };
-  }
-
-  const ids: number[] = [];
-  for (const item of items) {
-    const text = item.text.trim();
-    if (!POSITIVE_ID.test(text)) return undefined;
-    const id = Number(text);
-    if (!Number.isSafeInteger(id)) return undefined;
-    ids.push(id);
-  }
-
-  return { type: "complete", ids };
 }
 
 export function applyTodoCommand(
@@ -106,6 +51,16 @@ export function applyTodoCommand(
   }
 
   if (command.type === "delete") {
+    if (command.ids && command.ids.length > 0) {
+      const toDelete = new Set(command.ids);
+      const todos = state.todos.filter((todo) => !toDelete.has(todo.id));
+      const changed = todos.length !== state.todos.length;
+      return {
+        state: { todos, nextId: state.nextId },
+        unknownIds: [],
+        changed,
+      };
+    }
     if (state.todos.length === 0 || state.todos.some((todo) => !todo.done)) {
       return { state, unknownIds: [], changed: false };
     }
@@ -113,6 +68,38 @@ export function applyTodoCommand(
       state: { todos: [], nextId: state.nextId },
       unknownIds: [],
       changed: true,
+    };
+  }
+
+  if (command.type === "edit") {
+    let changed = false;
+    const todos = state.todos.map((todo) => {
+      if (todo.id === command.id) {
+        changed = true;
+        return { ...todo, text: command.text };
+      }
+      return todo;
+    });
+    return {
+      state: { todos, nextId: state.nextId },
+      unknownIds: changed ? [] : [command.id],
+      changed,
+    };
+  }
+
+  if (command.type === "priority") {
+    let changed = false;
+    const todos = state.todos.map((todo) => {
+      if (todo.id === command.id) {
+        changed = true;
+        return { ...todo, priority: command.priority };
+      }
+      return todo;
+    });
+    return {
+      state: { todos, nextId: state.nextId },
+      unknownIds: changed ? [] : [command.id],
+      changed,
     };
   }
 
@@ -157,7 +144,7 @@ export function formatTodoList(todos: readonly Todo[]): string {
   return byId(todos)
     .map((todo) => {
       const prio = todo.priority ? `[${todo.priority}] ` : "";
-      return `${todo.done ? "✓" : "•"} ${todo.id} ${prio}${todo.text}`;
+      return `${todo.done ? "✓" : "•"} ${todo.id} ${prio}${sanitizeTerminalText(todo.text)}`;
     })
     .join("\n");
 }
@@ -254,10 +241,11 @@ export function formatTodoWidget(
 
     const items: string[] = [];
     for (const todo of [...open, ...done].slice(0, WIDGET_LIMIT)) {
+      const safeText = sanitizeTerminalText(todo.text);
       if (todo.done) {
-        items.push(`✓ ${todo.id} ${strikethrough(todo.text)}`);
+        items.push(`✓ ${todo.id} ${strikethrough(safeText)}`);
       } else {
-        items.push(`• ${todo.id} ${todo.text}`);
+        items.push(`• ${todo.id} ${safeText}`);
       }
     }
     if (sorted.length > WIDGET_LIMIT) {
