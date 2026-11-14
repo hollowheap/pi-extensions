@@ -1,34 +1,22 @@
-# AGENTS.md
+# pi-extensions
 
-Pi extension monorepo for the Pi coding agent. Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, biome. Extensions live in `extensions/pi-*`; shared runtime libraries live in `packages/`. Host modules are peer-only. Never vendor policy, modes, or shell analysis. Commits are GPG-signed; never bypass hooks or signing.
+Pi coding agent extension monorepo delivering guardrails, statusline, budgeting, dashboard, modal editing, hooks, tasks, subagents, web/LSP tools, memory, and an ACP server.
 
 ## Essential Commands
 
-- `npm install` — install the workspace once at the root.
-- `npm test` — vitest over `extensions/*/src/**` and `packages/*/src/**` (`npx vitest run <file>` for one file).
-- `npm run typecheck` — `tsc --noEmit`.
-- `npm run lint` — `biome check .` (`npm run lint:fix` writes fixes).
-- `npm run new -- pi-<name>` — scaffold a package; never hand-copy manifests.
-- `npx tsc -p packages/pi-acp` — rebuild gitignored `packages/pi-acp/dist`.
-- `scripts/artifacts.sh status|check|verify-links|frontier` — inspect the R/D/S/T artifacts.
-
-## Repository Layout
-
-- `extensions/pi-*/` — one extension per package, entry `index.ts` re-exporting `src/index.ts`.
-- `packages/core/` — shared policy, config, pricing, usage ledger, shell parsing, formatting, modes, state.
-- `packages/runtime/` — command execution, sandboxing, detached process, atomic state, and JSONL Unix-socket primitives.
-- `packages/tui/` — shared frames, pickers, pagers, progress, and viewer primitives.
-- `packages/policy/` — headless permission policy and shared tool-target helpers.
-- `packages/pi-acp/` — standalone ACP server plus bundled pi extension.
-- `extensions/pi-hooks/src/skills/hooks-init/` — lifecycle-hooks skill.
-- `artifacts/` — requirements, decisions, specs, plan, context.
+- Install dependencies: `npm install`
+- Typecheck & ACP build: `npm run typecheck` (`npx tsc -p packages/pi-acp` rebuilds gitignored `packages/pi-acp/dist`)
+- Lint: `npm run lint` (`npm run lint:fix` writes fixes)
+- Full test suite: `npm test`
+- Single test / module: `npx vitest run <file-or-dir>`
+- Scaffold extension: `npm run new -- pi-<name>` (never hand-copy manifests)
+- Artifact checks: `scripts/artifacts.sh status|check|verify-links|frontier`
 
 ## Conventions
 
+- Extensions live in `extensions/pi-*` (`index.ts` re-exports `src/index.ts`); shared libraries live in `packages/`.
+- Extensions import `@hollowheap/core/*` and `@hollowheap/runtime/*` subpaths (never barrel `@hollowheap/core`); host modules stay peer-only.
+- Never vendor policy, modes, or shell analysis outside `@hollowheap/core`; commits are GPG-signed (never bypass hooks or signing).
 - In tests, clean `process.env` with `Reflect.deleteProperty` (`delete` triggers Biome lint).
-- Extension skills must be opt-in via env flags (e.g. `PI_HOOKS_DISCOVER_SKILL=1`) to prevent prompt bloat.
-- Verify changes narrowly (`npx vitest run <file>`) before chaining compound checks.
-
-## Architecture
-
-See `artifacts/context.md` for entrypoints and `artifacts/architecture.md` for module seams.
+- Extension skills stay opt-in via env flags (e.g. `PI_HOOKS_DISCOVER_SKILL=1`) to prevent prompt bloat.
+- Verify narrow slices (`npx vitest run <file>`) before running full workspace checks.

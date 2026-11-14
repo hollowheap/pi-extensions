@@ -49,7 +49,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
   - Risk: Historical regression coverage is in the Verify command.
 
 - [x] T78 [S17] (blocked-by: none): spawn wiring + bin + README; live smoke (initialize/new/list, zero load errors, no model call).
-  - Verify: test -f artifacts/logs/acp-live.log
+  - Verify: test -f .artifacts/logs/acp-live.log
   - Files: see A8 in git history
   - Notes: Archived ACP task A8, renumbered to T78; implementation and tests are in git history.
   - Risk: Historical regression coverage is in the Verify command.
@@ -512,7 +512,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 - [x] T68 [S84] (blocked-by: T60, T62, T65, T67): document the web-tool contract in package and root docs.
   - Verify: `rg -q "TAVILY_API_KEY" extensions/pi-web/README.md && rg -q "pi-web" README.md`
-  - Files: `extensions/pi-web/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Files: `extensions/pi-web/README.md`, `README.md`, `AGENTS.md`, `.artifacts/CONTEXT.md`
   - Notes: list providers, env keys, order arrays, shapes, caps, media, no-rendering limit, and fallback order.
   - Risk: stale provider list or undocumented security limits.
 
@@ -574,7 +574,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 - [x] T89 [S92] (blocked-by: T85, T86, T87, T88): document advisory use and verify direct-only exposure.
   - Verify: `npx vitest run extensions/pi-decide/src/index.test.ts && rg -q "decide" extensions/pi-decide/README.md`
-  - Files: `extensions/pi-decide/README.md`, `extensions/pi-decide/src/index.test.ts`, `package.json`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Files: `extensions/pi-decide/README.md`, `extensions/pi-decide/src/index.test.ts`, `package.json`, `README.md`, `AGENTS.md`, `.artifacts/CONTEXT.md`
   - Notes: direct tool, no codemode activation, no CLI, no service registry; warn that input is sent to the classifier.
   - Risk: hidden/codemode exposure, extra tools, undocumented privacy limits.
 
@@ -668,7 +668,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 
 - [x] T104 [S102] (blocked-by: T93, T94, T96, T97, T98, T99, T100, T101, T102, T103): document the subagent contract and shared process package.
   - Verify: `rg -q "maxConcurrent" extensions/pi-subagents/README.md && rg -q "pi-subagents" README.md`
-  - Files: `extensions/pi-subagents/README.md`, `packages/runtime/README.md`, `README.md`, `AGENTS.md`, `artifacts/context.md`
+  - Files: `extensions/pi-subagents/README.md`, `packages/runtime/README.md`, `README.md`, `AGENTS.md`, `.artifacts/CONTEXT.md`
   - Notes: config, agents, actions, state/socket, trust, depth, locks, recovery, ACP inactivity, limitations.
   - Risk: stale defaults, missing security limits.
 

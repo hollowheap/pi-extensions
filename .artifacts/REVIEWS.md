@@ -63,3 +63,5 @@
 | V59 | packages-runtime-r3 | `review/packages-runtime-r3.md` | robust | packages/runtime re-review r3 |
 | V60 | packages-core-r3 | `review/packages-core-r3.md` | robust | packages/core re-review r3 |
 | V61 | packages-pi-acp-r3 | `review/packages-pi-acp-r3.md` | robust | packages/pi-acp re-review r3 |
+| V62 | session-enrichment-dashboard-r1 | `review/session-enrichment-dashboard-r1.md` | needs-fixes | uncommitted session snapshots, pi-dashboard, pi-acp, policy + 117285e |
+| V63 | session-enrichment-dashboard-r2 | `review/session-enrichment-dashboard-r2.md` | robust | re-review of V62 fixes + target extraction & sessionManager guards |

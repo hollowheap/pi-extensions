@@ -1,12 +1,12 @@
 # Architecture
 
-Last verified: 2026-11-07.
+Last verified: 2026-11-15.
 Scope: `my-pi-agent` workspace.
 
 ## System Shape
 
 - Pi loads one extension per `extensions/pi-*` package through jiti with `moduleCache: false`; installed packages get separate module roots.
-- `packages/core` owns shared policy, config, shell parsing, formatting, modes, session state, pricing, usage ledger, session caches, and the prompt queue.
+- `packages/core` owns shared policy, config, shell parsing, formatting, modes, session state, pricing, usage ledger, session caches, the prompt queue, and the live session snapshot bus (`@hollowheap/core/snapshot`).
 - `packages/runtime` owns command execution, sandboxing, detached lifecycle, atomic state, logs, cancellation, PID/start-time reconciliation, and JSONL Unix-socket primitives.
 - `packages/tui` owns reusable frames, pickers, pagers, cancellable progress, and the code viewer; it depends on core types and host TUI peers.
 - `packages/policy` owns headless permission enforcement and shared tool-category/target helpers; `pi-guard` uses them for interactive approval and `pi-subagents` loads the headless extension for children.
@@ -18,20 +18,20 @@ Scope: `my-pi-agent` workspace.
 
 - `core` is the single policy/config/state owner; consumers keep UI, transport, and adapter behavior.
 - `pi-guard` owns verdict prompts, bash truncation, `/mode`, `/context`, and `alt+m`; it does not parse rules.
-- `pi-modal` owns the modal editor, mode-themed prompt borders, working indicator, rounded code viewer, vim keybind reference, and the `/expand` tool-output toggle.
-- `pi-tools` owns `/cd` only. `pi-language-tools` owns the codemode-only `lang` LSP client and its pooled servers.
+- `pi-modal` owns the modal editor, `$` skill autocomplete, `/expand` tool-output persistence (`hollowheap.modal.expand`), mode-themed prompt borders, working indicator, rounded code viewer, vim keybind reference, and `ModalSnapshot`.
+- `pi-tools` owns `/cd` (`hollowheap.core.cwd`) only. `pi-language-tools` owns the codemode-only `lang` LSP client, pooled servers, and `LspSnapshot`.
 - The default active tool set excludes host `powershell` and `ls`; `bash` covers listing and shell work.
-- `pi-hooks` owns session/pre/post hook execution and trusted project overlays.
-- `pi-question` and `pi-todos` own tagged-block parsing, UI, and branch-local state.
-- `pi-tasks` owns durable shell tasks. `packages/runtime` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents, harness selection, write locking, resume, and bounded, deletable session-only agent definitions.
+- `pi-hooks` owns session/pre/post hook execution, trusted project overlays, and `HooksSnapshot` / `hollowheap.hooks` stats.
+- `pi-question` and `pi-todos` expose codemode tools (`question`, `todo`), keep widget/UI flows, and persist branch custom entries (`hollowheap.question.answers`, `hollowheap.todos`) plus live snapshots.
+- `pi-tasks` owns durable shell tasks (`hollowheap.tasks.run`). `packages/runtime` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents (`hollowheap.subagents.run`), harness selection, write locking, resume, and bounded, deletable session-only agent definitions.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
-- `pi-web` owns provider adapters and URL safety; `pi-decide` owns the advisory `decide` tool; `pi-agent` owns profile switching and the rounded agent picker/activation popups.
-- `pi-usage` owns `/usage` presentation, subagent usage scanning, optional USD cap UX, and the statusline usage provider; accounting and compaction-safe state live in core.
-- `pi-memory` owns opt-in observer calls, branch-local observations, compaction focus, `/memory` commands, and observer usage recording. It does not replace Pi compaction.
+- `pi-web` owns provider adapters, URL safety, and `hollowheap.web.history` / `WebSnapshot`; `pi-decide` owns the advisory `decide` tool and `DecideSnapshot`; `pi-agent` owns `defaultAgent` config startup/switching and the rounded agent picker/activation popups.
+- `pi-statusline` owns footer rendering with git-repo `cwd` truncation, click dispatch, and rounded theme/section pickers; `pi-dashboard` owns auto-hiding startup dashboard (`header`, `state`, `sessions`, `actions`, `terminal` sections) and interactive `/dashboard` session-resume/quick-action overlay.
+- `pi-usage` owns `/usage` presentation, subagent usage scanning, optional USD cap persistence, and the statusline usage provider; accounting, budget cap persistence, and compaction-safe state live in core.
+- `pi-memory` owns opt-in observer calls, branch-local observations, compaction focus, `/memory` commands, observer usage recording, and `MemorySnapshot`. It does not replace Pi compaction.
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
-- Review V19–V38 remediation extracts a shared primitive only when three or more owners share a defect: config update, terminal sanitizing, process-group kill, and prompt-lock cancellation. Single-owner fixes stay local (D176).
-- `withPromptLock` accepts optional `signal` and `timeoutMs`; overlay helpers release the lock on dispose (D177, planned).
+- Review V19–V38 remediation extracted shared primitives cleanly (D176–D184: `updateJsonConfig`, `sanitizeTerminalText`, group kill, and signal/timeout `withPromptLock`). Round 3 reviews `V39–V61` are recorded in `.artifacts/REVIEWS.md`.
 
 ## Dependency Direction
 
@@ -41,7 +41,7 @@ Scope: `my-pi-agent` workspace.
 ## Framework & Library Choices
 
 - Node >= 22.19, npm workspaces, TypeScript loaded by jiti, vitest, and biome.
-- Extensions import `@hollowheap/core/*` and `@hollowheap/runtime/*` subpaths instead of the package barrel. Pi reloads each extension through jiti, so a barrel import re-resolves every shared module and costs about 150 ms per extension; `artifacts/scripts/bench-startup.mjs` measures the full load.
+- Extensions import `@hollowheap/core/*` and `@hollowheap/runtime/*` subpaths instead of the package barrel. Pi reloads each extension through jiti, so a barrel import re-resolves every shared module and costs about 150 ms per extension; `.artifacts/scripts/bench-startup.mjs` measures the full load.
 - Pi host modules are peer dependencies; shared runtime packages are real workspace dependencies.
 - `packages/pi-acp` builds with `tsc -p packages/pi-acp` into gitignored `dist/`.
 - `lang` is a dependency-free LSP client over stdio using Node builtins.
@@ -53,14 +53,14 @@ Scope: `my-pi-agent` workspace.
 
 - Agent settings live under `<agentDir>` (`permissions.json`, `modes.json`, `hooks.json`, `subagents.json`, `memory.json`, `decide.json`, `language-tools.json`, `modal.json`, `web.json`).
 - Trusted project overlays are read only after `ctx.isProjectTrusted()`; untrusted projects are ignored or asked.
-- Session state is stored as custom entries: mode, todos, usage, session-only subagent definitions, and observational memory survive resume and restore from the active branch. Definition and memory tombstones use separate custom types. `maxSessionAgents` and `maxSessionAgentBytes` in `<agentDir>/subagents.json` bound new definitions; `memory.json` controls observer activation, thresholds, redaction, and injection size.
+- Session state is stored as branch custom entries: mode, cwd (`hollowheap.core.cwd`), usage/budget (`hollowheap.usage`), todos (`hollowheap.todos`), agent (`hollowheap.agent`), autopilot (`hollowheap.autopilot`), guard audit counters (`hollowheap.guard.audit`), hook stats (`hollowheap.hooks`), task/subagent run links (`hollowheap.tasks.run`, `hollowheap.subagents.run`), question answers (`hollowheap.question.answers`), web history (`hollowheap.web.history`), expand preference (`hollowheap.modal.expand`), session-only subagent definitions, and observational memory survive resume and restore from the active branch. `@hollowheap/core/snapshot` (`globalThis[Symbol.for("@hollowheap/core/snapshot")]`) aggregates live state for `pi-dashboard`, and `extractSessionSummaryFromEntries` reads persisted summaries across previous session branches. `maxSessionAgents` and `maxSessionAgentBytes` in `<agentDir>/subagents.json` bound new definitions; `memory.json` controls observer activation, thresholds, redaction, and injection size.
 - Permission rules use `allow|ask|deny` with open category tags. Built-in path categories are `read`, `edit`, and `search`; `shell` matches commands; `external` and extension-defined categories match non-path targets such as URLs, queries, and model actions.
 - Web search and fetch return normalized shapes with caps; provider keys come only from environment variables.
 - Detached processes persist state atomically, stream logs, and speak one JSON object per line over Unix sockets.
 - Task records carry id, kind, status, cwd, timestamps, exit code, output, wait, and cancel. Subagent state adds agent, task, PID, start time, socket, session, attempt, and parent session.
 - Usage pricing is per message model; USD caps are optional and cache read/write tokens count.
-- One core cost function prices every model call: provider `usage.cost.total` when finite and above 0, else the price table. Ledger, statusline, subagent scan, observer, and classifier share it; restore reads the active branch (D178, planned).
-- Settings writers update JSON through one core helper that refuses to overwrite an unparseable file and writes temp+rename (D179, planned).
+- One core cost function prices every model call: provider `usage.cost.total` when finite and above 0, else the price table. Ledger, statusline, subagent scan, observer, and classifier share it; restore reads the active branch (D178).
+- Settings writers update JSON through one core helper that refuses to overwrite an unparseable file and writes temp+rename (D179).
 
 ## Operations & Security
 
@@ -82,9 +82,9 @@ Scope: `my-pi-agent` workspace.
 
 ## Known Debt
 
-- Review V19–V38 findings are open until D176–D184 specs S173–S187 land; reopened specs carry a `Regression:` line; see `artifacts/reviews.md` V19–V38. Destructive-shell matching is heuristic and does not replace an outer sandbox.
+- Review V19–V38 findings are fixed in code and verified against D176–D184 specs S173–S187 (`S173`–`S188`); destructive-shell matching remains heuristic and does not replace an outer sandbox.
 - DNS-rebinding hardening for `web_fetch` is deferred.
-- Todo dependency/cycle behavior remains unported; D156 keeps text blocks and adds selected upstream behaviors without a model tool.
+- Todo dependency/cycle behavior remains unported beyond core CRUD and priority fields.
 - Durable task cleanup is manual; there is no automatic task garbage collection.
 - Subagents do not auto-resume; `resume` is explicit.
 - Generic CLI harness usage is unavailable and excluded from usage totals.
@@ -98,17 +98,13 @@ Scope: `my-pi-agent` workspace.
 - Auto-installing language servers or resolving them from project-local `node_modules`.
 - Project-level `language-tools.json`; server commands come from built-in mappings and the agent dir only.
 - Semantic or embedding-based code search.
-- A todo model tool; `pi-todos` uses `create_todos`/`complete_todos` tagged blocks only.
-- Rewriting the stored assistant message or model transcript to remove tagged blocks.
-- A sidebar or split-pane todo panel; Pi overlays composite without reflowing
-  the transcript, and the extension API has no split-pane or side placement.
-  Todos use a compact above-editor widget, `/todos`, and the status count.
+- Direct top-level `question` or `todo` tool schemas; both tools stay `codemode`-only.
+- Rewriting stored assistant messages or transcripts when answering questions or mutating todos.
+- A persistent split-pane sidebar; Pi overlays and widgets composite above the editor without reflowing the chat transcript.
 - A combined tabbed question form; questions are sequential dialogs.
-- Stored-message stripping or a tool fallback when no UI is available.
 - Removing tagged blocks from RPC client transcripts; RPC rendering is client-owned.
 - OS-level sandboxing of allowed shell side effects.
-- `tool_search` activation of `fd`/`rg`; a mid-session schema append can invalidate the cached prefix.
-- A direct-schema fallback when `codemode` is unavailable; the declared set must not depend on the environment.
+- Standalone `pi-tools` `fd`/`rg` model tools; `acp_fd`/`acp_rg` handle ACP search and core bash handles workspace search.
 - A runtime dependency on the ACP SDK; an ACP SDK in core.
 - Sharing core state across processes.
 - Changing the permissions rule schema beyond adding a `tools` tag map.
@@ -127,9 +123,9 @@ Scope: `my-pi-agent` workspace.
 
 ## Evidence
 
-- Accepted decisions: `artifacts/decisions.md` D01-D184 (D176-D184 accepted; specs S173-S187 pending).
-- Behavioral specs: `artifacts/specs.md` (170 entries, S01-S172; S139-S140 absent).
-- Historical spec prose: `artifacts/research/spec-prose-archive.md`.
-- Runtime map and commands: `artifacts/context.md`.
-- Requirements: `artifacts/requirements.md`.
-- Final suite (1052 tests/117 files), typecheck, and lint (327 files) green on 2026-11-05.
+- Accepted decisions: `.artifacts/DECISIONS.md` D01-D185.
+- Behavioral specs: `.artifacts/SPECS.md` (186 entries, S01-S188; S139-S140 absent).
+- Historical spec prose: `.artifacts/research/spec-prose-archive.md`.
+- Runtime map and commands: `.artifacts/CONTEXT.md`.
+- Requirements: `.artifacts/REQUIREMENTS.md`.
+- Full build, typecheck, lint (334 files), and test suite (1147 tests/124 files) green on 2026-11-15.

@@ -18,16 +18,16 @@ never hidden behind completed rows.
 
 ## References
 
-- `artifacts/research/pi-extension-landscape.md` — versions, feature matrix,
+- `.artifacts/research/pi-extension-landscape.md` — versions, feature matrix,
   source citations, and upstream defects.
-- `artifacts/review/pi-web.md`, `pi-subagents.md`, `pi-todos.md` — verified
+- `.artifacts/review/pi-web.md`, `pi-subagents.md`, `pi-todos.md` — verified
   local defects and probe output.
-- `artifacts/scripts/probe-web-ssrf.ts` — `localtest.me` and `nip.io` allowed.
-- `artifacts/scripts/probe-web-fallbacks.ts` — empty search stops fallback;
+- `.artifacts/scripts/probe-web-ssrf.ts` — `localtest.me` and `nip.io` allowed.
+- `.artifacts/scripts/probe-web-fallbacks.ts` — empty search stops fallback;
   non-OK body not canceled.
-- `artifacts/scripts/probe-subagents-lifecycle.ts` — starting child marked
+- `.artifacts/scripts/probe-subagents-lifecycle.ts` — starting child marked
   failed; abort leaves a live process alive.
-- `artifacts/scripts/probe-todos-overflow.ts` — ten completed rows hide both
+- `.artifacts/scripts/probe-todos-overflow.ts` — ten completed rows hide both
   open rows.
 - npm: `pi-web-access@0.46.0`, `pi-subagents@0.84.0`, `rpiv-todo@1.1.0`.
 
@@ -125,7 +125,7 @@ Use B, sequenced by coupling:
    graph and overflow policy. Do not adopt it as the engine.
 
 Do not start with a rewrite of all three. The verified probes in
-`artifacts/scripts/` are the acceptance gate for whichever direction is chosen.
+`.artifacts/scripts/` are the acceptance gate for whichever direction is chosen.
 
 ## Not yet specified
 
@@ -167,11 +167,11 @@ User-visible outcomes:
 
 ## References
 
-- `artifacts/review/pi-decide.md` — verified robustness and overengineering
+- `.artifacts/review/pi-decide.md` — verified robustness and overengineering
   findings.
-- `artifacts/requirements.md` — R23-R28.
-- `artifacts/decisions.md` — D88-D93.
-- `artifacts/specs.md` — S88-S93.
+- `.artifacts/REQUIREMENTS.md` — R23-R28.
+- `.artifacts/DECISIONS.md` — D88-D93.
+- `.artifacts/SPECS.md` — S88-S93.
 - `extensions/pi-decide/src/decide.ts` — tool, cache, timeout, normalize.
 - `extensions/pi-decide/src/config.ts` — explicit model config and input
   bounds.
@@ -347,13 +347,13 @@ The user-visible outcome:
 
 ## References
 
-- `artifacts/research/pi-system-prompt-2026-10-30.md` — full live Pi 1.4.0
+- `.artifacts/research/pi-system-prompt-2026-10-30.md` — full live Pi 1.4.0
   system prompt captured from the RPC `message_start` system message. Date:
   2026-10-30. Configuration excludes built-in `grep`/`find`.
-- `artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
+- `.artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
   baseline: 15 active tools, 10,032-byte prompt, 5,990-byte schemas, 5,223-byte
   descriptions.
-- `artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — removing
+- `.artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — removing
   `fd`/`rg` leaves `bash` as the search path: 13 tools, 20,200 total bytes.
 - `extensions/pi-tools/src/fd.ts` and `rg.ts` — per-result deny filtering and
   root containment.
@@ -475,7 +475,7 @@ The larger lean opportunity remains `project_context` (3,086) and `addendum`
 
 ## Open Questions
 
-See `artifacts/questions.md#brainstorm--fdrg-duplication`.
+See `.artifacts/QUESTIONS.md#brainstorm--fdrg-duplication`.
 
 ## Out of scope
 
@@ -510,11 +510,11 @@ The user-visible outcome:
 
 ## References
 
-- `artifacts/research/pi-system-prompt-2026-10-30.md` — current 15-tool Pi 1.4.0
+- `.artifacts/research/pi-system-prompt-2026-10-30.md` — current 15-tool Pi 1.4.0
   prompt; `fd`/`rg` cost 1,045 definition bytes and no prompt text.
-- `artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
+- `.artifacts/research/pi-rpc-events-grep-find-2026-10-30.jsonl` — current
   no-built-in-grep/find baseline.
-- `artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — bash-only
+- `.artifacts/research/pi-rpc-events-fd-rg-grep-find-2026-10-30.jsonl` — bash-only
   variant after `fd`/`rg` removal.
 - `packages/core/src/sandbox.ts:5,69,108` — Bubblewrap options, argument builder,
   and fail-closed wrapper.
@@ -650,7 +650,7 @@ Sequence after the `fd`/`rg` removal:
 
 ## Open Questions
 
-See `artifacts/questions.md#brainstorm--pi-tools-after-search-removal`.
+See `.artifacts/QUESTIONS.md#brainstorm--pi-tools-after-search-removal`.
 
 ## Out of scope
 
@@ -678,8 +678,8 @@ Each defect class is fixed once, in the module that owns it. A new extension tha
 
 ## References
 
-- Findings: `artifacts/review/` files for V19–V38, as registered in `artifacts/reviews.md`.
-- Module seams: `artifacts/architecture.md` (Module Seams, Dependency Direction).
+- Findings: `.artifacts/review/` files for V19–V38, as registered in `.artifacts/REVIEWS.md`.
+- Module seams: `.artifacts/ARCHITECTURE.md` (Module Seams, Dependency Direction).
 - Host contracts: `node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`:
   - `ReplacedSessionContext` at :329.
   - `ExtensionUIDialogOptions.signal` and `.timeout` at :36-44.
@@ -773,7 +773,7 @@ Archetype C fits the repository conventions:
 
 ## Open Questions
 
-See `artifacts/questions.md`, section `### Brainstorm — review remediation`. Cross-cutting policy questions Q15–Q18 are already registered there under the V19–V38 review heading.
+See `.artifacts/QUESTIONS.md`, section `### Brainstorm — review remediation`. Cross-cutting policy questions Q15–Q18 are already registered there under the V19–V38 review heading.
 
 ## Out of scope
 
