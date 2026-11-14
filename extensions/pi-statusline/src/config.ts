@@ -43,7 +43,13 @@ export interface StatuslineConfig {
   clickActions?: Record<string, string>;
 }
 
-export const DEFAULT_EXTENSIONS: readonly string[] = ["mode-guard", "usage"];
+export const DEFAULT_EXTENSIONS: readonly string[] = [
+  "mode-guard",
+  "agent",
+  "usage",
+  "tasks",
+  "subagents",
+];
 
 export const CONFIG_FILE_NAME = "statusline.json";
 

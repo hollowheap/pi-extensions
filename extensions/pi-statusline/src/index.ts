@@ -15,6 +15,7 @@ import {
   clockIntervalMs,
   createGitDiffState,
   defaultGitRunner,
+  findGitRoot,
 } from "./components.js";
 import {
   type StatuslineConfig,
@@ -28,6 +29,9 @@ const DEFAULT_CLICK_ACTIONS: Record<string, string> = {
   mode: "/mode",
   model: "/model",
   usage: "/usage",
+  agent: "/agent",
+  tasks: "/task",
+  subagents: "/subagent",
 };
 
 function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
@@ -74,7 +78,7 @@ export default function (pi: ExtensionAPI) {
   let config: StatuslineConfig = defaultConfig();
   let busy = false;
   let currentModel: unknown;
-  let repoRoot: string | undefined;
+  let repoRoot: string | null | undefined;
   let diffState: GitDiffState = createGitDiffState(defaultGitRunner, () => {});
   let requestRender: (() => void) | undefined;
   let cleanupFooter: (() => void) | undefined;
@@ -109,13 +113,14 @@ export default function (pi: ExtensionAPI) {
         cwd,
       });
       if (session !== owner) return;
-      repoRoot =
-        result.code === 0 && result.stdout.trim() !== ""
-          ? result.stdout.trim()
-          : undefined;
+      if (result.code === 0 && result.stdout.trim() !== "") {
+        repoRoot = result.stdout.trim();
+      } else {
+        repoRoot = findGitRoot(cwd) ?? null;
+      }
     } catch {
       if (session !== owner) return;
-      repoRoot = undefined;
+      repoRoot = findGitRoot(cwd) ?? null;
     }
     requestRender?.();
   }
@@ -130,7 +135,7 @@ export default function (pi: ExtensionAPI) {
   function installFooter(ctx: ExtensionContext): void {
     disposeFooter();
     owner = ctx.sessionManager;
-    repoRoot = undefined;
+    repoRoot = findGitRoot(effectiveCwd(ctx.cwd, ctx.sessionManager)) ?? null;
     if (ctx.mode !== "tui") return;
     void refreshRepoRoot(ctx);
     ctx.ui.setFooter((tui, theme, footerData) => {

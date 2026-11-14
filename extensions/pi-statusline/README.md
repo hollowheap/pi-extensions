@@ -74,7 +74,7 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 | type | shows | options |
 |---|---|---|
 | `mode` | `WORKING` while the agent runs, else `IDLE` | `idleText`, `workingText` |
-| `cwd` | working directory, shortened to the repository name plus relative path when inside a git repo | `depth` (last N segments), `homeAsTilde` (default `true`) |
+| `cwd` | working directory, truncated to the repository name when inside a git repo | `depth` (last N segments outside git repo), `homeAsTilde` (default `true`) |
 | `git_branch` | current branch, hidden outside a repo | `icon` |
 | `git_diff` | `+a ~m -r ?u` file counts, refreshed in background | `addedIcon`, `modifiedIcon`, `removedIcon`, `untrackedIcon` |
 | `model` | active model id | `shorten` (strip `provider/` prefix, default `true`) |

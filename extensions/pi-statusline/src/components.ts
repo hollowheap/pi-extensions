@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { basename, relative } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ComponentSpec } from "./config.js";
 
 export interface GitDiffSummary {
@@ -18,7 +19,7 @@ export interface TokenTotals {
 export interface ComponentContext {
   cwd: string;
   homeDir: string;
-  repoRoot?: string;
+  repoRoot?: string | null;
   modelId: string | undefined;
   branch: string | null;
   tokens: TokenTotals;
@@ -97,20 +98,34 @@ const mode: ComponentFn = (spec, ctx) => {
   return `${frame} ${text}`;
 };
 
+export function findGitRoot(startDir: string): string | undefined {
+  try {
+    let dir = resolve(startDir);
+    while (true) {
+      if (existsSync(join(dir, ".git"))) {
+        return dir;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 const cwd: ComponentFn = (spec, ctx) => {
   const depth = optNumber(spec, "depth");
-  const root = ctx.repoRoot;
+  const root =
+    ctx.repoRoot === null ? undefined : (ctx.repoRoot ?? findGitRoot(ctx.cwd));
   if (root !== undefined) {
     const inside =
       ctx.cwd === root ||
-      (ctx.cwd.startsWith(root) && ctx.cwd[root.length] === "/");
+      (ctx.cwd.startsWith(root) &&
+        (ctx.cwd[root.length] === "/" || ctx.cwd[root.length] === "\\"));
     if (inside) {
-      const rel = relative(root, ctx.cwd).split("\\").join("/");
-      const parts = [basename(root), ...rel.split("/").filter(Boolean)];
-      if (depth !== undefined && depth > 0 && parts.length > depth) {
-        return `…/${parts.slice(-depth).join("/")}`;
-      }
-      return parts.join("/");
+      return basename(root);
     }
   }
   return shortenPath(

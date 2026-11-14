@@ -1,9 +1,11 @@
+import { basename } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   BUILTINS,
   type ComponentContext,
   clockIntervalMs,
   createGitDiffState,
+  findGitRoot,
   formatClock,
   formatCount,
   parseGitPorcelain,
@@ -58,7 +60,7 @@ describe("cwd", () => {
     );
   });
 
-  it("shortens relative to the repository root", () => {
+  it("truncates cwd to the repository name inside a git repo", () => {
     const root = "/home/u/projects/app";
     expect(BUILTINS.cwd({ type: "cwd" }, ctx({ repoRoot: root }))).toBe("app");
     expect(
@@ -66,13 +68,21 @@ describe("cwd", () => {
         { type: "cwd" },
         ctx({ cwd: `${root}/src`, repoRoot: root }),
       ),
-    ).toBe("app/src");
+    ).toBe("app");
     expect(
       BUILTINS.cwd(
         { type: "cwd", depth: 1 },
         ctx({ cwd: `${root}/src`, repoRoot: root }),
       ),
-    ).toBe("…/src");
+    ).toBe("app");
+  });
+
+  it("finds git repository root via findGitRoot", () => {
+    const root = findGitRoot(process.cwd());
+    expect(root).toBeDefined();
+    expect(BUILTINS.cwd({ type: "cwd" }, ctx({ cwd: process.cwd() }))).toBe(
+      basename(root ?? ""),
+    );
   });
 
   it("shortenPath handles root and exact home", () => {

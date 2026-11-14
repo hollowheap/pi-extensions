@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_EXTENSIONS,
   defaultConfig,
   loadConfig,
   normalizeConfig,
@@ -175,7 +176,7 @@ describe("normalizeConfig", () => {
 
   it("rejects a non-array extensions field", () => {
     const { config, diagnostics } = normalizeConfig({ extensions: "nope" });
-    expect(config.extensions).toEqual(["mode-guard", "usage"]);
+    expect(config.extensions).toEqual([...DEFAULT_EXTENSIONS]);
     expect(diagnostics).toHaveLength(1);
   });
 
