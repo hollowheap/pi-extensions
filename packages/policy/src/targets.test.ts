@@ -14,6 +14,10 @@ describe("policy targets", () => {
     expect(TOOL_TAGS.web_fetch).toBe("external");
     expect(TOOL_TAGS.decide).toBe("external");
     expect(TOOL_TAGS.lang).toBe("read");
+    expect(TOOL_TAGS.codemode).toBe("read");
+    expect(TOOL_TAGS.question).toBe("read");
+    expect(TOOL_TAGS.todo).toBe("read");
+    expect(TOOL_TAGS.todos).toBe("read");
   });
 
   it("extracts non-path targets", () => {
@@ -22,6 +26,12 @@ describe("policy targets", () => {
     );
     expect(readToolTarget("web_search", { query: "lil bro" })).toBe("lil bro");
     expect(readToolTarget("decide", { input: "x" })).toBe("decide");
+    expect(readToolTarget("codemode", { code: "console.log(1)" })).toBe(
+      "codemode",
+    );
+    expect(readToolTarget("question", { prompt: "hi" })).toBe("question");
+    expect(readToolTarget("todo", { action: "list" })).toBe("todo");
+    expect(readToolTarget("todos", { action: "list" })).toBe("todo");
     expect(readToolTarget("read", { path: "src/x.ts" })).toBe("src/x.ts");
   });
 

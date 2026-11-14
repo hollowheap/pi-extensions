@@ -17,6 +17,12 @@ export const TOOL_TAGS: Record<string, Tag> = {
   web_fetch: "external",
   lang: "read",
   decide: "external",
+  // Codemode nested tool calls are individually gated by tool_call hooks;
+  // todo mutates branch session entries only, not workspace files.
+  codemode: "read",
+  question: "read",
+  todo: "read",
+  todos: "read",
 };
 
 export const PASSTHROUGH_ACTIONS = new Set([
@@ -47,6 +53,9 @@ export function readToolTarget(
     return record.query;
   }
   if (toolName === "decide") return "decide";
+  if (toolName === "codemode") return "codemode";
+  if (toolName === "question") return "question";
+  if (toolName === "todo" || toolName === "todos") return "todo";
   return readPathArg(input);
 }
 
