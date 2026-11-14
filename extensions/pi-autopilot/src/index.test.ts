@@ -1,6 +1,7 @@
 import { evaluate, getModeLayer, registerMode } from "@hollowheap/core";
 import { setMode } from "@hollowheap/core";
-import { describe, expect, it } from "vitest";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { describe, expect, it, vi } from "vitest";
 import extension, { AUTOPILOT_MODE } from "./index.js";
 
 function setup(): void {
@@ -143,5 +144,52 @@ describe("pi-autopilot extension", () => {
         ],
       }),
     ).toBe("allow");
+  });
+
+  it("publishes session snapshot on lifecycle events", () => {
+    const handlers = new Map<string, (event: unknown, ctx?: unknown) => void>();
+    const mockPi = {
+      on: vi.fn(
+        (event: string, handler: (event: unknown, ctx?: unknown) => void) => {
+          handlers.set(event, handler);
+        },
+      ),
+    };
+
+    extension(mockPi as never);
+
+    expect(mockPi.on).toHaveBeenCalledWith(
+      "session_start",
+      expect.any(Function),
+    );
+    expect(mockPi.on).toHaveBeenCalledWith(
+      "session_tree",
+      expect.any(Function),
+    );
+    expect(mockPi.on).toHaveBeenCalledWith("agent_start", expect.any(Function));
+    expect(mockPi.on).toHaveBeenCalledWith("turn_end", expect.any(Function));
+
+    const owner = {};
+    const ctx = { sessionManager: owner };
+
+    // Initially mode is default (ask), so active = false
+    handlers.get("session_start")?.({}, ctx);
+    expect(getSessionSnapshot(owner).autopilot).toEqual(
+      expect.objectContaining({ active: false, updatedAt: expect.any(Number) }),
+    );
+
+    // Switch mode to autopilot
+    setMode(owner, "autopilot");
+    handlers.get("turn_end")?.({}, ctx);
+    expect(getSessionSnapshot(owner).autopilot).toEqual(
+      expect.objectContaining({ active: true, updatedAt: expect.any(Number) }),
+    );
+
+    // Switch mode back to ask
+    setMode(owner, "ask");
+    handlers.get("session_tree")?.({}, ctx);
+    expect(getSessionSnapshot(owner).autopilot).toEqual(
+      expect.objectContaining({ active: false, updatedAt: expect.any(Number) }),
+    );
   });
 });

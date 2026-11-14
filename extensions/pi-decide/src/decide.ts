@@ -14,6 +14,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { messageCost } from "@hollowheap/core/pricing";
 import { getSessionCache } from "@hollowheap/core/session-cache";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import {
   USAGE_ENTRY_TYPE,
   getSessionUsage,
@@ -139,6 +140,85 @@ interface Inflight {
   waiters: number;
 }
 
+export const DECIDE_STATS_TYPE = "hollowheap.decide";
+
+interface DecideStats {
+  totalCount: number;
+  cacheHits: number;
+  lastKind?: DecideKind;
+}
+
+const decideStats = new WeakMap<object, DecideStats>();
+const persistedStatsCount = new WeakMap<object, number>();
+
+function publishDecideStats(owner: object, stats: DecideStats): void {
+  updateSessionSnapshot(
+    owner,
+    "decide",
+    stats.totalCount > 0 ? { ...stats, updatedAt: Date.now() } : undefined,
+  );
+}
+
+/** Persist accumulated decide stats as a branch custom entry when dirty or forced. */
+export function persistDecideStats(
+  owner: object,
+  pi?: Pick<ExtensionAPI, "appendEntry">,
+  force = false,
+): void {
+  const stats = decideStats.get(owner);
+  if (!stats || stats.totalCount <= 0) return;
+  if (!force && (persistedStatsCount.get(owner) ?? 0) >= stats.totalCount) {
+    return;
+  }
+  try {
+    pi?.appendEntry?.(DECIDE_STATS_TYPE, {
+      totalCount: stats.totalCount,
+      cacheHits: stats.cacheHits,
+      ...(stats.lastKind ? { lastKind: stats.lastKind } : {}),
+      updatedAt: Date.now(),
+    });
+    persistedStatsCount.set(owner, stats.totalCount);
+  } catch {
+    // Ignore when session persistence is unavailable.
+  }
+}
+
+/** Rebuild decide stats from the latest persisted stats entry on the branch. */
+export function restoreDecideStats(
+  owner: object,
+  entries: readonly unknown[],
+): void {
+  let stats: DecideStats = { totalCount: 0, cacheHits: 0 };
+  for (const entry of entries) {
+    const record = entry as {
+      type?: unknown;
+      customType?: unknown;
+      data?: { totalCount?: unknown; cacheHits?: unknown; lastKind?: unknown };
+    };
+    if (record.type !== "custom" || record.customType !== DECIDE_STATS_TYPE) {
+      continue;
+    }
+    const data = record.data;
+    if (
+      typeof data?.totalCount !== "number" ||
+      typeof data.cacheHits !== "number"
+    ) {
+      continue;
+    }
+    stats = { totalCount: data.totalCount, cacheHits: data.cacheHits };
+    if (
+      data.lastKind === "choice" ||
+      data.lastKind === "score" ||
+      data.lastKind === "bool"
+    ) {
+      stats.lastKind = data.lastKind;
+    }
+  }
+  decideStats.set(owner, stats);
+  persistedStatsCount.set(owner, stats.totalCount);
+  publishDecideStats(owner, stats);
+}
+
 export function createDecideTool(pi?: ExtensionAPI) {
   const fallbackOwner = {};
 
@@ -146,6 +226,22 @@ export function createDecideTool(pi?: ExtensionAPI) {
     return typeof ctx.sessionManager === "object" && ctx.sessionManager !== null
       ? ctx.sessionManager
       : fallbackOwner;
+  }
+
+  function recordDecide(
+    ctx: PiExtensionContext,
+    kind: DecideKind,
+    cacheHit: boolean,
+  ): void {
+    const owner = ownerFor(ctx);
+    const prev = decideStats.get(owner) ?? { totalCount: 0, cacheHits: 0 };
+    const next: DecideStats = {
+      totalCount: prev.totalCount + 1,
+      cacheHits: prev.cacheHits + (cacheHit ? 1 : 0),
+      lastKind: kind,
+    };
+    decideStats.set(owner, next);
+    publishDecideStats(owner, next);
   }
 
   function cacheKey(
@@ -279,6 +375,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
     const key = cacheKey(config.model, params, question);
     const cached = results.get(key);
     if (cached !== undefined) {
+      recordDecide(ctx, params.kind, true);
       if (cached.details.error !== undefined) {
         return cached;
       }
@@ -296,6 +393,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
     }
     const existing = inflight.get(key);
     if (existing !== undefined) {
+      recordDecide(ctx, params.kind, true);
       const result = await waitForResult(existing, signal);
       if (result.details.error !== undefined) {
         return result;
@@ -313,6 +411,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       };
     }
 
+    recordDecide(ctx, params.kind, false);
     const controller = new AbortController();
     const requestSignal = AbortSignal.any([
       AbortSignal.timeout(config.timeoutMs),

@@ -3,6 +3,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {
@@ -45,6 +46,8 @@ export function createSubagentsExtension(
 
     let ticker: ReturnType<typeof setInterval> | undefined;
     let emitting = false;
+    let lastActiveCount = 0;
+    let lastCtx: ExtensionContext | undefined;
     let lastStates: Array<{
       id: string;
       status: string;
@@ -52,6 +55,56 @@ export function createSubagentsExtension(
       task: string;
     }> = [];
     let sessionAgents = new Map<string, AgentConfig>();
+
+    const syncSubagentsSnapshot = async (
+      all?: Array<{
+        id: string;
+        agent: string;
+        status: string;
+        task?: string;
+        activeTool?: string;
+      }>,
+    ) => {
+      if (!lastCtx?.sessionManager) return;
+      try {
+        const fullList = all ?? (await list(resolveAgentDir()));
+        const active = fullList.filter(
+          (s) => s.status === "running" || s.status === "starting",
+        );
+        const items = active.map((s) => ({
+          id: s.id,
+          agent: s.agent,
+          status: s.status,
+          ...(s.task !== undefined ? { task: s.task } : {}),
+          ...(s.activeTool !== undefined ? { activeTool: s.activeTool } : {}),
+        }));
+        updateSessionSnapshot(lastCtx.sessionManager, "subagents", {
+          running: active.length,
+          total: fullList.length,
+          sessionDefinitions: [...sessionAgents.keys()],
+          items,
+          updatedAt: Date.now(),
+        });
+      } catch {
+        // Snapshot updates must not throw
+      }
+    };
+
+    const publishStatusline = (count: number) => {
+      lastActiveCount = count;
+      pi.events?.emit?.("statusline:values", {
+        name: "subagents",
+        text: count > 0 ? `${count} subagent${count === 1 ? "" : "s"}` : "",
+      });
+    };
+
+    pi.events?.on?.("statusline:request", (data: unknown) => {
+      if (typeof data === "object" && data !== null) {
+        const names = (data as { names?: unknown }).names;
+        if (Array.isArray(names) && !names.includes("subagents")) return;
+      }
+      publishStatusline(lastActiveCount);
+    });
 
     const restoreSessionAgents = (ctx: ExtensionContext): void => {
       try {
@@ -67,12 +120,14 @@ export function createSubagentsExtension(
     const defineSessionAgent = (definition: SessionAgentDefinition): void => {
       pi.appendEntry(SUBAGENT_DEFINITION_TYPE, definition);
       sessionAgents.set(definition.name, definitionToAgent(definition));
+      void syncSubagentsSnapshot();
     };
 
     const deleteSessionAgent = (name: string): boolean => {
       if (!sessionAgents.has(name)) return false;
       pi.appendEntry(SUBAGENT_DEFINITION_DELETE_TYPE, { name });
       sessionAgents.delete(name);
+      void syncSubagentsSnapshot();
       return true;
     };
 
@@ -113,7 +168,9 @@ export function createSubagentsExtension(
         }));
 
         pi.events?.emit?.("subagents:state", items);
+        publishStatusline(items.length);
         void subagentAlertTracker.observe(all);
+        void syncSubagentsSnapshot(all);
 
         if (items.length > 0) {
           if (ticker === undefined) {
@@ -127,6 +184,7 @@ export function createSubagentsExtension(
         }
         return items;
       } catch {
+        publishStatusline(0);
         stopTicker();
         return [];
       } finally {
@@ -187,6 +245,7 @@ export function createSubagentsExtension(
     };
 
     const tool = createSubagentTool({
+      pi,
       onSubagentsChange: () => {
         void emitSubagentsState();
       },
@@ -197,12 +256,15 @@ export function createSubagentsExtension(
     pi.registerTool(tool);
 
     pi.on("session_start", (_event, ctx) => {
+      lastCtx = ctx;
       restoreSessionAgents(ctx);
       void emitSubagentsState();
     });
 
     pi.on("session_tree", (_event, ctx) => {
+      lastCtx = ctx;
       restoreSessionAgents(ctx);
+      void syncSubagentsSnapshot();
     });
 
     pi.registerCommand("subagent", {
@@ -229,6 +291,7 @@ export function createSubagentsExtension(
           }));
       },
       handler: async (args, ctx) => {
+        lastCtx = ctx;
         const parts = args.trim().split(/\s+/).filter(Boolean);
         const action = parts[0];
         const id = parts[1];
@@ -319,6 +382,7 @@ export function createSubagentsExtension(
   };
 }
 
+export * from "./tool.js";
 export * from "./upstream.js";
 export * from "./workspace.js";
 

@@ -127,6 +127,9 @@ describe("split extensions over the event bus", () => {
     );
     const input = { path: "src/x.ts" };
     await expect(env.hook("write", input)).resolves.toBeUndefined();
+    await expect(
+      env.hook("codemode", { code: "console.log('hi')" }),
+    ).resolves.toBeUndefined();
     expect(env.ctx.ui.confirm).not.toHaveBeenCalled();
     await env.shortcut();
     expect(session(env.ctx.sessionManager).mode).toBe("ask");

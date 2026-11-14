@@ -1,6 +1,12 @@
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
-import { rememberWebLinks } from "./tools.js";
+import {
+  WEB_HISTORY_TYPE,
+  createWebFetchTool,
+  createWebSearchTool,
+  rememberWebLinks,
+} from "./tools.js";
 
 function createMockPi() {
   const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
@@ -14,6 +20,7 @@ function createMockPi() {
     ),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    appendEntry: vi.fn(),
     getAllTools: vi.fn((): Array<{ name: string }> => []),
     getActiveTools: vi.fn((): string[] => []),
     setActiveTools: vi.fn(),
@@ -135,5 +142,136 @@ describe("pi-web extension", () => {
     };
     expect(search.parameters.properties).toHaveProperty("query");
     expect(fetch.parameters.properties).toHaveProperty("url");
+  });
+
+  it("persists WEB_HISTORY_TYPE on web_search/web_fetch and publishes snapshot", async () => {
+    const pi = createMockPi();
+    const searchTool = createWebSearchTool(
+      {
+        search: vi.fn().mockResolvedValue([
+          {
+            title: "Result",
+            url: "https://example.com/item",
+            snippet: "Snippet",
+          },
+        ]),
+      },
+      pi as never,
+    );
+    const sessionManager = { getBranch: vi.fn(() => []) };
+    const ctx = { sessionManager };
+
+    await searchTool.execute(
+      "call-1",
+      { query: "search test" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      WEB_HISTORY_TYPE,
+      expect.objectContaining({
+        urls: ["https://example.com/item"],
+        searchCount: 1,
+        fetchCount: 0,
+      }),
+    );
+
+    let snap = getSessionSnapshot(sessionManager);
+    expect(snap.web).toMatchObject({
+      searchCount: 1,
+      fetchCount: 0,
+      recentUrls: ["https://example.com/item"],
+    });
+
+    const fetchTool = createWebFetchTool(
+      {
+        fetch: vi.fn().mockResolvedValue({
+          url: "https://example.com/fetched",
+          content: "Content",
+          links: [],
+          media: [],
+          truncated: false,
+        }),
+      },
+      pi as never,
+    );
+
+    await fetchTool.execute(
+      "call-2",
+      { url: "https://example.com/fetched" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      WEB_HISTORY_TYPE,
+      expect.objectContaining({
+        urls: expect.arrayContaining([
+          "https://example.com/fetched",
+          "https://example.com/item",
+        ]),
+        searchCount: 1,
+        fetchCount: 1,
+      }),
+    );
+
+    snap = getSessionSnapshot(sessionManager);
+    expect(snap.web).toMatchObject({
+      searchCount: 1,
+      fetchCount: 1,
+    });
+  });
+
+  it("restores web state on session_start / session_tree and re-appends on session_compact", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+
+    const sessionManager = {
+      getBranch: vi.fn(() => [
+        {
+          type: "custom",
+          customType: WEB_HISTORY_TYPE,
+          data: {
+            urls: ["https://example.com/old"],
+            searchCount: 3,
+            fetchCount: 2,
+            updatedAt: 5000,
+          },
+        },
+      ]),
+    };
+    const ctx = { sessionManager };
+
+    pi.handlers.session_start?.({}, ctx);
+
+    let snap = getSessionSnapshot(sessionManager);
+    expect(snap.web).toMatchObject({
+      searchCount: 3,
+      fetchCount: 2,
+      recentUrls: ["https://example.com/old"],
+      updatedAt: 5000,
+    });
+
+    pi.handlers.session_tree?.({}, ctx);
+    snap = getSessionSnapshot(sessionManager);
+    expect(snap.web).toMatchObject({
+      searchCount: 3,
+      fetchCount: 2,
+      recentUrls: ["https://example.com/old"],
+    });
+
+    pi.appendEntry.mockClear();
+    pi.handlers.session_compact?.({}, ctx);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      WEB_HISTORY_TYPE,
+      expect.objectContaining({
+        urls: ["https://example.com/old"],
+        searchCount: 3,
+        fetchCount: 2,
+      }),
+    );
   });
 });

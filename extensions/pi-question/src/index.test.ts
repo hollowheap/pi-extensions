@@ -1,6 +1,11 @@
-import { withPromptLock } from "@hollowheap/core";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { describe, expect, it, vi } from "vitest";
-import extension, { askQuestionFlow, askSingleQuestion } from "./index.js";
+import extension, {
+  ANSWERS_TYPE,
+  askQuestionFlow,
+  askSingleQuestion,
+  createQuestionTool,
+} from "./index.js";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -22,28 +27,25 @@ vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
-const TOOL_REGISTRATION = "register" + "Tool";
-
 function createMockPi() {
   const handlers: Record<string, Handler> = {};
+  const activeTools = ["read", "bash"];
+  const allTools = [{ name: "read" }, { name: "bash" }, { name: "codemode" }];
   const pi = {
     on: vi.fn((event: string, handler: Handler) => {
       handlers[event] = handler;
       return () => {};
     }),
-    [TOOL_REGISTRATION]: vi.fn(),
-    registerMarkdownTransformer: vi.fn(),
-    registerMessageRenderer: vi.fn(),
-    sendMessage: vi.fn(),
+    registerTool: vi.fn(),
+    appendEntry: vi.fn(),
+    getActiveTools: vi.fn(() => [...activeTools]),
+    getAllTools: vi.fn(() => [...allTools]),
+    setActiveTools: vi.fn((tools: string[]) => {
+      activeTools.length = 0;
+      activeTools.push(...tools);
+    }),
   };
   return { pi, handlers };
-}
-
-function assistant(...text: string[]) {
-  return {
-    role: "assistant",
-    content: text.map((part) => ({ type: "text", text: part })),
-  };
 }
 
 function context(
@@ -59,1101 +61,33 @@ function context(
   };
 }
 
-interface MultiResult {
-  selected: string[];
-  writeIn?: string;
-  cancelled: boolean;
-}
-
-interface ComponentLike {
-  handleInput?: (data: string) => void;
-  render: (width: number) => string[];
-}
-
-function multiCustom() {
-  let component: ComponentLike | undefined;
-  const tui = { requestRender: vi.fn() };
-  const mockTheme = {
-    fg: (_: string, s: string) => s,
-    bold: (s: string) => s,
-  };
-  const custom = vi.fn(
-    (
-      factory: (
-        tui: unknown,
-        theme: unknown,
-        keybindings: unknown,
-        done: (result: MultiResult) => void,
-      ) => ComponentLike,
-    ) =>
-      new Promise<MultiResult>((resolve) => {
-        component = factory(tui, mockTheme, {}, resolve);
-      }),
-  );
-  return { custom, tui, component: () => component };
-}
-
-function writeInCustom() {
-  let component: ComponentLike | undefined;
-  const tui = { requestRender: vi.fn() };
-  const mockTheme = {
-    fg: (_: string, s: string) => s,
-    bold: (s: string) => s,
-  };
-  const custom = vi.fn(
-    (
-      factory: (
-        tui: unknown,
-        theme: unknown,
-        keybindings: unknown,
-        done: (result: string | undefined) => void,
-      ) => ComponentLike,
-    ) =>
-      new Promise<string | undefined>((resolve) => {
-        component = factory(tui, mockTheme, {}, resolve);
-      }),
-  );
-  return { custom, tui, component: () => component };
-}
-
-function emit(
-  handler: Handler,
-  message: unknown,
-  ctx: ReturnType<typeof context>,
-) {
-  return handler({ type: "message_end", message }, ctx);
+function firstText(result: { content: unknown[] }): string {
+  const item = result.content[0] as { text?: string } | undefined;
+  return item?.text ?? "";
 }
 
 describe("pi-question extension", () => {
-  it("registers no model tool and listens for assistant message_end", () => {
+  it("registers question tool with codemode exposure and prompt guidelines", () => {
     const { pi } = createMockPi();
     extension(pi as never);
-    expect(pi[TOOL_REGISTRATION]).not.toHaveBeenCalled();
-    expect(pi.on).toHaveBeenCalledWith("message_end", expect.any(Function));
+    expect(pi.registerTool).toHaveBeenCalledTimes(1);
+    const tool = pi.registerTool.mock.calls[0][0];
+    expect(tool.name).toBe("question");
+    expect(tool.exposure).toBe("codemode");
+    expect(tool.promptGuidelines).toBeDefined();
+    expect(tool.promptGuidelines?.[0]).toContain("tools.question via codemode");
   });
 
-  it("adds a stable question format section only when a UI is available", () => {
+  it("activates codemode on session_start and removes direct question exposure", () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
-    const sections: Record<string, string> = { keep: "yes" };
-
-    const result = handlers.before_agent_start(
-      { systemPromptOptions: { sections } },
-      context(),
-    );
-
-    expect(result).toBeUndefined();
-    expect(sections.keep).toBe("yes");
-    expect(sections.question_format).toContain("'''question");
-    expect(sections.question_format).toContain("## ");
-    expect(sections.question_format).toContain("1. ");
-    expect(sections.question_format).toContain("[ ]");
-    expect(sections.question_format).toContain("Write-in answer");
-    expect(sections.question_format).toContain("0-8 options");
-    expect(sections.question_format).toContain("without calling a tool");
-    expect(sections.question_format).toContain("follow-up user message");
-
-    for (const mode of ["print", "json"]) {
-      const gated: Record<string, string> = {};
-      handlers.before_agent_start(
-        { systemPromptOptions: { sections: gated } },
-        context(vi.fn(), vi.fn(), { hasUI: false, mode }),
-      );
-      expect(gated.question_format).toBeUndefined();
-    }
-  });
-
-  it("keeps print and json inert for question dialogs", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-
-    for (const mode of ["print", "json"]) {
-      const select = vi.fn();
-      const input = vi.fn();
-      const ctx = context(select, input, { hasUI: false, mode });
-      await emit(
-        handlers.message_end,
-        assistant("'''question\n## Pick\n1. Alpha\n'''"),
-        ctx,
-      );
-      expect(select).not.toHaveBeenCalled();
-      expect(input).not.toHaveBeenCalled();
-    }
-  });
-
-  it("accepts assistant content supplied as a string", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Alpha");
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      {
-        role: "assistant",
-        content: "'''question\n## Pick\n1. Alpha\n'''",
-      },
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledWith("Pick", ["Alpha", "Write-in answer"]);
-  });
-
-  it("does not throw when UI selectors are unavailable", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const ctx = context(vi.fn(), vi.fn(), { ui: {} });
-
-    await expect(
-      emit(
-        handlers.message_end,
-        assistant("'''question\n## Pick\n1. Alpha\n'''"),
-        ctx,
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it("reports dialog failures and allows a retry", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("dialog exploded"))
-      .mockResolvedValueOnce("Yes");
-    const notify = vi.fn();
-    const ctx = context(select, vi.fn(), {
-      ui: { select, input: vi.fn(), custom: vi.fn(), notify },
-    });
-    const message = assistant("'''question\n## Pick\n1. Yes\n'''");
-
-    await expect(
-      emit(handlers.message_end, message, ctx),
-    ).resolves.toBeUndefined();
-    expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("dialog exploded"),
-      "error",
-    );
-
-    await emit(handlers.message_end, message, ctx);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. Yes" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("skips questions whose conditions are false", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("No")
-      .mockResolvedValueOnce("Never");
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## First\n1. Yes\n2. No\n## Second [if: answer1 == 'Yes']\n1. Never\n'''",
-      ),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledWith("First", [
-      "Yes",
-      "No",
-      "Write-in answer",
+    expect(handlers.session_start).toBeDefined();
+    handlers.session_start({}, {});
+    expect(pi.setActiveTools).toHaveBeenCalledWith([
+      "read",
+      "bash",
+      "codemode",
     ]);
-  });
-
-  it("evaluates conditions against source question indexes after skips", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Yes");
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## First [if: answer1 == 'No']\n1. Never\n## Second\n1. Yes\n## Third [if: answer1 == 'Yes']\n1. Should not\n'''",
-      ),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledWith("Second", ["Yes", "Write-in answer"]);
-  });
-
-  it("uses select and input for a single-select question in RPC mode", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Write-in answer");
-    const input = vi.fn(async () => "custom");
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledWith("Pick", ["Alpha", "Write-in answer"]);
-    expect(input).toHaveBeenCalledWith("Pick", "Custom answer");
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. custom" }),
-      { deliverAs: "followUp" },
-    );
-    expect(withPromptLock).toHaveBeenCalled();
-  });
-
-  it("asks a single-select question with a final write-in row", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Beta");
-    const input = vi.fn();
-    const ctx = context(select, input);
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n2. Beta\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledWith("Pick", [
-      "Alpha",
-      "Beta",
-      "Write-in answer",
-    ]);
-    expect(input).not.toHaveBeenCalled();
-  });
-
-  it("reads a write-in answer through input", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Write-in answer");
-    const input = vi.fn(async () => "custom");
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n2. Beta\n'''"),
-      ctx,
-    );
-
-    expect(input).toHaveBeenCalledWith("Pick", "Custom answer");
-  });
-
-  it("asks a free-text question through input", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn();
-    const input = vi.fn(async () => "because");
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Why?\n'''"),
-      ctx,
-    );
-
-    expect(input).toHaveBeenCalledWith("Why?");
-    expect(select).not.toHaveBeenCalled();
-  });
-
-  it("uses the decorated custom prompt for TUI free-text answers", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const { custom, component } = writeInCustom();
-    const ctx = context(vi.fn(), vi.fn(), {
-      ui: { select: vi.fn(), input: vi.fn(), custom },
-    });
-
-    const pending = emit(
-      handlers.message_end,
-      assistant("'''question\n## Why?\n'''"),
-      ctx,
-    );
-
-    expect(custom).toHaveBeenCalledTimes(1);
-    const view = component();
-    expect(view).toBeDefined();
-    const rendered = view?.render(80).join("\n") ?? "";
-    expect(rendered).toContain("Why?");
-    expect(rendered).toContain("╭");
-    expect(rendered).toContain("❯");
-    expect(rendered).toContain("╰");
-    expect(rendered).toContain("Enter submits • Esc cancels");
-
-    for (const char of "a longer answer") {
-      view?.handleInput?.(char);
-    }
-    view?.handleInput?.("\r");
-
-    await pending;
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. a longer answer" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("falls back to ctx.ui.editor in TUI mode when custom is unavailable", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const editor = vi.fn(async () => "a longer answer");
-    const ctx = context(vi.fn(), vi.fn(), {
-      ui: { select: vi.fn(), input: vi.fn(), editor },
-    });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Why?\n'''"),
-      ctx,
-    );
-
-    expect(editor).toHaveBeenCalledWith("Why?");
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. a longer answer" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("navigates question pages forward and backward", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("Yes")
-      .mockResolvedValueOnce("Back")
-      .mockResolvedValueOnce("No")
-      .mockResolvedValueOnce("Next page")
-      .mockResolvedValueOnce("Blue");
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## First [page: 1]\n1. Yes\n2. No\n## Second [page: 2]\n1. Red\n2. Blue\n'''",
-      ),
-      ctx,
-    );
-
-    expect(select).toHaveBeenNthCalledWith(2, "Question page 1 complete", [
-      "Next page",
-      "Back",
-    ]);
-    expect(select).toHaveBeenNthCalledWith(3, "First", [
-      "Yes",
-      "No",
-      "Write-in answer",
-    ]);
-    expect(select).toHaveBeenNthCalledWith(4, "Question page 1 complete", [
-      "Next page",
-      "Back",
-    ]);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. No\n2. Blue" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("asks multiple questions in source order", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const prompts: string[] = [];
-    const select = vi.fn(async (prompt: string) => {
-      prompts.push(prompt);
-      return prompt === "First" ? "Yes" : "No";
-    });
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## First\n1. Yes\n2. No\n## Second\n1. Yes\n2. No\n'''",
-      ),
-      ctx,
-    );
-
-    expect(prompts).toEqual(["First", "Second"]);
-  });
-
-  it("does nothing without a UI", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn();
-    const input = vi.fn();
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n'''"),
-      context(select, input, { hasUI: false, mode: "print" }),
-    );
-
-    expect(select).not.toHaveBeenCalled();
-    expect(input).not.toHaveBeenCalled();
-  });
-
-  it("ignores non-assistant messages and invalid blocks", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn();
-    const input = vi.fn();
-    const ctx = context(select, input);
-
-    await emit(
-      handlers.message_end,
-      { role: "user", content: [{ type: "text", text: "'''question" }] },
-      ctx,
-    );
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n- Alpha\n'''"),
-      ctx,
-    );
-    await emit(
-      handlers.message_end,
-      assistant("'''other\n## Pick\n1. Alpha\n'''"),
-      ctx,
-    );
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha"),
-      ctx,
-    );
-    const nine = Array.from(
-      { length: 9 },
-      (_, index) => `${index + 1}. Option ${index + 1}`,
-    ).join("\n");
-    await emit(
-      handlers.message_end,
-      assistant(`'''question\n## Pick\n${nine}\n'''`),
-      ctx,
-    );
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n2. Write-in answer\n'''"),
-      ctx,
-    );
-
-    expect(select).not.toHaveBeenCalled();
-    expect(input).not.toHaveBeenCalled();
-  });
-
-  it("asks only valid blocks when a message mixes valid and invalid blocks", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Alpha");
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## Good\n1. Alpha\n'''\n'''question\n## Bad\n1. [ ] Alpha\n2. Beta\n'''\n```\n'''question\n## Code\n1. Alpha\n'''\n```",
-      ),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledWith("Good", ["Alpha", "Write-in answer"]);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. Alpha" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("never throws on malformed blocks", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn();
-    const input = vi.fn();
-    const ctx = context(select, input);
-
-    for (const text of [
-      "'''question\n'''",
-      "'''question\n###\n'''",
-      "'''question\n## \n'''",
-      "'''question\n1. \n'''",
-      "no block here",
-    ]) {
-      await expect(
-        emit(handlers.message_end, assistant(text), ctx),
-      ).resolves.toBeUndefined();
-    }
-
-    expect(select).not.toHaveBeenCalled();
-    expect(input).not.toHaveBeenCalled();
-  });
-
-  it("cancels the whole set when the first dialog is dismissed", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => undefined);
-    const input = vi.fn();
-    const ctx = context(select, input);
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## First\n1. Yes\n## Second\n1. No\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledWith("First", ["Yes", "Write-in answer"]);
-    expect(input).not.toHaveBeenCalled();
-  });
-
-  it("cancels the whole set when a write-in dialog is dismissed", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Write-in answer");
-    const input = vi.fn(async () => undefined);
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## First\n1. Yes\n## Second\n1. No\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(input).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders TUI multi-select rows and toggles them with space", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const { custom, tui, component } = multiCustom();
-    const select = vi.fn();
-    const ctx = context(select);
-    ctx.ui.custom = custom as never;
-
-    const pending = emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [x] Beta\n'''"),
-      ctx,
-    );
-    const view = component();
-    expect(view).toBeDefined();
-    expect(select).not.toHaveBeenCalled();
-    expect(custom).toHaveBeenCalledTimes(1);
-
-    const rendered = view?.render(80).join("\n") ?? "";
-    expect(rendered).toContain("[ ] Alpha");
-    expect(rendered).toContain("[ ] Beta");
-    expect(rendered).toContain("Write-in answer");
-    expect(rendered).toContain("Done");
-
-    view?.handleInput?.(" ");
-    expect(view?.render(80).join("\n") ?? "").toContain("[x] Alpha");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.(" ");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\r");
-
-    await pending;
-    expect(tui.requestRender).toHaveBeenCalled();
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. Alpha, Beta" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("submits zero TUI multi-select rows as none selected", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const { custom, component } = multiCustom();
-    const ctx = context();
-    ctx.ui.custom = custom as never;
-
-    const pending = emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [ ] Beta\n'''"),
-      ctx,
-    );
-    const view = component();
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\r");
-
-    await pending;
-    const sent = pi.sendMessage.mock.calls[0][0] as {
-      content: string;
-      details: { answers: unknown[] };
-    };
-    expect(sent.content).toBe("1. none selected");
-    expect(sent.details.answers[0]).toMatchObject({
-      mode: "multi",
-      selected: [],
-    });
-  });
-
-  it("collects a TUI multi-select write-in through the inline editor", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const { custom, component } = multiCustom();
-    const ctx = context();
-    ctx.ui.custom = custom as never;
-
-    const pending = emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [ ] Beta\n'''"),
-      ctx,
-    );
-    const view = component();
-    view?.handleInput?.(" ");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\x1b[B");
-    view?.handleInput?.("\r");
-    for (const char of "custom") view?.handleInput?.(char);
-    expect(view?.render(80).join("\n") ?? "").toContain("custom");
-    view?.handleInput?.("\r");
-    view?.handleInput?.("\r");
-
-    await pending;
-    const sent = pi.sendMessage.mock.calls[0][0] as {
-      content: string;
-      details: { answers: unknown[] };
-    };
-    expect(sent.content).toBe("1. Alpha, Write-in: custom");
-    expect(sent.details.answers[0]).toMatchObject({
-      mode: "multi",
-      selected: ["Alpha"],
-      writeIn: "custom",
-    });
-  });
-
-  it("cancels the TUI multi-select set on escape", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const { custom, component } = multiCustom();
-    const ctx = context();
-    ctx.ui.custom = custom as never;
-
-    const pending = emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n'''"),
-      ctx,
-    );
-    component()?.handleInput?.("\x1b");
-
-    await pending;
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringContaining("Question dialog cancelled"),
-        details: expect.objectContaining({ cancelled: true }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("toggles RPC multi-select rows through select until Done", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("[ ] Alpha")
-      .mockResolvedValueOnce("[ ] Beta")
-      .mockResolvedValueOnce("Done");
-    const input = vi.fn();
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [ ] Beta\n'''"),
-      ctx,
-    );
-
-    expect(ctx.ui.custom).not.toHaveBeenCalled();
-    expect(select).toHaveBeenCalledTimes(3);
-    expect(select.mock.calls[0][1]).toEqual([
-      "[ ] Alpha",
-      "[ ] Beta",
-      "Write-in answer",
-      "Done",
-    ]);
-    expect(select.mock.calls[1][1]).toEqual([
-      "[x] Alpha",
-      "[ ] Beta",
-      "Write-in answer",
-      "Done",
-    ]);
-    expect(select.mock.calls[2][1]).toEqual([
-      "[x] Alpha",
-      "[x] Beta",
-      "Write-in answer",
-      "Done",
-    ]);
-    expect(input).not.toHaveBeenCalled();
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. Alpha, Beta" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("submits zero RPC multi-select rows as none selected", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn().mockResolvedValueOnce("Done");
-    const ctx = context(select, vi.fn(), { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [ ] Beta\n'''"),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. none selected" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("collects an RPC multi-select write-in through input", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("Write-in answer")
-      .mockResolvedValueOnce("Done");
-    const input = vi.fn().mockResolvedValueOnce("custom");
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n2. [ ] Beta\n'''"),
-      ctx,
-    );
-
-    expect(input).toHaveBeenCalledWith("Pick", "Custom answer");
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. Write-in: custom" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("cancels the RPC multi-select set when select is dismissed", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn().mockResolvedValueOnce(undefined);
-    const ctx = context(select, vi.fn(), { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringContaining("Question dialog cancelled"),
-        details: expect.objectContaining({ cancelled: true }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("cancels the RPC multi-select set when write-in is dismissed", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn().mockResolvedValueOnce("Write-in answer");
-    const input = vi.fn().mockResolvedValueOnce(undefined);
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(input).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringContaining("Question dialog cancelled"),
-        details: expect.objectContaining({ cancelled: true }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("falls back to the select loop when TUI custom is unavailable", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn().mockResolvedValueOnce("Done");
-    const ctx = context(select);
-    ctx.ui.custom = undefined as never;
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. [ ] Alpha\n'''"),
-      ctx,
-    );
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "1. none selected" }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("sends one numbered follow-up after all questions are answered", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async (prompt: string) =>
-      prompt === "First" ? "Yes" : "No",
-    );
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## First\n1. Yes\n2. No\n## Second\n1. Yes\n2. No\n'''",
-      ),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      {
-        customType: "hollowheap.question.answers",
-        content: "1. Yes\n2. No",
-        display: true,
-        details: {
-          questions: [
-            { prompt: "First", mode: "single", options: ["Yes", "No"] },
-            { prompt: "Second", mode: "single", options: ["Yes", "No"] },
-          ],
-          answers: [
-            { mode: "single", value: "Yes" },
-            { mode: "single", value: "No" },
-          ],
-        },
-      },
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("sends write-in and free-text answers with the 500-character cap", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Write-in answer");
-    const input = vi
-      .fn()
-      .mockResolvedValueOnce("custom")
-      .mockResolvedValueOnce("x".repeat(600));
-    const ctx = context(select, input, { mode: "rpc" });
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n## Why?\n'''"),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: `1. custom\n2. ${"x".repeat(500)}`,
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("sends a cancelled follow-up message when a dialog is cancelled", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => undefined);
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n'''"),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringContaining("Question dialog cancelled"),
-        display: true,
-        details: expect.objectContaining({
-          cancelled: true,
-        }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("preserves partial answers and sends cancelled message on mid-flow cancellation", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("Alpha")
-      .mockResolvedValueOnce(undefined);
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## Q1\n1. Alpha\n2. Beta\n## Q2\n1. Gamma\n2. Delta\n'''",
-      ),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringMatching(
-          /1\.\s+Alpha[\s\S]*Question dialog cancelled/,
-        ),
-        display: true,
-        details: expect.objectContaining({
-          cancelled: true,
-          answers: expect.arrayContaining([
-            expect.objectContaining({ mode: "single", value: "Alpha" }),
-          ]),
-        }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("preserves partial answers across pages when cancelled during page navigation", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("Alpha")
-      .mockResolvedValueOnce(undefined);
-    const ctx = context(select);
-
-    await emit(
-      handlers.message_end,
-      assistant(
-        "'''question\n## Q1 [page: 1]\n1. Alpha\n## Q2 [page: 2]\n1. Beta\n'''",
-      ),
-      ctx,
-    );
-
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customType: "hollowheap.question.answers",
-        content: expect.stringMatching(
-          /1\.\s+Alpha[\s\S]*Question dialog cancelled/,
-        ),
-        display: true,
-        details: expect.objectContaining({
-          cancelled: true,
-          answers: expect.arrayContaining([
-            expect.objectContaining({ mode: "single", value: "Alpha" }),
-          ]),
-        }),
-      }),
-      { deliverAs: "followUp" },
-    );
-  });
-
-  it("renders numbered details and falls back to content", () => {
-    const { pi } = createMockPi();
-    extension(pi as never);
-    const [type, renderer] = pi.registerMessageRenderer.mock.calls[0] as [
-      string,
-      (
-        message: unknown,
-        options: unknown,
-        theme: unknown,
-      ) => {
-        render: (width: number) => string[];
-      },
-    ];
-    expect(type).toBe("hollowheap.question.answers");
-
-    const options = { expanded: false, outputPad: 0 };
-    const rendered = renderer(
-      {
-        content: "1. fallback",
-        details: { answers: [{ mode: "single", value: "Beta" }] },
-      },
-      options,
-      {},
-    );
-    expect(rendered.render(80).join("\n").trimEnd()).toBe("1. Beta");
-
-    const fallback = renderer(
-      { content: "1. fallback", details: undefined },
-      options,
-      {},
-    );
-    expect(fallback.render(80).join("\n").trimEnd()).toBe("1. fallback");
-
-    expect(() =>
-      renderer(
-        { content: "1. fallback", details: { answers: [null] } },
-        options,
-        {},
-      ),
-    ).not.toThrow();
-  });
-
-  it("strips closed valid question blocks from assistant markdown", () => {
-    const { pi } = createMockPi();
-    extension(pi as never);
-    const transformer = pi.registerMarkdownTransformer.mock.calls[0][0] as (
-      markdown: string,
-      context: {
-        messageType: "user" | "assistant" | "assistant-thinking";
-        isStreaming: boolean;
-        availableWidth: number;
-      },
-    ) => string;
-    const transform = (
-      markdown: string,
-      messageType: "user" | "assistant" | "assistant-thinking" = "assistant",
-      isStreaming = false,
-    ) =>
-      transformer(markdown, { messageType, isStreaming, availableWidth: 80 });
-
-    const valid = "before\n'''question\n## Pick\n1. Alpha\n'''\nafter";
-    expect(transform(valid)).toBe("before\nafter");
-    expect(transform(valid, "user")).toBe(valid);
-    expect(transform(valid, "assistant-thinking")).toBe(valid);
-
-    const invalid = "before\n'''question\n- Alpha\n'''\nafter";
-    expect(transform(invalid)).toBe(invalid);
-
-    const mixed =
-      "'''question\n## Good\n1. Alpha\n'''\n'''question\n## Bad\n1. [ ] Alpha\n2. Beta\n'''";
-    expect(transform(mixed)).toBe(
-      "'''question\n## Bad\n1. [ ] Alpha\n2. Beta\n'''",
-    );
-
-    const unknown = "before\n'''other\n## Pick\n1. Alpha\n'''\nafter";
-    expect(transform(unknown)).toBe(unknown);
-
-    const fenced = "```\n'''question\n## Pick\n1. Alpha\n'''\n```\nafter";
-    expect(transform(fenced)).toBe(fenced);
-
-    const open = "before\n'''question\n## Pick\n1. Alpha";
-    expect(transform(open, "assistant", true)).toBe("before\n");
-    expect(transform(open)).toBe(open);
-  });
-
-  it("does not re-ask an already handled message", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const select = vi.fn(async () => "Yes");
-    const ctx = context(select);
-    const message = assistant("'''question\n## Pick\n1. Yes\n'''");
-
-    await emit(handlers.message_end, message, ctx);
-    await emit(handlers.message_end, message, ctx);
-
-    expect(select).toHaveBeenCalledTimes(1);
   });
 
   it("exports askSingleQuestion and askQuestionFlow", () => {
@@ -1161,40 +95,229 @@ describe("pi-question extension", () => {
     expect(typeof askQuestionFlow).toBe("function");
   });
 
-  it("passes signal and timeout to withPromptLock and cancels when aborted", async () => {
-    const controller = new AbortController();
-    controller.abort();
-    const select = vi.fn();
-    const ctx = context(select, undefined, { signal: controller.signal });
-
-    const result = await askSingleQuestion(
-      { prompt: "Pick", mode: "single", options: ["Alpha"] },
-      ctx as never,
-      { signal: controller.signal, timeoutMs: 5000 },
+  it("returns error result when no question prompt is provided", async () => {
+    const tool = createQuestionTool();
+    const result = await tool.execute(
+      "call-1",
+      {},
+      undefined,
+      undefined,
+      context() as never,
     );
-    expect(result).toBeUndefined();
-    expect(withPromptLock).toHaveBeenCalledWith(
-      expect.any(Function),
-      expect.objectContaining({ signal: controller.signal, timeoutMs: 5000 }),
-    );
+    expect(firstText(result)).toContain("Error: No question prompt provided.");
+    expect(result.details).toEqual({ cancelled: true, answers: [] });
   });
 
-  it("does not send a follow-up message when the session/turn signal aborts", async () => {
-    const { pi, handlers } = createMockPi();
-    extension(pi as never);
-    const controller = new AbortController();
-    const select = vi.fn(async () => {
-      controller.abort();
-      return undefined;
-    });
-    const ctx = context(select, undefined, { signal: controller.signal });
+  it("asks single question shorthand and returns formatted answer", async () => {
+    const tool = createQuestionTool();
+    const select = vi.fn().mockResolvedValue("Option A");
+    const ctx = context(select);
 
-    await emit(
-      handlers.message_end,
-      assistant("'''question\n## Pick\n1. Alpha\n'''"),
-      ctx,
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "Which option?", options: ["Option A", "Option B"] },
+      undefined,
+      undefined,
+      ctx as never,
     );
 
-    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(select).toHaveBeenCalledWith("Which option?", [
+      "Option A",
+      "Option B",
+      "Write-in answer",
+    ]);
+    expect(result.details).toMatchObject({
+      cancelled: false,
+      answers: [{ mode: "single", value: "Option A" }],
+    });
+    expect(firstText(result)).toBe("1. Option A");
+  });
+
+  it("asks free text question when no options are provided", async () => {
+    const tool = createQuestionTool();
+    const input = vi.fn().mockResolvedValue("My answer");
+    const ctx = context(vi.fn(), input, { mode: "rpc" });
+
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "What is your name?" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(input).toHaveBeenCalledWith("What is your name?");
+    expect(result.details).toMatchObject({
+      cancelled: false,
+      answers: [{ mode: "free", value: "My answer" }],
+    });
+    expect(firstText(result)).toBe("1. My answer");
+  });
+
+  it("handles user cancellation cleanly", async () => {
+    const tool = createQuestionTool();
+    const select = vi.fn().mockResolvedValue(undefined); // user dismisses dialog
+    const ctx = context(select);
+
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "Which option?", options: ["Option A", "Option B"] },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(firstText(result)).toBe("Question cancelled by user.");
+    expect(result.details).toMatchObject({ cancelled: true });
+  });
+
+  it("handles aborted signal", async () => {
+    const tool = createQuestionTool();
+    const controller = new AbortController();
+    controller.abort();
+    const ctx = context();
+
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "Which option?", options: ["Option A"] },
+      controller.signal,
+      undefined,
+      ctx as never,
+    );
+
+    expect(firstText(result)).toBe("Question cancelled by user.");
+    expect(result.details).toMatchObject({ cancelled: true });
+  });
+
+  it("asks multiple questions with array format", async () => {
+    const tool = createQuestionTool();
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("TypeScript")
+      .mockResolvedValueOnce("Vitest");
+    const ctx = context(select);
+
+    const result = await tool.execute(
+      "call-1",
+      {
+        questions: [
+          { prompt: "Select language", options: ["TypeScript", "Python"] },
+          { prompt: "Select test runner", options: ["Vitest", "Jest"] },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(firstText(result)).toContain("1. TypeScript\n2. Vitest");
+    expect(result.details).toMatchObject({
+      cancelled: false,
+      answers: [
+        { mode: "single", value: "TypeScript" },
+        { mode: "single", value: "Vitest" },
+      ],
+    });
+  });
+
+  it("persists ANSWERS_TYPE entry and updates snapshot on answers", async () => {
+    const { pi } = createMockPi();
+    const tool = createQuestionTool(pi as never);
+    const sessionManager = { getBranch: vi.fn(() => []) };
+    const select = vi.fn().mockResolvedValue("Option B");
+    const ctx = context(select, vi.fn(), { sessionManager });
+
+    await tool.execute(
+      "call-1",
+      { prompt: "Pick one", options: ["Option A", "Option B"] },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ANSWERS_TYPE,
+      expect.objectContaining({
+        questions: expect.arrayContaining([
+          expect.objectContaining({ prompt: "Pick one" }),
+        ]),
+        answers: [{ mode: "single", value: "Option B" }],
+        askedAt: expect.any(Number),
+      }),
+    );
+
+    const snap = getSessionSnapshot(sessionManager);
+    expect(snap.questions).toMatchObject({
+      askedCount: 1,
+      lastQuestion: "Pick one",
+      lastAnswer: "Option B",
+    });
+  });
+
+  it("does not persist when question is cancelled", async () => {
+    const { pi } = createMockPi();
+    const tool = createQuestionTool(pi as never);
+    const select = vi.fn().mockResolvedValue(undefined);
+    const ctx = context(select);
+
+    await tool.execute(
+      "call-1",
+      { prompt: "Cancel me", options: ["Option A"] },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("restores count and last question/answer on session_start and session_tree", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+
+    const sessionManager = {
+      getBranch: vi.fn(() => [
+        {
+          type: "custom",
+          customType: ANSWERS_TYPE,
+          data: {
+            questions: [{ prompt: "First question?" }],
+            answers: [{ mode: "single", value: "First answer" }],
+            askedAt: 1000,
+          },
+        },
+        {
+          type: "custom",
+          customType: ANSWERS_TYPE,
+          data: {
+            questions: [{ prompt: "Second question?" }],
+            answers: [{ mode: "free", value: "Second answer" }],
+            askedAt: 2000,
+          },
+        },
+      ]),
+    };
+    const ctx = context(vi.fn(), vi.fn(), { sessionManager });
+
+    await handlers.session_start({}, ctx);
+
+    let snap = getSessionSnapshot(sessionManager);
+    expect(snap.questions).toMatchObject({
+      askedCount: 2,
+      lastQuestion: "Second question?",
+      lastAnswer: "Second answer",
+      updatedAt: 2000,
+    });
+
+    // session_tree restores similarly
+    await handlers.session_tree({}, ctx);
+    snap = getSessionSnapshot(sessionManager);
+    expect(snap.questions).toMatchObject({
+      askedCount: 2,
+      lastQuestion: "Second question?",
+      lastAnswer: "Second answer",
+      updatedAt: 2000,
+    });
   });
 });

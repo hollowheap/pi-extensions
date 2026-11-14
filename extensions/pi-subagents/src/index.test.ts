@@ -1,13 +1,26 @@
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension, { createSubagentsExtension } from "./index.js";
 
 function createMockPi() {
+  const eventHandlers = new Map<string, Array<(...args: unknown[]) => void>>();
   return {
     on: vi.fn(),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
-    events: { emit: vi.fn() },
+    appendEntry: vi.fn(),
+    events: {
+      emit: vi.fn((event: string, ...args: unknown[]) => {
+        const list = eventHandlers.get(event) ?? [];
+        for (const h of list) h(...args);
+      }),
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        const list = eventHandlers.get(event) ?? [];
+        list.push(handler);
+        eventHandlers.set(event, list);
+      }),
+    },
   };
 }
 
@@ -71,6 +84,17 @@ describe("pi-subagents extension", () => {
           activeToolStartedAt: 1050,
         }),
       ]);
+      expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+        name: "subagents",
+        text: "1 subagent",
+      });
+    });
+
+    pi.events.emit.mockClear();
+    pi.events.emit("statusline:request", { names: ["subagents"] });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "subagents",
+      text: "1 subagent",
     });
 
     const sessionShutdownHandler = pi.on.mock.calls.find(
@@ -189,5 +213,65 @@ describe("pi-subagents extension", () => {
     extension(pi as never);
     expect(pi.registerTool).not.toHaveBeenCalled();
     expect(pi.on).not.toHaveBeenCalled();
+  });
+
+  it("publishes subagents snapshot on session_start, session_tree, and definition changes", async () => {
+    const pi = createMockPi();
+    const mockList = vi.fn().mockReturnValue([
+      {
+        id: "sub-alpha",
+        status: "running",
+        agent: "scout",
+        task: "Inspect",
+        startedAt: 1000,
+      },
+      {
+        id: "sub-beta",
+        status: "completed",
+        agent: "coder",
+        task: "Build",
+        startedAt: 900,
+      },
+    ]);
+    const ext = createSubagentsExtension({
+      getAgentDir: () => "/tmp/agent",
+      listSubagents: mockList,
+    });
+    ext(pi as never);
+
+    const sessionManager = { getBranch: () => [] };
+    const sessionStart = pi.on.mock.calls.find(
+      ([event]) => event === "session_start",
+    )?.[1];
+    sessionStart?.({}, { sessionManager });
+
+    await vi.waitFor(() => {
+      const snap = getSessionSnapshot(sessionManager);
+      expect(snap.subagents).toBeDefined();
+      expect(snap.subagents?.total).toBe(2);
+      expect(snap.subagents?.running).toBe(1);
+      expect(snap.subagents?.items).toHaveLength(1);
+      expect(snap.subagents?.items[0]?.id).toBe("sub-alpha");
+    });
+
+    // Test definition changes
+    const tool = pi.registerTool.mock.calls[0][0];
+    await tool.execute(
+      "call-def",
+      {
+        action: "define",
+        name: "custom-bot",
+        description: "Custom agent",
+        systemPrompt: "You are custom",
+      },
+      undefined,
+      undefined,
+      { sessionManager } as never,
+    );
+
+    await vi.waitFor(() => {
+      const snap = getSessionSnapshot(sessionManager);
+      expect(snap.subagents?.sessionDefinitions).toContain("custom-bot");
+    });
   });
 });

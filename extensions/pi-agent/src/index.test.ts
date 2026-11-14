@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension, { ACTIVE_AGENT_TYPE, createAgentExtension } from "./index.js";
 
@@ -60,6 +61,17 @@ function createMockPi() {
     }),
     getSessionName: vi.fn(() => currentSessionName),
     setLabel: vi.fn(),
+    events: {
+      emit: vi.fn((event: string, ...args: unknown[]) => {
+        const list = handlers.get(event) ?? [];
+        return list.map((h) => h(...args));
+      }),
+      on: vi.fn((event: string, handler: MockHandler) => {
+        const list = handlers.get(event) ?? [];
+        list.push(handler);
+        handlers.set(event, list);
+      }),
+    },
     getCommand: (name: string): MockCommand => {
       const cmd = commands.get(name);
       if (!cmd) throw new Error(`Command "${name}" not registered`);
@@ -258,9 +270,17 @@ describe("pi-agent extension", () => {
     expect(forkedPi.setSessionName).toHaveBeenCalledWith("[scout] session-1");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
     expect(forkCtx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
-    expect(forkedPi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
-      name: "scout",
-    });
+    expect(forkedPi.appendEntry).toHaveBeenCalledWith(
+      ACTIVE_AGENT_TYPE,
+      expect.objectContaining({
+        name: "scout",
+        description: "Recon",
+        model: "opencode-go/beam-free",
+        mode: "plan",
+        thinking: "low",
+        updatedAt: expect.any(Number),
+      }),
+    );
     expect(forkedPi.setModel).toHaveBeenCalledWith({
       provider: "opencode-go",
       id: "beam-free",
@@ -341,9 +361,17 @@ describe("pi-agent extension", () => {
     expect(ctx.fork).not.toHaveBeenCalled();
     expect(pi.setSessionName).toHaveBeenCalledWith("[engineer] session-1");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
-    expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
-      name: "engineer",
-    });
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ACTIVE_AGENT_TYPE,
+      expect.objectContaining({
+        name: "engineer",
+        description: "Software engineer",
+        model: "opencode-go/deepseek-v4.1-flash",
+        mode: "ask",
+        thinking: "high",
+        updatedAt: expect.any(Number),
+      }),
+    );
     expect(pi.setThinkingLevel).toHaveBeenCalledWith("high");
     expect(ctx.ui.custom).toHaveBeenCalled();
   });
@@ -694,5 +722,97 @@ describe("pi-agent extension", () => {
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
     expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+  });
+
+  it("emits statusline values on agent switch and answers statusline:request", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx as never);
+
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "agent",
+      text: "scout",
+    });
+
+    pi.events.emit.mockClear();
+    pi.events.emit("statusline:request", { names: ["agent"] });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "agent",
+      text: "scout",
+    });
+
+    await cmd.handler("default", ctx as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "agent",
+      text: "",
+    });
+  });
+
+  it("publishes session snapshot on agent switch, restore, reset, and compaction", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    const cmd = pi.getCommand("agent");
+
+    // Initial restore when no agent entry exists
+    await pi.emit("session_start", { reason: "startup" }, ctx);
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({
+        name: null,
+        updatedAt: expect.any(Number),
+      }),
+    );
+
+    // Apply agent
+    await cmd.handler("scout", ctx as never);
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({
+        name: "scout",
+        description: "Recon",
+        model: "opencode-go/beam-free",
+        mode: "plan",
+        thinking: "low",
+        tools: ["read", "grep"],
+        skills: ["author-pr"],
+        updatedAt: expect.any(Number),
+      }),
+    );
+
+    // Compacting when activeAgent is set
+    pi.appendEntry.mockClear();
+    pi.emit("session_compact");
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ACTIVE_AGENT_TYPE,
+      expect.objectContaining({
+        name: "scout",
+        description: "Recon",
+        model: "opencode-go/beam-free",
+        mode: "plan",
+        thinking: "low",
+        updatedAt: expect.any(Number),
+      }),
+    );
+
+    // Reset to default
+    await cmd.handler("default", ctx as never);
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({
+        name: null,
+        updatedAt: expect.any(Number),
+      }),
+    );
+
+    // Compacting when reset
+    pi.appendEntry.mockClear();
+    pi.emit("session_compact");
+    expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
+      name: null,
+    });
   });
 });

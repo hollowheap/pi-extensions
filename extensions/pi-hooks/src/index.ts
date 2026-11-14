@@ -6,6 +6,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { truncateText } from "@hollowheap/core/format";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, session } from "@hollowheap/core/state";
 import { type HookConfig, clearHooksCache, loadHooks } from "./config.js";
 import {
@@ -74,13 +75,154 @@ function notifyWarning(ctx: ExtensionContext, message: string): void {
   }
 }
 
+export const HOOK_STATS_TYPE = "hollowheap.hooks";
+
+interface HooksSessionState {
+  runs: number;
+  blocks: number;
+  errors: number;
+  updatedAt: number;
+}
+
+const hooksStates = new WeakMap<object, HooksSessionState>();
+const fallbackHooksState: HooksSessionState = {
+  runs: 0,
+  blocks: 0,
+  errors: 0,
+  updatedAt: 0,
+};
+
+function getHooksSessionState(owner?: unknown): HooksSessionState {
+  if (typeof owner === "object" && owner !== null) {
+    let state = hooksStates.get(owner);
+    if (state === undefined) {
+      state = { runs: 0, blocks: 0, errors: 0, updatedAt: 0 };
+      hooksStates.set(owner, state);
+    }
+    return state;
+  }
+  return fallbackHooksState;
+}
+
+function publishHooksSnapshot(
+  ctx: ExtensionContext,
+  config?: HookConfig,
+): void {
+  try {
+    let cfg = config;
+    if (cfg === undefined) {
+      try {
+        cfg = loadContextHooks(ctx);
+      } catch {
+        cfg = {
+          sessionStart: [],
+          preTool: [],
+          postTool: [],
+        };
+      }
+    }
+    const state = getHooksSessionState(ctx.sessionManager);
+    if (ctx.sessionManager) {
+      updateSessionSnapshot(ctx.sessionManager, "hooks", {
+        sessionStartCount: cfg.sessionStart.length,
+        preToolCount: cfg.preTool.length,
+        postToolCount: cfg.postTool.length,
+        runs: state.runs,
+        blocks: state.blocks,
+        errors: state.errors,
+        updatedAt: state.updatedAt,
+      });
+    }
+  } catch {
+    // Snapshot updates must never throw
+  }
+}
+
+function recordHookEvent(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  event: { run?: boolean; block?: boolean; error?: boolean },
+  config?: HookConfig,
+): void {
+  const state = getHooksSessionState(ctx.sessionManager);
+  let shouldPersist = false;
+  if (event.run) state.runs += 1;
+  if (event.block) {
+    state.blocks += 1;
+    shouldPersist = true;
+  }
+  if (event.error) {
+    state.errors += 1;
+    shouldPersist = true;
+  }
+  state.updatedAt = Date.now();
+  if (shouldPersist) {
+    pi?.appendEntry?.(HOOK_STATS_TYPE, {
+      runs: state.runs,
+      blocks: state.blocks,
+      errors: state.errors,
+      updatedAt: state.updatedAt,
+    });
+  }
+  publishHooksSnapshot(ctx, config);
+}
+
 export default function (pi: ExtensionAPI) {
+  let lastCtx: ExtensionContext | undefined;
+
+  const restoreHooksSession = (ctx: ExtensionContext) => {
+    lastCtx = ctx;
+    const entries =
+      (typeof ctx.sessionManager?.getBranch === "function"
+        ? ctx.sessionManager.getBranch()
+        : typeof ctx.sessionManager?.getEntries === "function"
+          ? ctx.sessionManager.getEntries()
+          : []) ?? [];
+    let lastData:
+      | {
+          runs?: number;
+          blocks?: number;
+          errors?: number;
+          updatedAt?: number;
+        }
+      | undefined;
+    for (const entry of entries) {
+      const raw = entry as {
+        type?: string;
+        customType?: string;
+        data?: unknown;
+      };
+      if (
+        (raw.type === "custom" && raw.customType === HOOK_STATS_TYPE) ||
+        raw.type === HOOK_STATS_TYPE
+      ) {
+        if (typeof raw.data === "object" && raw.data !== null) {
+          lastData = raw.data as typeof lastData;
+        }
+      }
+    }
+    const state = getHooksSessionState(ctx.sessionManager);
+    if (lastData) {
+      state.runs = typeof lastData.runs === "number" ? lastData.runs : 0;
+      state.blocks = typeof lastData.blocks === "number" ? lastData.blocks : 0;
+      state.errors = typeof lastData.errors === "number" ? lastData.errors : 0;
+      state.updatedAt =
+        typeof lastData.updatedAt === "number"
+          ? lastData.updatedAt
+          : Date.now();
+    }
+    publishHooksSnapshot(ctx);
+  };
+
   if (process.env.PI_HOOKS_DISCOVER_SKILL === "1") {
     pi.on("resources_discover", () => ({ skillPaths: [SKILL_PATH] }));
   }
+
   pi.on("session_start", async (_event, ctx) => {
+    restoreHooksSession(ctx);
     try {
-      const hooks = loadContextHooks(ctx).sessionStart;
+      const config = loadContextHooks(ctx);
+      const hooks = config.sessionStart;
       if (hooks.length === 0) return;
       const payload: SessionHookPayload = {
         event: "session_start",
@@ -90,23 +232,47 @@ export default function (pi: ExtensionAPI) {
       for (const hook of hooks) {
         const result = await runSessionHook(hook, payload);
         if (result.error !== undefined) {
+          recordHookEvent(pi, ctx, { run: true, error: true }, config);
           notifyWarning(
             ctx,
             `pi-hooks: ${hook.command} failed: ${result.error}`,
           );
+        } else {
+          recordHookEvent(pi, ctx, { run: true }, config);
         }
       }
     } catch (error) {
+      recordHookEvent(pi, ctx, { error: true });
       notifyWarning(
         ctx,
         `pi-hooks: session hooks failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   });
+
+  pi.on("session_tree", (_event, ctx) => {
+    restoreHooksSession(ctx);
+  });
+
+  pi.on("session_compact", (_event, ctx) => {
+    const owner = ctx?.sessionManager ?? lastCtx?.sessionManager;
+    const state = getHooksSessionState(owner);
+    if (state.runs > 0) {
+      pi?.appendEntry?.(HOOK_STATS_TYPE, {
+        runs: state.runs,
+        blocks: state.blocks,
+        errors: state.errors,
+        updatedAt: Date.now(),
+      });
+    }
+  });
+
   pi.on("tool_call", async (event, ctx) => {
+    lastCtx = ctx;
     try {
+      const config = loadContextHooks(ctx);
       const payload = payloadFor(ctx, event, "pre_tool");
-      const hooks = loadContextHooks(ctx).preTool.filter(
+      const hooks = config.preTool.filter(
         (hook) =>
           matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
       );
@@ -114,12 +280,15 @@ export default function (pi: ExtensionAPI) {
       for (const hook of hooks) {
         const verdict = await runPreHook(hook, payload);
         if (verdict.block) {
+          recordHookEvent(pi, ctx, { run: true, block: true }, config);
           return { block: true, reason: `pi-hooks: ${verdict.reason}` };
         }
+        recordHookEvent(pi, ctx, { run: true }, config);
       }
       return undefined;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      recordHookEvent(pi, ctx, { error: true, block: true });
       notifyWarning(ctx, `pi-hooks: pre-tool hooks failed: ${message}`);
       return {
         block: true,
@@ -129,9 +298,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", async (event, ctx) => {
+    lastCtx = ctx;
     try {
+      const config = loadContextHooks(ctx);
       const payload = payloadFor(ctx, event, "post_tool");
-      const hooks = loadContextHooks(ctx).postTool.filter(
+      const hooks = config.postTool.filter(
         (hook) =>
           matchesTool(hook, event.toolName) && evaluateCondition(hook, payload),
       );
@@ -144,6 +315,7 @@ export default function (pi: ExtensionAPI) {
           : payload;
         const result = await runPostHook(hook, hookPayload);
         if (result.error !== undefined) {
+          recordHookEvent(pi, ctx, { run: true, error: true }, config);
           notifyWarning(
             ctx,
             `pi-hooks: ${hook.command} failed: ${result.error}`,
@@ -151,6 +323,7 @@ export default function (pi: ExtensionAPI) {
           previousOutput = "";
           continue;
         }
+        recordHookEvent(pi, ctx, { run: true }, config);
         previousOutput = result.output ?? "";
         if (result.output !== undefined) {
           notes.push(
@@ -169,6 +342,7 @@ export default function (pi: ExtensionAPI) {
           : { structuredContent: event.structuredContent }),
       };
     } catch (error) {
+      recordHookEvent(pi, ctx, { error: true });
       notifyWarning(
         ctx,
         `pi-hooks: post-tool hooks failed: ${error instanceof Error ? error.message : String(error)}`,

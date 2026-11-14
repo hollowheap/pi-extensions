@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension, {
   USAGE_ENTRY_TYPE,
@@ -835,5 +836,44 @@ describe("pi-usage extension lifecycle", () => {
     env.sessionTree();
     expect(getSessionUsage(env.ctx.sessionManager).totalCost).toBe(0.5);
     expect(env.sessionManager.getEntries).not.toHaveBeenCalled();
+  });
+
+  it("persists budget cap via /usage budget and syncs snapshot", async () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+
+    // Set budget cap
+    await env.commands.usage.handler("budget 10", env.ctx);
+    expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBe(10);
+    expect(
+      env.customEntries.some(
+        (e) =>
+          e.customType === USAGE_ENTRY_TYPE &&
+          (e.data as { budgetCap?: number })?.budgetCap === 10,
+      ),
+    ).toBe(true);
+
+    const snap = getSessionSnapshot(env.ctx.sessionManager).usage;
+    expect(snap?.budgetCap).toBe(10);
+
+    // Clear budget cap via /usage budget off
+    await env.commands.usage.handler("budget off", env.ctx);
+    expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBeUndefined();
+    const snapCleared = getSessionSnapshot(env.ctx.sessionManager).usage;
+    expect(snapCleared?.budgetCap).toBeUndefined();
+  });
+
+  it("re-persists usage on session_compact when tokens, cost, or budgetCap are set", () => {
+    const env = setupUsageExtension();
+    env.sessionStart();
+
+    // With usage tokens/cost
+    env.messageEnd({ input: 100, output: 50 });
+    env.customEntries.length = 0;
+
+    env.handlers.session_compact({} as never, env.ctx as never);
+    expect(
+      env.customEntries.some((e) => e.customType === USAGE_ENTRY_TYPE),
+    ).toBe(true);
   });
 });

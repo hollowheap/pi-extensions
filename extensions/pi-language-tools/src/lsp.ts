@@ -24,6 +24,7 @@ export interface LspClientOptions {
   args: readonly string[];
   root: string;
   timeoutMs?: number;
+  language?: string;
 }
 
 interface PendingRequest {
@@ -72,6 +73,7 @@ export class LspClient {
   readonly args: readonly string[];
   readonly root: string;
   readonly timeoutMs: number;
+  readonly language?: string;
 
   private child: ChildProcessWithoutNullStreams | undefined;
   private startPromise: Promise<void> | undefined;
@@ -98,6 +100,7 @@ export class LspClient {
     this.args = [...options.args];
     this.root = options.root;
     this.timeoutMs = resolveTimeout(options.timeoutMs);
+    this.language = options.language;
     this.onExit = onExit ?? (() => undefined);
   }
 
@@ -789,4 +792,24 @@ export async function disposeAllLspClients(): Promise<void> {
     pool.clear();
     await Promise.all(clients.map((client) => client.dispose()));
   }
+}
+
+export interface LspStatusItem {
+  name: string;
+  language?: string;
+  status: string;
+}
+
+export function listLspStatus(): LspStatusItem[] {
+  const pool = getPool();
+  const list: LspStatusItem[] = [];
+  for (const client of pool.values()) {
+    if (client.disposed) continue;
+    list.push({
+      name: client.name,
+      ...(client.language ? { language: client.language } : {}),
+      status: client.busy ? "busy" : "running",
+    });
+  }
+  return list;
 }

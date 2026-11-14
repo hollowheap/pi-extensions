@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { loadLanguageToolsConfig } from "./config.js";
 import { createLangTool, isLspLoaded, setLspLoaded } from "./tool.js";
 
@@ -25,6 +26,8 @@ export default function (pi: ExtensionAPI) {
   let reported = false;
   pi.on("session_start", (_event, ctx) => {
     void disposeIfLoaded();
+    // Clients are disposed on session start, so the LSP snapshot restarts empty.
+    updateSessionSnapshot(ctx.sessionManager, "lsp", undefined);
     if (!reported && diagnostics.length > 0) {
       reported = true;
       for (const message of diagnostics) {

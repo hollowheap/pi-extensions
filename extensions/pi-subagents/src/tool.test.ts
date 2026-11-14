@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import type { SubagentState } from "./state.js";
-import { createSubagentTool } from "./tool.js";
+import { SUBAGENT_RUN_TYPE, createSubagentTool } from "./tool.js";
 
 const mocks = vi.hoisted(() => ({
   getAgentDir: vi.fn(),
@@ -959,5 +959,26 @@ describe("subagent tool", () => {
     const rendered = statusComp?.render(80).join("\n") ?? "";
     expect(rendered).toContain("@sub-1");
     expect(rendered).toContain("line 1");
+  });
+
+  it("persists SUBAGENT_RUN_TYPE entry when a subagent is spawned", async () => {
+    const appendEntry = vi.fn();
+    const tool = createSubagentTool({ pi: { appendEntry } as never });
+    await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(appendEntry).toHaveBeenCalledWith(
+      SUBAGENT_RUN_TYPE,
+      expect.objectContaining({
+        id: "sub-1",
+        agent: "scout",
+        task: "find",
+        startedAt: 1,
+      }),
+    );
   });
 });

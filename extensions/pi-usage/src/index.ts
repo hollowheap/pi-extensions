@@ -198,6 +198,19 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  pi.on("session_compact", (_event, ctx) => {
+    const owner = ctx?.sessionManager ?? statusOwner;
+    if (!owner) return;
+    const current = getSessionUsage(owner);
+    if (
+      current.totalTokens > 0 ||
+      current.totalCost > 0 ||
+      current.budgetCap !== undefined
+    ) {
+      persistUsage(owner as never, current);
+    }
+  });
+
   pi.on("message_end", (event, ctx) => {
     if (event.message.role !== "assistant") return;
     const usage = event.message.usage;
@@ -277,7 +290,8 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const raw = args.trim();
       const [subcommand, ...rest] = raw.split(/\s+/).filter(Boolean);
-      if (subcommand?.toLowerCase() === "cap") {
+      const sub = subcommand?.toLowerCase();
+      if (sub === "cap" || sub === "budget") {
         const value = rest.join(" ").trim();
         if (value === "") {
           const usage = getSessionUsage(ctx.sessionManager);
@@ -291,7 +305,9 @@ export default function (pi: ExtensionAPI) {
         }
         if (value.toLowerCase() === "off" || value.toLowerCase() === "none") {
           warningNotified = false;
-          const next = setSessionBudgetCap(ctx.sessionManager, undefined);
+          const next = setSessionBudgetCap(ctx.sessionManager, undefined, {
+            persist: true,
+          });
           persistUsage(ctx.sessionManager, next);
           publishCurrent();
           if (ctx.hasUI) ctx.ui.notify("pi-usage: budget cap cleared");
@@ -304,13 +320,15 @@ export default function (pi: ExtensionAPI) {
         if (!Number.isFinite(amount) || amount <= 0) {
           if (ctx.hasUI)
             ctx.ui.notify(
-              "pi-usage: cap must be a positive dollar amount, e.g. /usage cap $5",
+              `pi-usage: cap must be a positive dollar amount, e.g. /usage ${sub} $5`,
               "error",
             );
           return;
         }
         warningNotified = false;
-        const next = setSessionBudgetCap(ctx.sessionManager, amount);
+        const next = setSessionBudgetCap(ctx.sessionManager, amount, {
+          persist: true,
+        });
         persistUsage(ctx.sessionManager, next);
         publishCurrent();
         if (ctx.hasUI) {

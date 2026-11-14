@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
@@ -29,7 +30,57 @@ function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   return code;
 }
 
+export const MODAL_EXPAND_TYPE = "hollowheap.modal.expand";
+
+function readPersistedExpanded(ctx: ExtensionContext): boolean | undefined {
+  const getBranch = (ctx.sessionManager as { getBranch?: () => unknown[] })
+    ?.getBranch;
+  if (typeof getBranch !== "function") return undefined;
+  let expanded: boolean | undefined;
+  for (const raw of getBranch.call(ctx.sessionManager)) {
+    const entry = raw as {
+      type?: unknown;
+      customType?: unknown;
+      data?: { expanded?: unknown };
+    };
+    if (
+      entry?.type === "custom" &&
+      entry.customType === MODAL_EXPAND_TYPE &&
+      typeof entry.data?.expanded === "boolean"
+    ) {
+      expanded = entry.data.expanded;
+    }
+  }
+  return expanded;
+}
+
 export default function (pi: ExtensionAPI): void {
+  let lastCodemodeCode: string | undefined;
+  let lastToolCall:
+    | { name: string; input: Record<string, unknown> }
+    | undefined;
+  let persistedExpand: boolean | undefined;
+
+  const publishModalSnapshot = (ctx: ExtensionContext | undefined): void => {
+    if (!ctx?.sessionManager) return;
+    const toolsExpanded =
+      typeof ctx.ui?.getToolsExpanded === "function"
+        ? ctx.ui.getToolsExpanded()
+        : persistedExpand;
+    updateSessionSnapshot(ctx.sessionManager, "modal", {
+      ...(toolsExpanded !== undefined ? { toolsExpanded } : {}),
+      ...(lastToolCall ? { lastTool: lastToolCall.name } : {}),
+      hasLastCodemode: Boolean(
+        lastCodemodeCode ??
+          (typeof (ctx.sessionManager as { getBranch?: unknown })?.getBranch ===
+          "function"
+            ? lastCodemodeFromSession(ctx)
+            : undefined),
+      ),
+      updatedAt: Date.now(),
+    });
+  };
+
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
     const renderCall = base?.renderCall;
@@ -47,26 +98,26 @@ export default function (pi: ExtensionAPI): void {
       "Expand or collapse tool output, including codemode scripts and nested calls",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase();
+      let nextExpanded: boolean;
       if (mode === "" || mode === "toggle") {
-        ctx.ui.setToolsExpanded(!ctx.ui.getToolsExpanded());
+        nextExpanded = !ctx.ui.getToolsExpanded();
       } else if (mode === "on" || mode === "expand") {
-        ctx.ui.setToolsExpanded(true);
+        nextExpanded = true;
       } else if (mode === "off" || mode === "collapse") {
-        ctx.ui.setToolsExpanded(false);
+        nextExpanded = false;
       } else {
         ctx.ui.notify("Usage: /expand [on|off|toggle]", "error");
         return;
       }
+      ctx.ui.setToolsExpanded(nextExpanded);
+      persistedExpand = nextExpanded;
+      pi.appendEntry?.(MODAL_EXPAND_TYPE, { expanded: nextExpanded });
+      publishModalSnapshot(ctx);
       ctx.ui.notify(
         `pi-modal: tool output ${ctx.ui.getToolsExpanded() ? "expanded" : "collapsed"}`,
       );
     },
   });
-
-  let lastCodemodeCode: string | undefined;
-  let lastToolCall:
-    | { name: string; input: Record<string, unknown> }
-    | undefined;
 
   const showLastCodemode = async (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
@@ -86,17 +137,32 @@ export default function (pi: ExtensionAPI): void {
     ctx.ui.notify("pi-modal: no codemode script yet", "info");
   };
 
-  pi.on("tool_call", (event) => {
+  pi.on("tool_call", (event, ctx) => {
     if (event.parentToolCallId === undefined) {
       lastToolCall = {
         name: event.toolName,
         input: event.input as Record<string, unknown>,
       };
     }
-    if (event.toolName !== "codemode") return;
-    const code = event.input.code;
-    if (typeof code === "string") lastCodemodeCode = code;
+    if (event.toolName === "codemode") {
+      const code = event.input.code;
+      if (typeof code === "string") lastCodemodeCode = code;
+    }
+    publishModalSnapshot(ctx);
   });
+
+  const syncFromBranch = (ctx: ExtensionContext) => {
+    lastCodemodeCode = undefined;
+    lastToolCall = undefined;
+    persistedExpand = readPersistedExpanded(ctx);
+    if (
+      persistedExpand !== undefined &&
+      typeof ctx.ui?.setToolsExpanded === "function"
+    ) {
+      ctx.ui.setToolsExpanded(persistedExpand);
+    }
+    publishModalSnapshot(ctx);
+  };
 
   pi.registerShortcut("ctrl+shift+o", {
     description: "Open the last codemode script",
@@ -124,7 +190,19 @@ export default function (pi: ExtensionAPI): void {
     return handleSkillInput(event, pi);
   });
 
+  pi.on("session_tree", (_event, ctx) => {
+    syncFromBranch(ctx);
+  });
+
+  pi.on("session_compact", (_event, ctx) => {
+    if (persistedExpand !== undefined) {
+      pi.appendEntry(MODAL_EXPAND_TYPE, { expanded: persistedExpand });
+    }
+    publishModalSnapshot(ctx);
+  });
+
   pi.on("session_start", (_event, ctx) => {
+    syncFromBranch(ctx);
     if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === "function") {
       registerSkillAutocomplete(pi, ctx);
     }

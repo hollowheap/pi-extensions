@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  type ExtensionAPI,
   type Theme,
   defineTool,
   getAgentDir,
@@ -33,11 +34,14 @@ import {
   subagentWorkspaceTracker,
 } from "./workspace.js";
 
+export const SUBAGENT_RUN_TYPE = "hollowheap.subagents.run";
+
 export interface SubagentToolOptions {
   onSubagentsChange?: () => void;
   getSessionAgents?: () => readonly AgentConfig[];
   defineSessionAgent?: (definition: SessionAgentDefinition) => void;
   deleteSessionAgent?: (name: string) => boolean;
+  pi?: ExtensionAPI;
 }
 
 interface ChildSpec {
@@ -579,6 +583,12 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             throw error;
           }
           subagentWorkspaceTracker.track(state.id, workspace);
+          options.pi?.appendEntry?.(SUBAGENT_RUN_TYPE, {
+            id: state.id,
+            agent: state.agent,
+            task: state.task,
+            startedAt: state.startedAt,
+          });
           options.onSubagentsChange?.();
           if (spec.inputMode === "jsonl") {
             try {

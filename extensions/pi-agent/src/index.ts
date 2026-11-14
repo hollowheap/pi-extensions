@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode } from "@hollowheap/core/modes";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { loadAgentConfig } from "./config.js";
 
@@ -35,6 +36,33 @@ const VALID_THINKING_LEVELS = new Set<string>([
   "xhigh",
   "max",
 ]);
+
+function toAgentEntryData(agent: AgentConfig): {
+  name: string;
+  description?: string;
+  model?: string;
+  thinking?: string;
+  mode?: string;
+  updatedAt: number;
+} {
+  const data: {
+    name: string;
+    description?: string;
+    model?: string;
+    thinking?: string;
+    mode?: string;
+    updatedAt: number;
+  } = {
+    name: agent.name,
+    updatedAt: Date.now(),
+  };
+  if (agent.description !== undefined) data.description = agent.description;
+  if (agent.model !== undefined) data.model = agent.model;
+  const thinking = agent.thinking ?? agent.effort;
+  if (thinking !== undefined) data.thinking = thinking;
+  if (agent.mode !== undefined) data.mode = agent.mode;
+  return data;
+}
 
 function formatModelId(model: unknown): string {
   if (typeof model === "string") return model.trim();
@@ -141,7 +169,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
       activeAgent = agent;
       if (options.persist) {
-        piApi.appendEntry(ACTIVE_AGENT_TYPE, { name: agent.name });
+        piApi.appendEntry(ACTIVE_AGENT_TYPE, toAgentEntryData(agent));
       }
 
       ctx.ui?.setStatus?.("agent", sanitizeTerminalText(agent.name));
@@ -150,6 +178,19 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         name: "agent",
         text: sanitizeTerminalText(agent.name),
       });
+
+      if (ctx.sessionManager) {
+        updateSessionSnapshot(ctx.sessionManager, "agent", {
+          name: agent.name,
+          description: agent.description,
+          model: agent.model,
+          thinking: agent.thinking ?? agent.effort,
+          mode: agent.mode,
+          tools: agent.tools,
+          skills: agent.skills,
+          updatedAt: Date.now(),
+        });
+      }
 
       if (agent.mode && ctx.sessionManager) {
         const result = enterMode(ctx.sessionManager, agent.mode);
@@ -226,6 +267,13 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         name: "agent",
         text: "",
       });
+
+      if (ctx.sessionManager) {
+        updateSessionSnapshot(ctx.sessionManager, "agent", {
+          name: null,
+          updatedAt: Date.now(),
+        });
+      }
 
       if (options.persist && previousAgent?.mode && ctx.sessionManager) {
         enterMode(ctx.sessionManager, "ask");
@@ -324,8 +372,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           data?: unknown;
         };
         if (
-          (raw.type === "custom" &&
-            raw.customType === ACTIVE_AGENT_TYPE) ||
+          (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
           raw.type === ACTIVE_AGENT_TYPE
         ) {
           hasAgentEntry = true;
@@ -394,6 +441,12 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         name: "agent",
         text: "",
       });
+      if (ctx.sessionManager) {
+        updateSessionSnapshot(ctx.sessionManager, "agent", {
+          name: null,
+          updatedAt: Date.now(),
+        });
+      }
     };
 
     pi.on("session_start", async (event, ctx) => {
@@ -416,7 +469,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
     pi.on("session_compact", () => {
       if (activeAgent) {
-        pi.appendEntry(ACTIVE_AGENT_TYPE, { name: activeAgent.name });
+        pi.appendEntry(ACTIVE_AGENT_TYPE, toAgentEntryData(activeAgent));
       } else {
         pi.appendEntry(ACTIVE_AGENT_TYPE, { name: null });
       }

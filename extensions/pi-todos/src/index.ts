@@ -4,6 +4,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import { Type } from "typebox";
 import {
@@ -347,6 +348,47 @@ export default function (pi: ExtensionAPI) {
   let tasks: TaskStateItem[] = [];
   let lastCtx: ExtensionContext | undefined;
   let panelCollapsed = false;
+  let lastOpenCount = 0;
+
+  const publishStatusline = (open: number) => {
+    lastOpenCount = open;
+    pi.events?.emit?.("statusline:values", {
+      name: "todos",
+      text: open > 0 ? `${open} todo${open === 1 ? "" : "s"}` : "",
+    });
+  };
+
+  pi.events?.on?.("statusline:request", (data: unknown) => {
+    if (typeof data === "object" && data !== null) {
+      const names = (data as { names?: unknown }).names;
+      if (Array.isArray(names) && !names.includes("todos")) return;
+    }
+    publishStatusline(lastOpenCount);
+  });
+
+  const publishState = (ctx?: ExtensionContext) => {
+    const total = state.todos.length;
+    const open = state.todos.filter((t) => !t.done).length;
+    const done = total - open;
+    const highPriority = state.todos.filter(
+      (t) => !t.done && t.priority === "high",
+    ).length;
+
+    pi.events?.emit?.("todos:state", { todos: state.todos, open, total });
+    publishStatusline(open);
+
+    const sessionManager = ctx?.sessionManager ?? lastCtx?.sessionManager;
+    if (sessionManager) {
+      updateSessionSnapshot(sessionManager, "todos", {
+        total,
+        open,
+        done,
+        highPriority,
+        items: state.todos.slice(0, 10),
+        updatedAt: Date.now(),
+      });
+    }
+  };
 
   const updateUI = (ctx: ExtensionContext) => {
     lastCtx = ctx;
@@ -384,9 +426,14 @@ export default function (pi: ExtensionAPI) {
       () => state,
       (next, context) => {
         state = next;
-        pi.appendEntry(TODOS_TYPE, state);
-        if (context) updateUI(context);
-        else if (lastCtx) updateUI(lastCtx);
+        pi.appendEntry(TODOS_TYPE, {
+          todos: state.todos,
+          nextId: state.nextId,
+          updatedAt: Date.now(),
+        });
+        const currentCtx = context ?? lastCtx;
+        if (currentCtx) updateUI(currentCtx);
+        publishState(currentCtx);
       },
     ),
   );
@@ -408,7 +455,13 @@ export default function (pi: ExtensionAPI) {
   const restore = (ctx: ExtensionContext) => {
     state = emptyTodoState();
     try {
-      for (const entry of ctx.sessionManager.getBranch()) {
+      const entries =
+        typeof ctx.sessionManager?.getBranch === "function"
+          ? ctx.sessionManager.getBranch()
+          : typeof ctx.sessionManager?.getEntries === "function"
+            ? ctx.sessionManager.getEntries()
+            : [];
+      for (const entry of entries) {
         if (entry.type !== "custom" || entry.customType !== TODOS_TYPE)
           continue;
         const restored = readState(entry.data);
@@ -418,6 +471,7 @@ export default function (pi: ExtensionAPI) {
       // A broken branch should not prevent the session from starting.
     }
     updateUI(ctx);
+    publishState(ctx);
   };
 
   // Prefixed keybinding: Ctrl+X then p toggles panel collapse
@@ -481,11 +535,16 @@ export default function (pi: ExtensionAPI) {
     disposeTerminalInput?.();
     disposeTerminalInput = undefined;
     resetChord();
+    pi.events?.emit?.("statusline:values", { name: "todos", text: "" });
   });
 
   pi.on("session_compact", () => {
     if (state.todos.length > 0 || state.nextId > 1) {
-      pi.appendEntry(TODOS_TYPE, state);
+      pi.appendEntry(TODOS_TYPE, {
+        todos: state.todos,
+        nextId: state.nextId,
+        updatedAt: Date.now(),
+      });
     }
   });
 
@@ -565,8 +624,13 @@ export default function (pi: ExtensionAPI) {
           state = result.state;
           updateUI(ctx);
           if (result.changed) {
-            pi.appendEntry(TODOS_TYPE, state);
+            pi.appendEntry(TODOS_TYPE, {
+              todos: state.todos,
+              nextId: state.nextId,
+              updatedAt: Date.now(),
+            });
           }
+          publishState(ctx);
           if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
           return;
         }
@@ -582,8 +646,13 @@ export default function (pi: ExtensionAPI) {
         state = result.state;
         updateUI(ctx);
         if (result.changed) {
-          pi.appendEntry(TODOS_TYPE, state);
+          pi.appendEntry(TODOS_TYPE, {
+            todos: state.todos,
+            nextId: state.nextId,
+            updatedAt: Date.now(),
+          });
         }
+        publishState(ctx);
         if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
         return;
       }
@@ -616,7 +685,12 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, state);
+        pi.appendEntry(TODOS_TYPE, {
+          todos: state.todos,
+          nextId: state.nextId,
+          updatedAt: Date.now(),
+        });
+        publishState(ctx);
         if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
         return;
       }
@@ -636,7 +710,12 @@ export default function (pi: ExtensionAPI) {
             nextId: state.nextId,
           };
           updateUI(ctx);
-          pi.appendEntry(TODOS_TYPE, state);
+          pi.appendEntry(TODOS_TYPE, {
+            todos: state.todos,
+            nextId: state.nextId,
+            updatedAt: Date.now(),
+          });
+          publishState(ctx);
           if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
           return;
         }
@@ -659,7 +738,12 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, state);
+        pi.appendEntry(TODOS_TYPE, {
+          todos: state.todos,
+          nextId: state.nextId,
+          updatedAt: Date.now(),
+        });
+        publishState(ctx);
         if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
         return;
       }
@@ -698,7 +782,12 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, state);
+        pi.appendEntry(TODOS_TYPE, {
+          todos: state.todos,
+          nextId: state.nextId,
+          updatedAt: Date.now(),
+        });
+        publishState(ctx);
         if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
         return;
       }

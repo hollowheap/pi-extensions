@@ -10,7 +10,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 import { readProcStartTime } from "./runner.js";
-import { type TaskToolDeps, createTaskTool } from "./task-tool.js";
+import {
+  TASK_RUN_TYPE,
+  type TaskToolDeps,
+  createTaskTool,
+} from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
 function createCtx(opts: { cwd: string; trusted?: boolean }) {
@@ -411,5 +415,37 @@ describe("pi-tasks task-tool", () => {
       ctx as never,
     );
     expect(getText(missingId as never)).toContain("requires an id");
+  });
+
+  it("persists TASK_RUN_TYPE entry when a task is started", async () => {
+    const appendEntry = vi.fn();
+    const mockPi = { appendEntry };
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange: vi.fn(),
+      onTasksChange: vi.fn(),
+      pi: mockPi as never,
+    });
+    const ctx = createCtx({ cwd: workspaceDir, trusted: true });
+
+    const started = await tool.execute(
+      "call-persist",
+      { action: "start", command: "echo test-persist" } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(getText(started as never)).toContain("Started task");
+    expect(appendEntry).toHaveBeenCalledTimes(1);
+    expect(appendEntry).toHaveBeenCalledWith(
+      TASK_RUN_TYPE,
+      expect.objectContaining({
+        id: expect.stringMatching(/^task-/),
+        command: "echo test-persist",
+        cwd: expect.any(String),
+        startedAt: expect.any(Number),
+      }),
+    );
   });
 });

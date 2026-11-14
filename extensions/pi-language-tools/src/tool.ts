@@ -11,6 +11,7 @@ import { Markdown, type MarkdownTheme, Text } from "@earendil-works/pi-tui";
 import { loadPermissions } from "@hollowheap/core/config";
 import { displayPath } from "@hollowheap/core/format";
 import { checkPath } from "@hollowheap/core/policy";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
 import { clampMaxResults } from "@hollowheap/runtime/exec";
@@ -616,6 +617,38 @@ const defaultDeps: LangToolDeps = {
   getAgentDir,
 };
 
+const lspRequestCounts = new WeakMap<object, number>();
+
+async function publishLspSnapshot(
+  ctx: ExtensionContext,
+  serverName: string,
+  languageId: string,
+): Promise<void> {
+  const owner = ctx.sessionManager;
+  if (typeof owner !== "object" || owner === null) return;
+  const requestCount = (lspRequestCounts.get(owner) ?? 0) + 1;
+  lspRequestCounts.set(owner, requestCount);
+  try {
+    const { listLspStatus } = await import("./lsp.js");
+    const pooled = listLspStatus().map((item) =>
+      item.name === serverName && !item.language
+        ? { ...item, language: languageId }
+        : item,
+    );
+    const servers =
+      pooled.length > 0
+        ? pooled
+        : [{ name: serverName, language: languageId, status: "running" }];
+    updateSessionSnapshot(owner, "lsp", {
+      servers,
+      requestCount,
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // Snapshot updates must never fail a lang call.
+  }
+}
+
 export const langTool = createLangTool();
 
 export function createLangTool(overrides: Partial<LangToolDeps> = {}) {
@@ -770,6 +803,7 @@ async function executeLang(
       root: ctx.cwd,
       timeoutMs: server.timeoutMs,
     });
+    void publishLspSnapshot(ctx, server.name, languageId);
     const cap = clampMaxResults(params.max_results);
 
     if (action === "workspace_symbols") {

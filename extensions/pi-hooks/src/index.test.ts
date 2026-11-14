@@ -8,8 +8,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import extension from "./index.js";
+import extension, { HOOK_STATS_TYPE } from "./index.js";
 
 let agentDir = "";
 
@@ -35,6 +36,7 @@ function setup() {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
+    appendEntry: vi.fn(),
     events: { on: vi.fn(), emit: vi.fn() },
   };
   extension(pi as never);
@@ -45,7 +47,7 @@ function setup() {
     isProjectTrusted: () => true,
     ui: { notify: vi.fn(), confirm: vi.fn(), setStatus: vi.fn() },
   };
-  return { handlers, ctx, notify: ctx.ui.notify };
+  return { handlers, ctx, notify: ctx.ui.notify, pi };
 }
 
 function toolCall(toolName: string, input: unknown = {}) {
@@ -464,5 +466,89 @@ describe("pi-hooks extension", () => {
       expect.stringContaining("command not found"),
       "warning",
     );
+  });
+
+  it("persists HOOK_STATS_TYPE entry when blocks or errors increment, and on session_compact", async () => {
+    writeHooks({
+      preTool: [
+        {
+          command: "exit",
+          args: ["1"],
+        },
+      ],
+    });
+    const { handlers, ctx, pi } = setup();
+
+    await handlers.tool_call(toolCall("bash"), ctx);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      HOOK_STATS_TYPE,
+      expect.objectContaining({
+        blocks: 1,
+        errors: 0,
+        runs: 1,
+      }),
+    );
+
+    const snap = getSessionSnapshot(ctx.sessionManager);
+    expect(snap.hooks).toMatchObject({
+      preToolCount: 1,
+      blocks: 1,
+      runs: 1,
+    });
+
+    pi.appendEntry.mockClear();
+    handlers.session_compact({}, ctx);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      HOOK_STATS_TYPE,
+      expect.objectContaining({
+        runs: 1,
+        blocks: 1,
+      }),
+    );
+  });
+
+  it("restores hook stats on session_start and session_tree", async () => {
+    writeHooks({
+      sessionStart: [{ command: "true" }],
+      preTool: [],
+      postTool: [],
+    });
+    const { handlers } = setup();
+    const sessionManager = {
+      getBranch: vi.fn(() => [
+        {
+          type: "custom",
+          customType: HOOK_STATS_TYPE,
+          data: {
+            runs: 10,
+            blocks: 3,
+            errors: 2,
+            updatedAt: 4000,
+          },
+        },
+      ]),
+    };
+    const ctx = {
+      cwd: agentDir,
+      sessionManager,
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn() },
+    };
+
+    handlers.session_tree({}, ctx);
+    let snap = getSessionSnapshot(sessionManager);
+    expect(snap.hooks).toMatchObject({
+      runs: 10,
+      blocks: 3,
+      errors: 2,
+      sessionStartCount: 1,
+    });
+
+    await handlers.session_start({}, ctx);
+    snap = getSessionSnapshot(sessionManager);
+    expect(snap.hooks?.runs).toBeGreaterThanOrEqual(11);
   });
 });

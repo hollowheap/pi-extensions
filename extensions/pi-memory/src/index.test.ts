@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { USAGE_ENTRY_TYPE } from "@hollowheap/core/usage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MEMORY_CONFIG_FILE } from "./config.js";
@@ -18,11 +19,18 @@ vi.mock("@hollowheap/tui/pager", () => ({
 }));
 
 function createMockPi() {
+  const eventHandlers: Record<string, (data: unknown) => void> = {};
   return {
     on: vi.fn(),
     registerCommand: vi.fn(),
     appendEntry: vi.fn(),
-    events: { emit: vi.fn(), on: vi.fn() },
+    events: {
+      emit: vi.fn(),
+      on: vi.fn((event: string, handler: (data: unknown) => void) => {
+        eventHandlers[event] = handler;
+      }),
+    },
+    eventHandlers,
   };
 }
 
@@ -429,5 +437,72 @@ describe("pi-memory extension", () => {
     createMemoryExtension({ getAgentDir: () => configDir() })(pi as never);
     expect(pi.on).not.toHaveBeenCalled();
     expect(pi.registerCommand).not.toHaveBeenCalled();
+  });
+
+  it("publishes updateSessionSnapshot and statusline:values on restore, observe, and clear, and answers statusline:request", async () => {
+    const pi = createMockPi();
+    const dir = configDir();
+    const observeMock = vi.fn().mockResolvedValue({
+      observations: [{ text: "New observation", relevance: 5 }],
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+    });
+
+    createMemoryExtension({
+      getAgentDir: () => dir,
+      observe: observeMock as never,
+    })(pi as never);
+
+    const branch = [
+      observationEntry("Existing observation"),
+      messageEntry("m1", "x".repeat(5_000)),
+    ];
+    const ctx = createCtx(branch);
+
+    // session_start (restore)
+    await handler(pi, "session_start")?.({}, ctx);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "memory",
+      text: "1 obs",
+    });
+
+    let snap = getSessionSnapshot(ctx.sessionManager).memory;
+    expect(snap).toBeDefined();
+    expect(snap?.observations).toBe(1);
+    expect(snap?.reflections).toBe(0);
+    expect(snap?.latestObservation).toBe("Existing observation");
+
+    // statusline:request answers current status
+    pi.events.emit.mockClear();
+    pi.eventHandlers["statusline:request"]?.({ names: ["memory"] });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "memory",
+      text: "1 obs",
+    });
+
+    // agent_settled triggers observation
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => {
+      expect(observeMock).toHaveBeenCalled();
+    });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "memory",
+      text: "2 obs",
+    });
+
+    snap = getSessionSnapshot(ctx.sessionManager).memory;
+    expect(snap?.observations).toBe(2);
+    expect(snap?.latestObservation).toBe("New observation");
+
+    // clearMemory clears snapshot and statusline
+    const command = memoryCommand(pi);
+    await command?.handler("clear", ctx);
+
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "memory",
+      text: "",
+    });
+    snap = getSessionSnapshot(ctx.sessionManager).memory;
+    expect(snap?.observations).toBe(0);
+    expect(snap?.latestObservation).toBeUndefined();
   });
 });

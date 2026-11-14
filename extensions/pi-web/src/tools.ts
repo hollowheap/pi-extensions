@@ -1,4 +1,6 @@
 import {
+  type ExtensionAPI,
+  type ExtensionContext,
   type Theme,
   defineTool,
   getAgentDir,
@@ -13,6 +15,7 @@ import {
   getCapabilities,
   hyperlink,
 } from "@earendil-works/pi-tui";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { Type } from "typebox";
 import { loadWebConfig } from "./config.js";
 import {
@@ -45,16 +48,55 @@ export const FETCH_MAX_LINKS = 50;
 export const FETCH_MAX_MEDIA = 20;
 const FETCH_CACHE_TTL_MS = 5 * 60_000;
 const FETCH_RATE_LIMIT_MS = 1_000;
-let lastWebLinks: string[] = [];
 
-export function getLastWebLinks(): readonly string[] {
-  return lastWebLinks;
+export const WEB_HISTORY_TYPE = "hollowheap.web.history";
+
+export interface WebSessionState {
+  urls: string[];
+  searchCount: number;
+  fetchCount: number;
+  updatedAt: number;
 }
 
-export function rememberWebLinks(links: readonly { url: string }[]): void {
+const webStates = new WeakMap<object, WebSessionState>();
+const fallbackWebState: WebSessionState = {
+  urls: [],
+  searchCount: 0,
+  fetchCount: 0,
+  updatedAt: 0,
+};
+let lastActiveWebState = fallbackWebState;
+
+export function getWebSessionState(owner?: unknown): WebSessionState {
+  if (typeof owner === "object" && owner !== null) {
+    let state = webStates.get(owner);
+    if (state === undefined) {
+      state = { urls: [], searchCount: 0, fetchCount: 0, updatedAt: 0 };
+      webStates.set(owner, state);
+    }
+    lastActiveWebState = state;
+    return state;
+  }
+  return fallbackWebState;
+}
+
+export function getLastWebLinks(owner?: unknown): readonly string[] {
+  if (typeof owner === "object" && owner !== null) {
+    return getWebSessionState(owner).urls;
+  }
+  return lastActiveWebState.urls.length > 0
+    ? lastActiveWebState.urls
+    : fallbackWebState.urls;
+}
+
+export function rememberWebLinks(
+  links: readonly { url: string }[],
+  owner?: unknown,
+): void {
+  const state = getWebSessionState(owner);
   const seen = new Set<string>();
-  lastWebLinks = links
-    .map((link) => link.url)
+  const merged = [...links.map((link) => link.url), ...state.urls];
+  state.urls = merged
     .filter((url) => {
       if (!/^https?:\/\//i.test(url) || seen.has(url)) return false;
       seen.add(url);
@@ -106,6 +148,7 @@ function expandHint(theme: Theme, count: number, noun: string): string {
 
 export interface WebSearchDeps {
   search?: (request: SearchRequest) => Promise<NormalizedSearchResult[]>;
+  pi?: ExtensionAPI;
 }
 
 export interface WebFetchDeps {
@@ -114,6 +157,7 @@ export interface WebFetchDeps {
     url: string,
     signal?: AbortSignal,
   ) => Promise<MediaPreview | undefined>;
+  pi?: ExtensionAPI;
 }
 
 async function adapterFor(provider: ProviderId): Promise<ProviderAdapter> {
@@ -287,7 +331,10 @@ function extractDomain(url: string): string {
   }
 }
 
-export function createWebSearchTool(deps: WebSearchDeps = {}) {
+export function createWebSearchTool(
+  deps: WebSearchDeps = {},
+  pi?: ExtensionAPI,
+) {
   return defineTool({
     name: "web_search",
     label: "web_search",
@@ -372,6 +419,8 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
       _toolCallId,
       params: { query: string; max_results?: number },
       signal?: AbortSignal,
+      _onUpdate?: unknown,
+      ctx?: ExtensionContext,
     ) {
       const query = typeof params.query === "string" ? params.query.trim() : "";
       if (query === "") return errorResult("web_search", "query is required");
@@ -395,7 +444,26 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
           signal,
         });
         const capped = results.slice(0, limit).map(normalizeSearch);
-        rememberWebLinks(capped);
+        const owner = ctx?.sessionManager;
+        rememberWebLinks(capped, owner);
+        const state = getWebSessionState(owner);
+        state.searchCount += 1;
+        state.updatedAt = Date.now();
+        const piApi = deps.pi ?? pi;
+        piApi?.appendEntry?.(WEB_HISTORY_TYPE, {
+          urls: state.urls,
+          searchCount: state.searchCount,
+          fetchCount: state.fetchCount,
+          updatedAt: state.updatedAt,
+        });
+        if (owner) {
+          updateSessionSnapshot(owner, "web", {
+            searchCount: state.searchCount,
+            fetchCount: state.fetchCount,
+            recentUrls: state.urls,
+            updatedAt: state.updatedAt,
+          });
+        }
         const text = formatSearchMarkdown(
           query,
           capped,
@@ -419,7 +487,7 @@ export function createWebSearchTool(deps: WebSearchDeps = {}) {
   });
 }
 
-export function createWebFetchTool(deps: WebFetchDeps = {}) {
+export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
   return defineTool({
     name: "web_fetch",
     label: "web_fetch",
@@ -556,6 +624,8 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
       _toolCallId,
       params: { url: string; max_chars?: number },
       signal?: AbortSignal,
+      _onUpdate?: unknown,
+      ctx?: ExtensionContext,
     ) {
       const url = typeof params.url === "string" ? params.url.trim() : "";
       if (url === "") return errorResult("web_fetch", "url is required");
@@ -575,7 +645,26 @@ export function createWebFetchTool(deps: WebFetchDeps = {}) {
         const safeLinks = result.links.filter((link) => !isDataUrl(link.url));
         const safeMedia = result.media.filter((item) => !isDataUrl(item.url));
         const links = safeLinks.slice(0, FETCH_MAX_LINKS);
-        rememberWebLinks(links);
+        const owner = ctx?.sessionManager;
+        rememberWebLinks(isHttpUrl(url) ? [{ url }, ...links] : links, owner);
+        const state = getWebSessionState(owner);
+        state.fetchCount += 1;
+        state.updatedAt = Date.now();
+        const piApi = deps.pi ?? pi;
+        piApi?.appendEntry?.(WEB_HISTORY_TYPE, {
+          urls: state.urls,
+          searchCount: state.searchCount,
+          fetchCount: state.fetchCount,
+          updatedAt: state.updatedAt,
+        });
+        if (owner) {
+          updateSessionSnapshot(owner, "web", {
+            searchCount: state.searchCount,
+            fetchCount: state.fetchCount,
+            recentUrls: state.urls,
+            updatedAt: state.updatedAt,
+          });
+        }
         const media = safeMedia.slice(0, FETCH_MAX_MEDIA);
         const isTruncated =
           result.truncated ||

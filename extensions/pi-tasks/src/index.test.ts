@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
@@ -14,13 +15,22 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
 }));
 
 function createMockPi() {
+  const eventHandlers = new Map<string, Array<(...args: unknown[]) => void>>();
   return {
     on: vi.fn(),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
     events: {
-      emit: vi.fn(),
+      emit: vi.fn((event: string, ...args: unknown[]) => {
+        const list = eventHandlers.get(event) ?? [];
+        for (const h of list) h(...args);
+      }),
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        const list = eventHandlers.get(event) ?? [];
+        list.push(handler);
+        eventHandlers.set(event, list);
+      }),
     },
   };
 }
@@ -289,6 +299,10 @@ describe("pi-tasks extension", () => {
     onSessionStart({}, ctx);
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("tasks", undefined);
     expect(pi.events.emit).toHaveBeenCalledWith("tasks:state", []);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "tasks",
+      text: "",
+    });
 
     // 1 running -> "1 running"
     createTaskRecord(mockAgentDir, {
@@ -304,9 +318,20 @@ describe("pi-tasks extension", () => {
 
     onSessionStart({}, ctx);
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("tasks", "1 running");
-    expect(pi.events.emit).toHaveBeenLastCalledWith("tasks:state", [
+    expect(pi.events.emit).toHaveBeenCalledWith("tasks:state", [
       { id: "task-live", command: "sleep 30", status: "running" },
     ]);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "tasks",
+      text: "1 running",
+    });
+
+    pi.events.emit.mockClear();
+    pi.events.emit("statusline:request", { names: ["tasks"] });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "tasks",
+      text: "1 running",
+    });
   });
 
   it("warns instead of throwing when task storage cannot be read", () => {
@@ -347,5 +372,49 @@ describe("pi-tasks extension", () => {
     expect(meta?.status).toBe("running");
 
     await cancelTask(mockAgentDir, task.id);
+  });
+
+  it("publishes tasks snapshot on session_start with running, total, and capped recent", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+
+    for (let i = 1; i <= 7; i++) {
+      createTaskRecord(mockAgentDir, {
+        id: `task-${i}`,
+        kind: "shell",
+        status: i === 1 ? "running" : "completed",
+        command: `echo ${i}`,
+        cwd: workspaceDir,
+        pid: i === 1 ? process.pid : 99999,
+        startTime: i === 1 ? readProcStartTime(process.pid) : 100,
+        startedAt: 1000 * i,
+        exitCode: i === 1 ? null : 0,
+      });
+    }
+
+    const sessionStartCall = pi.on.mock.calls.find(
+      ([ev]) => ev === "session_start",
+    );
+    const onSessionStart = sessionStartCall?.[1] as (
+      ev: unknown,
+      ctx: unknown,
+    ) => void;
+    const sessionManager = {};
+    const ctx = { ...createCtx(workspaceDir), sessionManager };
+
+    onSessionStart({}, ctx);
+
+    const snap = getSessionSnapshot(sessionManager);
+    expect(snap.tasks).toBeDefined();
+    expect(snap.tasks?.total).toBe(7);
+    expect(snap.tasks?.running).toBe(1);
+    expect(snap.tasks?.recent).toHaveLength(5);
+    expect(snap.tasks?.recent[0]).toMatchObject({
+      id: "task-7",
+      status: "completed",
+      command: "echo 7",
+      startedAt: 7000,
+      exitCode: 0,
+    });
   });
 });

@@ -24,6 +24,7 @@ import {
   resetSession,
 } from "@hollowheap/core/modes";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { dropSession, effectiveCwd, session } from "@hollowheap/core/state";
 import type { Tag } from "@hollowheap/core/types";
 import {
@@ -43,6 +44,15 @@ import {
   persistDecision,
 } from "./rules.js";
 
+export const GUARD_AUDIT_TYPE = "hollowheap.guard.audit";
+
+export interface GuardAudit {
+  decisionCount: number;
+  deniedCount: number;
+  approvedTagsCount: number;
+  updatedAt?: number;
+}
+
 interface TempGrant {
   target: string;
   expiresAt: number;
@@ -57,8 +67,138 @@ interface GuardRuntime {
   sessionGrants: Map<unknown, TempGrant[]>;
   sessionTargets: Map<unknown, Set<string>>;
   sessionApprovedTags: Map<unknown, Map<string, Set<string>>>;
+  sessionAudits: Map<unknown, GuardAudit>;
+  trustedByOwner: Map<unknown, boolean>;
   eventSink?: EventSink;
   lastOwner?: unknown;
+}
+
+function getAudit(runtime: GuardRuntime, owner: unknown): GuardAudit {
+  let audit = runtime.sessionAudits.get(owner);
+  if (!audit) {
+    audit = { decisionCount: 0, deniedCount: 0, approvedTagsCount: 0 };
+    runtime.sessionAudits.set(owner, audit);
+  }
+  return audit;
+}
+
+function getActiveGrantCount(runtime: GuardRuntime, owner: unknown): number {
+  const grants = runtime.sessionGrants.get(owner) ?? [];
+  const now = Date.now();
+  return grants.filter((g) => g.expiresAt > now).length;
+}
+
+function persistGuardAudit(
+  pi: ExtensionAPI | undefined,
+  owner: unknown,
+  audit: GuardAudit,
+): void {
+  const updatedAt = Date.now();
+  audit.updatedAt = updatedAt;
+  const data = {
+    decisionCount: audit.decisionCount,
+    deniedCount: audit.deniedCount,
+    approvedTagsCount: audit.approvedTagsCount,
+    updatedAt,
+  };
+  try {
+    if (typeof pi?.appendEntry === "function") {
+      pi.appendEntry(GUARD_AUDIT_TYPE, data);
+    } else {
+      const s = owner as
+        | {
+            appendCustomEntry?: (t: string, d: unknown) => void;
+            appendEntry?: (t: string, d: unknown) => void;
+          }
+        | undefined;
+      if (typeof s?.appendCustomEntry === "function") {
+        s.appendCustomEntry(GUARD_AUDIT_TYPE, data);
+      } else if (typeof s?.appendEntry === "function") {
+        s.appendEntry(GUARD_AUDIT_TYPE, data);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+function publishGuardSnapshot(runtime: GuardRuntime, owner: unknown): void {
+  if (owner === undefined || owner === null) return;
+  const audit = getAudit(runtime, owner);
+  const trusted = runtime.trustedByOwner.get(owner) ?? false;
+  const activeGrantCount = getActiveGrantCount(runtime, owner);
+  updateSessionSnapshot(owner, "guard", {
+    trusted,
+    decisionCount: audit.decisionCount,
+    activeGrantCount,
+    approvedTagsCount: audit.approvedTagsCount,
+    deniedCount: audit.deniedCount,
+    updatedAt: audit.updatedAt ?? Date.now(),
+  });
+}
+
+function restoreAuditCounters(owner: unknown): GuardAudit {
+  const sessionObj = owner as
+    | {
+        getBranch?: () => readonly unknown[];
+        getEntries?: () => readonly unknown[];
+      }
+    | undefined;
+  let entries: readonly unknown[] | undefined;
+  if (typeof sessionObj?.getBranch === "function") {
+    try {
+      entries = sessionObj.getBranch();
+    } catch {
+      entries = undefined;
+    }
+  }
+  if (!entries && typeof sessionObj?.getEntries === "function") {
+    try {
+      entries = sessionObj.getEntries();
+    } catch {
+      entries = undefined;
+    }
+  }
+  if (!entries || !Array.isArray(entries)) {
+    return { decisionCount: 0, deniedCount: 0, approvedTagsCount: 0 };
+  }
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i] as
+      | {
+          type?: string;
+          customType?: string;
+          data?: unknown;
+        }
+      | undefined;
+    if (
+      entry?.customType === GUARD_AUDIT_TYPE ||
+      entry?.type === GUARD_AUDIT_TYPE
+    ) {
+      const data = entry.data as
+        | {
+            decisionCount?: unknown;
+            deniedCount?: unknown;
+            approvedTagsCount?: unknown;
+            updatedAt?: unknown;
+          }
+        | undefined;
+      if (typeof data === "object" && data !== null) {
+        return {
+          decisionCount:
+            typeof data.decisionCount === "number" ? data.decisionCount : 0,
+          deniedCount:
+            typeof data.deniedCount === "number" ? data.deniedCount : 0,
+          approvedTagsCount:
+            typeof data.approvedTagsCount === "number"
+              ? data.approvedTagsCount
+              : 0,
+          updatedAt:
+            typeof data.updatedAt === "number" ? data.updatedAt : undefined,
+        };
+      }
+    }
+  }
+  return { decisionCount: 0, deniedCount: 0, approvedTagsCount: 0 };
 }
 
 function rememberTarget(
@@ -114,6 +254,13 @@ function loadContextToolTags(ctx: ExtensionContext) {
 
 function publishValues(runtime: GuardRuntime, owner: unknown): void {
   runtime.lastOwner = owner;
+  if (owner !== undefined && owner !== null) {
+    updateSessionSnapshot(owner, "mode", {
+      name: session(owner).mode,
+      updatedAt: Date.now(),
+    });
+    publishGuardSnapshot(runtime, owner);
+  }
   if (runtime.eventSink === undefined) return;
   runtime.eventSink.emit("statusline:values", {
     name: "mode-guard",
@@ -130,11 +277,17 @@ function nextMode(current: string): string {
 }
 
 async function requestApproval(
+  runtime: GuardRuntime,
   toolName: string,
   target: string,
   ctx: ExtensionContext,
+  pi?: ExtensionAPI,
 ): Promise<{ block: true; reason: string } | undefined> {
+  const audit = getAudit(runtime, ctx.sessionManager);
   if (!ctx.hasUI) {
+    audit.deniedCount++;
+    persistGuardAudit(pi, ctx.sessionManager, audit);
+    publishGuardSnapshot(runtime, ctx.sessionManager);
     return {
       block: true,
       reason: `pi-guard: ${toolName} ${displayTarget(target)} needs approval (no UI)`,
@@ -144,12 +297,18 @@ async function requestApproval(
   const approved = await withPromptLock(() =>
     ctx.ui.confirm(`Allow ${toolName}?`, sanitizedTarget),
   );
+  audit.decisionCount++;
   if (!approved) {
+    audit.deniedCount++;
+    persistGuardAudit(pi, ctx.sessionManager, audit);
+    publishGuardSnapshot(runtime, ctx.sessionManager);
     return {
       block: true,
       reason: `pi-guard: ${toolName} ${displayTarget(target)} was not approved`,
     };
   }
+  persistGuardAudit(pi, ctx.sessionManager, audit);
+  publishGuardSnapshot(runtime, ctx.sessionManager);
   return undefined;
 }
 
@@ -220,6 +379,8 @@ export default function (pi: ExtensionAPI) {
     sessionGrants: new Map(),
     sessionTargets: new Map(),
     sessionApprovedTags: new Map(),
+    sessionAudits: new Map(),
+    trustedByOwner: new Map(),
     eventSink: pi.events,
   };
   pi.events.on("statusline:request", () => {
@@ -237,8 +398,11 @@ export default function (pi: ExtensionAPI) {
     const tag: Tag | undefined =
       TOOL_TAGS[event.toolName] ?? loadContextToolTags(ctx)[event.toolName];
     if (tag === undefined) {
+      if (session(ctx.sessionManager).mode === "autopilot") {
+        return undefined;
+      }
       const raw = readToolTarget(event.toolName, event.input) ?? ".";
-      return requestApproval(event.toolName, raw, ctx);
+      return requestApproval(runtime, event.toolName, raw, ctx, pi);
     }
     if (tag !== "shell") {
       const cwd = effectiveCwd(ctx.cwd, ctx.sessionManager);
@@ -272,6 +436,10 @@ export default function (pi: ExtensionAPI) {
 
       if (trust.isOutsideWorkspace) {
         if (trust.cachedDecision === "deny") {
+          const audit = getAudit(runtime, ctx.sessionManager);
+          audit.deniedCount++;
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           return {
             block: true,
             reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
@@ -279,6 +447,10 @@ export default function (pi: ExtensionAPI) {
         }
         if (trust.isTrusted) {
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+            const audit = getAudit(runtime, ctx.sessionManager);
+            audit.deniedCount++;
+            persistGuardAudit(pi, ctx.sessionManager, audit);
+            publishGuardSnapshot(runtime, ctx.sessionManager);
             return {
               block: true,
               reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
@@ -304,6 +476,10 @@ export default function (pi: ExtensionAPI) {
               rules: loadContextPermissions(ctx),
             });
             if (verdict === "deny") {
+              const audit = getAudit(runtime, ctx.sessionManager);
+              audit.deniedCount++;
+              persistGuardAudit(pi, ctx.sessionManager, audit);
+              publishGuardSnapshot(runtime, ctx.sessionManager);
               return {
                 block: true,
                 reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
@@ -314,6 +490,10 @@ export default function (pi: ExtensionAPI) {
         }
 
         if (!ctx.hasUI || typeof ctx.ui.select !== "function") {
+          const audit = getAudit(runtime, ctx.sessionManager);
+          audit.deniedCount++;
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           return {
             block: true,
             reason: `pi-guard: ${tag} access to out-of-workspace ${displayTarget(target)} is denied`,
@@ -333,12 +513,18 @@ export default function (pi: ExtensionAPI) {
           ),
         );
 
+        const audit = getAudit(runtime, ctx.sessionManager);
         if (choice === undefined) {
+          audit.deniedCount++;
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           return {
             block: true,
             reason: `pi-guard: ${tag} access to out-of-workspace ${displayTarget(target)} is denied`,
           };
         }
+
+        audit.decisionCount++;
 
         let currentSessionMap = runtime.sessionDecisions.get(
           ctx.sessionManager,
@@ -367,7 +553,10 @@ export default function (pi: ExtensionAPI) {
             tags = new Set();
             currentApprovedTags.set(trust.canonicalPath, tags);
           }
-          tags.add(tag);
+          if (!tags.has(tag)) {
+            tags.add(tag);
+            audit.approvedTagsCount++;
+          }
         }
 
         if (choice === "Allow (this session)") {
@@ -379,6 +568,8 @@ export default function (pi: ExtensionAPI) {
             currentSessionMap,
             (msg, t) => ctx.ui.notify(msg, t),
           );
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
             return {
               block: true,
@@ -396,6 +587,8 @@ export default function (pi: ExtensionAPI) {
             currentSessionMap,
             (msg, t) => ctx.ui.notify(msg, t),
           );
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
             return {
               block: true,
@@ -413,9 +606,14 @@ export default function (pi: ExtensionAPI) {
             currentSessionMap,
             (msg, t) => ctx.ui.notify(msg, t),
           );
-          return requestApproval(event.toolName, target, ctx);
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
+          return requestApproval(runtime, event.toolName, target, ctx, pi);
         }
         if (choice === "Deny (this session)") {
+          audit.deniedCount++;
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           persistDecision(
             getAgentDir(),
             trust.canonicalPath,
@@ -430,6 +628,9 @@ export default function (pi: ExtensionAPI) {
           };
         }
         if (choice === "Deny indefinitely") {
+          audit.deniedCount++;
+          persistGuardAudit(pi, ctx.sessionManager, audit);
+          publishGuardSnapshot(runtime, ctx.sessionManager);
           persistDecision(
             getAgentDir(),
             trust.canonicalPath,
@@ -464,19 +665,32 @@ export default function (pi: ExtensionAPI) {
       rules: loadContextPermissions(ctx),
     });
     if (verdict === "deny") {
+      const audit = getAudit(runtime, ctx.sessionManager);
+      audit.deniedCount++;
+      persistGuardAudit(pi, ctx.sessionManager, audit);
+      publishGuardSnapshot(runtime, ctx.sessionManager);
       return {
         block: true,
         reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
       };
     }
-    if (verdict === "ask") return requestApproval(event.toolName, target, ctx);
+    if (verdict === "ask")
+      return requestApproval(runtime, event.toolName, target, ctx, pi);
     return undefined;
   };
 
   pi.on("tool_call", async (event, ctx) => {
     try {
+      runtime.trustedByOwner.set(
+        ctx.sessionManager,
+        ctx.isProjectTrusted?.() ?? false,
+      );
       return await handleToolCall(event, ctx);
     } catch (error) {
+      const audit = getAudit(runtime, ctx.sessionManager);
+      audit.deniedCount++;
+      persistGuardAudit(pi, ctx.sessionManager, audit);
+      publishGuardSnapshot(runtime, ctx.sessionManager);
       const message = error instanceof Error ? error.message : String(error);
       return {
         block: true,
@@ -499,7 +713,7 @@ export default function (pi: ExtensionAPI) {
     if (!changed) return undefined;
     return { content };
   });
-  pi.on("session_start", (_event, ctx) => {
+  const restore = (ctx: ExtensionContext) => {
     const notify = (message: string) =>
       ctx.ui.notify(`pi-guard: ${message}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
@@ -510,12 +724,38 @@ export default function (pi: ExtensionAPI) {
     if (restored.veto !== undefined) {
       ctx.ui.notify(`pi-guard: ${restored.veto}`, "error");
     }
+    const trusted = ctx.isProjectTrusted?.() ?? false;
+    runtime.trustedByOwner.set(ctx.sessionManager, trusted);
+    const restoredAudit = restoreAuditCounters(ctx.sessionManager);
+    runtime.sessionAudits.set(ctx.sessionManager, restoredAudit);
     publishValues(runtime, ctx.sessionManager);
+  };
+  pi.on("session_start", (_event, ctx) => {
+    restore(ctx);
+  });
+  pi.on("session_tree", (_event, ctx) => {
+    restore(ctx);
+  });
+  pi.on("session_compact", (_event, ctx) => {
+    const owner = ctx?.sessionManager ?? runtime.lastOwner;
+    if (!owner) return;
+    const audit = runtime.sessionAudits.get(owner);
+    if (
+      audit &&
+      (audit.decisionCount > 0 ||
+        audit.deniedCount > 0 ||
+        audit.approvedTagsCount > 0)
+    ) {
+      persistGuardAudit(pi, owner, audit);
+    }
   });
   pi.on("session_shutdown", (_event, ctx) => {
     runtime.sessionDecisions.delete(ctx.sessionManager);
     runtime.sessionGrants.delete(ctx.sessionManager);
     runtime.sessionTargets.delete(ctx.sessionManager);
+    runtime.sessionApprovedTags.delete(ctx.sessionManager);
+    runtime.sessionAudits.delete(ctx.sessionManager);
+    runtime.trustedByOwner.delete(ctx.sessionManager);
     dropSession(ctx.sessionManager);
   });
   pi.registerCommand("mode", {
@@ -612,6 +852,7 @@ export default function (pi: ExtensionAPI) {
       }
       grants.push({ target, expiresAt: Date.now() + durationMs });
       rememberTarget(runtime, ctx.sessionManager, target);
+      publishGuardSnapshot(runtime, ctx.sessionManager);
       if (ctx.hasUI) {
         ctx.ui.notify(`Granted ${target} for ${durationStr}`, "info");
       }

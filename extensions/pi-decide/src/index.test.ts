@@ -12,6 +12,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   getAgentDir: () => state.agentDir,
 }));
 
+import { DECIDE_STATS_TYPE } from "./decide.js";
 import extension from "./index.js";
 
 function createMockPi() {
@@ -24,6 +25,7 @@ function createMockPi() {
         return () => {};
       },
     ),
+    appendEntry: vi.fn(),
     registerTool: vi.fn(),
     getAllTools: vi.fn((): Array<{ name: string }> => []),
     getActiveTools: vi.fn((): string[] => []),
@@ -94,5 +96,32 @@ describe("pi-decide extension", () => {
     extension(pi as never);
     start(pi);
     expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("restores decide stats on session_start and avoids redundant agent_end writes", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const sessionManager = {
+      getBranch: () => [
+        {
+          type: "custom",
+          customType: DECIDE_STATS_TYPE,
+          data: { totalCount: 3, cacheHits: 1, lastKind: "bool" },
+        },
+      ],
+    };
+    pi.handlers.session_start({}, { sessionManager });
+    pi.handlers.agent_end({}, { sessionManager });
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+
+    pi.handlers.session_compact({}, { sessionManager });
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      DECIDE_STATS_TYPE,
+      expect.objectContaining({
+        totalCount: 3,
+        cacheHits: 1,
+        lastKind: "bool",
+      }),
+    );
   });
 });

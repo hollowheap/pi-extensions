@@ -1,4 +1,5 @@
 import {
+  type ExtensionAPI,
   type ExtensionContext,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
@@ -23,6 +24,8 @@ import {
   taskWorkspaceTracker,
 } from "./workspace.js";
 
+export const TASK_RUN_TYPE = "hollowheap.tasks.run";
+
 export type TaskAction = "start" | "list" | "status" | "wait" | "cancel";
 
 export interface TaskToolParams {
@@ -40,6 +43,7 @@ export interface TaskToolDeps {
   onTasksChange: (
     tasks: Array<{ id: string; command?: string; status: string }>,
   ) => void;
+  pi?: ExtensionAPI;
 }
 
 interface TaskToolDetails {
@@ -139,7 +143,8 @@ function formatTaskList(tasks: readonly TaskRecord[]): string {
     .join("\n");
 }
 
-export function createTaskTool(deps: TaskToolDeps) {
+export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
+  const piApi = deps.pi ?? pi;
   return defineTool({
     name: "task",
     label: "Background Tasks",
@@ -328,6 +333,12 @@ export function createTaskTool(deps: TaskToolDeps) {
         }
         taskWorkspaceTracker.track(record.id, workspace);
         taskAlertTracker.seed(record);
+        piApi?.appendEntry?.(TASK_RUN_TYPE, {
+          id: record.id,
+          command: record.command,
+          cwd: record.cwd,
+          startedAt: record.startedAt,
+        });
         const runningCount = refreshRunningCount();
         const log = taskLogPath(agentDir, record.id);
         return textResult(

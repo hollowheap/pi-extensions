@@ -4,6 +4,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { taskAlertTracker } from "./alerts.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
@@ -93,19 +94,82 @@ async function pickTask(ctx: ExtensionContext): Promise<string | undefined> {
 export default function (pi: ExtensionAPI) {
   if (process.env.PI_ACP) return;
 
+  let lastRunningCount = 0;
+  let lastContext: ExtensionContext | undefined;
+
+  const syncTasksSnapshot = (
+    sessionManager: unknown,
+    allTasks: TaskRecord[],
+  ): void => {
+    if (!sessionManager) return;
+    const running = allTasks.filter((t) => t.status === "running").length;
+    const total = allTasks.length;
+    const recent = allTasks
+      .slice()
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 5)
+      .map((t) => ({
+        id: t.id,
+        status: t.status,
+        command: t.command,
+        startedAt: t.startedAt,
+        exitCode: t.exitCode,
+      }));
+    updateSessionSnapshot(sessionManager, "tasks", {
+      running,
+      total,
+      recent,
+      updatedAt: Date.now(),
+    });
+  };
+
+  const publishStatusline = (runningCount: number, ctx?: ExtensionContext) => {
+    lastRunningCount = runningCount;
+    if (ctx) lastContext = ctx;
+    pi.events?.emit?.("statusline:values", {
+      name: "tasks",
+      text: runningCount > 0 ? `${runningCount} running` : "",
+    });
+    const effectiveCtx = ctx ?? lastContext;
+    if (effectiveCtx?.sessionManager) {
+      try {
+        const all = reconcileAllTasks(getAgentDir());
+        syncTasksSnapshot(effectiveCtx.sessionManager, all);
+      } catch {
+        // Snapshot sync must not break statusline
+      }
+    }
+  };
+
+  pi.events?.on?.("statusline:request", (data: unknown) => {
+    if (typeof data === "object" && data !== null) {
+      const names = (data as { names?: unknown }).names;
+      if (Array.isArray(names) && !names.includes("tasks")) return;
+    }
+    publishStatusline(lastRunningCount);
+  });
+
   const emitTasksState = (agentDir: string) => {
     const all = reconcileAllTasks(agentDir);
     const running = all
       .filter((t) => t.status === "running")
       .map((t) => ({ id: t.id, command: t.command, status: t.status }));
     pi.events?.emit?.("tasks:state", running);
+    if (lastContext?.sessionManager) {
+      syncTasksSnapshot(lastContext.sessionManager, all);
+    }
     return all;
   };
 
   pi.registerTool(
     createTaskTool({
       getAgentDir,
-      onStatusChange: updateTasksStatus,
+      pi,
+      onStatusChange: (ctx, runningCount) => {
+        lastContext = ctx;
+        updateTasksStatus(ctx, runningCount);
+        publishStatusline(runningCount, ctx);
+      },
       onTasksChange: (tasks) => {
         pi.events?.emit?.("tasks:state", tasks);
       },
@@ -127,6 +191,16 @@ export default function (pi: ExtensionAPI) {
         const tasks = reconcileAllTasks(getAgentDir());
         void taskAlertTracker.observe(tasks);
         void taskWorkspaceTracker.cleanupTerminal(tasks);
+        let runningCount = 0;
+        for (const t of tasks) {
+          if (t.status === "running") runningCount++;
+        }
+        if (runningCount !== lastRunningCount) {
+          publishStatusline(runningCount);
+          if (lastContext) {
+            updateTasksStatus(lastContext, runningCount);
+          }
+        }
       } catch {
         // Alert and cleanup observation must not affect tasks.
       }
@@ -175,6 +249,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
+    lastContext = ctx;
     try {
       const all = emitTasksState(getAgentDir());
       for (const t of all) taskAlertTracker.seed(t);
@@ -183,6 +258,7 @@ export default function (pi: ExtensionAPI) {
         if (t.status === "running") runningCount++;
       }
       updateTasksStatus(ctx, runningCount);
+      publishStatusline(runningCount, ctx);
     } catch (error) {
       if (ctx.hasUI) {
         ctx.ui.notify(

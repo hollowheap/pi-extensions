@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session } from "@hollowheap/core";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { CWD_ENTRY } from "@hollowheap/core/state";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
@@ -45,7 +47,14 @@ function setupCd(rulesFile: string = CD_RULES) {
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const pi = createMockPi();
   extension(pi as never);
-  const sessionManager = {};
+  const branch: Array<{ type: string; customType?: string; data?: unknown }> =
+    [];
+  const sessionManager = {
+    getBranch: vi.fn(() => branch),
+    appendCustomEntry: vi.fn((type: string, data: unknown) => {
+      branch.push({ type: "custom", customType: type, data });
+    }),
+  };
   const ctx = {
     cwd: dir,
     sessionManager,
@@ -60,6 +69,7 @@ function setupCd(rulesFile: string = CD_RULES) {
     dir,
     pi,
     ctx,
+    branch,
     commands,
     cd: (args: string) => commands.cd.handler(args, ctx as never),
   };
@@ -70,25 +80,36 @@ function currentCwd(ctx: { sessionManager: unknown }): string | undefined {
 }
 
 describe("pi-tools extension", () => {
-  it("registers no tools and exposes the /cd command", () => {
+  it("registers no tools and exposes the /cd command and lifecycle hooks", () => {
     const pi = createMockPi();
     extension(pi as never);
     expect(pi.registerTool).not.toHaveBeenCalled();
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
+    expect(pi.on).toHaveBeenCalledWith("session_tree", expect.any(Function));
+    expect(pi.on).toHaveBeenCalledWith("session_compact", expect.any(Function));
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["cd"]);
   });
 });
 
 describe("/cd command", () => {
-  it("updates session state and status without pi-guard", async () => {
-    const { dir, ctx, cd } = setupCd();
+  it("updates session state and status without pi-guard, persisting and syncing snapshot", async () => {
+    const { dir, ctx, branch, cd } = setupCd();
     await cd("sub");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", "sub");
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining(join(dir, "sub")),
     );
     expect(currentCwd(ctx)).toBe(join(dir, "sub"));
+
+    expect(branch.some((e) => e.customType === CWD_ENTRY)).toBe(true);
+    expect(getSessionSnapshot(ctx.sessionManager).cwd).toEqual(
+      expect.objectContaining({
+        root: dir,
+        effective: join(dir, "sub"),
+        updatedAt: expect.any(Number),
+      }),
+    );
   });
 
   it("rejects paths outside the root without announcing", async () => {
@@ -122,12 +143,13 @@ describe("/cd command", () => {
     expect(currentCwd(ctx)).toBeUndefined();
   });
 
-  it("announces a reset to the project root on empty input", async () => {
+  it("announces a reset to the project root on empty input and clears snapshot", async () => {
     const { ctx, cd } = setupCd();
     await cd("sub");
     await cd("   ");
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", undefined);
     expect(currentCwd(ctx)).toBeUndefined();
+    expect(getSessionSnapshot(ctx.sessionManager).cwd).toBeUndefined();
   });
 
   it("completes relative to the active cd override", async () => {
@@ -159,5 +181,60 @@ describe("/cd command", () => {
       [".pi/", "sub/"],
     );
     expect(complete?.("/nonexistent-xyz/")).toBeNull();
+  });
+
+  it("restores valid persisted cwd on session_start and session_tree", () => {
+    const { dir, pi, ctx, branch } = setupCd();
+    const subDir = join(dir, "sub");
+    branch.push({
+      type: "custom",
+      customType: CWD_ENTRY,
+      data: { cwd: subDir, updatedAt: Date.now() },
+    });
+
+    pi.handlers.session_start(
+      { type: "session_start", reason: "startup" } as never,
+      ctx as never,
+    );
+    expect(currentCwd(ctx)).toBe(subDir);
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", "sub");
+    expect(getSessionSnapshot(ctx.sessionManager).cwd).toEqual(
+      expect.objectContaining({
+        root: dir,
+        effective: subDir,
+        updatedAt: expect.any(Number),
+      }),
+    );
+
+    // session_tree restores similarly
+    pi.handlers.session_tree({ type: "session_tree" } as never, ctx as never);
+    expect(currentCwd(ctx)).toBe(subDir);
+  });
+
+  it("clears cwd if persisted path is invalid, missing, or denied", () => {
+    const { dir, pi, ctx, branch } = setupCd();
+    // Denied path
+    const secretDir = join(dir, "secret");
+    branch.push({
+      type: "custom",
+      customType: CWD_ENTRY,
+      data: { cwd: secretDir, updatedAt: Date.now() },
+    });
+
+    pi.handlers.session_start(
+      { type: "session_start", reason: "startup" } as never,
+      ctx as never,
+    );
+    expect(currentCwd(ctx)).toBeUndefined();
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", undefined);
+  });
+
+  it("re-persists CWD_ENTRY on session_compact when effective cwd differs from project root", () => {
+    const { pi, ctx, cd, branch } = setupCd();
+    void cd("sub");
+    branch.length = 0;
+
+    pi.handlers.session_compact({} as never, ctx as never);
+    expect(branch.some((e) => e.customType === CWD_ENTRY)).toBe(true);
   });
 });

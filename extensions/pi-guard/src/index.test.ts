@@ -2,13 +2,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session, setCwd, withPromptLock } from "@hollowheap/core";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
 });
 import { describe, expect, it, vi } from "vitest";
-import extension from "./index.js";
+import extension, { GUARD_AUDIT_TYPE } from "./index.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -103,8 +104,10 @@ describe("pi-guard extension", () => {
     expect(pi.registerTool).not.toHaveBeenCalled();
     const events = pi.on.mock.calls.map(([event]) => event).sort();
     expect(events).toEqual([
+      "session_compact",
       "session_shutdown",
       "session_start",
+      "session_tree",
       "tool_call",
       "tool_result",
     ]);
@@ -971,5 +974,107 @@ describe("mode shortcut and completions", () => {
       complete?.("e").map((item: { value: string }) => item.value),
     ).toEqual(["edit"]);
     expect(complete?.("x")).toEqual([]);
+  });
+
+  it("persists and restores audit counters, publishing guard snapshot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-guard-audit-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(
+      join(dir, ".pi", "permissions.json"),
+      JSON.stringify({ rules: ["deny edit secret.txt", "allow read *"] }),
+    );
+
+    const branch: Array<{ type: string; customType?: string; data?: unknown }> =
+      [];
+    const sessionManager = {
+      getBranch: vi.fn(() => branch),
+      appendCustomEntry: vi.fn((type: string, data: unknown) => {
+        branch.push({ type: "custom", customType: type, data });
+      }),
+    };
+
+    const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
+      {};
+    const mockPi = {
+      on: vi.fn(
+        (event: string, fn: (event: unknown, ctx: unknown) => unknown) => {
+          handlers[event] = fn;
+          return () => {};
+        },
+      ),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      appendEntry: vi.fn((type: string, data: unknown) => {
+        branch.push({ type: "custom", customType: type, data });
+      }),
+      events: {
+        on: vi.fn(),
+        emit: vi.fn(),
+      },
+    };
+
+    extension(mockPi as never);
+
+    const ctx = {
+      cwd: dir,
+      sessionManager,
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+
+    // session_start restores 0 counters
+    handlers.session_start({}, ctx);
+    let snap = getSessionSnapshot(sessionManager).guard;
+    expect(snap).toBeDefined();
+    expect(snap?.trusted).toBe(true);
+    expect(snap?.decisionCount).toBe(0);
+    expect(snap?.deniedCount).toBe(0);
+    expect(snap?.approvedTagsCount).toBe(0);
+
+    // Call tool that gets denied by rule: deniedCount increments & persists
+    const toolCallHandler = handlers.tool_call;
+    const res = await toolCallHandler(
+      { toolName: "edit", input: { path: "secret.txt" } },
+      ctx,
+    );
+    expect(res).toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+
+    snap = getSessionSnapshot(sessionManager).guard;
+    expect(snap?.deniedCount).toBe(1);
+    expect(branch.some((e) => e.customType === GUARD_AUDIT_TYPE)).toBe(true);
+
+    // Compacting re-appends audit if non-zero
+    mockPi.appendEntry.mockClear();
+    handlers.session_compact({}, ctx);
+    expect(mockPi.appendEntry).toHaveBeenCalledWith(
+      GUARD_AUDIT_TYPE,
+      expect.objectContaining({
+        deniedCount: 1,
+        decisionCount: 0,
+        approvedTagsCount: 0,
+      }),
+    );
+
+    // Simulate new session restoring from branch
+    const newSessionManager = {
+      getBranch: vi.fn(() => [...branch]),
+      appendCustomEntry: vi.fn(),
+    };
+    const newCtx = {
+      cwd: dir,
+      sessionManager: newSessionManager,
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+
+    handlers.session_start({}, newCtx);
+    const newSnap = getSessionSnapshot(newSessionManager).guard;
+    expect(newSnap?.deniedCount).toBe(1);
   });
 });

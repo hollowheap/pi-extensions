@@ -1,19 +1,80 @@
 import {
   type ExtensionAPI,
+  type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { type WebSettings, loadWebConfig, saveWebSettings } from "./config.js";
 import {
+  WEB_HISTORY_TYPE,
   createWebFetchTool,
   createWebSearchTool,
   getLastWebLinks,
+  getWebSessionState,
 } from "./tools.js";
 
 export default function (pi: ExtensionAPI): void {
-  pi.registerTool(createWebSearchTool());
-  pi.registerTool(createWebFetchTool());
+  pi.registerTool(createWebSearchTool({}, pi));
+  pi.registerTool(createWebFetchTool({}, pi));
 
-  pi.on("session_start", () => {
+  let lastCtx: ExtensionContext | undefined;
+
+  const restoreWebSession = (ctx?: ExtensionContext) => {
+    if (!ctx) return;
+    lastCtx = ctx;
+    const entries =
+      (typeof ctx.sessionManager?.getBranch === "function"
+        ? ctx.sessionManager.getBranch()
+        : typeof ctx.sessionManager?.getEntries === "function"
+          ? ctx.sessionManager.getEntries()
+          : []) ?? [];
+    let lastData:
+      | {
+          urls?: string[];
+          searchCount?: number;
+          fetchCount?: number;
+          updatedAt?: number;
+        }
+      | undefined;
+    for (const entry of entries) {
+      const raw = entry as {
+        type?: string;
+        customType?: string;
+        data?: unknown;
+      };
+      if (
+        (raw.type === "custom" && raw.customType === WEB_HISTORY_TYPE) ||
+        raw.type === WEB_HISTORY_TYPE
+      ) {
+        if (typeof raw.data === "object" && raw.data !== null) {
+          lastData = raw.data as typeof lastData;
+        }
+      }
+    }
+    const state = getWebSessionState(ctx.sessionManager);
+    if (lastData) {
+      state.urls = Array.isArray(lastData.urls) ? lastData.urls : [];
+      state.searchCount =
+        typeof lastData.searchCount === "number" ? lastData.searchCount : 0;
+      state.fetchCount =
+        typeof lastData.fetchCount === "number" ? lastData.fetchCount : 0;
+      state.updatedAt =
+        typeof lastData.updatedAt === "number"
+          ? lastData.updatedAt
+          : Date.now();
+    }
+    if (ctx.sessionManager) {
+      updateSessionSnapshot(ctx.sessionManager, "web", {
+        searchCount: state.searchCount,
+        fetchCount: state.fetchCount,
+        recentUrls: state.urls,
+        updatedAt: state.updatedAt,
+      });
+    }
+  };
+
+  pi.on("session_start", (_event, ctx) => {
+    restoreWebSession(ctx);
     const active = pi.getActiveTools();
     const next = active.filter(
       (name) => name !== "web_search" && name !== "web_fetch",
@@ -26,6 +87,27 @@ export default function (pi: ExtensionAPI): void {
       next.some((name, index) => name !== active[index])
     ) {
       pi.setActiveTools(next);
+    }
+  });
+
+  pi.on("session_tree", (_event, ctx) => {
+    restoreWebSession(ctx);
+  });
+
+  pi.on("session_compact", (_event, ctx) => {
+    const owner = ctx?.sessionManager ?? lastCtx?.sessionManager;
+    const state = getWebSessionState(owner);
+    if (
+      state.urls.length > 0 ||
+      state.searchCount > 0 ||
+      state.fetchCount > 0
+    ) {
+      pi.appendEntry(WEB_HISTORY_TYPE, {
+        urls: state.urls,
+        searchCount: state.searchCount,
+        fetchCount: state.fetchCount,
+        updatedAt: Date.now(),
+      });
     }
   });
   pi.registerCommand("web", {
@@ -55,7 +137,7 @@ export default function (pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts[0] === "insert") {
-        const links = getLastWebLinks();
+        const links = getLastWebLinks(ctx?.sessionManager);
         if (links.length === 0) {
           if (ctx.hasUI) {
             ctx.ui.notify("No recent web results to insert.", "info");

@@ -13,7 +13,8 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { checkPath } from "@hollowheap/core/policy";
-import { effectiveCwd, setCwd } from "@hollowheap/core/state";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { effectiveCwd, readPersistedCwd, setCwd } from "@hollowheap/core/state";
 import { loadContextPermissions } from "./permissions.js";
 
 function isWithinRoot(root: string, path: string): boolean {
@@ -60,9 +61,56 @@ function completeCd(prefix: string, ctx?: ExtensionContext) {
 
 export default function (pi: ExtensionAPI) {
   let completionCtx: ExtensionContext | undefined;
-  pi.on("session_start", (_event, ctx) => {
+
+  const restoreCwd = (ctx: ExtensionContext): void => {
     completionCtx = ctx;
+    const restored = readPersistedCwd(ctx.sessionManager);
+    if (typeof restored === "string" && restored !== "") {
+      let isDir = false;
+      try {
+        isDir = statSync(restored).isDirectory();
+      } catch {
+        isDir = false;
+      }
+      const within = isWithinRoot(ctx.cwd, restored);
+      const rules = loadContextPermissions(ctx);
+      const denied = checkPath(rules, restored, "read", ctx.cwd) === "deny";
+      if (isDir && within && !denied) {
+        setCwd(ctx.sessionManager, restored);
+        updateSessionSnapshot(ctx.sessionManager, "cwd", {
+          root: ctx.cwd,
+          effective: restored,
+          updatedAt: Date.now(),
+        });
+        const rel = relative(ctx.cwd, restored);
+        ctx.ui?.setStatus?.("cwd", rel === "" ? "." : rel.split(sep).join("/"));
+        return;
+      }
+    }
+    setCwd(ctx.sessionManager, undefined);
+    ctx.ui?.setStatus?.("cwd", undefined);
+  };
+
+  pi.on("session_start", (_event, ctx) => {
+    restoreCwd(ctx);
   });
+  pi.on("session_tree", (_event, ctx) => {
+    restoreCwd(ctx);
+  });
+  pi.on("session_compact", (_event, ctx) => {
+    const currentCtx = ctx ?? completionCtx;
+    if (!currentCtx?.sessionManager) return;
+    const currentCwd = effectiveCwd(currentCtx.cwd, currentCtx.sessionManager);
+    if (currentCwd !== currentCtx.cwd) {
+      setCwd(currentCtx.sessionManager, currentCwd, { persist: true });
+      updateSessionSnapshot(currentCtx.sessionManager, "cwd", {
+        root: currentCtx.cwd,
+        effective: currentCwd,
+        updatedAt: Date.now(),
+      });
+    }
+  });
+
   pi.registerCommand("cd", {
     description:
       "Change the working directory for file tools (stays inside the project root)",
@@ -71,7 +119,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (raw === "") {
-        setCwd(ctx.sessionManager, undefined);
+        setCwd(ctx.sessionManager, undefined, { persist: true });
         ctx.ui.setStatus("cwd", undefined);
         ctx.ui.notify(`pi-tools: working directory ${ctx.cwd}`);
         return;
@@ -97,7 +145,12 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(`pi-tools: directory denied by rules: ${raw}`, "error");
         return;
       }
-      setCwd(ctx.sessionManager, abs);
+      setCwd(ctx.sessionManager, abs, { persist: true });
+      updateSessionSnapshot(ctx.sessionManager, "cwd", {
+        root: ctx.cwd,
+        effective: abs,
+        updatedAt: Date.now(),
+      });
       ctx.ui.setStatus("cwd", rel === "" ? "." : rel.split(sep).join("/"));
       ctx.ui.notify(`pi-tools: working directory ${abs}`);
     },

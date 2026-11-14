@@ -14,6 +14,7 @@ import {
   formatDollarCost,
   resolveModelPricing,
 } from "@hollowheap/core/pricing";
+import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import {
   USAGE_ENTRY_TYPE,
   recordTurnUsage,
@@ -142,6 +143,64 @@ export function createMemoryExtension(
     let lastUsage:
       | { model: string; input: number; output: number; cost: number }
       | undefined;
+    let lastStatusText = "";
+
+    function memoryStatusText(m: MemoryLedger): string {
+      const obs = m.observations.length;
+      const ref = m.reflections.length;
+      if (obs === 0 && ref === 0) return "";
+      if (obs > 0 && ref > 0) return `${obs} obs, ${ref} ref`;
+      if (obs > 0) return `${obs} obs`;
+      return `${ref} ref`;
+    }
+
+    const publishStatusline = (text: string): void => {
+      lastStatusText = text;
+      pi.events?.emit?.("statusline:values", {
+        name: "memory",
+        text,
+      });
+    };
+
+    const publishMemory = (ctx: ExtensionContext): void => {
+      let branch: readonly unknown[] = [];
+      try {
+        branch =
+          typeof ctx.sessionManager?.getBranch === "function"
+            ? ctx.sessionManager.getBranch()
+            : [];
+      } catch {
+        branch = [];
+      }
+      const pending = pendingMessageEntries(branch, ledger.consumedIds);
+      const unconsumed = pending.length;
+      const latest =
+        ledger.observations.length > 0
+          ? ledger.observations[ledger.observations.length - 1]
+          : undefined;
+      const latestObservation = latest?.text;
+      const text = memoryStatusText(ledger);
+
+      publishStatusline(text);
+
+      if (ctx.sessionManager) {
+        updateSessionSnapshot(ctx.sessionManager, "memory", {
+          observations: ledger.observations.length,
+          reflections: ledger.reflections.length,
+          unconsumed,
+          latestObservation,
+          updatedAt: Date.now(),
+        });
+      }
+    };
+
+    pi.events?.on?.("statusline:request", (data: unknown) => {
+      if (typeof data === "object" && data !== null) {
+        const names = (data as { names?: unknown }).names;
+        if (Array.isArray(names) && !names.includes("memory")) return;
+      }
+      publishStatusline(lastStatusText);
+    });
 
     const loadConfig = (): MemoryConfig => loadMemoryConfig(resolveAgentDir());
 
@@ -162,6 +221,7 @@ export function createMemoryExtension(
       } catch {
         ledger = emptyMemoryLedger();
       }
+      publishMemory(ctx);
     };
 
     const recordUsage = (
@@ -258,6 +318,7 @@ export function createMemoryExtension(
         const ids = pending.map((entry) => entry.id);
         pi.appendEntry(MEMORY_CONSUMED_TYPE, { sourceEntryIds: ids });
         for (const id of ids) ledger.consumedIds.add(id);
+        publishMemory(ctx);
         return;
       }
       const entryIds = chunk.entries.map((entry) => entry.id);
@@ -301,6 +362,7 @@ export function createMemoryExtension(
         if (result.usage !== undefined) {
           recordUsage(ctx, model, result.usage);
         }
+        publishMemory(ctx);
       } catch (error) {
         consecutiveFailures += 1;
         const message = error instanceof Error ? error.message : String(error);
@@ -317,6 +379,7 @@ export function createMemoryExtension(
         if (consecutiveFailures >= 2) {
           for (const id of entryIds) ledger.consumedIds.add(id);
           consecutiveFailures = 0;
+          publishMemory(ctx);
         }
       } finally {
         if (observerAbort === controller) {
@@ -340,6 +403,7 @@ export function createMemoryExtension(
       lastUsage = undefined;
       consecutiveFailures = 0;
       lastNotifiedError = undefined;
+      publishStatusline("");
     });
 
     pi.on("agent_settled", (event, ctx) => {
@@ -488,6 +552,7 @@ export function createMemoryExtension(
         reflections: [],
         consumedIds: new Set([...ledger.consumedIds, ...entryIds]),
       };
+      publishMemory(ctx);
       if (ctx.hasUI) ctx.ui.notify("pi-memory: cleared", "info");
     };
   };
