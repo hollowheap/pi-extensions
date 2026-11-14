@@ -7,8 +7,9 @@ import type {
   DashboardSettings,
 } from "./config.js";
 
-const HEADERS: readonly DashboardHeaderPreset[] = ["banner", "version", "none"];
+const HEADERS: readonly DashboardHeaderPreset[] = ["banner", "none"];
 const GAPS = ["0", "1", "2"];
+const TOGGLES = ["on", "off"];
 
 function themeFor(theme: Theme): SettingsListTheme {
   return {
@@ -23,19 +24,20 @@ function themeFor(theme: Theme): SettingsListTheme {
 }
 
 function currentHeader(config: DashboardConfig): DashboardHeaderPreset {
-  const first = config.sections.find(
-    (section) => section.type === "header" || section.type === "version",
-  );
-  if (first?.type === "version") return "version";
-  if (first?.type === "header") return "banner";
-  return "none";
+  const first = config.sections.find((section) => section.type === "header");
+  return first ? "banner" : "none";
 }
 
 function currentGap(config: DashboardConfig): number {
-  const first = config.sections.find(
-    (section) => section.type === "header" || section.type === "version",
-  );
+  const first = config.sections.find((section) => section.type === "header");
   return first?.gap ?? 0;
+}
+
+function hasSection(
+  config: DashboardConfig,
+  type: DashboardConfig["sections"][number]["type"],
+): boolean {
+  return config.sections.some((section) => section.type === type);
 }
 
 export async function showDashboardSettings(
@@ -49,13 +51,17 @@ export async function showDashboardSettings(
     (tui, theme, _keybindings, done) => {
       let header = currentHeader(config);
       let gap = currentGap(config);
+      let showState = hasSection(config, "state");
+      let showSessions = hasSection(config, "sessions");
+      let showActions = hasSection(config, "actions");
+      let autoHide = config.autoHide ?? true;
+
       const list = new SettingsList(
         [
           {
             id: "header",
             label: "Startup header",
-            description:
-              "Banner keeps the configured art; version shows Pi v<version>",
+            description: "Banner keeps configured ASCII art or none to hide",
             currentValue: header,
             values: [...HEADERS],
           },
@@ -66,16 +72,61 @@ export async function showDashboardSettings(
             currentValue: String(gap),
             values: GAPS,
           },
+          {
+            id: "state",
+            label: "Session state",
+            description:
+              "Show active mode, agent, model, usage, todos, and tasks",
+            currentValue: showState ? "on" : "off",
+            values: TOGGLES,
+          },
+          {
+            id: "sessions",
+            label: "Recent sessions",
+            description: "Show resumable recent sessions for this project",
+            currentValue: showSessions ? "on" : "off",
+            values: TOGGLES,
+          },
+          {
+            id: "actions",
+            label: "Quick actions",
+            description: "Show keyboard/command shortcut bar on startup",
+            currentValue: showActions ? "on" : "off",
+            values: TOGGLES,
+          },
+          {
+            id: "auto-hide",
+            label: "Auto-hide on chat",
+            description:
+              "Hide startup dashboard once conversation starts (reopen via /dashboard)",
+            currentValue: autoHide ? "on" : "off",
+            values: TOGGLES,
+          },
         ],
         10,
         themeFor(theme),
         (id, value) => {
           if (id === "header") {
             header = value as DashboardHeaderPreset;
-          } else {
+          } else if (id === "header-gap") {
             gap = Number(value);
+          } else if (id === "state") {
+            showState = value === "on";
+          } else if (id === "sessions") {
+            showSessions = value === "on";
+          } else if (id === "actions") {
+            showActions = value === "on";
+          } else if (id === "auto-hide") {
+            autoHide = value === "on";
           }
-          onSave({ header, gap });
+          onSave({
+            header,
+            gap,
+            showState,
+            showSessions,
+            showActions,
+            autoHide,
+          });
           tui.requestRender();
         },
         () => done(),
@@ -98,7 +149,7 @@ export async function showDashboardSettings(
     },
     {
       overlay: true,
-      overlayOptions: { width: "70%", maxHeight: "70%", margin: 1 },
+      overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
     },
   );
 }

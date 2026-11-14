@@ -1,9 +1,15 @@
 import {
   type ExtensionAPI,
-  VERSION,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type Theme,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import {
+  getSessionSnapshot,
+  subscribeSessionSnapshot,
+} from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
 import {
   type DashboardConfig,
@@ -13,6 +19,32 @@ import {
 } from "./config.js";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
+import {
+  DEFAULT_DASHBOARD_ACTIONS,
+  type StateRenderInput,
+  renderActionsSection,
+  renderSessionsSection,
+  renderStateSection,
+} from "./sections.js";
+import { type DashboardSessionItem, loadRecentSessions } from "./sessions.js";
+import { showDashboardSettings } from "./settings.js";
+import { showDashboardOverlay } from "./view.js";
+
+const IDENTITY_THEME = {
+  fg: (_color: unknown, text: string) => text,
+  bold: (text: string) => text,
+} as unknown as Theme;
+
+function resolveTheme(theme?: Partial<Theme>): Theme {
+  if (
+    theme &&
+    typeof theme.fg === "function" &&
+    typeof theme.bold === "function"
+  ) {
+    return theme as Theme;
+  }
+  return IDENTITY_THEME;
+}
 
 export interface DashboardDeps {
   run: (
@@ -21,36 +53,159 @@ export interface DashboardDeps {
     signal: AbortSignal | undefined,
   ) => Promise<string>;
   notify: (message: string) => void;
+  theme?: Partial<Theme>;
+  snapshotOwner?: unknown;
+  getStateInput?: () => Omit<StateRenderInput, "snapshot">;
+  loadSessions?: (
+    scope: "cwd" | "all",
+    maxItems: number,
+  ) => Promise<DashboardSessionItem[]>;
 }
 
 export interface DashboardController {
-  lines: (renderWidth?: number) => string[];
+  lines: (renderWidth?: number, theme?: Partial<Theme>) => string[];
   refresh: () => Promise<void>;
   start: (requestRender: () => void) => void;
   stop: () => void;
 }
 
 interface SectionController {
-  lines: (renderWidth?: number) => string[];
+  lines: (renderWidth?: number, theme?: Partial<Theme>) => string[];
   refresh: () => Promise<void>;
   start: (requestRender: () => void) => void;
   stop: () => void;
 }
 
+function appendGap(lines: string[], gap: number): string[] {
+  for (let i = 0; i < gap; i++) lines.push("");
+  return lines;
+}
+
 function headerSection(
   ascii: string[],
   width: number,
+  align: "left" | "center" | undefined,
   gap: number,
 ): SectionController {
-  const fitted = (renderWidth?: number) => {
-    const lines = fitLines(ascii, renderWidth ?? width, "center");
-    for (let i = 0; i < gap; i++) lines.push("");
-    return lines;
-  };
   return {
-    lines: fitted,
+    lines: (renderWidth?: number) =>
+      appendGap(fitLines(ascii, renderWidth ?? width, align ?? "center"), gap),
     refresh: () => Promise.resolve(),
-    start: (_requestRender: () => void) => undefined,
+    start: () => undefined,
+    stop: () => undefined,
+  };
+}
+
+function stateSection(
+  width: number,
+  align: "left" | "center" | undefined,
+  gap: number,
+  deps: DashboardDeps,
+): SectionController {
+  let unsubscribe: (() => void) | undefined;
+  let stopped = false;
+
+  return {
+    lines: (renderWidth?: number, theme?: Partial<Theme>) => {
+      const base = deps.getStateInput?.() ?? { cwd: process.cwd() };
+      const snapshot = deps.snapshotOwner
+        ? getSessionSnapshot(deps.snapshotOwner)
+        : {};
+      return appendGap(
+        renderStateSection(
+          { ...base, snapshot },
+          resolveTheme(theme ?? deps.theme),
+          renderWidth ?? width,
+          align ?? "left",
+        ),
+        gap,
+      );
+    },
+    refresh: () => Promise.resolve(),
+    start: (requestRender: () => void) => {
+      if (stopped || !deps.snapshotOwner || unsubscribe) return;
+      unsubscribe = subscribeSessionSnapshot(deps.snapshotOwner, () => {
+        if (!stopped) requestRender();
+      });
+    },
+    stop: () => {
+      stopped = true;
+      unsubscribe?.();
+      unsubscribe = undefined;
+    },
+  };
+}
+
+function sessionsSection(
+  maxItems: number,
+  scope: "cwd" | "all",
+  width: number,
+  align: "left" | "center" | undefined,
+  gap: number,
+  deps: DashboardDeps,
+): SectionController {
+  let sessions: DashboardSessionItem[] = [];
+  let running = false;
+  let stopped = false;
+  let requestRender: (() => void) | undefined;
+
+  async function refresh(): Promise<void> {
+    if (running || stopped || !deps.loadSessions) return;
+    running = true;
+    try {
+      const loaded = await deps.loadSessions(scope, maxItems);
+      if (!stopped) {
+        sessions = loaded;
+        requestRender?.();
+      }
+    } catch {
+      // Keep prior list when session listing fails transiently.
+    } finally {
+      running = false;
+    }
+  }
+
+  return {
+    lines: (renderWidth?: number, theme?: Partial<Theme>) =>
+      appendGap(
+        renderSessionsSection(
+          sessions,
+          resolveTheme(theme ?? deps.theme),
+          renderWidth ?? width,
+          { maxItems },
+          align ?? "left",
+        ),
+        gap,
+      ),
+    refresh,
+    start: (renderRequest: () => void) => {
+      if (!stopped) requestRender = renderRequest;
+    },
+    stop: () => {
+      stopped = true;
+    },
+  };
+}
+
+function actionsSection(
+  width: number,
+  align: "left" | "center" | undefined,
+  gap: number,
+  deps: DashboardDeps,
+): SectionController {
+  return {
+    lines: (renderWidth?: number, theme?: Partial<Theme>) =>
+      appendGap(
+        renderActionsSection(
+          DEFAULT_DASHBOARD_ACTIONS,
+          resolveTheme(theme ?? deps.theme),
+          renderWidth ?? width,
+          align ?? "left",
+        ),
+        gap,
+      ),
+    refresh: () => Promise.resolve(),
+    start: () => undefined,
     stop: () => undefined,
   };
 }
@@ -121,8 +276,7 @@ function terminalSection(
   return {
     lines: (renderWidth?: number) => {
       const fitted = fitLines(lines, renderWidth ?? width, align ?? "left");
-      for (let i = 0; i < gap; i++) fitted.push("");
-      return fitted;
+      return appendGap(fitted, gap);
     },
     refresh,
     start(renderRequest: () => void) {
@@ -148,10 +302,28 @@ export function createDashboard(
 ): DashboardController {
   const sections = config.sections.map((section) => {
     if (section.type === "header") {
-      return headerSection(section.ascii, config.width, section.gap);
+      return headerSection(
+        section.ascii,
+        config.width,
+        section.align,
+        section.gap,
+      );
     }
-    if (section.type === "version") {
-      return headerSection([`Pi v${VERSION}`], config.width, section.gap);
+    if (section.type === "state") {
+      return stateSection(config.width, section.align, section.gap, deps);
+    }
+    if (section.type === "sessions") {
+      return sessionsSection(
+        section.maxItems,
+        section.scope,
+        config.width,
+        section.align,
+        section.gap,
+        deps,
+      );
+    }
+    if (section.type === "actions") {
+      return actionsSection(config.width, section.align, section.gap, deps);
     }
     return terminalSection(
       section.command,
@@ -164,8 +336,8 @@ export function createDashboard(
     );
   });
   return {
-    lines: (renderWidth?: number) =>
-      sections.flatMap((section) => section.lines(renderWidth)),
+    lines: (renderWidth?: number, theme?: Partial<Theme>) =>
+      sections.flatMap((section) => section.lines(renderWidth, theme)),
     refresh: async () => {
       await Promise.all(sections.map((section) => section.refresh()));
     },
@@ -178,14 +350,73 @@ export function createDashboard(
   };
 }
 
+function hasConversationStarted(ctx: ExtensionContext): boolean {
+  const getBranch = (ctx.sessionManager as { getBranch?: () => unknown[] })
+    ?.getBranch;
+  if (typeof getBranch !== "function") return false;
+  return getBranch
+    .call(ctx.sessionManager)
+    .some(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        (entry as { type?: unknown }).type === "message",
+    );
+}
+
 export default function (pi: ExtensionAPI) {
   let active: DashboardController | undefined;
+  let currentConfig: DashboardConfig | undefined;
+  let hidden = false;
 
-  const install = (
-    ctx: Parameters<NonNullable<Parameters<ExtensionAPI["on"]>[1]>>[1],
-    config: DashboardConfig,
-  ) => {
+  const makeStateInput = (
+    ctx: ExtensionContext,
+  ): Omit<StateRenderInput, "snapshot"> => ({
+    cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
+    model: ctx.model?.id,
+    thinking: ctx.thinkingLevel,
+  });
+
+  const loadForCtx = (
+    ctx: ExtensionContext,
+    scope: "cwd" | "all",
+    limit = 5,
+  ): Promise<DashboardSessionItem[]> => {
+    const sm = ctx.sessionManager as {
+      getSessionDir?: () => string;
+      getSessionId?: () => string;
+    };
+    return loadRecentSessions({
+      cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
+      sessionDir:
+        typeof sm.getSessionDir === "function" ? sm.getSessionDir() : undefined,
+      currentSessionId:
+        typeof sm.getSessionId === "function" ? sm.getSessionId() : undefined,
+      limit,
+      scope,
+    });
+  };
+
+  const hideHeader = (ctx: ExtensionContext) => {
+    hidden = true;
     active?.stop();
+    active = undefined;
+    // Empty component suppresses builtInHeader without leaving startup lines in chat.
+    ctx.ui.setHeader(() => ({
+      dispose() {},
+      invalidate() {},
+      render: () => [],
+    }));
+  };
+
+  const install = (ctx: ExtensionContext, config: DashboardConfig) => {
+    active?.stop();
+    currentConfig = config;
+    if ((config.autoHide ?? true) && hasConversationStarted(ctx)) {
+      hideHeader(ctx);
+      return;
+    }
+    hidden = false;
     const controller = createDashboard(config, {
       run: (command, args, signal) =>
         runCommand(
@@ -195,18 +426,49 @@ export default function (pi: ExtensionAPI) {
           signal,
         ),
       notify: (message) => ctx.ui.notify(message, "warning"),
+      snapshotOwner: ctx.sessionManager,
+      getStateInput: () => makeStateInput(ctx),
+      loadSessions: (scope, maxItems) => loadForCtx(ctx, scope, maxItems),
     });
     active = controller;
     void controller.refresh();
-    ctx.ui.setHeader((tui, _theme) => {
+    ctx.ui.setHeader((tui, theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
       return {
         dispose: () => controller.stop(),
         invalidate() {},
-        render: (width: number) => controller.lines(width),
+        render: (width: number) => controller.lines(width, theme),
       };
     });
+  };
+
+  const openSettings = async (ctx: ExtensionContext) => {
+    const agentDir = getAgentDir();
+    const config = currentConfig ?? loadConfig(agentDir).config;
+    await showDashboardSettings(ctx, config, (settings: DashboardSettings) => {
+      saveDashboardSettings(agentDir, settings);
+      const next = loadConfig(agentDir);
+      currentConfig = next.config;
+      if (ctx.mode === "tui") install(ctx, next.config);
+    });
+  };
+
+  const openOverlay = async (ctx: ExtensionCommandContext) => {
+    const initialSessions = await loadForCtx(ctx, "cwd", 8);
+    const result = await showDashboardOverlay(ctx, {
+      initialSessions,
+      loadSessions: (scope) => loadForCtx(ctx, scope, 8),
+      getStateInput: () => makeStateInput(ctx),
+      snapshotOwner: ctx.sessionManager,
+    });
+    if (result.type === "settings") {
+      await openSettings(ctx);
+    } else if (result.type === "resume") {
+      await ctx.switchSession(result.session.path);
+    } else if (result.type === "command") {
+      pi.sendUserMessage(result.command, { expandPromptTemplates: true });
+    }
   };
 
   pi.on("session_start", (_event, ctx) => {
@@ -220,37 +482,37 @@ export default function (pi: ExtensionAPI) {
     }
     install(ctx, loaded.config);
   });
+
+  pi.on("agent_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    if ((currentConfig?.autoHide ?? true) && !hidden) {
+      hideHeader(ctx);
+    }
+  });
+
+  pi.on("session_tree", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    const config = currentConfig ?? loadConfig(getAgentDir()).config;
+    install(ctx, config);
+  });
+
   pi.registerCommand("dashboard", {
-    description: "Dashboard settings: startup header and header gap",
-    handler: async (_args, ctx) => {
-      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
-        if (ctx.hasUI) {
-          ctx.ui.notify("Dashboard settings require TUI mode.", "info");
-        }
+    description:
+      "Open interactive dashboard (or '/dashboard settings' to configure)",
+    handler: async (args, ctx) => {
+      if (ctx.mode !== "tui") return;
+      if (args.trim().toLowerCase() === "settings") {
+        await openSettings(ctx);
         return;
       }
-      const loaded = loadConfig(getAgentDir());
-      let pending: DashboardSettings | undefined;
-      const { showDashboardSettings } = await import("./settings.js");
-      await showDashboardSettings(ctx, loaded.config, (settings) => {
-        pending = settings;
-      });
-      if (pending === undefined) return;
-      try {
-        saveDashboardSettings(getAgentDir(), pending);
-        install(ctx, loadConfig(getAgentDir()).config);
-        ctx.ui.notify("Dashboard settings saved", "info");
-      } catch (error) {
-        ctx.ui.notify(
-          `pi-dashboard: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
-          "error",
-        );
-      }
+      await openOverlay(ctx);
     },
   });
+
   pi.on("session_shutdown", (_event, ctx) => {
     active?.stop();
     active = undefined;
+    hidden = false;
     ctx.ui.setHeader(undefined);
   });
 }

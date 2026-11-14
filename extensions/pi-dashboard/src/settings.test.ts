@@ -52,8 +52,12 @@ describe("showDashboardSettings", () => {
 
     env.component()?.handleInput("\r");
     expect(onSave).toHaveBeenCalledWith({
-      header: "version",
-      gap: 0,
+      header: "none",
+      gap: 1,
+      showState: true,
+      showSessions: true,
+      showActions: true,
+      autoHide: true,
     });
 
     env.component()?.handleInput("\x1b");

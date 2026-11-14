@@ -1,9 +1,8 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VERSION } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { setCwd } from "@hollowheap/core";
+import { setCwd } from "@hollowheap/core/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "./exec.js";
 import extension, { createDashboard } from "./index.js";
@@ -33,6 +32,7 @@ function createMockPi() {
       (_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
     ),
     registerCommand: vi.fn(),
+    sendUserMessage: vi.fn(),
   };
 }
 
@@ -40,8 +40,11 @@ function createMockCtx(overrides: Record<string, unknown> = {}) {
   return {
     mode: "tui",
     cwd: tmpdir(),
+    model: { id: "claude-sonnet-4-5" },
+    thinkingLevel: "off",
     sessionManager: {},
-    ui: { setHeader: vi.fn(), notify: vi.fn() },
+    switchSession: vi.fn(async () => ({ cancelled: false })),
+    ui: { setHeader: vi.fn(), notify: vi.fn(), custom: vi.fn() },
     ...overrides,
   };
 }
@@ -86,10 +89,10 @@ describe("pi-dashboard extension", () => {
     const lines = component.render(60);
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
-      expect(visibleWidth(line)).toBe(60);
+      if (line.length > 0) expect(visibleWidth(line)).toBe(60);
     }
     for (const line of component.render(40)) {
-      expect(visibleWidth(line)).toBe(40);
+      if (line.length > 0) expect(visibleWidth(line)).toBe(40);
     }
   });
 
@@ -114,6 +117,66 @@ describe("pi-dashboard extension", () => {
     );
     handlers.session_shutdown(undefined as never, ctx as never);
     expect(ctx.ui.setHeader).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("auto-hides the startup header on agent_start and re-shows on empty session_tree", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    let branch: Array<Record<string, unknown>> = [];
+    const ctx = createMockCtx({
+      sessionManager: {
+        getBranch: () => branch,
+      },
+    });
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    const comp = installHeader(pi, ctx);
+    expect(comp.render(60).length).toBeGreaterThan(0);
+
+    handlers.agent_start(undefined as never, ctx as never);
+    const hiddenFactory = ctx.ui.setHeader.mock.calls.at(-1)?.[0];
+    expect(hiddenFactory({ requestRender: vi.fn() }, {}).render(60)).toEqual(
+      [],
+    );
+
+    branch = [];
+    handlers.session_tree(undefined as never, ctx as never);
+    const reshownFactory = ctx.ui.setHeader.mock.calls.at(-1)?.[0];
+    expect(
+      reshownFactory({ requestRender: vi.fn() }, {}).render(60).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("opens empty on a resumed branch with messages when autoHide is true", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx({
+      sessionManager: {
+        getBranch: () => [{ type: "message", message: { role: "user" } }],
+      },
+    });
+    const comp = installHeader(pi, ctx);
+    expect(comp.render(60)).toEqual([]);
+  });
+
+  it("handles /dashboard quick command dispatch cleanly", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const registered = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const ctx = createMockCtx({
+      ui: {
+        setHeader: vi.fn(),
+        notify: vi.fn(),
+        custom: vi.fn(async () => ({ type: "command", command: "/todos" })),
+      },
+    });
+    await registered.handler("", ctx);
+    expect(pi.sendUserMessage).toHaveBeenCalledWith("/todos", {
+      expandPromptTemplates: true,
+    });
   });
 });
 
@@ -143,15 +206,47 @@ describe("createDashboard", () => {
     expect(deps.run).not.toHaveBeenCalled();
   });
 
-  it("renders the running Pi version", () => {
+  it("renders state, sessions, and actions sections", async () => {
+    const owner = {};
     const controller = createDashboard(
       {
-        width: 20,
-        sections: [{ type: "version", gap: 0 }],
+        width: 72,
+        sections: [
+          { type: "state", gap: 1 },
+          { type: "sessions", maxItems: 3, scope: "cwd", gap: 1 },
+          { type: "actions", gap: 0 },
+        ],
       },
-      fakeDeps(""),
+      {
+        run: vi.fn(async () => ""),
+        notify: vi.fn(),
+        snapshotOwner: owner,
+        getStateInput: () => ({
+          cwd: "/repo/demo",
+          model: "claude-sonnet-4-5",
+        }),
+        loadSessions: async () => [
+          {
+            id: "sess-1",
+            path: "/tmp/s1.jsonl",
+            cwd: "/repo/demo",
+            created: new Date("2026-01-01T00:00:00Z"),
+            modified: new Date("2026-01-01T01:00:00Z"),
+            messageCount: 7,
+            firstMessage: "refactor dashboard",
+            summary: { todosOpen: 2, totalCost: 0.42 },
+          },
+        ],
+      },
     );
-    expect(controller.lines().join("")).toContain(`Pi v${VERSION}`);
+    await controller.refresh();
+    const joined = controller.lines().join("\n");
+    expect(joined).toContain("Session State");
+    expect(joined).toContain("demo");
+    expect(joined).toContain("Recent Sessions");
+    expect(joined).toContain("refactor dashboard");
+    expect(joined).toContain("Quick Actions");
+    expect(joined).toContain("/todos");
   });
 
   it("re-centers the header when the render width changes", () => {

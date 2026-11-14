@@ -3,10 +3,33 @@ import { join } from "node:path";
 import { updateJsonConfig } from "@hollowheap/core/config";
 
 export const CONFIG_FILE_NAME = "dashboard.json";
+export const DEFAULT_INTERVAL_MS = 30000;
+export const DEFAULT_MAX_SESSIONS = 5;
 
 export type DashboardSection =
-  | { type: "header"; ascii: string[]; gap: number }
-  | { type: "version"; gap: number }
+  | {
+      type: "header";
+      ascii: string[];
+      align?: "left" | "center";
+      gap: number;
+    }
+  | {
+      type: "state";
+      align?: "left" | "center";
+      gap: number;
+    }
+  | {
+      type: "sessions";
+      maxItems: number;
+      scope: "cwd" | "all";
+      align?: "left" | "center";
+      gap: number;
+    }
+  | {
+      type: "actions";
+      align?: "left" | "center";
+      gap: number;
+    }
   | {
       type: "terminal";
       command: string;
@@ -18,6 +41,7 @@ export type DashboardSection =
 
 export interface DashboardConfig {
   width: number;
+  autoHide?: boolean;
   sections: DashboardSection[];
 }
 
@@ -37,16 +61,25 @@ function defaultArt(): string[] {
 
 export function defaultConfig(): DashboardConfig {
   return {
-    width: 60,
-    sections: [{ type: "header", ascii: defaultArt(), gap: 0 }],
+    width: 72,
+    autoHide: true,
+    sections: [
+      { type: "header", ascii: defaultArt(), gap: 1 },
+      { type: "state", gap: 1 },
+      {
+        type: "sessions",
+        maxItems: DEFAULT_MAX_SESSIONS,
+        scope: "cwd",
+        gap: 1,
+      },
+      { type: "actions", gap: 0 },
+    ],
   };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-export const DEFAULT_INTERVAL_MS = 30000;
 
 function normalizeGap(input: unknown, diagnostics: string[]): number {
   if (input === undefined) return 0;
@@ -55,6 +88,132 @@ function normalizeGap(input: unknown, diagnostics: string[]): number {
   }
   diagnostics.push("section gap must be a non-negative integer; using 0");
   return 0;
+}
+
+function normalizeAlign(
+  input: unknown,
+  label: string,
+  diagnostics: string[],
+): "left" | "center" | undefined {
+  if (input === undefined) return undefined;
+  if (input === "left" || input === "center") return input;
+  diagnostics.push(`${label} align must be "left" or "center"; using left`);
+  return undefined;
+}
+
+function normalizeHeaderSection(
+  input: Record<string, unknown>,
+  diagnostics: string[],
+): DashboardSection {
+  const align = normalizeAlign(input.align, "header", diagnostics);
+  const gap = normalizeGap(input.gap, diagnostics);
+  if (input.ascii === undefined) {
+    return {
+      type: "header",
+      ascii: defaultArt(),
+      ...(align ? { align } : {}),
+      gap,
+    };
+  }
+  if (
+    !Array.isArray(input.ascii) ||
+    !input.ascii.every((line) => typeof line === "string")
+  ) {
+    diagnostics.push(
+      "header ascii must be an array of strings; using the default banner",
+    );
+    return {
+      type: "header",
+      ascii: defaultArt(),
+      ...(align ? { align } : {}),
+      gap,
+    };
+  }
+  return {
+    type: "header",
+    ascii: [...input.ascii],
+    ...(align ? { align } : {}),
+    gap,
+  };
+}
+
+function normalizeSessionsSection(
+  input: Record<string, unknown>,
+  diagnostics: string[],
+): DashboardSection {
+  let maxItems = DEFAULT_MAX_SESSIONS;
+  if (input.maxItems !== undefined) {
+    if (
+      typeof input.maxItems === "number" &&
+      Number.isInteger(input.maxItems) &&
+      input.maxItems >= 1 &&
+      input.maxItems <= 20
+    ) {
+      maxItems = input.maxItems;
+    } else {
+      diagnostics.push(
+        "sessions maxItems must be an integer between 1 and 20; using default",
+      );
+    }
+  }
+  let scope: "cwd" | "all" = "cwd";
+  if (input.scope !== undefined) {
+    if (input.scope === "cwd" || input.scope === "all") {
+      scope = input.scope;
+    } else {
+      diagnostics.push('sessions scope must be "cwd" or "all"; using cwd');
+    }
+  }
+  const align = normalizeAlign(input.align, "sessions", diagnostics);
+  return {
+    type: "sessions",
+    maxItems,
+    scope,
+    ...(align ? { align } : {}),
+    gap: normalizeGap(input.gap, diagnostics),
+  };
+}
+
+function normalizeTerminalSection(
+  input: Record<string, unknown>,
+  diagnostics: string[],
+): DashboardSection | undefined {
+  if (typeof input.command !== "string" || input.command === "") {
+    diagnostics.push("terminal command must be a non-empty string; skipping");
+    return undefined;
+  }
+  let args: string[] = [];
+  if (input.args !== undefined) {
+    if (
+      Array.isArray(input.args) &&
+      input.args.every((arg) => typeof arg === "string")
+    ) {
+      args = [...input.args];
+    } else {
+      diagnostics.push("terminal args must be an array of strings; using []");
+    }
+  }
+  let intervalMs = DEFAULT_INTERVAL_MS;
+  if (input.intervalMs !== undefined) {
+    if (
+      typeof input.intervalMs === "number" &&
+      Number.isFinite(input.intervalMs) &&
+      input.intervalMs > 0
+    ) {
+      intervalMs = input.intervalMs;
+    } else {
+      diagnostics.push("terminal intervalMs must be positive; using default");
+    }
+  }
+  const align = normalizeAlign(input.align, "terminal", diagnostics);
+  return {
+    type: "terminal",
+    command: input.command,
+    args,
+    intervalMs,
+    ...(align ? { align } : {}),
+    gap: normalizeGap(input.gap, diagnostics),
+  };
 }
 
 function normalizeSection(
@@ -66,84 +225,33 @@ function normalizeSection(
     return undefined;
   }
   if (input.type === "header" || input.type === undefined) {
-    if (input.ascii === undefined) {
-      return {
-        type: "header",
-        ascii: defaultArt(),
-        gap: normalizeGap(input.gap, diagnostics),
-      };
-    }
-    if (
-      !Array.isArray(input.ascii) ||
-      !input.ascii.every((line) => typeof line === "string")
-    ) {
-      diagnostics.push(
-        "header ascii must be an array of strings; using the default banner",
-      );
-      return {
-        type: "header",
-        ascii: defaultArt(),
-        gap: normalizeGap(input.gap, diagnostics),
-      };
-    }
+    return normalizeHeaderSection(input, diagnostics);
+  }
+  // Deprecated fastfetch-style version preset removed silently for existing configs.
+  if (input.type === "version") {
+    return undefined;
+  }
+  if (input.type === "state") {
+    const align = normalizeAlign(input.align, "state", diagnostics);
     return {
-      type: "header",
-      ascii: [...input.ascii],
+      type: "state",
+      ...(align ? { align } : {}),
       gap: normalizeGap(input.gap, diagnostics),
     };
   }
-  if (input.type === "version") {
+  if (input.type === "sessions") {
+    return normalizeSessionsSection(input, diagnostics);
+  }
+  if (input.type === "actions") {
+    const align = normalizeAlign(input.align, "actions", diagnostics);
     return {
-      type: "version",
+      type: "actions",
+      ...(align ? { align } : {}),
       gap: normalizeGap(input.gap, diagnostics),
     };
   }
   if (input.type === "terminal") {
-    if (typeof input.command !== "string" || input.command === "") {
-      diagnostics.push("terminal command must be a non-empty string; skipping");
-      return undefined;
-    }
-    let args: string[] = [];
-    if (input.args !== undefined) {
-      if (
-        Array.isArray(input.args) &&
-        input.args.every((arg) => typeof arg === "string")
-      ) {
-        args = [...input.args];
-      } else {
-        diagnostics.push("terminal args must be an array of strings; using []");
-      }
-    }
-    let intervalMs = DEFAULT_INTERVAL_MS;
-    if (input.intervalMs !== undefined) {
-      if (
-        typeof input.intervalMs === "number" &&
-        Number.isFinite(input.intervalMs) &&
-        input.intervalMs > 0
-      ) {
-        intervalMs = input.intervalMs;
-      } else {
-        diagnostics.push("terminal intervalMs must be positive; using default");
-      }
-    }
-    let align: "left" | "center" | undefined;
-    if (input.align !== undefined) {
-      if (input.align === "left" || input.align === "center") {
-        align = input.align;
-      } else {
-        diagnostics.push(
-          'terminal align must be "left" or "center"; using left',
-        );
-      }
-    }
-    return {
-      type: "terminal",
-      command: input.command,
-      args,
-      intervalMs,
-      ...(align === undefined ? {} : { align }),
-      gap: normalizeGap(input.gap, diagnostics),
-    };
+    return normalizeTerminalSection(input, diagnostics);
   }
   diagnostics.push(`ignoring unknown section type "${String(input.type)}"`);
   return undefined;
@@ -173,6 +281,13 @@ export function normalizeConfig(input: unknown): {
       diagnostics.push(
         "width must be an integer between 10 and 500; using default",
       );
+    }
+  }
+  if (input.autoHide !== undefined) {
+    if (typeof input.autoHide === "boolean") {
+      config.autoHide = input.autoHide;
+    } else {
+      diagnostics.push("autoHide must be a boolean; using true");
     }
   }
   if (input.intervalMs !== undefined) {
@@ -229,14 +344,18 @@ export function loadConfig(agentDir: string): {
   return { config, diagnostics, path };
 }
 
-export type DashboardHeaderPreset = "banner" | "version" | "none";
+export type DashboardHeaderPreset = "banner" | "none";
 
 export interface DashboardSettings {
   header: DashboardHeaderPreset;
   gap: number;
+  showState?: boolean;
+  showSessions?: boolean;
+  showActions?: boolean;
+  autoHide?: boolean;
 }
 
-/** Persist the startup header preset while preserving terminal sections. */
+/** Persist dashboard header/section settings while preserving terminal sections. */
 export function saveDashboardSettings(
   agentDir: string,
   settings: DashboardSettings,
@@ -247,24 +366,77 @@ export function saveDashboardSettings(
     const existingHeader = sections.find(
       (section) =>
         isRecord(section) &&
-        (section.type === "header" ||
-          section.type === "version" ||
-          section.type === undefined),
+        (section.type === "header" || section.type === undefined),
+    );
+    const existingState = sections.find(
+      (section) => isRecord(section) && section.type === "state",
+    );
+    const existingSessions = sections.find(
+      (section) => isRecord(section) && section.type === "sessions",
+    );
+    const existingActions = sections.find(
+      (section) => isRecord(section) && section.type === "actions",
     );
     const terminals = sections.filter(
       (section) => isRecord(section) && section.type === "terminal",
     );
-    if (settings.header === "none") {
-      root.sections = terminals;
-    } else {
+
+    const nextSections: Record<string, unknown>[] = [];
+    if (settings.header !== "none") {
       const baseHeader = isRecord(existingHeader) ? { ...existingHeader } : {};
-      const nextHeader: Record<string, unknown> = {
+      nextSections.push({
         ...baseHeader,
-        type: settings.header === "version" ? "version" : "header",
+        type: "header",
         gap: settings.gap,
-      };
-      root.sections = [nextHeader, ...terminals];
+      });
     }
+    nextSections.push(...(terminals as Record<string, unknown>[]));
+
+    const includeState =
+      settings.showState !== undefined
+        ? settings.showState
+        : existingState !== undefined;
+    if (includeState) {
+      nextSections.push(
+        isRecord(existingState)
+          ? { ...existingState }
+          : { type: "state", gap: 1 },
+      );
+    }
+
+    const includeSessions =
+      settings.showSessions !== undefined
+        ? settings.showSessions
+        : existingSessions !== undefined;
+    if (includeSessions) {
+      nextSections.push(
+        isRecord(existingSessions)
+          ? { ...existingSessions }
+          : {
+              type: "sessions",
+              maxItems: DEFAULT_MAX_SESSIONS,
+              scope: "cwd",
+              gap: 1,
+            },
+      );
+    }
+
+    const includeActions =
+      settings.showActions !== undefined
+        ? settings.showActions
+        : existingActions !== undefined;
+    if (includeActions) {
+      nextSections.push(
+        isRecord(existingActions)
+          ? { ...existingActions }
+          : { type: "actions", gap: 0 },
+      );
+    }
+
+    if (settings.autoHide !== undefined) {
+      root.autoHide = settings.autoHide;
+    }
+    root.sections = nextSections;
   });
   if (!res.ok) {
     throw new Error(res.error);

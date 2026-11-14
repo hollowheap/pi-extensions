@@ -27,8 +27,12 @@ describe("default banner", () => {
       ),
     );
     expect(widths).toEqual(new Set([8]));
+    expect(defaultConfig().autoHide).toBe(true);
     expect(defaultConfig().sections).toEqual([
-      { type: "header", ascii: [...DEFAULT_ART], gap: 0 },
+      { type: "header", ascii: [...DEFAULT_ART], gap: 1 },
+      { type: "state", gap: 1 },
+      { type: "sessions", maxItems: 5, scope: "cwd", gap: 1 },
+      { type: "actions", gap: 0 },
     ]);
   });
 });
@@ -54,12 +58,43 @@ describe("normalizeConfig", () => {
     }
   });
 
-  it("accepts a version section", () => {
+  it("silently ignores deprecated version sections", () => {
     const { config, diagnostics } = normalizeConfig({
-      sections: [{ type: "version", gap: 1 }],
+      sections: [
+        { type: "version", gap: 1 },
+        { type: "state", gap: 1 },
+      ],
     });
     expect(diagnostics).toEqual([]);
-    expect(config.sections).toEqual([{ type: "version", gap: 1 }]);
+    expect(config.sections).toEqual([{ type: "state", gap: 1 }]);
+  });
+
+  it("accepts state, sessions, actions, and autoHide", () => {
+    const { config, diagnostics } = normalizeConfig({
+      autoHide: false,
+      sections: [
+        { type: "state", align: "center", gap: 1 },
+        { type: "sessions", maxItems: 8, scope: "all", gap: 2 },
+        { type: "actions", gap: 0 },
+      ],
+    });
+    expect(diagnostics).toEqual([]);
+    expect(config.autoHide).toBe(false);
+    expect(config.sections).toEqual([
+      { type: "state", align: "center", gap: 1 },
+      { type: "sessions", maxItems: 8, scope: "all", gap: 2 },
+      { type: "actions", gap: 0 },
+    ]);
+
+    const bad = normalizeConfig({
+      autoHide: "yes",
+      sections: [{ type: "sessions", maxItems: 50, scope: "invalid" }],
+    });
+    expect(bad.diagnostics).toHaveLength(3);
+    expect(bad.config.autoHide).toBe(true);
+    expect(bad.config.sections).toEqual([
+      { type: "sessions", maxItems: 5, scope: "cwd", gap: 0 },
+    ]);
   });
 
   it("accepts header and terminal sections", () => {
@@ -152,7 +187,7 @@ describe("normalizeConfig", () => {
     expect(diagnostics).toHaveLength(4);
   });
 
-  it("saves a header preset while preserving terminal sections", () => {
+  it("saves header and section toggles while preserving terminal sections", () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
     writeFileSync(
       join(dir, "dashboard.json"),
@@ -165,16 +200,32 @@ describe("normalizeConfig", () => {
       }),
     );
 
-    saveDashboardSettings(dir, { header: "version", gap: 1 });
+    saveDashboardSettings(dir, {
+      header: "banner",
+      gap: 1,
+      showState: true,
+      showSessions: true,
+      showActions: false,
+      autoHide: false,
+    });
     const saved = JSON.parse(
       readFileSync(join(dir, "dashboard.json"), "utf8"),
     ) as Record<string, unknown>;
+    expect(saved.autoHide).toBe(false);
     expect(saved.sections).toEqual([
-      { type: "version", ascii: ["custom"], gap: 1 },
+      { type: "header", ascii: ["custom"], gap: 1 },
       { type: "terminal", command: "echo hi", intervalMs: 5000 },
+      { type: "state", gap: 1 },
+      { type: "sessions", maxItems: 5, scope: "cwd", gap: 1 },
     ]);
 
-    saveDashboardSettings(dir, { header: "none", gap: 0 });
+    saveDashboardSettings(dir, {
+      header: "none",
+      gap: 0,
+      showState: false,
+      showSessions: false,
+      showActions: false,
+    });
     const hidden = JSON.parse(
       readFileSync(join(dir, "dashboard.json"), "utf8"),
     ) as Record<string, unknown>;
@@ -196,7 +247,7 @@ describe("normalizeConfig", () => {
     expect(readFileSync(path, "utf8")).toBe(broken);
   });
 
-  it("keeps existing header ascii and other header fields when changing gap or preset", () => {
+  it("keeps existing header ascii and other header fields when changing gap", () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
     const path = join(dir, "dashboard.json");
     writeFileSync(
@@ -216,19 +267,12 @@ describe("normalizeConfig", () => {
     );
 
     saveDashboardSettings(dir, { header: "banner", gap: 3 });
-    let result = JSON.parse(readFileSync(path, "utf8")) as Record<
+    const result = JSON.parse(readFileSync(path, "utf8")) as Record<
       string,
       unknown
     >;
     expect(result.sections).toEqual([
       { type: "header", ascii: ["custom1", "custom2"], color: "cyan", gap: 3 },
-      { type: "terminal", command: "echo hi", intervalMs: 5000 },
-    ]);
-
-    saveDashboardSettings(dir, { header: "version", gap: 2 });
-    result = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    expect(result.sections).toEqual([
-      { type: "version", ascii: ["custom1", "custom2"], color: "cyan", gap: 2 },
       { type: "terminal", command: "echo hi", intervalMs: 5000 },
     ]);
   });
