@@ -87,6 +87,15 @@ describe("session state", () => {
     expect(readPersistedMode({})).toBeUndefined();
   });
 
+  it("reads the last valid mode entry via getBranch", () => {
+    const owner = {
+      getBranch: () => [
+        { customType: "hollowheap.core.mode", data: { mode: "edit" } },
+      ],
+    };
+    expect(readPersistedMode(owner)).toBe("edit");
+  });
+
   it("shares state across module instances", async () => {
     const owner = {};
     setMode(owner, "plan");

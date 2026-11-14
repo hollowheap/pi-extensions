@@ -1,3 +1,5 @@
+import { updateSessionSnapshot } from "./snapshot.js";
+
 export const USAGE_ENTRY_TYPE = "hollowheap.usage";
 
 export interface ModelUsage {
@@ -39,6 +41,7 @@ export interface CumulativeUsage {
 
 export interface UsageSessionManager {
   appendCustomEntry?: (customType: string, data?: unknown) => unknown;
+  appendEntry?: (customType: string, data?: unknown) => unknown;
   getEntries?: () => readonly unknown[];
   getBranch?: () => readonly unknown[];
 }
@@ -290,14 +293,46 @@ function ownerKey(owner: unknown): object | undefined {
   return typeof owner === "object" && owner !== null ? owner : undefined;
 }
 
+function toUsageSnapshot(usage: CumulativeUsage) {
+  const byModel: Record<string, { tokens: number; cost: number }> = {};
+  for (const [model, row] of Object.entries(usage.byModel)) {
+    byModel[model] = {
+      tokens:
+        row.inputTokens +
+        row.outputTokens +
+        row.cacheReadTokens +
+        row.cacheWriteTokens,
+      cost: row.cost,
+    };
+  }
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    totalTokens: usage.totalTokens,
+    totalCost: usage.totalCost,
+    ...(usage.budgetCap !== undefined ? { budgetCap: usage.budgetCap } : {}),
+    ...(usage.budgetWarning ? { budgetWarning: true } : {}),
+    ...(Object.keys(byModel).length > 0 ? { byModel } : {}),
+    updatedAt: Date.now(),
+  };
+}
+
 export function setSessionUsage(owner: unknown, usage: CumulativeUsage): void {
   const key = ownerKey(owner);
-  if (key !== undefined) getActiveUsage().set(key, usage);
+  if (key !== undefined) {
+    getActiveUsage().set(key, usage);
+    updateSessionSnapshot(key, "usage", toUsageSnapshot(usage));
+  }
 }
 
 export function clearSessionUsage(owner: unknown): void {
   const key = ownerKey(owner);
-  if (key !== undefined) getActiveUsage().delete(key);
+  if (key !== undefined) {
+    getActiveUsage().delete(key);
+    updateSessionSnapshot(key, "usage", undefined);
+  }
 }
 
 export function getSessionUsage(owner: unknown): CumulativeUsage {
@@ -310,6 +345,7 @@ export function getSessionUsage(owner: unknown): CumulativeUsage {
 export function setSessionBudgetCap(
   owner: unknown,
   cap: number | undefined,
+  options: { persist?: boolean } = {},
 ): CumulativeUsage {
   const current = getSessionUsage(owner);
   const next: CumulativeUsage = { ...current };
@@ -321,6 +357,9 @@ export function setSessionBudgetCap(
     next.budgetWarning = next.totalCost >= cap * 0.8 ? true : undefined;
   }
   setSessionUsage(owner, next);
+  if (options.persist === true && ownerKey(owner) !== undefined) {
+    persistUsage(owner as UsageSessionManager, next);
+  }
   return next;
 }
 
@@ -328,9 +367,12 @@ export function persistUsage(
   manager: UsageSessionManager,
   usage: CumulativeUsage,
 ): void {
-  if (typeof manager.appendCustomEntry !== "function") return;
   try {
-    manager.appendCustomEntry(USAGE_ENTRY_TYPE, usage);
+    if (typeof manager.appendCustomEntry === "function") {
+      manager.appendCustomEntry(USAGE_ENTRY_TYPE, usage);
+    } else if (typeof manager.appendEntry === "function") {
+      manager.appendEntry(USAGE_ENTRY_TYPE, usage);
+    }
   } catch {
     // Custom entries are optional.
   }

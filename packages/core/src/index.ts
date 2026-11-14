@@ -12,5 +12,6 @@ export * from "./state.js";
 export * from "./prompt-lock.js";
 export * from "./pricing.js";
 export * from "./session-cache.js";
+export * from "./snapshot.js";
 export * from "./workspace.js";
 export * from "./usage.js";
