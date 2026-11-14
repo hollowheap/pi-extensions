@@ -13,21 +13,15 @@ import {
   replaceConfigModes,
 } from "@hollowheap/core/modes";
 import type { Tag } from "@hollowheap/core/types";
+import {
+  TOOL_TAGS,
+  readCommandArg,
+  readToolTarget,
+} from "@hollowheap/policy/targets";
 import { RequestTracker, attachWireHandler } from "../socket.js";
 import { type ClientCaps, SOCKET_ENV, readCaps } from "./client.js";
 import { loadPermissions } from "./permissions.js";
 import { type ToolDeps, askPermission, createAcpTools } from "./tools.js";
-
-const BUILTIN_TAGS: Record<string, Tag> = {
-  write: "edit",
-  edit: "edit",
-  read: "read",
-  find: "search",
-  grep: "search",
-  ls: "search",
-  bash: "shell",
-  powershell: "shell",
-};
 
 const ACP_TOOLS = new Set([
   "acp_read",
@@ -97,18 +91,6 @@ const toolDeps: ToolDeps = {
   connected: () => sock !== undefined && !sock.destroyed,
   callSocket,
 };
-
-function readPathArg(input: unknown): string | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const path = (input as Record<string, unknown>).path;
-  return typeof path === "string" && path !== "" ? path : undefined;
-}
-
-function readCommandArg(input: unknown): string {
-  if (typeof input !== "object" || input === null) return "";
-  const command = (input as Record<string, unknown>).command;
-  return typeof command === "string" ? command : "";
-}
 
 export interface ModeDescriptor {
   name: string;
@@ -191,13 +173,13 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("tool_call", async (event, ctx) => {
     if (ACP_TOOLS.has(event.toolName)) return undefined;
-    const tag: Tag | undefined = BUILTIN_TAGS[event.toolName];
+    const tag: Tag | undefined = TOOL_TAGS[event.toolName];
     if (tag === undefined) {
       try {
         await askPermission(
           toolDeps,
           event.toolName,
-          readPathArg(event.input) ?? event.toolName,
+          readToolTarget(event.toolName, event.input) ?? event.toolName,
           "other",
           event.toolCallId,
         );
@@ -212,7 +194,7 @@ export default function (pi: ExtensionAPI) {
     const target =
       tag === "shell"
         ? readCommandArg(event.input)
-        : (readPathArg(event.input) ?? ".");
+        : (readToolTarget(event.toolName, event.input) ?? ".");
     const verdict = evaluate({
       owner: ctx.sessionManager,
       cwd: ctx.cwd,

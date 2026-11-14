@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { PiRpc, piRpcArgs } from "./pi-rpc.js";
+import { PiRpc, ensureEnvironment, piRpcArgs } from "./pi-rpc.js";
 
 function setup(onEvent: (event: unknown) => void = () => {}): {
   rpc: PiRpc;
@@ -100,6 +100,24 @@ describe("pi rpc", () => {
       sent.map((line) => (JSON.parse(line) as { type: string }).type),
     ).toEqual(["prompt", "abort"]);
   });
+
+  it("sends set_model and get_available_models commands", async () => {
+    const { rpc, sent, peer } = setup();
+    const settingModel = rpc.setModel("opencode-go", "deepseek-v4.1-flash");
+    answer(peer, sent, { id: "deepseek-v4.1-flash", provider: "opencode-go" });
+    await expect(settingModel).resolves.toEqual({
+      id: "deepseek-v4.1-flash",
+      provider: "opencode-go",
+    });
+    const gettingModels = rpc.getAvailableModels();
+    answer(peer, sent, { models: [{ id: "m1", provider: "p1" }] });
+    await expect(gettingModels).resolves.toEqual({
+      models: [{ id: "m1", provider: "p1" }],
+    });
+    expect(
+      sent.map((line) => (JSON.parse(line) as { type: string }).type),
+    ).toEqual(["set_model", "get_available_models"]);
+  });
 });
 
 describe("pi rpc spawn args", () => {
@@ -116,6 +134,22 @@ describe("pi rpc spawn args", () => {
     expect(args).toContain("-ne");
     expect(args[args.indexOf("-e") + 1]).toBe("/tmp/ext.ts");
     expect(args).not.toContain("--session");
+    expect(args).not.toContain("--model");
+  });
+
+  it("passes the model when given", () => {
+    const args = piRpcArgs({
+      cwd: "/tmp/work",
+      model: "opencode-go/deepseek-v4.1-flash",
+      socketPath: "/tmp/s.sock",
+      caps: "{}",
+      extensionPath: "/tmp/ext.ts",
+      appendix: "appendix",
+      onEvent: () => {},
+    });
+    expect(args[args.indexOf("--model") + 1]).toBe(
+      "opencode-go/deepseek-v4.1-flash",
+    );
   });
 
   it("passes the session file when given", () => {
@@ -172,5 +206,15 @@ describe("pi rpc spawn args", () => {
         process.kill(bgPid, "SIGKILL");
       } catch {}
     }
+  });
+
+  it("merges extraEnv into process.env without blocking on external lookups", () => {
+    const start = Date.now();
+    const env = ensureEnvironment({
+      HOLLOWHEAP_ACP_SOCKET: "/tmp/test.sock",
+      OPENCODE_API_KEY: undefined,
+    });
+    expect(Date.now() - start).toBeLessThan(250);
+    expect(env.HOLLOWHEAP_ACP_SOCKET).toBe("/tmp/test.sock");
   });
 });

@@ -14,6 +14,8 @@ export interface SessionRecord {
   title: string;
   updatedAt: string;
   agent: "hollowheap-pi-acp";
+  mode?: string;
+  model?: string;
 }
 
 export function loadStore(path: string): SessionRecord[] {

@@ -1,9 +1,22 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { LineSplitter } from "./acp.js";
 
 export const SOCKET_ENV = "HOLLOWHEAP_ACP_SOCKET";
 export const CAPS_ENV = "HOLLOWHEAP_ACP_CAPS";
+
+export interface ModelDescriptorInfo {
+  id: string;
+  name?: string;
+  provider: string;
+  api?: string;
+  reasoning?: boolean;
+  contextWindow?: number;
+  maxTokens?: number;
+}
 
 export interface PiRpcCallbacks {
   onEvent: (event: unknown) => void;
@@ -140,6 +153,16 @@ export class PiRpc {
     );
   }
 
+  setModel(provider: string, modelId: string): Promise<unknown> {
+    return this.request("set_model", { provider, modelId });
+  }
+
+  getAvailableModels(): Promise<{ models: ModelDescriptorInfo[] }> {
+    return this.request("get_available_models") as Promise<{
+      models: ModelDescriptorInfo[];
+    }>;
+  }
+
   abort(): Promise<unknown> {
     return this.request("abort");
   }
@@ -174,6 +197,7 @@ export class PiRpc {
 export interface SpawnPiRpcOptions {
   cwd: string;
   sessionFile?: string;
+  model?: string;
   socketPath: string;
   caps: string;
   extensionPath: string;
@@ -193,22 +217,51 @@ export function piRpcArgs(options: SpawnPiRpcOptions): string[] {
     "--append-system-prompt",
     options.appendix,
   ];
+  if (options.model !== undefined && options.model !== "") {
+    args.push("--model", options.model);
+  }
   if (options.sessionFile !== undefined) {
     args.push("--session", options.sessionFile);
   }
   return args;
 }
 
+export function ensureEnvironment(
+  extraEnv?: Record<string, string | undefined>,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+  const user = env.USER ?? process.env.USER ?? "";
+  const home = env.HOME ?? homedir();
+  const searchDirs = [
+    join(home, ".nix-profile", "bin"),
+    user ? `/etc/profiles/per-user/${user}/bin` : undefined,
+    "/run/current-system/sw/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ].filter((dir): dir is string => dir !== undefined && existsSync(dir));
+
+  const currentPath = env.PATH ?? "";
+  const existingParts = new Set(currentPath.split(":").filter(Boolean));
+  const missing = searchDirs.filter((dir) => !existingParts.has(dir));
+  if (missing.length > 0) {
+    env.PATH = [...missing, ...(currentPath ? [currentPath] : [])].join(":");
+  }
+
+  return env;
+}
+
 export function spawnPiRpc(options: SpawnPiRpcOptions): PiRpc {
+  const env = ensureEnvironment({
+    HOLLOWHEAP_ACP_SOCKET: options.socketPath,
+    HOLLOWHEAP_ACP_CAPS: options.caps,
+  });
   return PiRpc.spawn(
     "pi",
     piRpcArgs(options),
     {
       cwd: options.cwd,
-      env: {
-        HOLLOWHEAP_ACP_SOCKET: options.socketPath,
-        HOLLOWHEAP_ACP_CAPS: options.caps,
-      },
+      env,
     },
     { onEvent: options.onEvent },
   );

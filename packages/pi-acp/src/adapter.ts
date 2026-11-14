@@ -1,6 +1,6 @@
-import { unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { type Socket, createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { METHOD_NOT_FOUND } from "./acp.js";
 import {
@@ -14,7 +14,7 @@ import {
   requestPermission,
   writeClientFile,
 } from "./client-requests.js";
-import type { PiRpc } from "./pi-rpc.js";
+import type { ModelDescriptorInfo, PiRpc } from "./pi-rpc.js";
 import { type SessionRecord, loadStore, saveStore } from "./sessions.js";
 import {
   RequestTracker,
@@ -50,6 +50,7 @@ export interface ClientCaps {
 export interface SpawnPiOptions {
   cwd: string;
   sessionFile?: string;
+  model?: string;
   socketPath: string;
   extensionPath: string;
   caps: ClientCaps;
@@ -65,6 +66,8 @@ interface LiveSession {
   pi: PiRpc;
   mode: Mode;
   modes: ModeDescriptor[];
+  currentModel?: ModelDescriptorInfo;
+  availableModels: ModelDescriptorInfo[];
   server: ReturnType<typeof createServer>;
   socketPath: string;
   sockets: Set<Socket>;
@@ -89,6 +92,7 @@ export interface AdapterDeps {
   notify: (sessionId: string, update: unknown) => void;
   client: ClientRequest;
   log: (message: string) => void;
+  defaultModel?: string;
 }
 
 function toolKindFor(toolName: string): ToolKind {
@@ -191,6 +195,155 @@ export function modeOption(
     currentValue: current,
     options,
   };
+}
+
+export function modelOption(
+  current: ModelDescriptorInfo | undefined,
+  available: readonly ModelDescriptorInfo[] = [],
+): unknown {
+  const options = available.map((m) => ({
+    value: `${m.provider}/${m.id}`,
+    name: m.name ?? `${m.provider}/${m.id}`,
+    description: `${m.provider}/${m.id}${m.reasoning ? " (reasoning)" : ""}`,
+  }));
+  const currentValue = current ? `${current.provider}/${current.id}` : "";
+  if (current && !options.some((opt) => opt.value === currentValue)) {
+    options.unshift({
+      value: currentValue,
+      name: current.name ?? currentValue,
+      description: currentValue,
+    });
+  }
+  return {
+    type: "select",
+    id: "model",
+    name: "Model",
+    description: "Language model for agent completions",
+    category: "model",
+    currentValue,
+    options,
+  };
+}
+
+export function findModelMatches(
+  query: string,
+  models: readonly ModelDescriptorInfo[],
+): ModelDescriptorInfo[] {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return [];
+
+  const exactFull = models.filter(
+    (m) => `${m.provider}/${m.id}`.toLowerCase() === trimmed,
+  );
+  if (exactFull.length > 0) return exactFull;
+
+  const exactId = models.filter((m) => m.id.toLowerCase() === trimmed);
+  if (exactId.length > 0) return exactId;
+
+  return models.filter(
+    (m) =>
+      `${m.provider}/${m.id}`.toLowerCase().includes(trimmed) ||
+      m.id.toLowerCase().includes(trimmed) ||
+      m.name?.toLowerCase().includes(trimmed),
+  );
+}
+
+export function findModelMatch(
+  query: string,
+  models: readonly ModelDescriptorInfo[],
+): ModelDescriptorInfo | undefined {
+  const matches = findModelMatches(query, models);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+export function parseModelFromFrontmatter(content: string): string | undefined {
+  if (!content.startsWith("---")) return undefined;
+  const endIndex = content.indexOf("---", 3);
+  if (endIndex === -1) return undefined;
+  const frontmatter = content.slice(3, endIndex);
+  for (const line of frontmatter.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("model:")) {
+      const val = trimmed
+        .slice(6)
+        .trim()
+        .replace(/^["']|["']$/g, "");
+      if (val) return val;
+    }
+  }
+  return undefined;
+}
+
+export function resolveConfiguredModel(cwd?: string): string | undefined {
+  if (process.env.PI_ACP_MODEL?.trim()) {
+    return process.env.PI_ACP_MODEL.trim();
+  }
+  if (process.env.PI_MODEL?.trim()) {
+    return process.env.PI_MODEL.trim();
+  }
+
+  const agentHome = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+
+  const settingsPath = join(agentHome, "settings.json");
+  if (existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      if (typeof settings === "object" && settings !== null) {
+        const provider =
+          typeof settings.defaultProvider === "string"
+            ? settings.defaultProvider.trim()
+            : "";
+        const model =
+          typeof settings.defaultModel === "string"
+            ? settings.defaultModel.trim()
+            : "";
+        if (provider && model) return `${provider}/${model}`;
+        if (model?.includes("/")) return model;
+      }
+    } catch {}
+  }
+
+  let agentName = "ask";
+  const agentJsonPath = join(agentHome, "agent.json");
+  if (existsSync(agentJsonPath)) {
+    try {
+      const agentJson = JSON.parse(readFileSync(agentJsonPath, "utf-8"));
+      if (typeof agentJson?.default === "string" && agentJson.default.trim()) {
+        agentName = agentJson.default.trim();
+      }
+    } catch {}
+  }
+
+  const candidateDirs = [
+    ...(cwd ? [join(cwd, ".pi", "agents"), join(cwd, "agents")] : []),
+    join(agentHome, "agents"),
+  ];
+
+  for (const dir of candidateDirs) {
+    const candidateFile = join(dir, `${agentName}.md`);
+    if (existsSync(candidateFile)) {
+      try {
+        const content = readFileSync(candidateFile, "utf-8");
+        const model = parseModelFromFrontmatter(content);
+        if (model) return model;
+      } catch {}
+    }
+  }
+
+  if (agentName !== "ask") {
+    for (const dir of candidateDirs) {
+      const candidateFile = join(dir, "ask.md");
+      if (existsSync(candidateFile)) {
+        try {
+          const content = readFileSync(candidateFile, "utf-8");
+          const model = parseModelFromFrontmatter(content);
+          if (model) return model;
+        } catch {}
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function noticeText(reply: unknown): string | undefined {
@@ -343,11 +496,20 @@ export class Adapter {
     return server;
   }
 
+  private buildConfigOptions(live: LiveSession, notice?: string): unknown[] {
+    const options: unknown[] = [modeOption(live.mode, live.modes, notice)];
+    if (live.availableModels.length > 0 || live.currentModel !== undefined) {
+      options.push(modelOption(live.currentModel, live.availableModels));
+    }
+    return options;
+  }
+
   private async startPi(
     cwd: string,
     sessionFile: string | undefined,
     title: string,
     mode: Mode = "ask",
+    modelOverride?: string,
   ): Promise<LiveSession> {
     const socketPath = this.socketPath();
     const tracker = new RequestTracker();
@@ -355,10 +517,13 @@ export class Adapter {
     const server = await this.serveSocket({ socketPath, sockets, tracker });
     const buffered: unknown[] = [];
     let sessionId: string | undefined;
+    const targetModel =
+      modelOverride ?? this.deps.defaultModel ?? resolveConfiguredModel(cwd);
     const pi = this.deps.spawnPi(
       {
         cwd,
         sessionFile,
+        model: targetModel,
         socketPath,
         extensionPath: this.deps.extensionPath,
         caps: this.clientCaps,
@@ -375,6 +540,7 @@ export class Adapter {
       const state = (await pi.getState()) as {
         sessionFile?: unknown;
         sessionId?: unknown;
+        model?: ModelDescriptorInfo;
       };
       if (
         typeof state.sessionFile !== "string" ||
@@ -382,6 +548,40 @@ export class Adapter {
       ) {
         throw rpcError(-32603, "pi did not report a session");
       }
+
+      let availableModels: ModelDescriptorInfo[] = [];
+      try {
+        const available = await pi.getAvailableModels?.();
+        if (Array.isArray(available?.models)) {
+          availableModels = available.models;
+        }
+      } catch {}
+
+      let currentModel = state.model;
+      const isUnknown =
+        !currentModel ||
+        currentModel.provider === "unknown" ||
+        !currentModel.id;
+      if (isUnknown && availableModels.length > 0) {
+        const preferred = targetModel
+          ? findModelMatch(targetModel, availableModels)
+          : (availableModels.find((m) => m.provider === "opencode-go") ??
+            availableModels[0]);
+        if (preferred && pi.setModel) {
+          try {
+            const switched = await pi.setModel(
+              preferred.provider,
+              preferred.id,
+            );
+            if (switched && typeof switched === "object") {
+              currentModel = switched as ModelDescriptorInfo;
+            } else {
+              currentModel = preferred;
+            }
+          } catch {}
+        }
+      }
+
       const record: SessionRecord = {
         sessionId: state.sessionId,
         cwd,
@@ -389,6 +589,10 @@ export class Adapter {
         title,
         updatedAt: new Date().toISOString(),
         agent: AGENT_MARK,
+        mode,
+        model: currentModel
+          ? `${currentModel.provider}/${currentModel.id}`
+          : undefined,
       };
       const records = loadStore(this.deps.storePath).filter(
         (entry) => entry.sessionId !== record.sessionId,
@@ -400,6 +604,8 @@ export class Adapter {
         pi,
         mode,
         modes: [],
+        currentModel,
+        availableModels,
         server,
         socketPath,
         sockets,
@@ -440,7 +646,7 @@ export class Adapter {
     const live = await this.startPi(params.cwd, undefined, "New session");
     return {
       sessionId: live.record.sessionId,
-      configOptions: [modeOption("ask", live.modes)],
+      configOptions: this.buildConfigOptions(live),
     };
   }
 
@@ -474,13 +680,17 @@ export class Adapter {
         `cwd mismatch: session is ${stored.cwd}, request is ${params.cwd}`,
       );
     }
-    const previous = this.sessions.get(stored.sessionId)?.mode;
+    const previous =
+      this.sessions.get(stored.sessionId)?.mode ??
+      (stored.mode as Mode | undefined);
+    const modelOverride = stored.model;
     this.closeSession(stored.sessionId);
     const live = await this.startPi(
       stored.cwd,
       stored.piSessionFile,
       stored.title,
       previous,
+      modelOverride,
     );
     if (live.record.sessionId !== stored.sessionId) {
       this.closeSession(live.record.sessionId);
@@ -490,7 +700,9 @@ export class Adapter {
     this.sessions.set(stored.sessionId, { ...live, record: stored });
     await this.replayHistory(stored);
     this.touch(stored);
-    return {};
+    return {
+      configOptions: this.buildConfigOptions(live),
+    };
   }
 
   private async replayHistory(stored: SessionRecord): Promise<void> {
@@ -610,33 +822,66 @@ export class Adapter {
     if (live === undefined) {
       throw rpcError(-32602, `unknown session: ${params.sessionId}`);
     }
-    if (params.configId !== "mode") {
-      throw rpcError(-32602, `unknown config option: ${params.configId}`);
-    }
-    const known =
-      live.modes.length > 0 ? live.modes.map((mode) => mode.name) : MODES;
-    if (typeof params.value !== "string" || !known.includes(params.value)) {
-      throw rpcError(
-        -32602,
-        `unknown mode: ${String(params.value)} (${known.join(", ")})`,
+    if (params.configId === "mode") {
+      const known =
+        live.modes.length > 0 ? live.modes.map((mode) => mode.name) : MODES;
+      if (typeof params.value !== "string" || !known.includes(params.value)) {
+        throw rpcError(
+          -32602,
+          `unknown mode: ${String(params.value)} (${known.join(", ")})`,
+        );
+      }
+      const mode = params.value as Mode;
+      live.mode = mode;
+      live.record.mode = mode;
+      this.touch(live.record);
+      const target = latestSocket(live);
+      if (target === undefined) {
+        return { configOptions: this.buildConfigOptions(live) };
+      }
+      const reply = await sendWireRequest(
+        target,
+        live.tracker,
+        "set-mode",
+        { mode },
+        10_000,
       );
+      const modes = readModes(reply);
+      if (modes.length > 0) live.modes = modes;
+      return {
+        configOptions: this.buildConfigOptions(live, noticeText(reply)),
+      };
     }
-    const mode = params.value as Mode;
-    live.mode = mode;
-    const target = latestSocket(live);
-    if (target === undefined) {
-      return { configOptions: [modeOption(mode, live.modes)] };
+    if (
+      params.configId === "model" &&
+      (live.availableModels.length > 0 || live.currentModel !== undefined)
+    ) {
+      if (typeof params.value !== "string") {
+        throw rpcError(-32602, "model value must be a string");
+      }
+      const models =
+        live.availableModels.length > 0
+          ? live.availableModels
+          : live.currentModel !== undefined
+            ? [live.currentModel]
+            : [];
+      const matched = findModelMatch(params.value, models);
+      if (matched === undefined) {
+        throw rpcError(-32602, `unknown model: ${params.value}`);
+      }
+      if (live.pi.setModel) {
+        const switched = await live.pi.setModel(matched.provider, matched.id);
+        live.currentModel = (
+          typeof switched === "object" && switched !== null ? switched : matched
+        ) as ModelDescriptorInfo;
+      } else {
+        live.currentModel = matched;
+      }
+      live.record.model = `${matched.provider}/${matched.id}`;
+      this.touch(live.record);
+      return { configOptions: this.buildConfigOptions(live) };
     }
-    const reply = await sendWireRequest(
-      target,
-      live.tracker,
-      "set-mode",
-      { mode },
-      10_000,
-    );
-    const modes = readModes(reply);
-    if (modes.length > 0) live.modes = modes;
-    return { configOptions: [modeOption(mode, live.modes, noticeText(reply))] };
+    throw rpcError(-32602, `unknown config option: ${params.configId}`);
   }
 
   private async pushMode(live: LiveSession, sock: Socket): Promise<void> {
@@ -948,10 +1193,19 @@ export class Adapter {
       }
       texts.push(text);
     }
-    if (live.record.title === "New session") {
-      const first = texts.find((text) => text.trim() !== "");
-      if (first !== undefined) {
-        live.record.title = first.trim().slice(0, 50);
+    const firstText = texts.find((text) => text.trim() !== "");
+    if (firstText !== undefined) {
+      const trimmed = firstText.trim();
+      if (
+        trimmed === "/model" ||
+        trimmed === "/models" ||
+        trimmed.startsWith("/model ") ||
+        trimmed.startsWith("/models ")
+      ) {
+        return this.handleModelCommand(live, trimmed);
+      }
+      if (live.record.title === "New session") {
+        live.record.title = trimmed.slice(0, 50);
       }
     }
     this.touch(live.record);
@@ -974,6 +1228,112 @@ export class Adapter {
       throw error;
     }
     return completion;
+  }
+
+  private async handleModelCommand(
+    live: LiveSession,
+    text: string,
+  ): Promise<unknown> {
+    const parts = text.split(/\s+/);
+    const command = parts[0]?.toLowerCase() ?? "";
+    const arg = parts.slice(1).join(" ").trim();
+
+    try {
+      const res = await live.pi.getAvailableModels?.();
+      if (Array.isArray(res?.models)) {
+        live.availableModels = res.models;
+      }
+    } catch {}
+
+    try {
+      const state = (await live.pi.getState()) as {
+        model?: ModelDescriptorInfo;
+        thinkingLevel?: string;
+      };
+      if (state.model) live.currentModel = state.model;
+    } catch {}
+
+    const notify = (msg: string) => {
+      this.deps.notify(live.record.sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: msg },
+      });
+    };
+
+    if (arg === "" || arg === "list" || command === "/models") {
+      const current = live.currentModel;
+      const currentStr = current
+        ? `\`${current.provider}/${current.id}\`${current.name ? ` (${current.name})` : ""}`
+        : "None";
+
+      let response = `**Current Model:** ${currentStr}\n\n`;
+      if (live.availableModels.length === 0) {
+        response += "No models currently available from Pi.\n";
+      } else {
+        response += "**Available Models:**\n";
+        const byProvider = new Map<string, ModelDescriptorInfo[]>();
+        for (const m of live.availableModels) {
+          const list = byProvider.get(m.provider) ?? [];
+          list.push(m);
+          byProvider.set(m.provider, list);
+        }
+        for (const [provider, list] of byProvider) {
+          response += `\n*${provider}*\n`;
+          for (const m of list) {
+            const isCurrent =
+              current?.provider === m.provider && current?.id === m.id;
+            const marker = isCurrent ? " ✓ (active)" : "";
+            const reasoning = m.reasoning ? " [reasoning]" : "";
+            response += `- \`${provider}/${m.id}\`${m.name ? ` — ${m.name}` : ""}${reasoning}${marker}\n`;
+          }
+        }
+        response +=
+          "\nTo switch model, use: `/model <provider>/<id>` or `/model <name>`\n";
+      }
+      notify(response);
+      return { stopReason: "end_turn" };
+    }
+
+    const matches = findModelMatches(arg, live.availableModels);
+    if (matches.length === 0) {
+      notify(
+        `Model "${arg}" not found. Type \`/model\` to list available models.`,
+      );
+      return { stopReason: "end_turn" };
+    }
+
+    if (matches.length > 1) {
+      let response = `Multiple models match "${arg}":\n`;
+      for (const m of matches) {
+        response += `- \`${m.provider}/${m.id}\`${m.name ? ` — ${m.name}` : ""}\n`;
+      }
+      response +=
+        "\nPlease specify the full model ID: `/model <provider>/<id>`";
+      notify(response);
+      return { stopReason: "end_turn" };
+    }
+
+    const target = matches[0];
+    try {
+      if (live.pi.setModel) {
+        const switched = await live.pi.setModel(target.provider, target.id);
+        live.currentModel = (
+          typeof switched === "object" && switched !== null ? switched : target
+        ) as ModelDescriptorInfo;
+      } else {
+        live.currentModel = target;
+      }
+      live.record.model = `${target.provider}/${target.id}`;
+      this.touch(live.record);
+      notify(
+        `Switched model to **${target.name ?? target.id}** (\`${target.provider}/${target.id}\`).`,
+      );
+    } catch (err) {
+      notify(
+        `Failed to switch model to \`${target.provider}/${target.id}\`: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { stopReason: "end_turn" };
   }
 
   private closeSession(sessionId: string): void {

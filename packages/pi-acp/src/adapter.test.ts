@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Adapter, type SpawnPi, type SpawnPiOptions } from "./adapter.js";
-import type { PiRpc } from "./pi-rpc.js";
+import type { ModelDescriptorInfo, PiRpc } from "./pi-rpc.js";
 import { loadStore } from "./sessions.js";
 import {
   RequestTracker,
@@ -22,13 +22,39 @@ const FAKE_MODES = [
   },
 ];
 
+const FAKE_MODELS: ModelDescriptorInfo[] = [
+  {
+    provider: "opencode-go",
+    id: "deepseek-v4.1-flash",
+    name: "DeepSeek V4.1 Flash",
+  },
+  {
+    provider: "opencode",
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+  },
+  {
+    provider: "anthropic",
+    id: "claude-3-5-sonnet",
+    name: "Claude 3.5 Sonnet",
+  },
+];
+
 const peerSockets: Socket[] = [];
 
 function setup(
   client: (method: string, params: unknown) => Promise<unknown> = async () => {
     throw new Error("no client");
   },
-  stateOverride: Partial<{ sessionFile: string; sessionId: string }> = {},
+  stateOverride: Partial<{
+    sessionFile: string;
+    sessionId: string;
+    model?: ModelDescriptorInfo;
+  }> = {},
+  optionsOverride: {
+    models?: ModelDescriptorInfo[];
+    defaultModel?: string;
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "pi-acp-adapter-"));
   const storePath = join(dir, "sessions.json");
@@ -36,7 +62,11 @@ function setup(
   const prompts: { message: string; images: unknown }[][] = [];
   const aborted: string[][] = [];
   const mailbox: { messages: unknown[] } = { messages: [] };
-  const state = {
+  const state: {
+    sessionFile: string;
+    sessionId: string;
+    model?: ModelDescriptorInfo;
+  } = {
     sessionFile: join(dir, "pi-session.jsonl"),
     sessionId: "pi-1",
     ...stateOverride,
@@ -68,6 +98,17 @@ function setup(
         throw new Error(`unexpected: ${type}`);
       },
       getState: async () => ({ ...state }),
+      getAvailableModels: async () => ({
+        models: optionsOverride.models ?? [],
+      }),
+      setModel: async (provider: string, modelId: string) => {
+        calls.push(`set_model:${provider}/${modelId}`);
+        const found = optionsOverride.models?.find(
+          (m) => m.provider === provider && m.id === modelId,
+        );
+        state.model = found ?? { provider, id: modelId };
+        return state.model;
+      },
       getMessages: async () => ({ messages: mailbox.messages }),
       abort: async () => {
         calls.push("abort");
@@ -88,6 +129,7 @@ function setup(
     spawnPi,
     extensionPath: "/ext/index.ts",
     storePath,
+    defaultModel: optionsOverride.defaultModel,
     notify: (sessionId, update) => notified.push({ sessionId, update }),
     client,
     log: () => {},
@@ -202,7 +244,9 @@ describe("adapter sessions", () => {
         cwd: "/repo",
         mcpServers: [],
       }),
-    ).resolves.toEqual({});
+    ).resolves.toMatchObject({
+      configOptions: expect.any(Array),
+    });
     expect(spawns[spawns.length - 1].sessionFile).toContain("pi-session.jsonl");
   });
 
@@ -345,6 +389,60 @@ describe("adapter sessions", () => {
     expect(result.configOptions[0].currentValue).toBe("autopilot");
   });
 
+  it("auto-selects opencode-go model when initial model is unknown", async () => {
+    const { adapter, aborted } = setup(
+      async () => ({}),
+      { model: { provider: "unknown", id: "" } },
+      { models: FAKE_MODELS },
+    );
+    await adapter.handle("session/new", { cwd: "/repo" });
+    expect(aborted[0]).toContain("set_model:opencode-go/deepseek-v4.1-flash");
+  });
+
+  it("auto-selects configured defaultModel if provided", async () => {
+    const { adapter, aborted } = setup(
+      async () => ({}),
+      { model: { provider: "unknown", id: "" } },
+      { models: FAKE_MODELS, defaultModel: "kimi" },
+    );
+    await adapter.handle("session/new", { cwd: "/repo" });
+    expect(aborted[0]).toContain("set_model:opencode/kimi-k2.6");
+  });
+
+  it("supports model configuration via session/set_config_option", async () => {
+    const { adapter, aborted } = setup(
+      async () => ({}),
+      { model: FAKE_MODELS[0] },
+      { models: FAKE_MODELS },
+    );
+    const created = (await adapter.handle("session/new", {
+      cwd: "/repo",
+    })) as {
+      configOptions: { id: string; currentValue: string }[];
+    };
+    const modelOption = created.configOptions.find((opt) => opt.id === "model");
+    expect(modelOption?.currentValue).toBe("opencode-go/deepseek-v4.1-flash");
+
+    const updated = (await adapter.handle("session/set_config_option", {
+      sessionId: "pi-1",
+      configId: "model",
+      value: "anthropic/claude-3-5-sonnet",
+    })) as { configOptions: { id: string; currentValue: string }[] };
+    expect(aborted[0]).toContain("set_model:anthropic/claude-3-5-sonnet");
+    const updatedModel = updated.configOptions.find(
+      (opt) => opt.id === "model",
+    );
+    expect(updatedModel?.currentValue).toBe("anthropic/claude-3-5-sonnet");
+
+    await expect(
+      adapter.handle("session/set_config_option", {
+        sessionId: "pi-1",
+        configId: "model",
+        value: "nonexistent",
+      }),
+    ).rejects.toThrow("unknown model");
+  });
+
   it("closes the previous live session when reloading", async () => {
     const { adapter, aborted, spawns } = setup();
     await adapter.handle("session/new", { cwd: "/repo" });
@@ -361,7 +459,15 @@ describe("adapter sessions", () => {
       configId: "mode",
       value: "plan",
     });
-    await adapter.handle("session/load", { sessionId: "pi-1", cwd: "/repo" });
+    const loaded = (await adapter.handle("session/load", {
+      sessionId: "pi-1",
+      cwd: "/repo",
+    })) as {
+      configOptions: { id: string; currentValue: string }[];
+    };
+    expect(
+      loaded.configOptions.find((opt) => opt.id === "mode")?.currentValue,
+    ).toBe("plan");
 
     const received: { method: string; params?: unknown }[] = [];
     const sock = createConnection(spawns[1].socketPath);
@@ -699,6 +805,98 @@ describe("prompt turns", () => {
       }),
     ).rejects.toMatchObject({ code: -32602 });
   });
+
+  it("intercepts /model command to display available models", async () => {
+    const { adapter, notified, prompts } = setup(
+      async () => ({}),
+      { model: FAKE_MODELS[0] },
+      { models: FAKE_MODELS },
+    );
+    await adapter.handle("session/new", { cwd: "/repo" });
+    const result = await adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "/model" }],
+    });
+    expect(result).toEqual({ stopReason: "end_turn" });
+    expect(prompts[0]).toEqual([]);
+    const chunk = notified.find(
+      (n) =>
+        (n.update as { sessionUpdate: string }).sessionUpdate ===
+        "agent_message_chunk",
+    );
+    const text = (chunk?.update as { content: { type: string; text: string } })
+      .content.text;
+    expect(text).toContain(
+      "**Current Model:** `opencode-go/deepseek-v4.1-flash`",
+    );
+    expect(text).toContain("DeepSeek V4.1 Flash");
+    expect(text).toContain("Kimi K2.6");
+    expect(text).toContain("✓ (active)");
+  });
+
+  it("intercepts /model <name> to switch model", async () => {
+    const { adapter, notified, prompts, aborted } = setup(
+      async () => ({}),
+      { model: FAKE_MODELS[0] },
+      { models: FAKE_MODELS },
+    );
+    await adapter.handle("session/new", { cwd: "/repo" });
+    const result = await adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "/model kimi" }],
+    });
+    expect(result).toEqual({ stopReason: "end_turn" });
+    expect(prompts[0]).toEqual([]);
+    expect(aborted[0]).toContain("set_model:opencode/kimi-k2.6");
+    const chunk = notified.find(
+      (n) =>
+        (n.update as { sessionUpdate: string }).sessionUpdate ===
+        "agent_message_chunk",
+    );
+    const text = (chunk?.update as { content: { type: string; text: string } })
+      .content.text;
+    expect(text).toContain(
+      "Switched model to **Kimi K2.6** (`opencode/kimi-k2.6`)",
+    );
+  });
+
+  it("handles /model with unknown or ambiguous names", async () => {
+    const ambiguousModels: ModelDescriptorInfo[] = [
+      { provider: "p1", id: "deepseek-chat", name: "DeepSeek Chat" },
+      { provider: "p2", id: "deepseek-coder", name: "DeepSeek Coder" },
+    ];
+    const { adapter, notified, prompts } = setup(
+      async () => ({}),
+      { model: ambiguousModels[0] },
+      { models: ambiguousModels },
+    );
+    await adapter.handle("session/new", { cwd: "/repo" });
+
+    // Unknown model
+    await adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "/model non-existent" }],
+    });
+    expect(prompts[0]).toEqual([]);
+    let lastUpdate = notified[notified.length - 1].update as {
+      content: { text: string };
+    };
+    expect(lastUpdate.content.text).toContain('Model "non-existent" not found');
+
+    // Ambiguous model
+    await adapter.handle("session/prompt", {
+      sessionId: "pi-1",
+      prompt: [{ type: "text", text: "/model deepseek" }],
+    });
+    lastUpdate = notified[notified.length - 1].update as {
+      content: { text: string };
+    };
+    expect(lastUpdate.content.text).toContain(
+      'Multiple models match "deepseek"',
+    );
+    expect(lastUpdate.content.text).toContain("deepseek-chat");
+    expect(lastUpdate.content.text).toContain("deepseek-coder");
+  });
 });
 
 describe("session/load replay", () => {
@@ -746,7 +944,9 @@ describe("session/load replay", () => {
         cwd: "/repo",
         mcpServers: [],
       }),
-    ).resolves.toEqual({});
+    ).resolves.toMatchObject({
+      configOptions: expect.any(Array),
+    });
     expect(notified.map((entry) => entry.update)).toEqual([
       {
         sessionUpdate: "user_message_chunk",

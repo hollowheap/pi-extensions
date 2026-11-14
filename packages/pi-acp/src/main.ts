@@ -35,7 +35,16 @@ export async function main(
   output: NodeJS.WritableStream = process.stdout,
   argv: string[] = process.argv,
 ): Promise<void> {
-  void argv;
+  let defaultModel: string | undefined;
+  for (let i = 2; i < argv.length; i++) {
+    const arg = argv[i];
+    if ((arg === "--model" || arg === "-m") && i + 1 < argv.length) {
+      defaultModel = argv[++i];
+    } else if (arg.startsWith("--model=")) {
+      defaultModel = arg.slice("--model=".length);
+    }
+  }
+
   let nextId = 1;
   const pending = new Map<
     number | string,
@@ -72,6 +81,7 @@ export async function main(
       spawnPiRpc({
         cwd: opts.cwd,
         sessionFile: opts.sessionFile,
+        model: opts.model,
         socketPath: opts.socketPath,
         caps: JSON.stringify(opts.caps),
         extensionPath: opts.extensionPath,
@@ -80,6 +90,7 @@ export async function main(
       }),
     extensionPath: extensionPath(),
     storePath: storePath(),
+    defaultModel,
     notify: (sessionId, update) => {
       write({
         jsonrpc: "2.0",
