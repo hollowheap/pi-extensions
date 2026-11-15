@@ -1,20 +1,57 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session, setCwd, withPromptLock } from "@hollowheap/core";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import {
+  resetActiveTuiConfig,
+  setActiveTuiConfig,
+} from "@hollowheap/tui/state";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
 });
-import { describe, expect, it, vi } from "vitest";
-import extension, { GUARD_AUDIT_TYPE } from "./index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import extension, { GUARD_AUDIT_TYPE, formatGuardModeBadge } from "./index.js";
+
+const testAgentState = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
+}));
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getAgentDir: () => "/nonexistent-pi-agent-dir-for-tests",
+  getAgentDir: () => testAgentState.agentDir,
 }));
+
+const guardTempDirs: string[] = [];
+
+function makeGuardTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guard-test-"));
+  guardTempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  testAgentState.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+  resetActiveTuiConfig();
+  for (const dir of guardTempDirs.splice(0)) {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // ignore cleanup error
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function createMockPi() {
   return {
@@ -112,7 +149,7 @@ describe("pi-guard extension", () => {
       "tool_result",
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commands).toEqual(["mode", "grant", "grants", "context"]);
+    expect(commands).toEqual(["mode", "grant", "grants", "context", "guard"]);
     expect(pi.registerShortcut).toHaveBeenCalledWith(
       "alt+m",
       expect.objectContaining({ description: "Cycle plan/approval mode" }),
@@ -1076,5 +1113,205 @@ describe("mode shortcut and completions", () => {
     handlers.session_start({}, newCtx);
     const newSnap = getSessionSnapshot(newSessionManager).guard;
     expect(newSnap?.deniedCount).toBe(1);
+  });
+});
+
+describe("guard shortMode and /guard settings|config|status", () => {
+  it("abbreviates mode-guard statusline badge when active TUI shortMode is enabled", () => {
+    expect(formatGuardModeBadge("ask", false)).toBe("ASK");
+    expect(formatGuardModeBadge("ask", true)).toBe("A");
+    expect(formatGuardModeBadge("edit", true)).toBe("E");
+    expect(formatGuardModeBadge("plan", true)).toBe("P");
+    expect(formatGuardModeBadge("autopilot", true)).toBe("AP");
+
+    const pi = createMockPi();
+    const channelHandlers = new Map<string, (data: unknown) => void>();
+    pi.events.on = vi.fn((channel: string, fn: (data: unknown) => void) => {
+      channelHandlers.set(channel, fn);
+      return () => {};
+    });
+    extension(pi as never);
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    ) as Record<string, (e: unknown, c: unknown) => void>;
+
+    const ctx = createContext(process.cwd());
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, shortMode: true });
+    handlers.session_start({}, ctx);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "A",
+    });
+
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, shortMode: false });
+    channelHandlers.get("tui:config-changed")?.(DEFAULT_TUI_CONFIG);
+    expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "ASK",
+    });
+  });
+
+  it("registers /guard completions and /guard status notifies summary", async () => {
+    const dir = makeGuardTempDir();
+    testAgentState.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      getArgumentCompletions: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    expect(
+      guardCmd.getArgumentCompletions("")?.map((item) => item.value),
+    ).toEqual(["settings", "config", "status"]);
+    expect(
+      guardCmd.getArgumentCompletions("con")?.map((item) => item.value),
+    ).toEqual(["config"]);
+
+    const ctx = createContext(dir);
+    await guardCmd.handler("status", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("mode=ask · trustedRoots=0"),
+      "info",
+    );
+  });
+
+  it("opens /guard settings and /guard config in TUI mode and persists trustedRoots", async () => {
+    const agentDir = makeGuardTempDir();
+    const workspaceDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+
+    const pi = createMockPi();
+    extension(pi as never);
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          render(width: number): string[];
+          handleInput(data: string): void;
+        },
+      ) => {
+        const comp = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_t: string, s: string) => s,
+            bg: (_t: string, s: string) => s,
+            bold: (s: string) => s,
+          },
+          {},
+          () => {},
+        );
+        const rendered = comp.render(80).join("\n");
+        expect(rendered).toContain("Guard settings");
+        expect(rendered).toContain("Trust current workspace");
+        // Move down to "Trust current workspace" and toggle to "trusted"
+        comp.handleInput("\x1b[B");
+        comp.handleInput("\r");
+        comp.handleInput("\x1b");
+      },
+    );
+
+    const ctx = {
+      ...createContext(workspaceDir),
+      mode: "tui",
+      ui: {
+        ...createContext(workspaceDir).ui,
+        custom,
+      },
+    };
+    await guardCmd.handler("config", ctx);
+    expect(custom).toHaveBeenCalledTimes(1);
+
+    const saved = JSON.parse(
+      readFileSync(join(agentDir, "guard.json"), "utf8"),
+    ) as { trustedRoots: string[] };
+    expect(saved.trustedRoots.length).toBe(1);
+  });
+
+  it("warns on EACCES read and notifies error on EACCES write in /guard settings", async () => {
+    if (process.getuid?.() === 0) return;
+
+    const agentDir = makeGuardTempDir();
+    const workspaceDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+    const guardPath = join(agentDir, "guard.json");
+    writeFileSync(guardPath, JSON.stringify({ trustedRoots: [] }));
+    chmodSync(guardPath, 0o000);
+
+    const pi = createMockPi();
+    extension(pi as never);
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    const statusCtx = createContext(workspaceDir);
+    await guardCmd.handler("status", statusCtx);
+    expect(statusCtx.ui.notify).toHaveBeenCalledWith(
+      expect.stringMatching(/permission|EACCES/i),
+      "warning",
+    );
+
+    chmodSync(guardPath, 0o400);
+    chmodSync(agentDir, 0o500);
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+        },
+      ) => {
+        const comp = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_t: string, s: string) => s,
+            bg: (_t: string, s: string) => s,
+            bold: (s: string) => s,
+          },
+          {},
+          () => {},
+        );
+        comp.handleInput("\x1b[B");
+        comp.handleInput("\r");
+        comp.handleInput("\x1b");
+      },
+    );
+    const settingsCtx = {
+      ...createContext(workspaceDir),
+      mode: "tui",
+      ui: {
+        ...createContext(workspaceDir).ui,
+        custom,
+      },
+    };
+    try {
+      await guardCmd.handler("settings", settingsCtx);
+      expect(settingsCtx.ui.notify).toHaveBeenCalledWith(
+        expect.stringMatching(/permission|EACCES/i),
+        "error",
+      );
+    } finally {
+      chmodSync(agentDir, 0o700);
+      chmodSync(guardPath, 0o600);
+    }
   });
 });

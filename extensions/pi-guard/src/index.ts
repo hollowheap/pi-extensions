@@ -33,6 +33,7 @@ import {
   readCommandArg,
   readToolTarget,
 } from "@hollowheap/policy";
+import { getActiveTuiConfig } from "@hollowheap/tui/state";
 import { loadGuardConfig } from "./config.js";
 import {
   calculateContextBreakdown,
@@ -43,6 +44,7 @@ import {
   checkPathTrust,
   persistDecision,
 } from "./rules.js";
+import { formatGuardStatus, showGuardSettings } from "./settings.js";
 
 export const GUARD_AUDIT_TYPE = "hollowheap.guard.audit";
 
@@ -252,6 +254,24 @@ function loadContextToolTags(ctx: ExtensionContext) {
   });
 }
 
+const SHORT_GUARD_MODE_MAP: Record<string, string> = {
+  ASK: "A",
+  EDIT: "E",
+  PLAN: "P",
+  AUTOPILOT: "AP",
+};
+
+export function formatGuardModeBadge(
+  mode: string,
+  shortMode = getActiveTuiConfig().shortMode,
+): string {
+  const upper = mode.trim().toUpperCase();
+  if (!shortMode) return upper;
+  const mapped = SHORT_GUARD_MODE_MAP[upper];
+  if (mapped !== undefined) return mapped;
+  return upper.slice(0, 1);
+}
+
 function publishValues(runtime: GuardRuntime, owner: unknown): void {
   runtime.lastOwner = owner;
   if (owner !== undefined && owner !== null) {
@@ -264,7 +284,7 @@ function publishValues(runtime: GuardRuntime, owner: unknown): void {
   if (runtime.eventSink === undefined) return;
   runtime.eventSink.emit("statusline:values", {
     name: "mode-guard",
-    text: session(owner).mode.toUpperCase(),
+    text: formatGuardModeBadge(session(owner).mode),
   });
 }
 
@@ -388,6 +408,11 @@ export default function (pi: ExtensionAPI) {
       publishValues(runtime, runtime.lastOwner);
     }
   });
+  pi.events.on("tui:config-changed", () => {
+    if (runtime.lastOwner !== undefined) {
+      publishValues(runtime, runtime.lastOwner);
+    }
+  });
   const handleToolCall = async (
     event: ToolCallEvent,
     ctx: ExtensionContext,
@@ -424,7 +449,9 @@ export default function (pi: ExtensionAPI) {
     rememberTarget(runtime, ctx.sessionManager, target);
 
     if (tag !== "shell") {
-      const guardConfig = loadGuardConfig(getAgentDir());
+      const guardConfig = loadGuardConfig(getAgentDir(), (msg) => {
+        if (ctx.hasUI) ctx.ui.notify(`pi-guard: ${msg}`, "warning");
+      });
       const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
       const trust = checkPathTrust(
         target,
@@ -892,6 +919,97 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(text);
       } else {
         console.log(text);
+      }
+    },
+  });
+
+  const GUARD_SUBCOMMANDS = ["settings", "config", "status"] as const;
+  pi.registerCommand("guard", {
+    description:
+      "Inspect or configure pi-guard settings: /guard [settings|config|status]",
+    getArgumentCompletions: (prefix: string) => {
+      const trimmedStart = prefix.trimStart();
+      const trailingSpace = /\s$/.test(prefix);
+      const parts = trimmedStart.split(/\s+/).filter(Boolean);
+      if (parts.length === 0 || (parts.length === 1 && !trailingSpace)) {
+        const query = (parts[0] ?? "").toLowerCase();
+        return GUARD_SUBCOMMANDS.filter((sub) => sub.startsWith(query)).map(
+          (sub) => ({ value: sub, label: sub }),
+        );
+      }
+      return null;
+    },
+    handler: async (args, ctx) => {
+      const sub = args.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+      const agentDir = getAgentDir();
+      const warn = (msg: string) => {
+        if (ctx.hasUI) {
+          ctx.ui.notify(`pi-guard: ${msg}`, "warning");
+        }
+      };
+
+      if (sub === "status") {
+        const config = loadGuardConfig(agentDir, warn);
+        const summary = formatGuardStatus({
+          mode: session(ctx.sessionManager).mode,
+          agentDir,
+          trustedRootsCount: (config.trustedRoots ?? []).length,
+          savedDecisionsCount: Object.keys(config.decisions ?? {}).length,
+          activeGrantsCount: getActiveGrantCount(runtime, ctx.sessionManager),
+        });
+        if (ctx.hasUI) {
+          ctx.ui.notify(`pi-guard: ${summary}`, "info");
+        } else {
+          console.log(summary);
+        }
+        return;
+      }
+
+      if (sub === "" || sub === "settings" || sub === "config") {
+        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+          const config = loadGuardConfig(agentDir, warn);
+          const summary = formatGuardStatus({
+            mode: session(ctx.sessionManager).mode,
+            agentDir,
+            trustedRootsCount: (config.trustedRoots ?? []).length,
+            savedDecisionsCount: Object.keys(config.decisions ?? {}).length,
+            activeGrantsCount: getActiveGrantCount(runtime, ctx.sessionManager),
+          });
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `Guard settings require TUI mode (${summary})`,
+              "info",
+            );
+          } else {
+            console.log(summary);
+          }
+          return;
+        }
+        await showGuardSettings({
+          ctx,
+          agentDir,
+          cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
+          currentMode: session(ctx.sessionManager).mode,
+          availableModes: modeNames(),
+          activeGrantCount: () =>
+            getActiveGrantCount(runtime, ctx.sessionManager),
+          onModeChange: async (mode) => {
+            await switchMode(runtime, ctx, mode);
+          },
+          onClearGrants: () => {
+            const prev = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
+            const now = Date.now();
+            const activeCount = prev.filter((g) => g.expiresAt > now).length;
+            runtime.sessionGrants.delete(ctx.sessionManager);
+            publishGuardSnapshot(runtime, ctx.sessionManager);
+            return activeCount;
+          },
+        });
+        return;
+      }
+
+      if (ctx.hasUI) {
+        ctx.ui.notify("Usage: /guard [settings|config|status]", "error");
       }
     },
   });

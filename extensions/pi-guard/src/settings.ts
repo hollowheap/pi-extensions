@@ -1,0 +1,242 @@
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { getFrameInnerWidth, roundedFrame } from "@hollowheap/tui/frame";
+import {
+  type GuardConfig,
+  getGuardConfigPath,
+  loadGuardConfig,
+  saveGuardConfig,
+} from "./config.js";
+import { resolveCanonicalPath } from "./rules.js";
+
+export interface GuardStatusInfo {
+  mode: string;
+  agentDir: string;
+  trustedRootsCount: number;
+  savedDecisionsCount: number;
+  activeGrantsCount: number;
+}
+
+export interface GuardSettingsOptions {
+  ctx: ExtensionContext;
+  agentDir: string;
+  cwd: string;
+  currentMode: string;
+  availableModes: readonly string[];
+  activeGrantCount: () => number;
+  onModeChange: (mode: string) => void | Promise<void>;
+  onClearGrants: () => number;
+  onClearSavedDecisions?: () => void;
+}
+
+function settingsTheme(theme: Theme): SettingsListTheme {
+  return {
+    label: (text, selected) =>
+      selected ? theme.fg("accent", text) : theme.fg("text", text),
+    value: (text, selected) =>
+      selected ? theme.fg("accent", text) : theme.fg("muted", text),
+    description: (text) => theme.fg("muted", text),
+    cursor: theme.fg("accent", "› "),
+    hint: (text) => theme.fg("dim", text),
+  };
+}
+
+/** Format a concise summary of active pi-guard policy state and config path. */
+export function formatGuardStatus(info: GuardStatusInfo): string {
+  return [
+    `mode=${info.mode}`,
+    `trustedRoots=${info.trustedRootsCount}`,
+    `savedRules=${info.savedDecisionsCount}`,
+    `activeGrants=${info.activeGrantsCount}`,
+    `config=${getGuardConfigPath(info.agentDir)}`,
+  ].join(" · ");
+}
+
+/** Open an interactive settings/overview menu for pi-guard. */
+export async function showGuardSettings(
+  options: GuardSettingsOptions,
+): Promise<void> {
+  const { ctx, agentDir, cwd } = options;
+  let guardConfig: GuardConfig = loadGuardConfig(agentDir, (msg) => {
+    if (ctx.hasUI) {
+      ctx.ui.notify(`pi-guard: ${msg}`, "warning");
+    }
+  });
+
+  if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+    return;
+  }
+
+  const canonicalCwd = resolveCanonicalPath(cwd, ".");
+  const isWorkspaceTrusted = (cfg: GuardConfig): boolean =>
+    (cfg.trustedRoots ?? []).some(
+      (root) => resolveCanonicalPath(cwd, root) === canonicalCwd,
+    );
+
+  await withPromptLock(() =>
+    ctx.ui.custom<void>(
+      (tui, theme, _keybindings, done) => {
+        let modeValue = options.currentMode;
+        const trustValue = (cfg: GuardConfig): string =>
+          isWorkspaceTrusted(cfg) ? "trusted" : "prompt";
+
+        const available =
+          options.availableModes.length > 0
+            ? [...options.availableModes]
+            : [modeValue];
+        if (!available.includes(modeValue)) {
+          available.unshift(modeValue);
+        }
+
+        const list = new SettingsList(
+          [
+            {
+              id: "mode",
+              label: "Approval mode",
+              description: "Active pi-guard policy mode for this session",
+              currentValue: modeValue,
+              values: available,
+            },
+            {
+              id: "trust-cwd",
+              label: "Trust current workspace",
+              description: `Persist ${canonicalCwd} in guard.json trustedRoots`,
+              currentValue: trustValue(guardConfig),
+              values: ["prompt", "trusted"],
+            },
+            {
+              id: "clear-grants",
+              label: "Temporary grants",
+              description: "Clear active temporary session grants",
+              currentValue: "keep",
+              values: ["keep", "clear"],
+            },
+            {
+              id: "clear-decisions",
+              label: "Saved path rules",
+              description:
+                "Clear saved path allow/deny decisions in guard.json",
+              currentValue: "keep",
+              values: ["keep", "clear"],
+            },
+          ],
+          6,
+          settingsTheme(theme),
+          (id, newValue) => {
+            if (id === "mode") {
+              modeValue = newValue;
+              void Promise.resolve(options.onModeChange(newValue)).finally(
+                () => {
+                  tui.requestRender();
+                },
+              );
+              return;
+            }
+
+            if (id === "trust-cwd") {
+              const prevTrust = trustValue(guardConfig);
+              const existingRoots = guardConfig.trustedRoots ?? [];
+              const filteredRoots = existingRoots.filter(
+                (root) => resolveCanonicalPath(cwd, root) !== canonicalCwd,
+              );
+              const nextRoots =
+                newValue === "trusted"
+                  ? [...filteredRoots, canonicalCwd]
+                  : filteredRoots;
+              const nextConfig: GuardConfig = {
+                ...guardConfig,
+                trustedRoots: nextRoots,
+              };
+              const res = saveGuardConfig(agentDir, nextConfig);
+              if (!res.ok) {
+                list.updateValue("trust-cwd", prevTrust);
+                if (ctx.hasUI) {
+                  ctx.ui.notify(`pi-guard: ${res.error}`, "error");
+                }
+              } else {
+                guardConfig = nextConfig;
+                if (ctx.hasUI) {
+                  ctx.ui.notify(
+                    newValue === "trusted"
+                      ? `pi-guard: trusted workspace ${canonicalCwd}`
+                      : `pi-guard: removed workspace trust for ${canonicalCwd}`,
+                    "info",
+                  );
+                }
+              }
+              tui.requestRender();
+              return;
+            }
+
+            if (id === "clear-grants") {
+              if (newValue === "clear") {
+                const cleared = options.onClearGrants();
+                if (ctx.hasUI) {
+                  ctx.ui.notify(
+                    `pi-guard: cleared ${cleared} temporary grant(s)`,
+                    "info",
+                  );
+                }
+                list.updateValue("clear-grants", "keep");
+                tui.requestRender();
+              }
+              return;
+            }
+
+            if (id === "clear-decisions") {
+              if (newValue === "clear") {
+                const nextConfig: GuardConfig = {
+                  ...guardConfig,
+                  decisions: {},
+                };
+                const res = saveGuardConfig(agentDir, nextConfig);
+                if (!res.ok) {
+                  if (ctx.hasUI) {
+                    ctx.ui.notify(`pi-guard: ${res.error}`, "error");
+                  }
+                } else {
+                  guardConfig = nextConfig;
+                  options.onClearSavedDecisions?.();
+                  if (ctx.hasUI) {
+                    ctx.ui.notify(
+                      "pi-guard: cleared saved path decisions",
+                      "info",
+                    );
+                  }
+                }
+                list.updateValue("clear-decisions", "keep");
+                tui.requestRender();
+              }
+            }
+          },
+          () => done(),
+        );
+
+        return {
+          render(width: number): string[] {
+            const innerWidth = getFrameInnerWidth(width);
+            const summary = theme.fg(
+              "muted",
+              `Mode: ${modeValue} · Trusted roots: ${(guardConfig.trustedRoots ?? []).length} · Saved rules: ${Object.keys(guardConfig.decisions ?? {}).length} · Active grants: ${options.activeGrantCount()}`,
+            );
+            return roundedFrame(
+              [summary, "", ...list.render(innerWidth)],
+              width,
+              theme,
+              "Guard settings",
+            );
+          },
+          invalidate() {
+            list.invalidate();
+          },
+          handleInput(data: string) {
+            list.handleInput(data);
+            tui.requestRender();
+          },
+        };
+      },
+      { overlay: true },
+    ),
+  );
+}
