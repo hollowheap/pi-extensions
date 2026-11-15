@@ -4,13 +4,9 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-
-const HORIZONTAL = "─";
-const TOP_LEFT = "╭";
-const TOP_RIGHT = "╮";
-const BOTTOM_LEFT = "╰";
-const BOTTOM_RIGHT = "╯";
-const VERTICAL = "│";
+import { getBorderChars } from "@hollowheap/core/border";
+import { getActiveTuiConfig } from "./state.js";
+import { paintSurfaceLine } from "./surface.js";
 
 function padToWidth(line: string, width: number): string {
   const padding = width - visibleWidth(line);
@@ -40,11 +36,46 @@ export async function showCodeViewer(
       return {
         render(width: number): string[] {
           const safeWidth = Math.max(4, width);
-          const codeWidth = Math.max(1, safeWidth - 4);
+          const { borderStyle, overlaySurface } = getActiveTuiConfig();
           const height = viewportHeight();
           offset = Math.max(0, Math.min(offset, maxOffset()));
           const visible = codeLines.slice(offset, offset + height);
+          const hint =
+            codeLines.length > height
+              ? ` ↑↓ scroll ${offset + 1}/${codeLines.length} · Esc close `
+              : " Esc close ";
 
+          if (borderStyle === "none") {
+            const top = paintSurfaceLine(
+              truncateToWidth(titlePaint(title), safeWidth, ""),
+              safeWidth,
+              theme,
+              overlaySurface,
+            );
+            const content = visible.map((line) =>
+              paintSurfaceLine(
+                truncateToWidth(line, safeWidth, ""),
+                safeWidth,
+                theme,
+                overlaySurface,
+              ),
+            );
+            while (content.length < height) {
+              content.push(
+                paintSurfaceLine("", safeWidth, theme, overlaySurface),
+              );
+            }
+            const bottom = paintSurfaceLine(
+              truncateToWidth(theme.fg("dim", hint.trim()), safeWidth, ""),
+              safeWidth,
+              theme,
+              overlaySurface,
+            );
+            return [top, ...content, bottom];
+          }
+
+          const chars = getBorderChars(borderStyle);
+          const codeWidth = Math.max(1, safeWidth - 4);
           const header = truncateToWidth(
             ` ${titlePaint(title)} `,
             Math.max(0, safeWidth - 3),
@@ -52,34 +83,38 @@ export async function showCodeViewer(
           );
           const topFill = Math.max(0, safeWidth - 2 - visibleWidth(header) - 1);
           const top =
-            border(`${TOP_LEFT}${HORIZONTAL}`) +
+            border(`${chars.topLeft}${chars.horizontal}`) +
             header +
-            border(`${HORIZONTAL.repeat(topFill)}${TOP_RIGHT}`);
+            border(`${chars.horizontal.repeat(topFill)}${chars.topRight}`);
 
           const content = visible.map((line) => {
             const text = truncateToWidth(line, codeWidth, "");
-            return `${border(VERTICAL)} ${padToWidth(text, codeWidth)} ${border(VERTICAL)}`;
+            return `${border(chars.vertical)} ${padToWidth(text, codeWidth)} ${border(chars.vertical)}`;
           });
           while (content.length < height) {
             content.push(
-              `${border(VERTICAL)} ${" ".repeat(codeWidth)} ${border(VERTICAL)}`,
+              `${border(chars.vertical)} ${" ".repeat(codeWidth)} ${border(chars.vertical)}`,
             );
           }
 
-          const hint =
-            codeLines.length > height
-              ? ` ↑↓ scroll ${offset + 1}/${codeLines.length} · Esc close `
-              : " Esc close ";
           const bottomFill = Math.max(
             0,
             safeWidth - 2 - visibleWidth(hint) - 1,
           );
           const bottom =
-            border(`${BOTTOM_LEFT}${HORIZONTAL}`) +
+            border(`${chars.bottomLeft}${chars.horizontal}`) +
             theme.fg("dim", hint) +
-            border(`${HORIZONTAL.repeat(bottomFill)}${BOTTOM_RIGHT}`);
+            border(
+              `${chars.horizontal.repeat(bottomFill)}${chars.bottomRight}`,
+            );
 
-          return [top, ...content, bottom];
+          const rows = [top, ...content, bottom];
+          if (overlaySurface === "transparent") {
+            return rows;
+          }
+          return rows.map((row) =>
+            paintSurfaceLine(row, safeWidth, theme, overlaySurface),
+          );
         },
         handleInput(data: string): void {
           if (

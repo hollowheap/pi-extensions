@@ -1,7 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "./state.js";
 import { showCodeViewer } from "./viewer.js";
+
+afterEach(() => {
+  resetActiveTuiConfig();
+});
 
 describe("showCodeViewer", () => {
   it("applies accent and border colors without breaking frame width", async () => {
@@ -47,5 +53,59 @@ describe("showCodeViewer", () => {
     for (const line of lines) {
       expect(visibleWidth(line)).toBe(40);
     }
+  });
+
+  it("respects active borderStyle, none border, and overlaySurface", async () => {
+    type FactoryFn = (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: () => void,
+    ) => { render: (width: number) => string[] };
+    let factory: FactoryFn | undefined;
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        custom: vi.fn((value: FactoryFn) => {
+          factory = value;
+          return Promise.resolve();
+        }),
+      },
+    } as unknown as ExtensionContext;
+
+    await showCodeViewer(ctx, "Script", "const x = 1;");
+    if (!factory) throw new Error("viewer factory was not captured");
+
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bg: (token: string, value: string) => `[${token}]${value}[/]`,
+      bold: (value: string) => value,
+    };
+    const component = factory(
+      { terminal: { rows: 12 }, requestRender: vi.fn() },
+      theme,
+      {},
+      vi.fn(),
+    );
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "double",
+      overlaySurface: "surface",
+    });
+    const doubleLines = component.render(32);
+    expect(doubleLines[0]).toContain("[customMessageBg]╔═");
+    expect(doubleLines.at(-1)).toContain("╚═");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "none",
+      overlaySurface: "card",
+    });
+    const noneLines = component.render(32);
+    expect(noneLines[0]).toContain("[userMessageBg]Script");
+    expect(noneLines[0]).not.toContain("╭");
+    expect(noneLines.join("\n")).toContain("const x = 1;");
   });
 });

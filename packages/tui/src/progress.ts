@@ -2,38 +2,87 @@ import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   CancellableLoader,
   Key,
+  type LoaderIndicatorOptions,
   Text,
   matchesKey,
 } from "@earendil-works/pi-tui";
+import type { BorderStyle } from "@hollowheap/core/border";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import { roundedFrame } from "./frame.js";
+import { type WorkingTheme, crushWorkingIndicator } from "./spinner.js";
+import { getActiveTuiConfig } from "./state.js";
 
 export type CancellableProgressResult<T> =
   | { status: "completed"; value: T }
   | { status: "cancelled" };
+
+export interface CancellableProgressOptions {
+  borderStyle?: BorderStyle;
+  overlaySurface?: OverlaySurfaceMode;
+  indicator?: LoaderIndicatorOptions;
+}
+
+const REQUIRED_WORKING_COLOR_TOKENS = [
+  "error",
+  "warning",
+  "success",
+  "borderAccent",
+  "accent",
+  "thinkingText",
+  "text",
+  "muted",
+] as const;
+
+function isWorkingTheme(theme: unknown): theme is WorkingTheme {
+  if (typeof theme !== "object" || theme === null) return false;
+  const candidate = theme as Partial<WorkingTheme>;
+  if (
+    typeof candidate.getColorMode !== "function" ||
+    typeof candidate.colors !== "object" ||
+    candidate.colors === null
+  ) {
+    return false;
+  }
+  const colors = candidate.colors as unknown as Record<string, unknown>;
+  return REQUIRED_WORKING_COLOR_TOKENS.every(
+    (token) => typeof colors[token] === "string",
+  );
+}
 
 function progressComponent(
   tui: ConstructorParameters<typeof CancellableLoader>[0],
   theme: Theme,
   message: string,
   onAbort: () => void,
+  options?: CancellableProgressOptions,
 ) {
+  const indicator =
+    options?.indicator ??
+    (isWorkingTheme(theme) ? crushWorkingIndicator(theme) : undefined);
   const loader = new CancellableLoader(
     tui,
     (text) => theme.fg("accent", text),
     (text) => theme.fg("muted", text),
     message,
+    indicator,
   );
   const hint = new Text(theme.fg("dim", "Esc to cancel"), 1, 0);
   loader.onAbort = onAbort;
   return {
     loader,
     render(width: number): string[] {
-      const innerWidth = Math.max(1, width - 4);
+      const active = getActiveTuiConfig();
+      const borderStyle = options?.borderStyle ?? active.borderStyle;
+      const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
+      const innerWidth =
+        borderStyle === "none" ? Math.max(1, width) : Math.max(1, width - 4);
       return roundedFrame(
         [...loader.render(innerWidth), ...hint.render(innerWidth)],
         width,
         theme,
+        undefined,
+        { borderStyle, overlaySurface },
       );
     },
     handleInput(data: string): void {
@@ -61,6 +110,7 @@ export async function withCancellableProgress<T>(
   message: string,
   operation: (signal: AbortSignal) => Promise<T>,
   signal?: AbortSignal,
+  options?: CancellableProgressOptions,
 ): Promise<CancellableProgressResult<T>> {
   const parentSignal = signal ?? ctx.signal;
   if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
@@ -95,7 +145,13 @@ export async function withCancellableProgress<T>(
           finish({ status: "cancelled" });
         };
         const onParentAbort = (): void => cancel();
-        state.component = progressComponent(tui, theme, message, cancel);
+        state.component = progressComponent(
+          tui,
+          theme,
+          message,
+          cancel,
+          options,
+        );
         if (parentSignal?.aborted) {
           cancel();
         } else {
