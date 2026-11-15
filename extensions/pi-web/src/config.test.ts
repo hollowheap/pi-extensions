@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -154,5 +160,23 @@ describe("loadWebConfig", () => {
     expect(() => saveWebSettings(dir, { searchOrder: ["exa"] })).toThrow();
 
     expect(readFileSync(join(dir, CONFIG_FILE_NAME), "utf8")).toBe(broken);
+  });
+
+  it("formats OS permission errors on unreadable or unwritable web.json", () => {
+    if (process.getuid?.() === 0) return;
+    const dir = agentDir();
+    const path = join(dir, CONFIG_FILE_NAME);
+    write(dir, "{}");
+    chmodSync(path, 0o000);
+    try {
+      const loaded = loadWebConfig(dir);
+      expect(loaded.diagnostics).toHaveLength(1);
+      expect(loaded.diagnostics[0]).toContain("OS permission denied");
+      expect(() => saveWebSettings(dir, { searchOrder: ["exa"] })).toThrow(
+        /OS permission denied/,
+      );
+    } finally {
+      chmodSync(path, 0o600);
+    }
   });
 });

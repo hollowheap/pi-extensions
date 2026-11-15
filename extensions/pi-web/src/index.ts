@@ -3,6 +3,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { isPermissionError } from "@hollowheap/core/config";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { type WebSettings, loadWebConfig, saveWebSettings } from "./config.js";
 import {
@@ -112,11 +113,11 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.registerCommand("web", {
     description:
-      "Web tools: /web settings; /web insert <n> inserts a recent result link",
+      "Web tools: /web settings|config; /web insert <n> inserts a recent result link",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
-        return ["settings", "insert"]
+        return ["settings", "config", "insert"]
           .filter((action) => action.startsWith((parts[0] ?? "").toLowerCase()))
           .map((action) => ({ value: action, label: action }));
       }
@@ -136,7 +137,8 @@ export default function (pi: ExtensionAPI): void {
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
-      if (parts[0] === "insert") {
+      const subcommand = (parts[0] ?? "").toLowerCase();
+      if (subcommand === "insert") {
         const links = getLastWebLinks(ctx?.sessionManager);
         if (links.length === 0) {
           if (ctx.hasUI) {
@@ -174,18 +176,40 @@ export default function (pi: ExtensionAPI): void {
         }
         return;
       }
-      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+      if (
+        subcommand !== "" &&
+        subcommand !== "settings" &&
+        subcommand !== "config"
+      ) {
         if (ctx.hasUI) {
           ctx.ui.notify(
-            `Web settings require TUI mode; edit ${loadWebConfig(getAgentDir()).path}`,
+            "Usage: /web [settings|config] or /web insert <n>",
             "info",
           );
         }
         return;
       }
       const config = loadWebConfig(getAgentDir());
+      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+        if (ctx.hasUI) {
+          for (const diagnostic of config.diagnostics) {
+            ctx.ui.notify(
+              `pi-web: ${diagnostic}`,
+              isPermissionError(diagnostic) ? "error" : "warning",
+            );
+          }
+          ctx.ui.notify(
+            `Web settings require TUI mode; edit ${config.path}`,
+            "info",
+          );
+        }
+        return;
+      }
       for (const diagnostic of config.diagnostics) {
-        ctx.ui.notify(`pi-web: ${diagnostic}`, "warning");
+        ctx.ui.notify(
+          `pi-web: ${diagnostic}`,
+          isPermissionError(diagnostic) ? "error" : "warning",
+        );
       }
       let saved = false;
       const { showWebSettings } = await import("./settings.js");

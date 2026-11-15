@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { updateJsonConfig } from "@hollowheap/core/config";
+import {
+  formatFsPermissionError,
+  isPermissionError,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
 import { isFetchProvider, isProviderId } from "./providers/selection.js";
 import type { FetchProvider, ProviderId } from "./providers/types.js";
 
@@ -68,7 +72,9 @@ export function loadWebConfig(
   } catch (error) {
     if ((error as { code?: unknown }).code !== "ENOENT") {
       diagnostics.push(
-        `${path}: ${error instanceof Error ? error.message : String(error)}; using defaults`,
+        isPermissionError(error)
+          ? `${formatFsPermissionError("read config file", path, error)}; using defaults`
+          : `${path}: ${error instanceof Error ? error.message : String(error)}; using defaults`,
       );
       for (const message of diagnostics) onDiagnostic?.(message);
     }

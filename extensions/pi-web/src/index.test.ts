@@ -1,5 +1,8 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 import {
   WEB_HISTORY_TYPE,
@@ -7,6 +10,27 @@ import {
   createWebSearchTool,
   rememberWebLinks,
 } from "./tools.js";
+
+const state = vi.hoisted(() => ({
+  agentDir: "",
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+  return {
+    ...actual,
+    getAgentDir: () => state.agentDir || actual.getAgentDir(),
+  };
+});
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  state.agentDir = "";
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function createMockPi() {
   const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
@@ -273,5 +297,105 @@ describe("pi-web extension", () => {
         fetchCount: 2,
       }),
     );
+  });
+
+  it("supports /web settings and config alias with completions and OS permission errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-web-idx-"));
+    tempDirs.push(dir);
+    state.agentDir = dir;
+
+    const pi = createMockPi();
+    extension(pi as never);
+    const command = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string; description?: string }> | null;
+    };
+
+    expect(
+      (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
+    ).toEqual(["settings", "config", "insert"]);
+    expect(
+      (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
+    ).toEqual(["config"]);
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const notify = vi.fn();
+    const pending = command.handler("config", {
+      hasUI: true,
+      mode: "tui",
+      ui: { pasteToEditor: vi.fn(), notify, custom },
+    });
+    await vi.waitFor(() => expect(component).toBeDefined());
+    expect(component?.render(80).join("\n")).toContain("Web settings");
+    component?.handleInput("\x1b");
+    await pending;
+    expect(custom).toHaveBeenCalledTimes(1);
+
+    // Trigger write failure notification via invalid JSON
+    writeFileSync(join(dir, "web.json"), "{bad");
+    component = undefined;
+    const getComponent = () => component;
+    const errNotify = vi.fn();
+    const errPending = command.handler("config", {
+      hasUI: true,
+      mode: "tui",
+      ui: { pasteToEditor: vi.fn(), notify: errNotify, custom },
+    });
+    await vi.waitFor(() => expect(getComponent()).toBeDefined());
+    getComponent()?.handleInput("\r");
+    getComponent()?.handleInput("\x1b");
+    await errPending;
+    expect(errNotify).toHaveBeenCalledWith(
+      expect.stringContaining("failed to save settings"),
+      "error",
+    );
+
+    if (process.getuid?.() !== 0) {
+      const permDir = mkdtempSync(join(tmpdir(), "pi-web-perm-"));
+      tempDirs.push(permDir);
+      const cfgPath = join(permDir, "web.json");
+      writeFileSync(cfgPath, "{}");
+      chmodSync(cfgPath, 0o000);
+      state.agentDir = permDir;
+      try {
+        const permNotify = vi.fn();
+        await command.handler("settings", {
+          hasUI: true,
+          mode: "print",
+          ui: { pasteToEditor: vi.fn(), notify: permNotify, custom: vi.fn() },
+        });
+        expect(permNotify).toHaveBeenCalledWith(
+          expect.stringContaining("OS permission denied"),
+          "error",
+        );
+      } finally {
+        chmodSync(cfgPath, 0o600);
+      }
+    }
   });
 });
