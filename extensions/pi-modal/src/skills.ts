@@ -62,10 +62,9 @@ export function stripSkillTokens(text: string, skillNames: string[]): string {
   if (skillNames.length === 0) return collapseWhitespace(text);
   const sorted = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
   const escaped = sorted.map(escapeRegExp).join("|");
-  const regex = new RegExp(
-    `(?:^|(?<=\\s))\\$(?:${escaped})(?=$|\\s|[.,;:!?)\\]}])`,
-    "g",
-  );
+  // Strip only leading command-style `$skill` prefixes so inline `$skill`
+  // references in the prompt body stay visible in the transcript and intact for the model.
+  const regex = new RegExp(`^(?:\\s*\\$(?:${escaped}))+(?=\\s|$)`, "g");
   const stripped = text.replace(regex, "");
   return collapseWhitespace(stripped);
 }
