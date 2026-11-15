@@ -1,8 +1,12 @@
 import { isAbsolute, resolve } from "node:path";
 import { runCapture } from "@hollowheap/runtime/exec";
-import type { HookEntry } from "./config.js";
+import {
+  type HookEntry,
+  type HookSandboxConfig,
+  resolveHookSandboxOptions,
+} from "./config.js";
 
-export type { HookEntry } from "./config.js";
+export type { HookEntry, HookSandboxConfig } from "./config.js";
 
 export interface HookPayload {
   event: "pre_tool" | "post_tool";
@@ -140,6 +144,7 @@ export function interpretPreHook(result: {
 async function run(
   entry: HookEntry,
   payload: HookInput,
+  defaultSandbox?: boolean | HookSandboxConfig,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   let command = entry.command;
   const isRelative =
@@ -159,18 +164,21 @@ async function run(
       };
     }
   }
+  const sandbox = resolveHookSandboxOptions(entry.sandbox ?? defaultSandbox);
   return runCapture(command, entry.args, payload.cwd, undefined, {
     input: JSON.stringify(payload),
     timeoutMs: entry.timeoutMs,
+    ...(sandbox !== undefined ? { sandbox } : {}),
   });
 }
 
 export async function runPreHook(
   entry: HookEntry,
   payload: HookPayload,
+  defaultSandbox?: boolean | HookSandboxConfig,
 ): Promise<PreVerdict> {
   try {
-    return interpretPreHook(await run(entry, payload));
+    return interpretPreHook(await run(entry, payload, defaultSandbox));
   } catch (error) {
     return {
       block: true,
@@ -182,9 +190,10 @@ export async function runPreHook(
 export async function runPostHook(
   entry: HookEntry,
   payload: HookPayload,
+  defaultSandbox?: boolean | HookSandboxConfig,
 ): Promise<PostHookResult> {
   try {
-    const result = await run(entry, payload);
+    const result = await run(entry, payload, defaultSandbox);
     if (result.code !== 0) {
       return {
         error:
@@ -205,9 +214,10 @@ export async function runPostHook(
 export async function runSessionHook(
   entry: HookEntry,
   payload: SessionHookPayload,
+  defaultSandbox?: boolean | HookSandboxConfig,
 ): Promise<SessionHookResult> {
   try {
-    const result = await run(entry, payload);
+    const result = await run(entry, payload, defaultSandbox);
     if (result.code !== 0) {
       return {
         error:

@@ -1,6 +1,18 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  formatFsPermissionError,
+  isPermissionError,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
 import { getMtimeCache } from "@hollowheap/core/mtime-cache";
+import type { SandboxOptions } from "@hollowheap/runtime/sandbox";
+
+export interface HookSandboxConfig {
+  enabled: boolean;
+  offline?: boolean;
+  maskPaths?: string[];
+}
 
 export interface HookEntry {
   /** Exact tool name, a trailing "*" prefix, or "" for every tool. Ignored for sessionStart. */
@@ -14,6 +26,8 @@ export interface HookEntry {
   format?: "markdown" | "plain";
   /** Whether to chain: pass previous hook output as input to next hook. */
   chain?: boolean;
+  /** Optional per-hook Bubblewrap sandbox override. */
+  sandbox?: boolean | HookSandboxConfig;
   /** Directory of the config file that declared this hook entry. */
   configDir?: string;
 }
@@ -22,6 +36,13 @@ export interface HookConfig {
   preTool: HookEntry[];
   postTool: HookEntry[];
   sessionStart: HookEntry[];
+  sandbox?: boolean | HookSandboxConfig;
+}
+
+export interface HooksSettings {
+  sandboxEnabled: boolean;
+  sandboxOffline?: boolean;
+  maskPaths?: readonly string[];
 }
 
 export interface LoadHooksOptions {
@@ -47,12 +68,102 @@ const CACHE = getMtimeCache<CacheEntry>("pi-hooks/config", {
   maxEntries: 8,
 });
 
-function mtimeMs(path: string): number {
+function statMtime(path: string): { mtime: number; error?: unknown } {
   try {
-    return statSync(path).mtimeMs;
-  } catch {
-    return -1;
+    return { mtime: statSync(path).mtimeMs };
+  } catch (error) {
+    return { mtime: -1, error };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseSandboxConfig(
+  value: unknown,
+  label: string,
+  diagnostics: string[],
+): boolean | HookSandboxConfig | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (!isRecord(value)) {
+    diagnostics.push(`ignoring ${label}: must be a boolean or object`);
+    return undefined;
+  }
+
+  let enabled: boolean | undefined;
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled === "boolean") {
+      enabled = value.enabled;
+    } else {
+      diagnostics.push(`ignoring ${label}.enabled: must be a boolean`);
+    }
+  }
+
+  let offline: boolean | undefined;
+  if (value.offline !== undefined) {
+    if (typeof value.offline === "boolean") {
+      offline = value.offline;
+    } else {
+      diagnostics.push(`ignoring ${label}.offline: must be a boolean`);
+    }
+  }
+
+  let maskPaths: string[] | undefined;
+  if (value.maskPaths !== undefined) {
+    if (
+      Array.isArray(value.maskPaths) &&
+      value.maskPaths.every(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim() !== "",
+      )
+    ) {
+      maskPaths = [...value.maskPaths];
+    } else {
+      diagnostics.push(
+        `ignoring ${label}.maskPaths: must be an array of non-empty strings`,
+      );
+    }
+  }
+
+  const resolvedEnabled =
+    enabled !== undefined
+      ? enabled
+      : offline !== undefined || maskPaths !== undefined;
+
+  return {
+    enabled: resolvedEnabled,
+    ...(offline !== undefined ? { offline } : {}),
+    ...(maskPaths !== undefined ? { maskPaths } : {}),
+  };
+}
+
+export function resolveHookSandboxOptions(
+  sandbox: boolean | HookSandboxConfig | undefined,
+): boolean | SandboxOptions | undefined {
+  if (sandbox === undefined || sandbox === false) return undefined;
+  if (sandbox === true) return true;
+  if (!sandbox.enabled) return undefined;
+  return {
+    ...(sandbox.offline !== undefined ? { offline: sandbox.offline } : {}),
+    ...(sandbox.maskPaths !== undefined
+      ? { maskPaths: [...sandbox.maskPaths] }
+      : {}),
+  };
+}
+
+export function isHookSandboxEnabled(
+  sandbox: boolean | HookSandboxConfig | undefined,
+): boolean {
+  if (sandbox === true) return true;
+  return typeof sandbox === "object" && sandbox.enabled;
+}
+
+export function isHookSandboxOffline(
+  sandbox: boolean | HookSandboxConfig | undefined,
+): boolean {
+  return typeof sandbox === "object" && sandbox.offline === true;
 }
 
 function report(
@@ -129,6 +240,11 @@ function parseEntry(
       ? record.format
       : undefined;
   const chain = record.chain === true ? true : undefined;
+  const sandbox = parseSandboxConfig(
+    record.sandbox,
+    `${kind}[${index}].sandbox`,
+    diagnostics,
+  );
   return {
     matcher,
     command,
@@ -137,6 +253,7 @@ function parseEntry(
     ...(condition ? { condition } : {}),
     ...(format ? { format } : {}),
     ...(chain ? { chain } : {}),
+    ...(sandbox !== undefined ? { sandbox } : {}),
     ...(isRelative && configDir ? { configDir } : {}),
   };
 }
@@ -160,17 +277,25 @@ function parseFile(
   }
   const root = parsed as Record<string, unknown>;
   for (const key of Object.keys(root)) {
-    if (key !== "hooks") {
+    if (key !== "hooks" && key !== "sandbox") {
       diagnostics.push(`ignoring unknown key in hooks file: ${key}`);
     }
   }
+  const sandbox = parseSandboxConfig(root.sandbox, "sandbox", diagnostics);
   const hooks = root.hooks;
-  if (hooks === undefined) return empty;
+  if (hooks === undefined) {
+    return sandbox !== undefined ? { ...empty, sandbox } : empty;
+  }
   if (typeof hooks !== "object" || hooks === null || Array.isArray(hooks)) {
     diagnostics.push(`hooks file must be {"hooks": {...}}: ${path}`);
-    return empty;
+    return sandbox !== undefined ? { ...empty, sandbox } : empty;
   }
-  const config: HookConfig = { preTool: [], postTool: [], sessionStart: [] };
+  const config: HookConfig = {
+    preTool: [],
+    postTool: [],
+    sessionStart: [],
+    ...(sandbox !== undefined ? { sandbox } : {}),
+  };
   const record = hooks as Record<string, unknown>;
   for (const key of Object.keys(record)) {
     const kind = KINDS.find((candidate) => candidate === key);
@@ -197,8 +322,12 @@ function readHooksFile(
   onDiagnostic?: (message: string) => void,
 ): HookConfig {
   const key = `${path}\0${trusted ? "1" : "0"}`;
-  const mtime = mtimeMs(path);
-  const signature = String(mtime);
+  const stat = statMtime(path);
+  const mtime = stat.mtime;
+  const signature =
+    mtime < 0 && stat.error && isPermissionError(stat.error)
+      ? "perm-error"
+      : String(mtime);
   const cached = CACHE.get(key, signature);
   if (cached !== undefined) {
     report(cached, onDiagnostic);
@@ -207,14 +336,22 @@ function readHooksFile(
   const diagnostics: string[] = [];
   let config: HookConfig = { preTool: [], postTool: [], sessionStart: [] };
   if (mtime < 0) {
-    // No file, nothing to load.
+    if (stat.error && isPermissionError(stat.error)) {
+      diagnostics.push(
+        formatFsPermissionError("read hooks file", path, stat.error),
+      );
+    }
   } else if (!trusted) {
     diagnostics.push("ignoring .pi/hooks.json: project is not trusted");
   } else {
     try {
       config = parseFile(readFileSync(path, "utf8"), path, diagnostics);
-    } catch {
-      diagnostics.push(`cannot read hooks file: ${path}`);
+    } catch (error) {
+      diagnostics.push(
+        isPermissionError(error)
+          ? formatFsPermissionError("read hooks file", path, error)
+          : `cannot read hooks file: ${path}`,
+      );
     }
   }
   const entry: CacheEntry = {
@@ -231,6 +368,56 @@ export function clearHooksCache(): void {
   CACHE.clear();
 }
 
+function withFallbackSandbox(
+  entries: HookEntry[],
+  fallback: boolean | HookSandboxConfig | undefined,
+): HookEntry[] {
+  if (fallback === undefined) return [...entries];
+  return entries.map((entry) =>
+    entry.sandbox !== undefined ? entry : { ...entry, sandbox: fallback },
+  );
+}
+
+export function loadAgentHooksConfig(
+  agentDir: string,
+  onDiagnostic?: (message: string) => void,
+): { config: HookConfig; path: string; diagnostics: string[] } {
+  const path = join(agentDir, "hooks.json");
+  const diagnostics: string[] = [];
+  const config = readHooksFile(path, true, (message) => {
+    diagnostics.push(message);
+    onDiagnostic?.(message);
+  });
+  return { config, path, diagnostics };
+}
+
+/** Persist hooks sandbox settings in <agentDir>/hooks.json while preserving existing hooks. */
+export function saveHooksSettings(
+  agentDir: string,
+  settings: HooksSettings,
+): string {
+  const path = join(agentDir, "hooks.json");
+  const res = updateJsonConfig(path, (root) => {
+    const existing = isRecord(root.sandbox) ? { ...root.sandbox } : {};
+    const next: Record<string, unknown> = {
+      ...existing,
+      enabled: settings.sandboxEnabled,
+    };
+    if (settings.sandboxOffline !== undefined) {
+      next.offline = settings.sandboxOffline;
+    }
+    if (settings.maskPaths !== undefined) {
+      next.maskPaths = [...settings.maskPaths];
+    }
+    root.sandbox = next;
+  });
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+  clearHooksCache();
+  return res.path;
+}
+
 export function loadHooks(options: LoadHooksOptions): HookConfig {
   const agent = readHooksFile(
     join(options.agentDir, "hooks.json"),
@@ -242,9 +429,20 @@ export function loadHooks(options: LoadHooksOptions): HookConfig {
     options.trusted,
     options.onDiagnostic,
   );
+  const sandbox = overlay.sandbox ?? agent.sandbox;
   return {
-    preTool: [...agent.preTool, ...overlay.preTool],
-    postTool: [...agent.postTool, ...overlay.postTool],
-    sessionStart: [...agent.sessionStart, ...overlay.sessionStart],
+    preTool: [
+      ...withFallbackSandbox(agent.preTool, sandbox),
+      ...withFallbackSandbox(overlay.preTool, sandbox),
+    ],
+    postTool: [
+      ...withFallbackSandbox(agent.postTool, sandbox),
+      ...withFallbackSandbox(overlay.postTool, sandbox),
+    ],
+    sessionStart: [
+      ...withFallbackSandbox(agent.sessionStart, sandbox),
+      ...withFallbackSandbox(overlay.sessionStart, sandbox),
+    ],
+    ...(sandbox !== undefined ? { sandbox } : {}),
   };
 }

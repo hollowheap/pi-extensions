@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -302,5 +308,55 @@ describe("runSessionHook", () => {
 
     expect(result.block).toBe(true);
     expect(result.reason).toContain("cannot execute relative command");
+  });
+
+  it("wraps hook commands with bwrap when sandbox is enabled and surfaces bwrap OS permission errors", async () => {
+    const binDir = mkdtempSync(join(tmpdir(), "pi-hooks-bwrap-"));
+    const argsPath = join(binDir, "args.json");
+    const fakeBwrap = join(binDir, "bwrap");
+    writeFileSync(
+      fakeBwrap,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));
+const sep = args.indexOf("--");
+const res = spawnSync(args[sep + 1], args.slice(sep + 2), { stdio: "inherit" });
+process.exit(res.status ?? 1);
+`,
+      { mode: 0o755 },
+    );
+    const origPath = process.env.PATH ?? "";
+    process.env.PATH = `${binDir}:${origPath}`;
+    try {
+      const verdict = await runPreHook(
+        entry({
+          args: [
+            "-e",
+            "process.stdout.write(JSON.stringify({decision:'allow'}))",
+          ],
+          sandbox: { enabled: true, offline: true },
+        }),
+        payload(),
+      );
+      expect(verdict).toEqual({ block: false });
+      const recorded = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+      expect(recorded).toContain("--ro-bind");
+      expect(recorded).toContain("--unshare-net");
+
+      if (process.getuid?.() !== 0) {
+        chmodSync(fakeBwrap, 0o644);
+        process.env.PATH = binDir;
+        const postErr = await runPostHook(
+          entry({ sandbox: true }),
+          payload({ event: "post_tool" }),
+        );
+        expect(postErr.error).toMatch(/permission/i);
+      }
+    } finally {
+      process.env.PATH = origPath;
+      rmSync(binDir, { recursive: true, force: true });
+    }
   });
 });

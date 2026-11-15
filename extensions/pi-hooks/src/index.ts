@@ -5,10 +5,24 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { isPermissionError } from "@hollowheap/core/config";
 import { truncateText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, session } from "@hollowheap/core/state";
-import { type HookConfig, clearHooksCache, loadHooks } from "./config.js";
+import {
+  isOsPermissionError,
+  probeBwrapAvailability,
+} from "@hollowheap/runtime/sandbox";
+import {
+  type HookConfig,
+  type HooksSettings,
+  clearHooksCache,
+  isHookSandboxEnabled,
+  isHookSandboxOffline,
+  loadAgentHooksConfig,
+  loadHooks,
+  saveHooksSettings,
+} from "./config.js";
 import {
   type HookPayload,
   type SessionHookPayload,
@@ -34,7 +48,12 @@ function loadContextHooks(ctx: ExtensionContext): HookConfig {
   const owner: object = ctx.sessionManager ?? ctx;
   let onDiagnostic = diagnosticCallbacks.get(owner);
   if (onDiagnostic === undefined) {
-    onDiagnostic = (message) => notifyWarning(ctx, `pi-hooks: ${message}`);
+    onDiagnostic = (message) =>
+      notifyMessage(
+        ctx,
+        `pi-hooks: ${message}`,
+        isPermissionError(message) ? "error" : "warning",
+      );
     diagnosticCallbacks.set(owner, onDiagnostic);
   }
   return loadHooks({
@@ -67,12 +86,24 @@ function payloadFor(
   };
 }
 
-function notifyWarning(ctx: ExtensionContext, message: string): void {
+function notifyMessage(
+  ctx: ExtensionContext,
+  message: string,
+  level: "info" | "warning" | "error" = "warning",
+): void {
   try {
-    ctx.ui.notify(message, "warning");
+    ctx.ui.notify(message, level);
   } catch {
     // Hooks must continue even when the UI is unavailable.
   }
+}
+
+function notifyWarning(ctx: ExtensionContext, message: string): void {
+  notifyMessage(ctx, message, "warning");
+}
+
+function isAnyPermissionFailure(detail: string): boolean {
+  return isPermissionError(detail) || isOsPermissionError(detail);
 }
 
 export const HOOK_STATS_TYPE = "hollowheap.hooks";
@@ -230,12 +261,13 @@ export default function (pi: ExtensionAPI) {
         mode: session(ctx.sessionManager).mode,
       };
       for (const hook of hooks) {
-        const result = await runSessionHook(hook, payload);
+        const result = await runSessionHook(hook, payload, config.sandbox);
         if (result.error !== undefined) {
           recordHookEvent(pi, ctx, { run: true, error: true }, config);
-          notifyWarning(
+          notifyMessage(
             ctx,
             `pi-hooks: ${hook.command} failed: ${result.error}`,
+            isAnyPermissionFailure(result.error) ? "error" : "warning",
           );
         } else {
           recordHookEvent(pi, ctx, { run: true }, config);
@@ -278,9 +310,12 @@ export default function (pi: ExtensionAPI) {
       );
       if (hooks.length === 0) return undefined;
       for (const hook of hooks) {
-        const verdict = await runPreHook(hook, payload);
+        const verdict = await runPreHook(hook, payload, config.sandbox);
         if (verdict.block) {
           recordHookEvent(pi, ctx, { run: true, block: true }, config);
+          if (verdict.reason && isAnyPermissionFailure(verdict.reason)) {
+            notifyMessage(ctx, `pi-hooks: ${verdict.reason}`, "error");
+          }
           return { block: true, reason: `pi-hooks: ${verdict.reason}` };
         }
         recordHookEvent(pi, ctx, { run: true }, config);
@@ -313,12 +348,13 @@ export default function (pi: ExtensionAPI) {
         const hookPayload = hook.chain
           ? { ...payload, input: { ...payload.input, previousOutput } }
           : payload;
-        const result = await runPostHook(hook, hookPayload);
+        const result = await runPostHook(hook, hookPayload, config.sandbox);
         if (result.error !== undefined) {
           recordHookEvent(pi, ctx, { run: true, error: true }, config);
-          notifyWarning(
+          notifyMessage(
             ctx,
             `pi-hooks: ${hook.command} failed: ${result.error}`,
+            isAnyPermissionFailure(result.error) ? "error" : "warning",
           );
           previousOutput = "";
           continue;
@@ -350,6 +386,93 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
   });
+  pi.registerCommand("hooks", {
+    description: "Manage hooks: /hooks [settings|config|status]",
+    getArgumentCompletions: (prefix: string) => {
+      const parts = prefix.trimStart().split(/\s+/);
+      if (parts.length > 1) return null;
+      const query = (parts[0] ?? "").toLowerCase();
+      return ["settings", "config", "status"]
+        .filter((action) => action.startsWith(query))
+        .map((action) => ({ value: action, label: action }));
+    },
+    handler: async (args, ctx) => {
+      lastCtx = ctx;
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const subcommand = (parts[0] ?? "").toLowerCase();
+      const agentDir = getAgentDir();
+
+      if (subcommand === "status") {
+        const loaded = loadContextHooks(ctx);
+        const probe = probeBwrapAvailability();
+        const { formatBwrapProbeStatus } = await import("./settings.js");
+        const sandboxState = isHookSandboxEnabled(loaded.sandbox)
+          ? isHookSandboxOffline(loaded.sandbox)
+            ? "enabled (offline)"
+            : "enabled"
+          : "disabled";
+        const summary = [
+          `Hooks: ${loaded.sessionStart.length} sessionStart, ${loaded.preTool.length} preTool, ${loaded.postTool.length} postTool`,
+          `Sandbox: ${sandboxState}`,
+          `Bubblewrap (bwrap): ${formatBwrapProbeStatus(probe)}`,
+        ].join("\n");
+        if (ctx.hasUI) ctx.ui.notify(summary, "info");
+        return;
+      }
+
+      if (
+        subcommand !== "" &&
+        subcommand !== "settings" &&
+        subcommand !== "config"
+      ) {
+        if (ctx.hasUI) {
+          ctx.ui.notify("Usage: /hooks [settings|config|status]", "info");
+        }
+        return;
+      }
+
+      const loaded = loadAgentHooksConfig(agentDir);
+      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+        if (ctx.hasUI) {
+          for (const diagnostic of loaded.diagnostics) {
+            ctx.ui.notify(
+              `pi-hooks: ${diagnostic}`,
+              isPermissionError(diagnostic) ? "error" : "warning",
+            );
+          }
+          ctx.ui.notify(
+            `Hooks settings require TUI mode; edit ${loaded.path}`,
+            "info",
+          );
+        }
+        return;
+      }
+
+      for (const diagnostic of loaded.diagnostics) {
+        ctx.ui.notify(
+          `pi-hooks: ${diagnostic}`,
+          isPermissionError(diagnostic) ? "error" : "warning",
+        );
+      }
+
+      let saved = false;
+      const { showHooksSettings } = await import("./settings.js");
+      await showHooksSettings(ctx, loaded.config, (settings: HooksSettings) => {
+        try {
+          saveHooksSettings(agentDir, settings);
+          saved = true;
+          publishHooksSnapshot(ctx);
+        } catch (error) {
+          ctx.ui.notify(
+            `pi-hooks: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+            "error",
+          );
+        }
+      });
+      if (saved) ctx.ui.notify("Hooks settings saved", "info");
+    },
+  });
+
   pi.on("session_shutdown", () => {
     clearHooksCache();
   });

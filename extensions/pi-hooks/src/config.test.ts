@@ -1,8 +1,14 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadHooks } from "./config.js";
+import { clearHooksCache, loadHooks, saveHooksSettings } from "./config.js";
 
 function agentDir(contents: string): string {
   const dir = mkdtempSync(join(tmpdir(), "pi-hooks-"));
@@ -254,5 +260,72 @@ describe("loadHooks", () => {
       join(dir, ".pi", "scripts", "project-guard.sh"),
       "echo",
     ]);
+  });
+
+  it("parses top-level and per-hook sandbox config and saves sandbox settings", () => {
+    clearHooksCache();
+    const dir = agentDir(
+      JSON.stringify({
+        sandbox: { enabled: true, offline: true, maskPaths: ["/secret"] },
+        hooks: {
+          preTool: [
+            { command: "inherited" },
+            { command: "opt-out", sandbox: false },
+          ],
+        },
+      }),
+    );
+    const config = loadHooks({
+      agentDir: dir,
+      workspaceRoot: dir,
+      trusted: true,
+    });
+    expect(config.sandbox).toEqual({
+      enabled: true,
+      offline: true,
+      maskPaths: ["/secret"],
+    });
+    expect(config.preTool[0]?.sandbox).toEqual({
+      enabled: true,
+      offline: true,
+      maskPaths: ["/secret"],
+    });
+    expect(config.preTool[1]?.sandbox).toBe(false);
+
+    saveHooksSettings(dir, { sandboxEnabled: false, sandboxOffline: false });
+    const saved = JSON.parse(readFileSync(join(dir, "hooks.json"), "utf8")) as {
+      sandbox?: Record<string, unknown>;
+      hooks?: Record<string, unknown>;
+    };
+    expect(saved.sandbox).toEqual({
+      enabled: false,
+      offline: false,
+      maskPaths: ["/secret"],
+    });
+    expect(saved.hooks).toBeDefined();
+  });
+
+  it("surfaces OS permission errors on unreadable or unwritable hooks.json", () => {
+    if (process.getuid?.() === 0) return;
+    clearHooksCache();
+    const dir = agentDir(JSON.stringify({ hooks: {} }));
+    const path = join(dir, "hooks.json");
+    chmodSync(path, 0o000);
+    try {
+      const diagnostics: string[] = [];
+      loadHooks({
+        agentDir: dir,
+        workspaceRoot: dir,
+        trusted: true,
+        onDiagnostic: (msg) => diagnostics.push(msg),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toContain("OS permission denied");
+      expect(() => saveHooksSettings(dir, { sandboxEnabled: true })).toThrow(
+        /OS permission denied/,
+      );
+    } finally {
+      chmodSync(path, 0o600);
+    }
   });
 });

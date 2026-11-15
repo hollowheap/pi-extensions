@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -550,5 +551,114 @@ describe("pi-hooks extension", () => {
     await handlers.session_start({}, ctx);
     snap = getSessionSnapshot(sessionManager);
     expect(snap.hooks?.runs).toBeGreaterThanOrEqual(11);
+  });
+
+  it("registers /hooks command with settings, config alias, status, completions, and OS permission error warnings", async () => {
+    const { clearHooksCache } = await import("./config.js");
+    clearHooksCache();
+    writeHooks({
+      preTool: [{ command: "true" }],
+    });
+    const { pi } = setup();
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "hooks",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+    };
+    expect(command).toBeDefined();
+    expect(
+      (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
+    ).toEqual(["settings", "config", "status"]);
+    expect(
+      (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
+    ).toEqual(["config"]);
+    expect(command.getArgumentCompletions?.("config extra")).toBeNull();
+
+    const statusNotify = vi.fn();
+    await command.handler("status", {
+      cwd: agentDir,
+      sessionManager: {},
+      hasUI: true,
+      mode: "print",
+      isProjectTrusted: () => true,
+      ui: { notify: statusNotify },
+    });
+    expect(statusNotify).toHaveBeenCalledWith(
+      expect.stringContaining("Hooks: 0 sessionStart, 1 preTool, 0 postTool"),
+      "info",
+    );
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const tuiNotify = vi.fn();
+    const pending = command.handler("config", {
+      cwd: agentDir,
+      sessionManager: {},
+      hasUI: true,
+      mode: "tui",
+      isProjectTrusted: () => true,
+      ui: { notify: tuiNotify, custom },
+    });
+    await vi.waitFor(() => expect(component).toBeDefined());
+    expect(component?.render(80).join("\n")).toContain("Hooks settings");
+    component?.handleInput("\r");
+    component?.handleInput("\x1b[B");
+    component?.handleInput("\r");
+    component?.handleInput("\x1b");
+    await pending;
+
+    const saved = JSON.parse(
+      readFileSync(join(agentDir, "hooks.json"), "utf8"),
+    ) as { sandbox?: { enabled?: boolean; offline?: boolean } };
+    expect(saved.sandbox).toEqual({ enabled: true, offline: true });
+    expect(tuiNotify).toHaveBeenCalledWith("Hooks settings saved", "info");
+
+    if (process.getuid?.() !== 0) {
+      clearHooksCache();
+      const hooksPath = join(agentDir, "hooks.json");
+      chmodSync(hooksPath, 0o000);
+      try {
+        const permNotify = vi.fn();
+        await command.handler("settings", {
+          cwd: agentDir,
+          sessionManager: {},
+          hasUI: true,
+          mode: "print",
+          isProjectTrusted: () => true,
+          ui: { notify: permNotify },
+        });
+        expect(permNotify).toHaveBeenCalledWith(
+          expect.stringContaining("OS permission denied"),
+          "error",
+        );
+      } finally {
+        chmodSync(hooksPath, 0o600);
+      }
+    }
   });
 });
