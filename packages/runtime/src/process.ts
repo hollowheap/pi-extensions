@@ -8,6 +8,7 @@ import {
   readFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
 
 export interface SpawnDetachedOptions {
   command: string;
@@ -15,6 +16,7 @@ export interface SpawnDetachedOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   logPath: string;
+  sandbox?: boolean | SandboxOptions;
 }
 
 export interface DetachedProcess {
@@ -84,11 +86,22 @@ export function isProcessAlive(
 export function spawnDetachedProcess(
   options: SpawnDetachedOptions,
 ): DetachedProcess {
+  let spawnCommand = options.command;
+  let spawnArgs = [...(options.args ?? [])];
+  if (options.sandbox) {
+    const sandboxOpts: SandboxOptions =
+      typeof options.sandbox === "object"
+        ? { ...options.sandbox, cwd: options.sandbox.cwd ?? options.cwd }
+        : { cwd: options.cwd };
+    const wrapped = wrapSandboxCommand(options.command, spawnArgs, sandboxOpts);
+    spawnCommand = wrapped.command;
+    spawnArgs = wrapped.args;
+  }
   mkdirSync(dirname(options.logPath), { recursive: true, mode: 0o700 });
   const logFd = openSync(options.logPath, "a", 0o600);
   try {
     chmodSync(options.logPath, 0o600);
-    const child = spawn(options.command, [...(options.args ?? [])], {
+    const child = spawn(spawnCommand, spawnArgs, {
       cwd: options.cwd,
       env: options.env,
       detached: true,

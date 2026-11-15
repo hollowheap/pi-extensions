@@ -1,4 +1,6 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runBinary, runCapture } from "./exec.js";
 
@@ -158,5 +160,20 @@ describe("runBinary", () => {
         { maxBuffer: 100 },
       ),
     ).rejects.toThrow(/maxBuffer/i);
+  });
+
+  it("reports OS permission denied cleanly when command is not executable", async () => {
+    if (process.getuid?.() === 0) return;
+    const dir = mkdtempSync(join(tmpdir(), "pi-exec-perm-"));
+    const script = join(dir, "noexec.sh");
+    writeFileSync(script, "#!/bin/sh\necho hi\n");
+    chmodSync(script, 0o644);
+    try {
+      await expect(runCapture(script, [], dir, undefined)).rejects.toThrow(
+        /EACCES OS permission denied/i,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

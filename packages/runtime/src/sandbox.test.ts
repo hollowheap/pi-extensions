@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,6 +14,7 @@ import {
   assertBwrapAvailable,
   buildSandboxArgs,
   isBwrapAvailable,
+  probeBwrapAvailability,
   wrapSandboxCommand,
 } from "./sandbox.js";
 
@@ -248,5 +255,45 @@ describe("sandboxed command execution", () => {
     expect(result.stdout).toContain("lo:");
     expect(result.stdout).not.toContain("eth0");
     expect(result.stdout).not.toContain("wlan0");
+  });
+
+  it("reports OS permission errors distinctly for non-executable bwrap binaries", () => {
+    if (process.platform !== "linux" || process.getuid?.() === 0) return;
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-perm-"));
+    const fakeBwrap = join(dir, "bwrap");
+    writeFileSync(fakeBwrap, "#!/bin/sh\nexit 0\n");
+    chmodSync(fakeBwrap, 0o644);
+    try {
+      const probe = probeBwrapAvailability(fakeBwrap);
+      expect(probe.available).toBe(false);
+      if (!probe.available) {
+        expect(probe.reason).toBe("permission");
+      }
+      expect(() => assertBwrapAvailable(fakeBwrap)).toThrow(
+        /OS permission denied|EACCES/i,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects with OS permission warning when bwrap exits with namespace permission error", async () => {
+    if (process.platform !== "linux") return;
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-ns-"));
+    const fakeBwrap = join(dir, "bwrap");
+    writeFileSync(
+      fakeBwrap,
+      "#!/bin/sh\necho 'bwrap: Creating new namespace failed: Operation not permitted' >&2\nexit 1\n",
+    );
+    chmodSync(fakeBwrap, 0o755);
+    try {
+      await expect(
+        runCapture("echo", ["hi"], dir, undefined, {
+          sandbox: { bwrapBinary: fakeBwrap },
+        }),
+      ).rejects.toThrow(/Bubblewrap sandbox OS permission error/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { type DetachedProcess, spawnDetachedProcess } from "./process.js";
+import type { SandboxOptions } from "./sandbox.js";
 import type { ProcessState } from "./state.js";
 import type { LockedProcessStore } from "./store.js";
 
@@ -10,6 +11,7 @@ export interface SpawnDetachedTaskOptions<T extends ProcessState> {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   logPath?: string;
+  sandbox?: boolean | SandboxOptions;
   patch?: (spawned: DetachedProcess) => Partial<Omit<T, "id">>;
 }
 
@@ -24,6 +26,7 @@ export function spawnDetachedTask<T extends ProcessState>(
     cwd: options.cwd,
     env: options.env,
     logPath,
+    sandbox: options.sandbox,
   });
   const patch =
     options.patch?.(spawned) ??

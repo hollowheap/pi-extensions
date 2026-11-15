@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
-import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
+import {
+  type SandboxOptions,
+  isOsPermissionError,
+  wrapSandboxCommand,
+} from "./sandbox.js";
 
 export interface RunOptions {
   okExitCodes?: readonly number[];
@@ -145,10 +149,28 @@ export function runCapture(
     });
 
     child.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EACCES" || error.code === "EPERM") {
+        fail(
+          new Error(
+            `${command} failed: ${error.code} OS permission denied executing '${targetCommand}' (check chmod +x and directory permissions): ${error.message}`,
+          ),
+        );
+        return;
+      }
       if (error.code === "ENOENT") {
         try {
           statSync(cwd);
-        } catch {
+        } catch (cwdError) {
+          if (isOsPermissionError(cwdError)) {
+            const cwdCode = (cwdError as NodeJS.ErrnoException | undefined)
+              ?.code;
+            fail(
+              new Error(
+                `${command} failed: ${cwdCode ?? "OS"} permission denied accessing working directory: ${cwd}`,
+              ),
+            );
+            return;
+          }
           fail(
             new Error(
               `${command} failed: working directory does not exist: ${cwd}`,
@@ -156,7 +178,7 @@ export function runCapture(
           );
           return;
         }
-        fail(new Error(`command not found: ${command}`));
+        fail(new Error(`command not found: ${targetCommand}`));
         return;
       }
       fail(
@@ -171,6 +193,20 @@ export function runCapture(
       settled = true;
       cleanup();
       if (typeof code === "number") {
+        if (
+          options.sandbox &&
+          code !== 0 &&
+          /^bwrap:\s*.*(?:permission denied|operation not permitted|EACCES|EPERM|creating new namespace failed|uid_map|gid_map|setgroups)/im.test(
+            stderr,
+          )
+        ) {
+          reject(
+            new Error(
+              `Bubblewrap sandbox OS permission error while running '${command}': ${stderr.trim()}`,
+            ),
+          );
+          return;
+        }
         resolvePromise({ code, stdout, stderr });
         return;
       }

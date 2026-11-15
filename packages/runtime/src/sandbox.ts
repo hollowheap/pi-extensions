@@ -22,22 +22,57 @@ export const DEFAULT_MASK_PATHS: readonly string[] = [
   join(homedir(), ".gnupg"),
 ];
 
+export function isOsPermissionError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted)\b/i.test(
+    message,
+  );
+}
+
+export type BwrapProbeResult =
+  | { available: true; path: string }
+  | {
+      available: false;
+      reason: "unsupported" | "missing" | "permission";
+      path?: string;
+      error?: unknown;
+    };
+
 /**
- * Checks whether the Bubblewrap binary (`bwrap` or specified binary) is available
- * and executable on the system. Bubblewrap requires Linux user namespaces.
+ * Probes Bubblewrap binary availability, distinguishing missing binaries from
+ * OS permission errors (`EACCES` / `EPERM`).
  */
-export function isBwrapAvailable(binaryName = "bwrap"): boolean {
-  if (process.platform !== "linux") return false;
+export function probeBwrapAvailability(binaryName = "bwrap"): BwrapProbeResult {
+  if (process.platform !== "linux") {
+    return { available: false, reason: "unsupported" };
+  }
   if (isAbsolute(binaryName)) {
     try {
-      accessSync(binaryName, constants.X_OK);
-      return true;
-    } catch {
-      return false;
+      const stat = statSync(binaryName);
+      if (stat.isFile()) {
+        accessSync(binaryName, constants.X_OK);
+        return { available: true, path: binaryName };
+      }
+      return { available: false, reason: "missing", path: binaryName };
+    } catch (error) {
+      if (isOsPermissionError(error)) {
+        return {
+          available: false,
+          reason: "permission",
+          path: binaryName,
+          error,
+        };
+      }
+      return { available: false, reason: "missing", path: binaryName, error };
     }
   }
   const pathEnv = process.env.PATH ?? "";
   const dirs = pathEnv.split(delimiter);
+  let permissionIssue: { path: string; error: unknown } | undefined;
   for (const dir of dirs) {
     if (!dir) continue;
     const candidate = join(dir, binaryName);
@@ -45,22 +80,58 @@ export function isBwrapAvailable(binaryName = "bwrap"): boolean {
       const stat = statSync(candidate);
       if (stat.isFile()) {
         accessSync(candidate, constants.X_OK);
-        return true;
+        return { available: true, path: candidate };
       }
-    } catch {}
+    } catch (error) {
+      if (isOsPermissionError(error) && !permissionIssue) {
+        permissionIssue = { path: candidate, error };
+      }
+    }
   }
-  return false;
+  if (permissionIssue) {
+    return {
+      available: false,
+      reason: "permission",
+      path: permissionIssue.path,
+      error: permissionIssue.error,
+    };
+  }
+  return { available: false, reason: "missing" };
 }
 
 /**
- * Asserts that the Bubblewrap binary is available, throwing an error if missing.
+ * Checks whether the Bubblewrap binary (`bwrap` or specified binary) is available
+ * and executable on the system. Bubblewrap requires Linux user namespaces.
+ */
+export function isBwrapAvailable(binaryName = "bwrap"): boolean {
+  return probeBwrapAvailability(binaryName).available;
+}
+
+/**
+ * Asserts that the Bubblewrap binary is available, throwing an error if missing
+ * or inaccessible due to OS permissions.
  */
 export function assertBwrapAvailable(binaryName = "bwrap"): void {
-  if (!isBwrapAvailable(binaryName)) {
+  const probe = probeBwrapAvailability(binaryName);
+  if (probe.available) return;
+  if (probe.reason === "permission") {
+    const code = (probe.error as NodeJS.ErrnoException | undefined)?.code;
+    const detail =
+      probe.error instanceof Error
+        ? probe.error.message
+        : String(probe.error ?? "");
     throw new Error(
-      `Bubblewrap sandbox is required but '${binaryName}' was not found on PATH`,
+      `Bubblewrap sandbox is required, but '${probe.path ?? binaryName}' cannot be accessed (${code ?? "OS permission"} denied — check chmod +x and directory permissions): ${detail}`,
     );
   }
+  if (probe.reason === "unsupported") {
+    throw new Error(
+      "Bubblewrap sandbox is required, but Linux namespaces are required on this host",
+    );
+  }
+  throw new Error(
+    `Bubblewrap sandbox is required but '${binaryName}' was not found on PATH`,
+  );
 }
 
 /**
@@ -117,7 +188,14 @@ export function wrapSandboxCommand(
   if (targetDir) {
     try {
       statSync(targetDir);
-    } catch {
+    } catch (error) {
+      if (isOsPermissionError(error)) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${command} failed: OS permission denied accessing working directory ${targetDir} (${code ?? "permission"}): ${detail}`,
+        );
+      }
       throw new Error(
         `${command} failed: working directory does not exist: ${targetDir}`,
       );
