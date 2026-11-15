@@ -1,0 +1,138 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  DEFAULT_TUI_CONFIG,
+  getTuiConfigPath,
+  loadTuiConfig,
+  normalizeTuiConfig,
+  updateTuiConfig,
+} from "./tui-config.js";
+
+const createdDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pi-tui-config-test-"));
+  createdDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of createdDirs.splice(0)) {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // Ignore cleanup chmod error.
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe("tui-config", () => {
+  it("returns defaults silently when tui.json is missing", () => {
+    const dir = makeTempDir();
+    const diagnostics: string[] = [];
+    expect(loadTuiConfig(dir, (msg) => diagnostics.push(msg))).toEqual(
+      DEFAULT_TUI_CONFIG,
+    );
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("normalizes partial configs and inherits borderStyle into toolBox when omitted", () => {
+    const diagnostics: string[] = [];
+    const cfg = normalizeTuiConfig(
+      {
+        borderStyle: "square",
+        overlaySurface: "card",
+        shortMode: true,
+        toolBox: {
+          enabled: true,
+          verbPack: "playful",
+          customVerbs: {
+            read: { active: "Peeking...", settled: "Peeked" },
+          },
+        },
+      },
+      diagnostics,
+    );
+
+    expect(diagnostics).toEqual([]);
+    expect(cfg).toEqual({
+      borderStyle: "square",
+      overlaySurface: "card",
+      shortMode: true,
+      toolBox: {
+        enabled: true,
+        borderStyle: "square",
+        accentStripe: true,
+        verbPack: "playful",
+        outcomeBadges: true,
+        reuseSpinner: true,
+        customVerbs: {
+          read: { active: "Peeking...", settled: "Peeked" },
+        },
+      },
+    });
+  });
+
+  it("warns on invalid enum values and falls back cleanly", () => {
+    const diagnostics: string[] = [];
+    const cfg = normalizeTuiConfig(
+      {
+        borderStyle: "zigzag",
+        overlaySurface: "neon",
+        toolBox: { verbPack: "chaotic" },
+      },
+      diagnostics,
+    );
+
+    expect(cfg.borderStyle).toBe("rounded");
+    expect(cfg.overlaySurface).toBe("transparent");
+    expect(cfg.toolBox.verbPack).toBe("standard");
+    expect(diagnostics).toHaveLength(3);
+  });
+
+  it("updates tui.json atomically and preserves unknown keys", () => {
+    const dir = makeTempDir();
+    writeFileSync(
+      getTuiConfigPath(dir),
+      JSON.stringify({ customHostKey: 42 }),
+      "utf8",
+    );
+
+    const res = updateTuiConfig(dir, (current) => {
+      current.borderStyle = "double";
+      current.shortMode = true;
+      current.toolBox.enabled = true;
+      current.toolBox.verbPack = "terse";
+    });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.customHostKey).toBe(42);
+    }
+    const reloaded = loadTuiConfig(dir);
+    expect(reloaded.borderStyle).toBe("double");
+    expect(reloaded.shortMode).toBe(true);
+    expect(reloaded.toolBox.enabled).toBe(true);
+    expect(reloaded.toolBox.verbPack).toBe("terse");
+  });
+
+  it("reports OS permission errors clearly on unreadable tui.json", () => {
+    if (process.getuid?.() === 0) return;
+    const dir = makeTempDir();
+    const path = getTuiConfigPath(dir);
+    writeFileSync(path, JSON.stringify({ shortMode: true }), "utf8");
+    chmodSync(path, 0o000);
+
+    try {
+      const diagnostics: string[] = [];
+      const cfg = loadTuiConfig(dir, (msg) => diagnostics.push(msg));
+      expect(cfg).toEqual(DEFAULT_TUI_CONFIG);
+      expect(diagnostics[0]).toMatch(/EACCES|permission denied/i);
+    } finally {
+      chmodSync(path, 0o600);
+    }
+  });
+});

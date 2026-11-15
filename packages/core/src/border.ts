@@ -1,3 +1,20 @@
+export type BorderStyle =
+  | "rounded"
+  | "sharp"
+  | "square"
+  | "double"
+  | "dashed"
+  | "none";
+
+export const BORDER_STYLES: readonly BorderStyle[] = [
+  "rounded",
+  "sharp",
+  "square",
+  "double",
+  "dashed",
+  "none",
+];
+
 export interface BorderChars {
   topLeft: string;
   topRight: string;
@@ -28,6 +45,7 @@ export function getBorderChars(style: string): BorderChars {
         vertical: "┊",
       };
     case "sharp":
+    case "square":
       return {
         topLeft: "┌",
         topRight: "┐",

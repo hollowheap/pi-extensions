@@ -19,6 +19,33 @@ import {
 
 const MAX_CACHE_ENTRIES = 64;
 
+export function isPermissionError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system)\b/i.test(
+    message,
+  );
+}
+
+export function formatFsPermissionError(
+  action: string,
+  path: string,
+  error: unknown,
+): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  const detail = error instanceof Error ? error.message : String(error);
+  const hint =
+    code === "EACCES" || code === "EPERM"
+      ? ` (${code} OS permission denied — check file/directory ownership and chmod/ACLs)`
+      : isPermissionError(error)
+        ? " (OS permission error — check file/directory permissions)"
+        : "";
+  return `cannot ${action} ${path}${hint}: ${detail}`;
+}
+
 interface PermissionsEntry {
   rules: readonly Rule[];
   toolTags: Readonly<Record<string, Tag>>;
@@ -53,8 +80,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function mtimeMs(path: string): number {
   try {
     return statSync(path).mtimeMs;
-  } catch {
-    return -1;
+  } catch (error) {
+    return isPermissionError(error) ? -2 : -1;
   }
 }
 
@@ -200,7 +227,7 @@ function readPermissions(
   failed: boolean;
   hasExplicitRules: boolean;
 } {
-  if (mtime < 0) {
+  if (mtime === -1) {
     return {
       rules: [],
       toolTags: {},
@@ -210,8 +237,12 @@ function readPermissions(
   }
   try {
     return parsePermissionsFile(readFileSync(path, "utf8"), path, diagnostics);
-  } catch {
-    diagnostics.push(`cannot read permissions file: ${path}`);
+  } catch (error) {
+    diagnostics.push(
+      isPermissionError(error)
+        ? formatFsPermissionError("read permissions file", path, error)
+        : `cannot read permissions file: ${path}`,
+    );
     return {
       rules: [],
       toolTags: {},
@@ -244,7 +275,7 @@ function loadPolicy(options: LoadPermissionsOptions): {
   const overlayPath = join(options.workspaceRoot, ".pi", "permissions.json");
   // Seed a default, editable permissions file on first run so head/tail are
   // allowed without prompting and users can extend the list.
-  if (mtimeMs(agentPath) < 0) {
+  if (mtimeMs(agentPath) === -1) {
     try {
       mkdirSync(options.agentDir, { recursive: true });
       writeFileSync(
@@ -449,10 +480,21 @@ function readModesFile(
   mtime: number,
   diagnostics: string[],
 ): ModeLayer[] {
-  if (mtime < 0) return [];
+  if (mtime === -1) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    diagnostics.push(
+      isPermissionError(error)
+        ? formatFsPermissionError("read modes file", path, error)
+        : `cannot read modes file: ${path}`,
+    );
+    return [];
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    parsed = JSON.parse(raw);
   } catch {
     diagnostics.push(`modes file is not valid JSON: ${path}`);
     return [];
@@ -534,7 +576,9 @@ export function updateJsonConfig(
       return {
         ok: false,
         path,
-        error: `cannot read config file ${path}: ${detail}`,
+        error: isPermissionError(error)
+          ? formatFsPermissionError("read config file", path, error)
+          : `cannot read config file ${path}: ${detail}`,
       };
     }
   }
@@ -581,7 +625,9 @@ export function updateJsonConfig(
     return {
       ok: false,
       path,
-      error: `cannot write config file ${path}: ${detail}`,
+      error: isPermissionError(error)
+        ? formatFsPermissionError("write config file", path, error)
+        : `cannot write config file ${path}: ${detail}`,
     };
   }
 

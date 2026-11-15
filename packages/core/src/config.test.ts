@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -609,5 +615,54 @@ describe("updateJsonConfig", () => {
       expect(arrayResult.error).toContain(arrayPath);
     }
     expect(readFileSync(arrayPath, "utf8")).toBe(rawArray);
+  });
+
+  it("reports OS permission errors clearly across config loaders and writers", async () => {
+    if (process.getuid?.() === 0) return;
+    const { updateJsonConfig } = await import("./config.js");
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    mkdirSync(agentDir, { recursive: true });
+
+    const permPath = join(agentDir, "permissions.json");
+    writeFileSync(permPath, "{}");
+    chmodSync(permPath, 0o000);
+
+    const modesPath = join(agentDir, "modes.json");
+    writeFileSync(modesPath, "{}");
+    chmodSync(modesPath, 0o000);
+
+    try {
+      const permDiagnostics: string[] = [];
+      const permResult = load(agentDir, root, false, permDiagnostics);
+      expect(Array.isArray(permResult)).toBe(true);
+      expect(permDiagnostics[0]).toMatch(/EACCES|OS permission denied/i);
+
+      const modeDiagnostics: string[] = [];
+      loadModesConfig(agentDir, (msg) => modeDiagnostics.push(msg));
+      expect(modeDiagnostics[0]).toMatch(/EACCES|OS permission denied/i);
+      expect(modeDiagnostics[0]).not.toMatch(/not valid JSON/i);
+
+      const readRes = updateJsonConfig(permPath, (current) => current);
+      expect(readRes.ok).toBe(false);
+      if (!readRes.ok) {
+        expect(readRes.error).toMatch(/EACCES|OS permission denied/i);
+      }
+
+      const roDir = join(root, "readonly-dir");
+      mkdirSync(roDir, { mode: 0o500 });
+      const writeRes = updateJsonConfig(join(roDir, "out.json"), (c) => ({
+        ...c,
+        a: 1,
+      }));
+      expect(writeRes.ok).toBe(false);
+      if (!writeRes.ok) {
+        expect(writeRes.error).toMatch(/EACCES|OS permission denied/i);
+      }
+      chmodSync(roDir, 0o700);
+    } finally {
+      chmodSync(permPath, 0o600);
+      chmodSync(modesPath, 0o600);
+    }
   });
 });
