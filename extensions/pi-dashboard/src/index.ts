@@ -5,6 +5,7 @@ import {
   type Theme,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { isPermissionError } from "@hollowheap/core/config";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import {
   getSessionSnapshot,
@@ -445,12 +446,31 @@ export default function (pi: ExtensionAPI) {
 
   const openSettings = async (ctx: ExtensionContext) => {
     const agentDir = getAgentDir();
-    const config = currentConfig ?? loadConfig(agentDir).config;
+    const loaded = loadConfig(agentDir);
+    if (loaded.diagnostics.length > 0 && ctx.hasUI) {
+      const hasPerm = loaded.diagnostics.some((diagnostic) =>
+        isPermissionError(diagnostic),
+      );
+      ctx.ui.notify(
+        `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
+        hasPerm ? "error" : "warning",
+      );
+    }
+    const config = currentConfig ?? loaded.config;
     await showDashboardSettings(ctx, config, (settings: DashboardSettings) => {
-      saveDashboardSettings(agentDir, settings);
-      const next = loadConfig(agentDir);
-      currentConfig = next.config;
-      if (ctx.mode === "tui") install(ctx, next.config);
+      try {
+        saveDashboardSettings(agentDir, settings);
+        const next = loadConfig(agentDir);
+        currentConfig = next.config;
+        if (ctx.mode === "tui") install(ctx, next.config);
+      } catch (error) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `pi-dashboard: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+            "error",
+          );
+        }
+      }
     });
   };
 
@@ -475,9 +495,12 @@ export default function (pi: ExtensionAPI) {
     if (ctx.mode !== "tui") return;
     const loaded = loadConfig(getAgentDir());
     if (loaded.diagnostics.length > 0) {
+      const hasPerm = loaded.diagnostics.some((diagnostic) =>
+        isPermissionError(diagnostic),
+      );
       ctx.ui.notify(
         `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
-        "warning",
+        hasPerm ? "error" : "warning",
       );
     }
     install(ctx, loaded.config);
@@ -498,10 +521,23 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("dashboard", {
     description:
-      "Open interactive dashboard (or '/dashboard settings' to configure)",
+      "Open interactive dashboard (or '/dashboard settings' / '/dashboard config' to configure)",
+    getArgumentCompletions: (prefix: string) => {
+      const parts = prefix.trimStart().split(/\s+/);
+      if (parts.length > 1) return null;
+      const query = (parts[0] ?? "").toLowerCase();
+      return ["settings", "config"]
+        .filter((action) => action.startsWith(query))
+        .map((action) => ({
+          value: action,
+          label: action,
+          description: "open dashboard settings",
+        }));
+    },
     handler: async (args, ctx) => {
       if (ctx.mode !== "tui") return;
-      if (args.trim().toLowerCase() === "settings") {
+      const subcommand = args.trim().toLowerCase();
+      if (subcommand === "settings" || subcommand === "config") {
         await openSettings(ctx);
         return;
       }

@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { updateJsonConfig } from "@hollowheap/core/config";
+import {
+  formatFsPermissionError,
+  isPermissionError,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
 
 export const CONFIG_FILE_NAME = "dashboard.json";
 export const DEFAULT_INTERVAL_MS = 30000;
@@ -326,7 +330,9 @@ export function loadConfig(agentDir: string): {
       (error as { code?: unknown }).code === "ENOENT"
         ? []
         : [
-            `${path}: ${error instanceof Error ? error.message : String(error)}`,
+            isPermissionError(error)
+              ? formatFsPermissionError("read config file", path, error)
+              : `${path}: ${error instanceof Error ? error.message : String(error)}`,
           ];
     return { config: defaultConfig(), diagnostics, path };
   }

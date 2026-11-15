@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -308,5 +314,20 @@ describe("loadConfig", () => {
     const { diagnostics } = loadConfig(dir);
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("dashboard.json");
+  });
+
+  it("formats OS permission errors on unreadable config files", () => {
+    if (process.getuid?.() === 0) return;
+    const dir = mkdtempSync(join(tmpdir(), "pi-dashboard-"));
+    const path = join(dir, "dashboard.json");
+    writeFileSync(path, "{}");
+    chmodSync(path, 0o000);
+    try {
+      const { diagnostics } = loadConfig(dir);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toContain("OS permission denied");
+    } finally {
+      chmodSync(path, 0o600);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -177,6 +177,143 @@ describe("pi-dashboard extension", () => {
     expect(pi.sendUserMessage).toHaveBeenCalledWith("/todos", {
       expandPromptTemplates: true,
     });
+  });
+
+  it("supports /dashboard settings and config alias with argument completions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dash-cfg-"));
+    state.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+    const registered = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+    };
+
+    expect(
+      (registered.getArgumentCompletions?.("") ?? []).map((item) => item.value),
+    ).toEqual(["settings", "config"]);
+    expect(
+      (registered.getArgumentCompletions?.("con") ?? []).map(
+        (item) => item.value,
+      ),
+    ).toEqual(["config"]);
+    expect(registered.getArgumentCompletions?.("config extra")).toBeNull();
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const ctx = createMockCtx({
+      hasUI: true,
+      ui: { setHeader: vi.fn(), notify: vi.fn(), custom },
+    });
+
+    const pending = registered.handler("config", ctx);
+    await vi.waitFor(() => expect(component).toBeDefined());
+    expect(component?.render(80).join("\n")).toContain("Dashboard settings");
+    component?.handleInput("\x1b");
+    await pending;
+    expect(custom).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies with error when saving dashboard settings fails with permission or config errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dash-err-"));
+    const cfgPath = join(dir, "dashboard.json");
+    writeFileSync(cfgPath, "{invalid-json");
+    state.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+    const registered = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const notify = vi.fn();
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const ctx = createMockCtx({
+      hasUI: true,
+      ui: { setHeader: vi.fn(), notify, custom },
+    });
+
+    const pending = registered.handler("config", ctx);
+    await vi.waitFor(() => expect(component).toBeDefined());
+    component?.handleInput("\r");
+    component?.handleInput("\x1b");
+    await pending;
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("failed to save settings"),
+      "error",
+    );
+
+    if (process.getuid?.() !== 0) {
+      const permDir = mkdtempSync(join(tmpdir(), "pi-dash-perm-"));
+      const permPath = join(permDir, "dashboard.json");
+      writeFileSync(permPath, "{}");
+      chmodSync(permPath, 0o000);
+      state.agentDir = permDir;
+      try {
+        const permNotify = vi.fn();
+        const permCtx = createMockCtx({
+          hasUI: true,
+          ui: {
+            setHeader: vi.fn(),
+            notify: permNotify,
+            custom: vi.fn(async () => undefined),
+          },
+        });
+        await registered.handler("settings", permCtx);
+        expect(permNotify).toHaveBeenCalledWith(
+          expect.stringContaining("OS permission denied"),
+          "error",
+        );
+      } finally {
+        chmodSync(permPath, 0o600);
+      }
+    }
   });
 });
 
