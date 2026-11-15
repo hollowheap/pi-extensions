@@ -1,4 +1,5 @@
 import {
+  type Component,
   rgbColor,
   stripTerminalSequences,
   visibleWidth,
@@ -268,5 +269,159 @@ describe("wrapToolRenderer", () => {
     );
     const lines = comp?.render(40) ?? [];
     expect(lines.join("\n")).toContain("const x = 1;");
+  });
+
+  it("unwraps inner lastComponent across repeated updates and strips redundant host titles", () => {
+    const createContainer = () => {
+      let items: string[] = [];
+      return {
+        clear() {
+          items = [];
+        },
+        push(line: string) {
+          items.push(line);
+        },
+        render() {
+          return [...items];
+        },
+        invalidate() {},
+      };
+    };
+    type FakeContainer = ReturnType<typeof createContainer>;
+
+    const renderer = wrapToolRenderer(
+      "codemode",
+      {
+        renderCall(args, _theme, context) {
+          const c =
+            (context.lastComponent as FakeContainer | undefined) ??
+            createContainer();
+          c.clear();
+          c.push("codemode");
+          c.push(String((args as { code?: string }).code ?? ""));
+          return c;
+        },
+        renderResult(result, _options, _theme, context) {
+          const c =
+            (context.lastComponent as FakeContainer | undefined) ??
+            createContainer();
+          c.clear();
+          c.push("");
+          const block = result.content[0] as { text?: string } | undefined;
+          c.push(block?.text ?? "");
+          c.push("Took 120ms");
+          return c;
+        },
+      },
+      () => makeConfig({ borderStyle: "rounded", accentStripe: true }),
+    );
+
+    const state = {};
+    const makeCtx = (
+      lastComponent: Component | undefined,
+      isPartial: boolean,
+      durationMs?: number,
+    ) => ({
+      args: { code: "return 42;" },
+      toolCallId: "cm-1",
+      invalidate: vi.fn(),
+      lastComponent,
+      state,
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs,
+      outputPad: 1,
+    });
+
+    // Pass 1 (streaming call)
+    const call1 = renderer.renderCall?.(
+      { code: "return 42;" },
+      mockTheme,
+      makeCtx(undefined, true),
+    );
+    expect(call1).toBeDefined();
+
+    // Pass 2 (settled update passes previous wrapper component as lastComponent)
+    const call2 = renderer.renderCall?.(
+      { code: "return 42;" },
+      mockTheme,
+      makeCtx(call1, false, 120),
+    );
+    const res1 = renderer.renderResult?.(
+      { content: [{ type: "text", text: "result: 42" }], details: undefined },
+      { expanded: false, isPartial: true },
+      mockTheme,
+      makeCtx(undefined, true),
+    );
+    const res2 = renderer.renderResult?.(
+      { content: [{ type: "text", text: "result: 42" }], details: undefined },
+      { expanded: false, isPartial: false },
+      mockTheme,
+      makeCtx(res1, false, 120),
+    );
+
+    const combined = [
+      ...(call2?.render(60) ?? []),
+      ...(res2?.render(60) ?? []),
+    ];
+    expect(combined.filter((l) => l.startsWith("╭"))).toHaveLength(1);
+    expect(combined.filter((l) => l.startsWith("╰"))).toHaveLength(1);
+    const plain = combined.map((l) => stripTerminalSequences(l));
+    // Header uses verb badge, redundant inner "codemode" line is omitted
+    expect(plain[1]).toContain("Executed");
+    expect(plain[1]).toContain("✓");
+    expect(plain[1]).toContain("120ms");
+    expect(plain.some((l) => /^│▎\s*codemode\s*│$/.test(l))).toBe(false);
+    expect(plain.some((l) => l.includes("return 42;"))).toBe(true);
+    expect(plain.some((l) => l.includes("result: 42"))).toBe(true);
+    expect(plain.at(-2)).toContain("Took 120ms");
+  });
+
+  it("reads header error badge consistently from result.isError even when context.isError is false", () => {
+    const renderer = wrapToolRenderer("bash", undefined, () => makeConfig());
+    const state = {};
+    const ctx = {
+      args: { command: "false" },
+      toolCallId: "t-err",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state,
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: false,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs: 10,
+      outputPad: 1,
+    };
+
+    const callComp = renderer.renderCall?.(
+      { command: "false" },
+      mockTheme,
+      ctx,
+    );
+    const resComp = renderer.renderResult?.(
+      {
+        content: [{ type: "text", text: "boom" }],
+        details: undefined,
+        isError: true,
+      } as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      ctx,
+    );
+
+    const lines = [
+      ...(callComp?.render(50) ?? []),
+      ...(resComp?.render(50) ?? []),
+    ];
+    expect(lines[1]).toContain("✗");
   });
 });

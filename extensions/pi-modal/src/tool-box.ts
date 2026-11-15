@@ -14,6 +14,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import type {
   CustomToolVerb,
   ToolBoxConfig,
@@ -139,8 +140,25 @@ export function formatToolCallSummary(
   if (toolName === "bash") return pick("command");
   if (toolName === "web_search") return pick("query");
   if (toolName === "fetch_url") return pick("url");
+  if (toolName === "read") {
+    const filePath = pick("file_path") ?? pick("path");
+    if (!filePath) return undefined;
+    const offset =
+      typeof record.offset === "number" && Number.isFinite(record.offset)
+        ? Math.trunc(record.offset)
+        : undefined;
+    const limit =
+      typeof record.limit === "number" && Number.isFinite(record.limit)
+        ? Math.trunc(record.limit)
+        : undefined;
+    if (offset !== undefined && limit !== undefined) {
+      return `${filePath}:${offset}-${offset + limit - 1}`;
+    }
+    if (offset !== undefined) return `${filePath}:${offset}`;
+    return filePath;
+  }
   const pattern = pick("pattern");
-  const path = pick("path");
+  const path = pick("path") ?? pick("file_path");
   if (pattern && path) return `${pattern} in ${path}`;
   return path ?? pattern ?? pick("command") ?? pick("query") ?? pick("url");
 }
@@ -165,21 +183,79 @@ function isWorkingTheme(theme: unknown): theme is WorkingTheme {
 
 interface ToolBoxState {
   hasCall?: boolean;
+  hasCallLines?: boolean;
   resultCalled?: boolean;
   resultIsError?: boolean;
   startedAt?: number;
   spinnerTheme?: unknown;
   spinner?: { frames: string[]; intervalMs: number };
+  innerCallComponent?: Component;
+  innerResultComponent?: Component;
   renderResultLines?: (innerWidth: number) => string[];
   resultInvalidate?: () => void;
   cachedResult?: { width: number; lines: string[] };
 }
 
+const BOX_STATES = new WeakMap<object, ToolBoxState>();
+
 function getBoxState(context: ToolRenderContext | undefined): ToolBoxState {
   if (context && typeof context.state === "object" && context.state !== null) {
-    return context.state as ToolBoxState;
+    let existing = BOX_STATES.get(context.state);
+    if (!existing) {
+      existing = {};
+      BOX_STATES.set(context.state, existing);
+    }
+    return existing;
   }
   return {};
+}
+
+function isBlankRenderedLine(line: string): boolean {
+  return sanitizeTerminalText(line).trim() === "";
+}
+
+function trimEdgeBlankLines(lines: readonly string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && isBlankRenderedLine(lines[start] ?? "")) {
+    start += 1;
+  }
+  while (end > start && isBlankRenderedLine(lines[end - 1] ?? "")) {
+    end -= 1;
+  }
+  return lines.slice(start, end);
+}
+
+const REDUNDANT_HEADER_TOOLS = new Set([
+  "bash",
+  "codemode",
+  "edit",
+  "find",
+  "grep",
+  "ls",
+  "powershell",
+  "read",
+  "write",
+]);
+
+function normalizeInnerCallLines(
+  toolName: string,
+  lines: readonly string[],
+): string[] {
+  const trimmed = trimEdgeBlankLines(lines);
+  if (trimmed.length === 0 || !REDUNDANT_HEADER_TOOLS.has(toolName)) {
+    return trimmed;
+  }
+  const firstPlain = sanitizeTerminalText(trimmed[0] ?? "").trim();
+  const isRedundant =
+    firstPlain.toLowerCase() === toolName.toLowerCase() ||
+    firstPlain.toLowerCase().startsWith(`${toolName.toLowerCase()} `) ||
+    ((toolName === "bash" || toolName === "powershell") &&
+      firstPlain.startsWith("$ "));
+  if (!isRedundant) {
+    return trimmed;
+  }
+  return trimEdgeBlankLines(trimmed.slice(1));
 }
 
 function fg(theme: Theme | undefined, token: string, value: string): string {
@@ -360,7 +436,24 @@ export function wrapToolRenderer(
       boxState.cachedResult = undefined;
       boxState.startedAt ??= now();
 
-      const innerCall = base?.renderCall?.(args, theme, effectiveContext);
+      const innerCallContext: ToolRenderContext = {
+        ...effectiveContext,
+        lastComponent: context.lastComponent
+          ? boxState.innerCallComponent
+          : undefined,
+      };
+      let innerCall: Component | undefined;
+      if (base?.renderCall) {
+        try {
+          innerCall = base.renderCall(args, theme, innerCallContext);
+          boxState.innerCallComponent = innerCall;
+        } catch {
+          boxState.innerCallComponent = undefined;
+          innerCall = undefined;
+        }
+      } else {
+        boxState.innerCallComponent = undefined;
+      }
 
       return {
         invalidate(): void {
@@ -409,7 +502,19 @@ export function wrapToolRenderer(
           }
 
           const headerLine = headerParts.join(" ");
-          const callLines = innerCall ? innerCall.render(innerWidth) : [];
+          let callLines: string[] = [];
+          if (innerCall) {
+            try {
+              callLines = normalizeInnerCallLines(
+                toolName,
+                innerCall.render(innerWidth),
+              );
+            } catch {
+              callLines = [];
+            }
+          }
+
+          boxState.hasCallLines = callLines.length > 0;
 
           let hasResultLines = false;
           if (boxState.resultCalled && boxState.renderResultLines) {
@@ -437,18 +542,41 @@ export function wrapToolRenderer(
       boxState.resultIsError = Boolean(result.isError);
       boxState.cachedResult = undefined;
 
-      const innerResult = base?.renderResult?.(
-        result,
-        options,
-        theme,
-        effectiveContext,
-      );
+      const innerResultContext: ToolRenderContext = {
+        ...effectiveContext,
+        lastComponent: context.lastComponent
+          ? boxState.innerResultComponent
+          : undefined,
+      };
+      let innerResult: Component | undefined;
+      if (base?.renderResult) {
+        try {
+          innerResult = base.renderResult(
+            result,
+            options,
+            theme,
+            innerResultContext,
+          );
+          boxState.innerResultComponent = innerResult;
+        } catch {
+          boxState.innerResultComponent = undefined;
+          innerResult = undefined;
+        }
+      } else {
+        boxState.innerResultComponent = undefined;
+      }
 
       const computeLines = (innerWidth: number): string[] => {
         if (innerResult) {
-          return innerResult.render(innerWidth);
+          try {
+            return trimEdgeBlankLines(innerResult.render(innerWidth));
+          } catch {
+            // Fall through to safe text extraction inside the frame.
+          }
         }
-        return renderFallbackResultLines(result, options, theme);
+        return trimEdgeBlankLines(
+          renderFallbackResultLines(result, options, theme),
+        );
       };
 
       boxState.renderResultLines = computeLines;
@@ -482,7 +610,10 @@ export function wrapToolRenderer(
               ? "error"
               : "success";
 
-          return frameBoxLines(lines, width, theme, {
+          const displayLines =
+            boxState.hasCall && boxState.hasCallLines ? ["", ...lines] : lines;
+
+          return frameBoxLines(displayLines, width, theme, {
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
             stripeToken,
