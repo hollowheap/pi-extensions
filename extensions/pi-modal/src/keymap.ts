@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { BORDER_STYLES, type BorderStyle } from "@hollowheap/core/border";
+
+export type { BorderStyle } from "@hollowheap/core/border";
 
 export type EditorMode = "normal" | "insert" | "visual";
 
@@ -9,13 +12,13 @@ export interface ModalKeymapConfig {
   insert?: Record<string, string | null>;
 }
 
-export type BorderStyle = "rounded" | "double" | "dashed" | "sharp" | "none";
-
 export interface ModalConfig {
   enabled?: boolean;
   initialMode?: EditorMode;
   promptChar?: string;
   borderStyle?: BorderStyle;
+  borderStyleExplicit?: boolean;
+  shortMode?: boolean;
   keymaps?: ModalKeymapConfig;
 }
 
@@ -57,13 +60,7 @@ export const DEFAULT_VISUAL_KEYS: Record<string, string | null> = {
 export const DEFAULT_INSERT_KEYS: Record<string, string | null> = {};
 
 const VALID_MODES = new Set<EditorMode>(["normal", "insert", "visual"]);
-const VALID_STYLES = new Set<BorderStyle>([
-  "rounded",
-  "double",
-  "dashed",
-  "sharp",
-  "none",
-]);
+const VALID_STYLES = new Set<string>(BORDER_STYLES);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -156,13 +153,22 @@ export function loadModalConfig(
   if (parsed.borderStyle !== undefined) {
     if (
       typeof parsed.borderStyle === "string" &&
-      VALID_STYLES.has(parsed.borderStyle as BorderStyle)
+      VALID_STYLES.has(parsed.borderStyle)
     ) {
       config.borderStyle = parsed.borderStyle as BorderStyle;
+      config.borderStyleExplicit = true;
     } else {
       onDiagnostic?.(
-        'borderStyle must be "rounded", "double", "dashed", "sharp", or "none"; using rounded',
+        'borderStyle must be "rounded", "sharp", "square", "double", "dashed", or "none"; using rounded',
       );
+    }
+  }
+
+  if (parsed.shortMode !== undefined) {
+    if (typeof parsed.shortMode === "boolean") {
+      config.shortMode = parsed.shortMode;
+    } else {
+      onDiagnostic?.("shortMode must be a boolean; ignoring");
     }
   }
 

@@ -4,16 +4,24 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { crushWorkingIndicator } from "@hollowheap/tui/spinner";
+import {
+  getActiveTuiConfig,
+  loadAndActivateTuiConfig,
+} from "@hollowheap/tui/state";
 import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
 import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
+import { wrapToolRenderer } from "./tool-box.js";
+import { formatTuiStatus, showTuiSettings } from "./tui-settings.js";
 import { formatVimKeys } from "./vimkeys.js";
-import { crushWorkingIndicator } from "./working.js";
 
 export { ModalEditor } from "./editor.js";
 export * from "./keymap.js";
 export * from "./skills.js";
+export * from "./tool-box.js";
+export * from "./tui-settings.js";
 
 function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   let code: string | undefined;
@@ -83,6 +91,13 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
+    if (getActiveTuiConfig().toolBox.enabled) {
+      return wrapToolRenderer(
+        toolName,
+        base,
+        () => getActiveTuiConfig().toolBox,
+      );
+    }
     const renderCall = base?.renderCall;
     if (toolName !== "codemode" || renderCall === undefined) return base;
     return {
@@ -91,6 +106,48 @@ export default function (pi: ExtensionAPI): void {
         return renderCall(args, theme, { ...context, expanded: true });
       },
     };
+  });
+
+  const TUI_SUBCOMMANDS = ["settings", "config", "status"] as const;
+  pi.registerCommand("tui", {
+    description:
+      "Inspect or configure TUI border, surface, short mode, and tool box settings",
+    getArgumentCompletions: (prefix: string) => {
+      const lower = prefix.trim().toLowerCase();
+      return TUI_SUBCOMMANDS.filter((sub) => sub.startsWith(lower)).map(
+        (sub) => ({ value: sub, label: sub }),
+      );
+    },
+    handler: async (args, ctx) => {
+      const sub = args.trim().toLowerCase();
+      if (sub === "status") {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `pi-modal TUI: ${formatTuiStatus(getActiveTuiConfig())}`,
+            "info",
+          );
+        }
+        return;
+      }
+      if (sub === "" || sub === "settings" || sub === "config") {
+        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `pi-modal TUI: ${formatTuiStatus(getActiveTuiConfig())} (interactive settings require TUI mode)`,
+              "info",
+            );
+          }
+          return;
+        }
+        await showTuiSettings(ctx, getAgentDir(), (next) => {
+          pi.events?.emit?.("tui:config-changed", next);
+        });
+        return;
+      }
+      if (ctx.hasUI) {
+        ctx.ui.notify("Usage: /tui [settings|config|status]", "error");
+      }
+    },
   });
 
   pi.registerCommand("expand", {
@@ -203,6 +260,9 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     syncFromBranch(ctx);
+    loadAndActivateTuiConfig(getAgentDir(), (msg) =>
+      ctx.ui?.notify?.(`pi-modal: ${msg}`, "warning"),
+    );
     if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === "function") {
       registerSkillAutocomplete(pi, ctx);
     }
@@ -211,10 +271,13 @@ export default function (pi: ExtensionAPI): void {
       ctx.ui.notify(`pi-modal: ${message}`, "warning"),
     );
     if (config.enabled === false) return;
+    const editorConfig = config.borderStyleExplicit
+      ? config
+      : { ...config, borderStyle: undefined };
     ctx.ui.setWorkingIndicator(crushWorkingIndicator(ctx.ui.theme));
     ctx.ui.setEditorComponent(
       (tui, theme, kb) =>
-        new ModalEditor(tui, theme, kb, config, undefined, ctx.ui.theme),
+        new ModalEditor(tui, theme, kb, editorConfig, undefined, ctx.ui.theme),
     );
   });
 }

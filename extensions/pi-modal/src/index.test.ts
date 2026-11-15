@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -6,6 +6,15 @@ import {
   rgbColor,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import {
+  DEFAULT_TUI_CONFIG,
+  getTuiConfigPath,
+} from "@hollowheap/core/tui-config";
+import {
+  getActiveTuiConfig,
+  resetActiveTuiConfig,
+  setActiveTuiConfig,
+} from "@hollowheap/tui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "./editor.js";
 import extension from "./index.js";
@@ -38,7 +47,14 @@ function createTempDir(): string {
 }
 
 afterEach(() => {
+  resetActiveTuiConfig();
+  Reflect.deleteProperty(process.env, "PI_CODING_AGENT_DIR");
   for (const dir of tmpDirs) {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // ignore chmod cleanup errors
+    }
     try {
       rmSync(dir, { recursive: true, force: true });
     } catch {
@@ -1562,7 +1578,7 @@ Perform operation two.`,
     );
     expect(res5).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\nplease use and`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\nplease use $skill-one and $skill-two`,
     });
 
     // 6. Deduplicating repeated mentions of the same skill
@@ -1576,7 +1592,7 @@ Perform operation two.`,
     );
     expect(res6).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease test with`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease test with $skill-one`,
     });
 
     // 7. Ignoring unknown variables like $HOME
@@ -1624,5 +1640,212 @@ Perform operation two.`,
       {},
     );
     expect(res9b).toBeUndefined();
+  });
+});
+
+describe("TUI config, shortMode, /tui command, and tool-box integration", () => {
+  it("renders shortMode badges and inherits borderStyle from active TUI config", () => {
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "double",
+      shortMode: true,
+    });
+    const { editor } = createMockEditor({ initialMode: "normal" });
+    expect(editor.render(40)[0]).toContain("╔");
+    expect(editor.render(40).at(-1)).toContain(" N ");
+
+    editor.setMode("insert");
+    expect(editor.render(40).at(-1)).toContain(" I ");
+
+    editor.setMode("visual");
+    expect(editor.render(40).at(-1)).toContain(" V ");
+
+    editor.setText("!ls");
+    expect(editor.render(40).at(-1)).toContain(" ! ");
+  });
+
+  it("loads tui.json on session_start and warns on EACCES", () => {
+    if (process.getuid?.() === 0) return;
+    const dir = createTempDir();
+    process.env.PI_CODING_AGENT_DIR = dir;
+    const path = getTuiConfigPath(dir);
+    writeFileSync(path, JSON.stringify({ shortMode: true }), "utf8");
+    chmodSync(path, 0o000);
+
+    try {
+      const handlers: Record<string, (event: unknown, ctx: unknown) => void> =
+        {};
+      const pi = {
+        on: vi.fn(
+          (event: string, fn: (event: unknown, ctx: unknown) => void) => {
+            handlers[event] = fn;
+          },
+        ),
+        registerCommand: vi.fn(),
+        registerShortcut: vi.fn(),
+        registerToolRenderer: vi.fn(),
+      };
+      extension(pi as never);
+
+      const notify = vi.fn();
+      handlers.session_start?.(
+        {},
+        {
+          hasUI: false,
+          ui: { notify },
+        },
+      );
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringMatching(/EACCES|permission denied/i),
+        "warning",
+      );
+      expect(getActiveTuiConfig().shortMode).toBe(false);
+    } finally {
+      chmodSync(path, 0o600);
+    }
+  });
+
+  it("registers /tui with completions, status, settings, and config aliases", async () => {
+    const dir = createTempDir();
+    process.env.PI_CODING_AGENT_DIR = dir;
+    const commands: Record<
+      string,
+      {
+        handler: (args: string, ctx: unknown) => Promise<void>;
+        getArgumentCompletions?: (prefix: string) => Array<{ value: string }>;
+      }
+    > = {};
+    const pi = {
+      on: vi.fn(),
+      registerCommand: vi.fn((name: string, def: (typeof commands)[string]) => {
+        commands[name] = def;
+      }),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    extension(pi as never);
+
+    const tuiCmd = commands.tui;
+    expect(tuiCmd).toBeDefined();
+    expect(
+      tuiCmd?.getArgumentCompletions?.("").map((item) => item.value),
+    ).toEqual(["settings", "config", "status"]);
+    expect(
+      tuiCmd?.getArgumentCompletions?.("co").map((item) => item.value),
+    ).toEqual(["config"]);
+
+    const notify = vi.fn();
+    await tuiCmd?.handler("status", {
+      hasUI: true,
+      mode: "print",
+      ui: { notify },
+    });
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("borderStyle=rounded"),
+      "info",
+    );
+
+    let overlay:
+      | {
+          render: (width: number) => string[];
+          handleInput: (d: string) => void;
+        }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          render: (width: number) => string[];
+          handleInput: (d: string) => void;
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          overlay = factory(
+            { requestRender: vi.fn() },
+            {
+              fg: (_t: string, v: string) => v,
+              bg: (_t: string, v: string) => v,
+              bold: (v: string) => v,
+            },
+            {},
+            resolve,
+          );
+        }),
+    );
+
+    const pending = tuiCmd?.handler("config", {
+      hasUI: true,
+      mode: "tui",
+      ui: { custom, notify },
+    });
+    await vi.waitFor(() => expect(overlay).toBeDefined());
+    overlay?.handleInput("\r");
+    expect(getActiveTuiConfig().borderStyle).toBe("sharp");
+    expect(pi.events.emit).toHaveBeenCalledWith(
+      "tui:config-changed",
+      expect.objectContaining({ borderStyle: "sharp" }),
+    );
+    overlay?.handleInput("\x1b");
+    await pending;
+  });
+
+  it("wraps tools with tool-box when toolBox.enabled is true", () => {
+    const pi = {
+      on: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+    };
+    extension(pi as never);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      toolBox: {
+        ...DEFAULT_TUI_CONFIG.toolBox,
+        enabled: true,
+        verbPack: "terse",
+      },
+    });
+
+    const resolver = pi.registerToolRenderer.mock.calls[0]?.[0] as (
+      toolName: string,
+      next: () => unknown,
+    ) => {
+      renderShell?: string;
+      renderCall?: (
+        args: unknown,
+        theme: unknown,
+        ctx: unknown,
+      ) => {
+        render: (width: number) => string[];
+      };
+    };
+
+    const baseRenderCall = vi.fn(() => ({
+      render: () => ["preview"],
+      invalidate: vi.fn(),
+    }));
+    const wrapped = resolver("codemode", () => ({
+      renderCall: baseRenderCall,
+    }));
+    expect(wrapped.renderShell).toBe("self");
+    const lines =
+      wrapped
+        .renderCall?.(
+          { code: "x" },
+          { fg: (_t: string, v: string) => v, bold: (v: string) => v },
+          { expanded: false, isPartial: false, state: {} },
+        )
+        .render(40) ?? [];
+    expect(baseRenderCall).toHaveBeenCalledWith(
+      { code: "x" },
+      expect.any(Object),
+      expect.objectContaining({ expanded: true }),
+    );
+    expect(lines.join("\n")).toContain("code");
   });
 });

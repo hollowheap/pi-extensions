@@ -15,12 +15,30 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 
-import { getBorderChars } from "@hollowheap/core/border";
+import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
+import { getActiveTuiConfig } from "@hollowheap/tui/state";
 import {
   type EditorMode,
   type ModalConfig,
   resolveEffectiveKeymaps,
 } from "./keymap.js";
+
+function formatEditorModeBadge(
+  mode: EditorMode,
+  isBash: boolean,
+  shortMode: boolean,
+): string {
+  if (isBash) return shortMode ? "!" : "BASH";
+  if (!shortMode) return mode.toUpperCase();
+  switch (mode) {
+    case "normal":
+      return "N";
+    case "insert":
+      return "I";
+    case "visual":
+      return "V";
+  }
+}
 
 function getGraphemeEnd(text: string, col: number): number {
   if (col < 0) return 0;
@@ -37,7 +55,8 @@ function getGraphemeEnd(text: string, col: number): number {
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
-  private borderStyle = "rounded";
+  private explicitBorderStyle: BorderStyle | undefined;
+  private explicitShortMode: boolean | undefined;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -66,7 +85,10 @@ export class ModalEditor extends CustomEditor {
       this.promptChar = config.promptChar;
     }
     if (config?.borderStyle) {
-      this.borderStyle = config.borderStyle;
+      this.explicitBorderStyle = config.borderStyle;
+    }
+    if (config?.shortMode !== undefined) {
+      this.explicitShortMode = config.shortMode;
     }
 
     if (config?.initialMode) {
@@ -568,15 +590,24 @@ export class ModalEditor extends CustomEditor {
     }
   }
 
+  private getEffectiveBorderStyle(): BorderStyle {
+    return this.explicitBorderStyle ?? getActiveTuiConfig().borderStyle;
+  }
+
+  private getEffectiveShortMode(): boolean {
+    return this.explicitShortMode ?? getActiveTuiConfig().shortMode;
+  }
+
   protected override renderTopBorder(
     width: number,
     hiddenLineCount: number,
   ): string {
-    if (this.borderStyle === "none" || width < 2) {
+    const borderStyle = this.getEffectiveBorderStyle();
+    if (borderStyle === "none" || width < 2) {
       return super.renderTopBorder(width, hiddenLineCount);
     }
     const paint = this.borderPaint();
-    const borderChars = getBorderChars(this.borderStyle);
+    const borderChars = getBorderChars(borderStyle);
     const innerWidth = width - 2;
     const inner =
       innerWidth > 0
@@ -593,8 +624,15 @@ export class ModalEditor extends CustomEditor {
     width: number,
     hiddenLineCount: number,
   ): string {
-    const label = ` ${this.getText().trimStart().startsWith("!") ? "BASH" : this.mode.toUpperCase()} `;
-    if (this.borderStyle === "none" || width < 2) {
+    const borderStyle = this.getEffectiveBorderStyle();
+    const isBash = this.getText().trimStart().startsWith("!");
+    const badge = formatEditorModeBadge(
+      this.mode,
+      isBash,
+      this.getEffectiveShortMode(),
+    );
+    const label = ` ${badge} `;
+    if (borderStyle === "none" || width < 2) {
       const line = fitRightLabel(
         super.renderBottomBorder(width, hiddenLineCount),
         width,
@@ -604,7 +642,7 @@ export class ModalEditor extends CustomEditor {
       return line;
     }
     const paint = this.borderPaint();
-    const borderChars = getBorderChars(this.borderStyle);
+    const borderChars = getBorderChars(borderStyle);
     const innerWidth = width - 2;
     const inner =
       innerWidth > 0
@@ -626,12 +664,12 @@ export class ModalEditor extends CustomEditor {
     const lines = super.render(width);
     if (lines.length === 0) return lines;
 
+    const borderStyle = this.getEffectiveBorderStyle();
     const paint = this.borderPaint();
     const promptPrefix = `${this.promptChar} `;
     const promptWidth = visibleWidth(promptPrefix);
-    const borderEnabled =
-      this.borderStyle !== "none" && width >= promptWidth + 2;
-    const borderChars = borderEnabled ? getBorderChars(this.borderStyle) : null;
+    const borderEnabled = borderStyle !== "none" && width >= promptWidth + 2;
+    const borderChars = borderEnabled ? getBorderChars(borderStyle) : null;
     const bottomIndex = this.lastBottomBorder
       ? lines.lastIndexOf(this.lastBottomBorder)
       : -1;
