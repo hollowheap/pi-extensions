@@ -1,8 +1,19 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONFIG_FILE_NAME, loadSubagentsConfig } from "./config.js";
+import {
+  CONFIG_FILE_NAME,
+  loadSubagentsConfig,
+  resolveSubagentSandboxOptions,
+  saveSubagentsSettings,
+} from "./config.js";
 
 function agentDir(): string {
   return mkdtempSync(join(tmpdir(), "pi-subagents-config-"));
@@ -161,5 +172,61 @@ describe("loadSubagentsConfig", () => {
     const diagnostics: string[] = [];
     loadSubagentsConfig(dir, (message) => diagnostics.push(message));
     expect(diagnostics.join(" ")).not.toContain(secret);
+  });
+
+  it("parses top-level and per-agent sandbox config and saves sandbox settings", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({
+        maxConcurrent: 2,
+        sandbox: { enabled: true, offline: false, maskPaths: ["/secret"] },
+        agents: {
+          scout: { sandbox: false },
+          worker: { sandbox: { enabled: true, offline: true } },
+        },
+      }),
+    );
+    const config = loadSubagentsConfig(dir);
+    expect(config.diagnostics).toEqual([]);
+    expect(resolveSubagentSandboxOptions(config, "other")).toEqual({
+      offline: false,
+      maskPaths: ["/secret"],
+    });
+    expect(resolveSubagentSandboxOptions(config, "scout")).toBeUndefined();
+    expect(resolveSubagentSandboxOptions(config, "worker")).toEqual({
+      offline: true,
+    });
+
+    saveSubagentsSettings(dir, { sandboxEnabled: false, sandboxOffline: true });
+    const saved = JSON.parse(
+      readFileSync(join(dir, CONFIG_FILE_NAME), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved.maxConcurrent).toBe(2);
+    expect(saved.agents).toBeDefined();
+    expect(saved.sandbox).toEqual({
+      enabled: false,
+      offline: true,
+      maskPaths: ["/secret"],
+    });
+  });
+
+  it("surfaces OS permission errors on unreadable or unwritable subagents.json", () => {
+    if (process.getuid?.() === 0) return;
+    const dir = agentDir();
+    const path = join(dir, CONFIG_FILE_NAME);
+    write(dir, "{}");
+    chmodSync(path, 0o000);
+    try {
+      const diagnostics: string[] = [];
+      loadSubagentsConfig(dir, (msg) => diagnostics.push(msg));
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toContain("OS permission denied");
+      expect(() =>
+        saveSubagentsSettings(dir, { sandboxEnabled: true }),
+      ).toThrow(/OS permission denied/);
+    } finally {
+      chmodSync(path, 0o600);
+    }
   });
 });

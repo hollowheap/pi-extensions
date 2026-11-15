@@ -1,6 +1,16 @@
+import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension, { createSubagentsExtension } from "./index.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function createMockPi() {
   const eventHandlers = new Map<string, Array<(...args: unknown[]) => void>>();
@@ -273,5 +283,100 @@ describe("pi-subagents extension", () => {
       const snap = getSessionSnapshot(sessionManager);
       expect(snap.subagents?.sessionDefinitions).toContain("custom-bot");
     });
+  });
+
+  it("supports /subagent settings and config alias with completions and OS permission errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagents-settings-"));
+    tempDirs.push(dir);
+    const pi = createMockPi();
+    const ext = createSubagentsExtension({
+      getAgentDir: () => dir,
+      listSubagents: vi.fn().mockResolvedValue([]),
+    });
+    ext(pi as never);
+
+    const command = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+    };
+
+    expect(
+      (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
+    ).toEqual(["logs", "pause", "resume", "steer", "settings", "config"]);
+    expect(
+      (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
+    ).toEqual(["config"]);
+    expect(command.getArgumentCompletions?.("config extra")).toBeNull();
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const notify = vi.fn();
+    const pending = command.handler("config", {
+      cwd: dir,
+      hasUI: true,
+      mode: "tui",
+      sessionManager: {},
+      ui: { notify, custom },
+    });
+    await vi.waitFor(() => expect(component).toBeDefined());
+    const rendered = component?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Subagent settings");
+    expect(rendered).toContain("Bubblewrap (bwrap):");
+    component?.handleInput("\r");
+    component?.handleInput("\x1b[B");
+    component?.handleInput("\r");
+    component?.handleInput("\x1b");
+    await pending;
+
+    const saved = JSON.parse(
+      readFileSync(join(dir, "subagents.json"), "utf8"),
+    ) as { sandbox?: { enabled?: boolean; offline?: boolean } };
+    expect(saved.sandbox).toEqual({ enabled: true, offline: true });
+    expect(notify).toHaveBeenCalledWith("Subagent settings saved", "info");
+
+    if (process.getuid?.() !== 0) {
+      const cfgPath = join(dir, "subagents.json");
+      chmodSync(cfgPath, 0o000);
+      try {
+        const permNotify = vi.fn();
+        await command.handler("settings", {
+          cwd: dir,
+          hasUI: true,
+          mode: "print",
+          sessionManager: {},
+          ui: { notify: permNotify },
+        });
+        expect(permNotify).toHaveBeenCalledWith(
+          expect.stringContaining("OS permission denied"),
+          "error",
+        );
+      } finally {
+        chmodSync(cfgPath, 0o600);
+      }
+    }
   });
 });

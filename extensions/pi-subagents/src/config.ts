@@ -1,7 +1,23 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  formatFsPermissionError,
+  isPermissionError,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
+import type { SandboxOptions } from "@hollowheap/runtime/sandbox";
 
 export const CONFIG_FILE_NAME = "subagents.json";
+
+export interface SubagentSandboxConfig {
+  readonly enabled: boolean;
+  readonly offline?: boolean;
+  readonly maskPaths?: readonly string[];
+}
+
+export interface SubagentAgentOverride {
+  readonly sandbox?: boolean | SubagentSandboxConfig;
+}
 
 export interface SubagentHarnessConfig {
   readonly command: string;
@@ -18,8 +34,16 @@ export interface SubagentsConfig {
   readonly maxSessionAgents: number;
   readonly maxSessionAgentBytes: number;
   readonly harnesses: Readonly<Record<string, SubagentHarnessConfig>>;
+  readonly sandbox?: boolean | SubagentSandboxConfig;
+  readonly agents?: Readonly<Record<string, SubagentAgentOverride>>;
   readonly path: string;
   readonly diagnostics: readonly string[];
+}
+
+export interface SubagentsSettings {
+  sandboxEnabled: boolean;
+  sandboxOffline?: boolean;
+  maskPaths?: readonly string[];
 }
 
 const EMPTY_HARNESSES: Readonly<Record<string, SubagentHarnessConfig>> =
@@ -41,6 +65,127 @@ const MAX_MAX_SESSION_AGENT_BYTES = 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseSandboxConfig(
+  value: unknown,
+  label: string,
+  diagnostics: string[],
+): boolean | SubagentSandboxConfig | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (!isRecord(value)) {
+    diagnostics.push(`"${label}" must be a boolean or object; ignoring`);
+    return undefined;
+  }
+
+  let enabled: boolean | undefined;
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled === "boolean") {
+      enabled = value.enabled;
+    } else {
+      diagnostics.push(`"${label}.enabled" must be a boolean; ignoring`);
+    }
+  }
+
+  let offline: boolean | undefined;
+  if (value.offline !== undefined) {
+    if (typeof value.offline === "boolean") {
+      offline = value.offline;
+    } else {
+      diagnostics.push(`"${label}.offline" must be a boolean; ignoring`);
+    }
+  }
+
+  let maskPaths: readonly string[] | undefined;
+  if (value.maskPaths !== undefined) {
+    if (
+      Array.isArray(value.maskPaths) &&
+      value.maskPaths.every(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim() !== "",
+      )
+    ) {
+      maskPaths = Object.freeze([...value.maskPaths]);
+    } else {
+      diagnostics.push(
+        `"${label}.maskPaths" must be an array of non-empty strings; ignoring`,
+      );
+    }
+  }
+
+  const resolvedEnabled =
+    enabled !== undefined
+      ? enabled
+      : offline !== undefined || maskPaths !== undefined;
+
+  return Object.freeze({
+    enabled: resolvedEnabled,
+    ...(offline !== undefined ? { offline } : {}),
+    ...(maskPaths !== undefined ? { maskPaths } : {}),
+  });
+}
+
+function parseAgents(
+  value: unknown,
+  diagnostics: string[],
+): Readonly<Record<string, SubagentAgentOverride>> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    diagnostics.push('"agents" must be an object; ignoring');
+    return undefined;
+  }
+  const agents: Record<string, SubagentAgentOverride> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      diagnostics.push(`invalid agent config name "${name}"; ignoring`);
+      continue;
+    }
+    if (!isRecord(raw)) {
+      diagnostics.push(`agent "${name}" config must be an object; ignoring`);
+      continue;
+    }
+    const sandbox = parseSandboxConfig(
+      raw.sandbox,
+      `agents.${name}.sandbox`,
+      diagnostics,
+    );
+    if (sandbox !== undefined) {
+      agents[name] = Object.freeze({ sandbox });
+    }
+  }
+  return Object.keys(agents).length > 0 ? Object.freeze(agents) : undefined;
+}
+
+export function resolveSubagentSandboxOptions(
+  config: Pick<SubagentsConfig, "sandbox" | "agents">,
+  agentName?: string,
+): boolean | SandboxOptions | undefined {
+  const override =
+    agentName !== undefined ? config.agents?.[agentName]?.sandbox : undefined;
+  const effective = override !== undefined ? override : config.sandbox;
+  if (effective === undefined || effective === false) return undefined;
+  if (effective === true) return true;
+  if (!effective.enabled) return undefined;
+  return {
+    ...(effective.offline !== undefined ? { offline: effective.offline } : {}),
+    ...(effective.maskPaths !== undefined
+      ? { maskPaths: [...effective.maskPaths] }
+      : {}),
+  };
+}
+
+export function isSubagentSandboxEnabled(
+  sandbox: boolean | SubagentSandboxConfig | undefined,
+): boolean {
+  if (sandbox === true) return true;
+  return typeof sandbox === "object" && sandbox.enabled;
+}
+
+export function isSubagentSandboxOffline(
+  sandbox: boolean | SubagentSandboxConfig | undefined,
+): boolean {
+  return typeof sandbox === "object" && sandbox.offline === true;
 }
 
 function parseHarnesses(
@@ -227,7 +372,9 @@ export function loadSubagentsConfig(
   } catch (error) {
     if ((error as { code?: unknown }).code !== "ENOENT") {
       diagnostics.push(
-        `${path}: ${error instanceof Error ? error.message : String(error)}`,
+        isPermissionError(error)
+          ? formatFsPermissionError("read config file", path, error)
+          : `${path}: ${error instanceof Error ? error.message : String(error)}`,
       );
       if (onDiagnostic !== undefined) {
         for (const message of diagnostics) onDiagnostic(message);
@@ -258,6 +405,13 @@ export function loadSubagentsConfig(
     parsed = undefined;
   }
 
+  const sandbox = isRecord(parsed)
+    ? parseSandboxConfig(parsed.sandbox, "sandbox", diagnostics)
+    : undefined;
+  const agents = isRecord(parsed)
+    ? parseAgents(parsed.agents, diagnostics)
+    : undefined;
+
   const config: SubagentsConfig = {
     maxConcurrent: parseMaxConcurrent(
       isRecord(parsed) ? parsed.maxConcurrent : undefined,
@@ -287,6 +441,8 @@ export function loadSubagentsConfig(
       isRecord(parsed) ? parsed.harnesses : undefined,
       diagnostics,
     ),
+    ...(sandbox !== undefined ? { sandbox } : {}),
+    ...(agents !== undefined ? { agents } : {}),
     path,
     diagnostics: Object.freeze(diagnostics),
   };
@@ -294,4 +450,30 @@ export function loadSubagentsConfig(
     for (const message of config.diagnostics) onDiagnostic(message);
   }
   return config;
+}
+
+/** Persist top-level sandbox settings in subagents.json while preserving unrelated config. */
+export function saveSubagentsSettings(
+  agentDir: string,
+  settings: SubagentsSettings,
+): string {
+  const path = join(agentDir, CONFIG_FILE_NAME);
+  const res = updateJsonConfig(path, (root) => {
+    const existing = isRecord(root.sandbox) ? { ...root.sandbox } : {};
+    const next: Record<string, unknown> = {
+      ...existing,
+      enabled: settings.sandboxEnabled,
+    };
+    if (settings.sandboxOffline !== undefined) {
+      next.offline = settings.sandboxOffline;
+    }
+    if (settings.maskPaths !== undefined) {
+      next.maskPaths = [...settings.maskPaths];
+    }
+    root.sandbox = next;
+  });
+  if (!res.ok) {
+    throw new Error(res.error);
+  }
+  return res.path;
 }

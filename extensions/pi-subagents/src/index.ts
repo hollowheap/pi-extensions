@@ -3,9 +3,15 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { isPermissionError } from "@hollowheap/core/config";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
+import {
+  type SubagentsSettings,
+  loadSubagentsConfig,
+  saveSubagentsSettings,
+} from "./config.js";
 import {
   SUBAGENT_DEFINITION_DELETE_TYPE,
   SUBAGENT_DEFINITION_TYPE,
@@ -269,10 +275,17 @@ export function createSubagentsExtension(
 
     pi.registerCommand("subagent", {
       description:
-        "Manage subagents: /subagent [logs] [id] or pause|resume|steer <id> [message]",
+        "Manage subagents: /subagent [logs] [id] | pause|resume|steer <id> [message] | settings|config",
       getArgumentCompletions: (prefix: string) => {
         const parts = prefix.trimStart().split(/\s+/);
-        const actions = ["logs", "pause", "resume", "steer"];
+        const actions = [
+          "logs",
+          "pause",
+          "resume",
+          "steer",
+          "settings",
+          "config",
+        ];
         if (parts.length === 1) {
           return actions
             .filter((action) =>
@@ -280,7 +293,10 @@ export function createSubagentsExtension(
             )
             .map((action) => ({ value: action, label: action }));
         }
-        if (parts.length > 2) return null;
+        const first = (parts[0] ?? "").toLowerCase();
+        if (first === "settings" || first === "config" || parts.length > 2) {
+          return null;
+        }
         const query = (parts[1] ?? "").toLowerCase();
         return lastStates
           .filter((state) => state.id.toLowerCase().startsWith(query))
@@ -294,8 +310,52 @@ export function createSubagentsExtension(
         lastCtx = ctx;
         const parts = args.trim().split(/\s+/).filter(Boolean);
         const action = parts[0];
+        const lowerAction = action?.toLowerCase();
         const id = parts[1];
         const agentDir = resolveAgentDir();
+        if (lowerAction === "settings" || lowerAction === "config") {
+          const config = loadSubagentsConfig(agentDir);
+          if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+            if (ctx.hasUI) {
+              for (const diagnostic of config.diagnostics) {
+                ctx.ui.notify(
+                  `pi-subagents: ${diagnostic}`,
+                  isPermissionError(diagnostic) ? "error" : "warning",
+                );
+              }
+              ctx.ui.notify(
+                `Subagent settings require TUI mode; edit ${config.path}`,
+                "info",
+              );
+            }
+            return;
+          }
+          for (const diagnostic of config.diagnostics) {
+            ctx.ui.notify(
+              `pi-subagents: ${diagnostic}`,
+              isPermissionError(diagnostic) ? "error" : "warning",
+            );
+          }
+          let saved = false;
+          const { showSubagentsSettings } = await import("./settings.js");
+          await showSubagentsSettings(
+            ctx,
+            config,
+            (settings: SubagentsSettings) => {
+              try {
+                saveSubagentsSettings(agentDir, settings);
+                saved = true;
+              } catch (error) {
+                ctx.ui.notify(
+                  `pi-subagents: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+                  "error",
+                );
+              }
+            },
+          );
+          if (saved) ctx.ui.notify("Subagent settings saved", "info");
+          return;
+        }
         if (!action || (action === "logs" && !id)) {
           await pickSubagent(ctx);
           return;
@@ -303,7 +363,7 @@ export function createSubagentsExtension(
         if (!id) {
           if (ctx.hasUI) {
             ctx.ui.notify(
-              "Usage: /subagent logs|pause|resume|steer <id> [message]",
+              "Usage: /subagent logs|pause|resume|steer <id> [message] | settings|config",
               "info",
             );
           }

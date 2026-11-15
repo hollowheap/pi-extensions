@@ -33,9 +33,13 @@ vi.mock("./agents.js", () => ({
   discoverAgents: mocks.discoverAgents,
 }));
 
-vi.mock("./config.js", () => ({
-  loadSubagentsConfig: mocks.loadSubagentsConfig,
-}));
+vi.mock("./config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config.js")>();
+  return {
+    ...actual,
+    loadSubagentsConfig: mocks.loadSubagentsConfig,
+  };
+});
 
 vi.mock("./swap.js", () => ({
   resolveSubagentModel: mocks.resolveSubagentModel,

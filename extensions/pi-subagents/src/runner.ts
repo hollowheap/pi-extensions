@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  chmodSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
@@ -9,6 +15,14 @@ import {
   isSocketConnectable,
   waitForProcessExit,
 } from "@hollowheap/runtime/process";
+import {
+  type SandboxOptions,
+  wrapSandboxCommand,
+} from "@hollowheap/runtime/sandbox";
+import {
+  loadSubagentsConfig,
+  resolveSubagentSandboxOptions,
+} from "./config.js";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
 
@@ -30,6 +44,7 @@ export interface StartSubagentOptions {
   inputMode?: "jsonl" | "text";
   initialInput?: string;
   timeoutMs?: number;
+  sandbox?: boolean | SandboxOptions;
 }
 
 interface RunnerConfig {
@@ -112,15 +127,51 @@ export async function startSubagent(
   let runner: ReturnType<typeof spawnDetachedTask> | undefined;
   let runnerError: Error | undefined;
 
+  const effectiveSandbox =
+    options.sandbox !== undefined
+      ? options.sandbox
+      : resolveSubagentSandboxOptions(
+          loadSubagentsConfig(options.agentDir),
+          options.agent,
+        );
+
   try {
     store.ensureLog(id);
+    let childCommand = options.command;
+    let childArgs = [...(options.args ?? [])];
+    if (effectiveSandbox) {
+      const sandboxOpts: SandboxOptions =
+        typeof effectiveSandbox === "object"
+          ? { ...effectiveSandbox, cwd: effectiveSandbox.cwd ?? options.cwd }
+          : { cwd: options.cwd };
+      const wrapped = wrapSandboxCommand(childCommand, childArgs, sandboxOpts);
+      const extraBinds: string[] = [];
+      if (options.sessionPath !== undefined) {
+        const sessionDir = dirname(resolve(options.cwd, options.sessionPath));
+        mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+        extraBinds.push("--bind", sessionDir, sessionDir);
+      }
+      const sepIndex = wrapped.args.indexOf("--");
+      childCommand = wrapped.command;
+      childArgs =
+        extraBinds.length === 0
+          ? wrapped.args
+          : sepIndex >= 0
+            ? [
+                ...wrapped.args.slice(0, sepIndex),
+                ...extraBinds,
+                ...wrapped.args.slice(sepIndex),
+              ]
+            : [...wrapped.args, ...extraBinds];
+    }
+
     writeConfig(configPath, {
       id,
       statePath: store.statePath(id),
       logPath: store.logPath(id),
       socketPath,
-      command: options.command,
-      args: [...(options.args ?? [])],
+      command: childCommand,
+      args: childArgs,
       cwd: options.cwd,
       env: options.env ?? {},
       inputMode: options.inputMode ?? "jsonl",

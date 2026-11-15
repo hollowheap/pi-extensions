@@ -9,12 +9,18 @@ import {
   keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { isPermissionError } from "@hollowheap/core/config";
 import { truncateText } from "@hollowheap/core/format";
 import { session } from "@hollowheap/core/state";
 import { isProcessAlive } from "@hollowheap/runtime/process";
+import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import { type SubagentsConfig, loadSubagentsConfig } from "./config.js";
+import {
+  type SubagentsConfig,
+  loadSubagentsConfig,
+  resolveSubagentSandboxOptions,
+} from "./config.js";
 import type { SessionAgentDefinition } from "./definitions.js";
 import {
   abortSubagent,
@@ -130,6 +136,25 @@ function errorResult(message: string) {
     ],
     details: { error: message },
   };
+}
+
+function loadToolSubagentsConfig(
+  agentDir: string,
+  ctx: {
+    hasUI?: boolean;
+    ui?: {
+      notify?: (msg: string, level?: "info" | "warning" | "error") => void;
+    };
+  },
+): SubagentsConfig {
+  return loadSubagentsConfig(agentDir, (message) => {
+    if (ctx.hasUI) {
+      ctx.ui?.notify?.(
+        `pi-subagents: ${message}`,
+        isPermissionError(message) ? "error" : "warning",
+      );
+    }
+  });
 }
 
 function textResult(details: Record<string, unknown>) {
@@ -450,7 +475,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               ? { harness: params.harness.trim() }
               : {}),
           };
-          const config = loadSubagentsConfig(agentDir);
+          const config = loadToolSubagentsConfig(agentDir, ctx);
           const bytes = Buffer.byteLength(JSON.stringify(definition), "utf8");
           if (bytes > config.maxSessionAgentBytes) {
             return errorResult(
@@ -484,7 +509,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           if (name === "" || task === "") {
             return errorResult("start requires agent and task");
           }
-          const config = loadSubagentsConfig(agentDir);
+          const config = loadToolSubagentsConfig(agentDir, ctx);
           const depth =
             Number.parseInt(process.env.PI_SUBAGENT_DEPTH ?? "0", 10) + 1;
           if (!Number.isInteger(depth) || depth < 1) {
@@ -550,6 +575,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
                 ? "plan"
                 : "ask";
           const parentSession = ctx.sessionManager?.getSessionId?.();
+          const sandbox = resolveSubagentSandboxOptions(
+            config,
+            effectiveAgent.name,
+          );
           let state: SubagentState;
           try {
             state = await startSubagent({
@@ -577,6 +606,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
                 ? { model: effectiveAgent.model }
                 : {}),
               ...(spec.harness === "pi" ? { sessionPath } : {}),
+              sandbox: sandbox ?? false,
             });
           } catch (error) {
             await cleanupSubagentWorkspace(workspace).catch(() => {});
@@ -684,7 +714,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               `cannot resume subagent ${id}: process ${state.pid} is still alive`,
             );
           }
-          const config = loadSubagentsConfig(agentDir);
+          const config = loadToolSubagentsConfig(agentDir, ctx);
           if (state.depth > config.maxDepth) {
             return errorResult(
               `subagent depth ${state.depth} exceeds maxDepth ${config.maxDepth}`,
@@ -775,6 +805,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               ? { model: effectiveAgent.model }
               : {}),
             ...(spec.harness === "pi" ? { sessionPath } : {}),
+            sandbox:
+              resolveSubagentSandboxOptions(config, effectiveAgent.name) ??
+              false,
           });
           options.onSubagentsChange?.();
           if (spec.inputMode === "jsonl") {
@@ -793,9 +826,14 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         }
         return errorResult(`invalid action: ${String(action)}`);
       } catch (error) {
-        return errorResult(
-          error instanceof Error ? error.message : String(error),
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          ctx.hasUI &&
+          (isPermissionError(error) || isOsPermissionError(error))
+        ) {
+          ctx.ui.notify(`pi-subagents: ${message}`, "error");
+        }
+        return errorResult(message);
       }
     },
   });

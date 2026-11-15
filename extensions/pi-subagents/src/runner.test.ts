@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isProcessAlive } from "@hollowheap/runtime";
@@ -315,5 +322,72 @@ describe("subagent runner", () => {
     await expect(
       sendSubagent(root, "missing", { type: "prompt" }),
     ).rejects.toThrow(/not found/);
+  });
+
+  it("wraps child command with bwrap and binds subagents store/session dir", async () => {
+    const root = agentDir();
+    const binDir = agentDir();
+    const workDir = agentDir();
+    const argsLog = join(binDir, "bwrap-args.json");
+    const fakeBwrap = join(binDir, "bwrap");
+    writeFileSync(
+      fakeBwrap,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
+const sep = args.indexOf("--");
+const res = spawnSync(args[sep + 1], args.slice(sep + 2), { stdio: "inherit" });
+process.exit(res.status ?? 1);
+`,
+      { mode: 0o755 },
+    );
+
+    const sessionPath = join(root, "sessions", "child.session.jsonl");
+    const state = await startSubagent({
+      agentDir: root,
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      command: process.execPath,
+      args: ["-e", CHILD],
+      cwd: workDir,
+      sessionPath,
+      sandbox: { offline: true, bwrapBinary: fakeBwrap },
+    });
+    await sendSubagent(root, state.id, {
+      id: 1,
+      type: "prompt",
+      message: "sandbox-hello",
+    });
+    const done = await waitSubagent(root, state.id, 2_000);
+    expect(done?.status).toBe("completed");
+    expect(readSubagentLog(root, state.id)).toContain("sandbox-hello");
+
+    const recorded = JSON.parse(readFileSync(argsLog, "utf8")) as string[];
+    expect(recorded).toContain("--ro-bind");
+    expect(recorded).toContain("--unshare-net");
+    expect(recorded).toContain(workDir);
+    expect(recorded).not.toContain(join(root, "subagents"));
+    expect(recorded).toContain(join(root, "sessions"));
+    const firstSep = recorded.indexOf("--");
+    expect(recorded.indexOf(join(root, "sessions"))).toBeLessThan(firstSep);
+
+    if (process.getuid?.() !== 0) {
+      chmodSync(fakeBwrap, 0o644);
+      await expect(
+        startSubagent({
+          agentDir: root,
+          agent: "scout",
+          task: "find",
+          depth: 1,
+          command: process.execPath,
+          args: ["-e", CHILD],
+          cwd: workDir,
+          sandbox: { bwrapBinary: fakeBwrap },
+        }),
+      ).rejects.toThrow(/permission/i);
+    }
   });
 });
