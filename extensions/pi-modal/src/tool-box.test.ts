@@ -143,6 +143,10 @@ describe("wrapToolRenderer", () => {
     }
 
     clock = 150;
+    const cachedFrame = comp.render(50);
+    expect(cachedFrame).toEqual(frame0);
+
+    comp.invalidate?.();
     const frame1 = comp.render(50);
     expect(stripTerminalSequences(frame1[1] ?? "")).not.toBe(
       stripTerminalSequences(frame0[1] ?? ""),
@@ -423,5 +427,72 @@ describe("wrapToolRenderer", () => {
       ...(resComp?.render(50) ?? []),
     ];
     expect(lines[1]).toContain("✗");
+  });
+
+  it("locks header spinner on tall executing boxes and invalidates cache cleanly on config changes", () => {
+    let clock = 0;
+    let tick = 0;
+    let currentCfg = makeConfig({
+      borderStyle: "rounded",
+      verbPack: "standard",
+    });
+    const baseRenderer = {
+      renderCall: () => ({
+        invalidate: vi.fn(),
+        render: () => [
+          ...Array.from(
+            { length: 9 },
+            (_, idx) => `\x1b[32mline ${idx + 1}\x1b[39m`,
+          ),
+          `Elapsed ${tick}s`,
+        ],
+      }),
+    };
+
+    const wrapped = wrapToolRenderer("bash", baseRenderer, () => currentCfg, {
+      now: () => clock,
+    });
+    const sharedState = {};
+    const makeCtx = () => ({
+      args: { command: "long-cmd" },
+      toolCallId: "t-tall",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state: sharedState,
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: true,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs: undefined,
+      outputPad: 1,
+    });
+
+    const call0 = wrapped.renderCall?.(
+      { command: "long-cmd" },
+      mockTheme,
+      makeCtx(),
+    );
+    const out0 = call0?.render(50) ?? [];
+    expect(out0[2]).toContain("\x1b[32mline 1\x1b[39m\x1b[0m");
+
+    clock = 150;
+    tick = 1;
+    const call1 = wrapped.renderCall?.(
+      { command: "long-cmd" },
+      mockTheme,
+      makeCtx(),
+    );
+    const out1 = call1?.render(50) ?? [];
+    // Header line stays identical while bottom timer line updates.
+    expect(out1[1]).toBe(out0[1]);
+    expect(stripTerminalSequences(out1.at(-2) ?? "")).toContain("Elapsed 1s");
+
+    currentCfg = makeConfig({ borderStyle: "none", verbPack: "playful" });
+    const out2 = call1?.render(50) ?? [];
+    expect(out2[0]?.startsWith("╭")).toBe(false);
+    expect(stripTerminalSequences(out2[0] ?? "")).toContain("Conjuring...");
   });
 });

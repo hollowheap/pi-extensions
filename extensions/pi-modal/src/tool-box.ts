@@ -189,11 +189,18 @@ interface ToolBoxState {
   startedAt?: number;
   spinnerTheme?: unknown;
   spinner?: { frames: string[]; intervalMs: number };
+  lockedSpinnerFrame?: string;
   innerCallComponent?: Component;
   innerResultComponent?: Component;
   renderResultLines?: (innerWidth: number) => string[];
   resultInvalidate?: () => void;
   cachedResult?: { width: number; lines: string[] };
+  cachedCallRender?: { key: string; lines: string[] };
+  cachedResultRender?: { key: string; lines: string[] };
+}
+
+function getConfigCacheKey(cfg: ToolBoxConfig): string {
+  return JSON.stringify(cfg);
 }
 
 const BOX_STATES = new WeakMap<object, ToolBoxState>();
@@ -310,7 +317,13 @@ function frameBoxLines(
         visibleWidth(line) > innerWidth
           ? truncateToWidth(line, innerWidth, "")
           : line;
-      return options.accentStripe ? `${stripe} ${fitted}` : fitted;
+      const resetTail =
+        fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m")
+          ? "\x1b[0m"
+          : "";
+      return options.accentStripe
+        ? `${stripe} ${fitted}${resetTail}`
+        : `${fitted}${resetTail}`;
     });
   }
 
@@ -336,7 +349,9 @@ function frameBoxLines(
         ? truncateToWidth(line, innerWidth, "")
         : line;
     const pad = Math.max(0, innerWidth - visibleWidth(fitted));
-    out.push(`${leftEdge}${fitted}${" ".repeat(pad)}${rightEdge}`);
+    const resetTail =
+      fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m") ? "\x1b[0m" : "";
+    out.push(`${leftEdge}${fitted}${resetTail}${" ".repeat(pad)}${rightEdge}`);
   }
 
   if (options.includeBottom) {
@@ -434,6 +449,8 @@ export function wrapToolRenderer(
       boxState.renderResultLines = undefined;
       boxState.resultInvalidate = undefined;
       boxState.cachedResult = undefined;
+      boxState.cachedCallRender = undefined;
+      boxState.cachedResultRender = undefined;
       boxState.startedAt ??= now();
 
       const innerCallContext: ToolRenderContext = {
@@ -458,10 +475,17 @@ export function wrapToolRenderer(
       return {
         invalidate(): void {
           boxState.cachedResult = undefined;
+          boxState.cachedCallRender = undefined;
+          boxState.cachedResultRender = undefined;
           innerCall?.invalidate?.();
         },
         render(width: number): string[] {
           const cfg = getConfig();
+          const cacheKey = `${width}:${getConfigCacheKey(cfg)}`;
+          if (boxState.cachedCallRender?.key === cacheKey) {
+            return boxState.cachedCallRender.lines;
+          }
+
           const settled = !context.isPartial;
           const isError = Boolean(context.isError || boxState.resultIsError);
           const stripeToken = !settled
@@ -475,12 +499,38 @@ export function wrapToolRenderer(
             cfg.accentStripe,
           );
 
+          let callLines: string[] = [];
+          if (innerCall) {
+            try {
+              callLines = normalizeInnerCallLines(
+                toolName,
+                innerCall.render(innerWidth),
+              );
+            } catch {
+              callLines = [];
+            }
+          }
+
+          boxState.hasCallLines = callLines.length > 0;
+
           const verb = resolveToolVerb(toolName, cfg);
           const verbLabel = settled ? verb.settled : verb.active;
           const headerParts: string[] = [];
 
           if (!settled && cfg.reuseSpinner) {
-            headerParts.push(getSpinnerFrame(boxState, theme, now()));
+            // Freeze the top-line spinner on tall executing boxes so timer invalidations
+            // only touch bottom lines instead of triggering above-viewport full redraws.
+            const freezeSpinner =
+              Boolean(context.executionStarted) &&
+              callLines.length > 8 &&
+              boxState.lockedSpinnerFrame !== undefined;
+            const spinnerFrame = freezeSpinner
+              ? (boxState.lockedSpinnerFrame as string)
+              : getSpinnerFrame(boxState, theme, now());
+            if (!freezeSpinner) {
+              boxState.lockedSpinnerFrame = spinnerFrame;
+            }
+            headerParts.push(spinnerFrame);
           }
 
           headerParts.push(bold(theme, fg(theme, "toolTitle", verbLabel)));
@@ -502,19 +552,6 @@ export function wrapToolRenderer(
           }
 
           const headerLine = headerParts.join(" ");
-          let callLines: string[] = [];
-          if (innerCall) {
-            try {
-              callLines = normalizeInnerCallLines(
-                toolName,
-                innerCall.render(innerWidth),
-              );
-            } catch {
-              callLines = [];
-            }
-          }
-
-          boxState.hasCallLines = callLines.length > 0;
 
           let hasResultLines = false;
           if (boxState.resultCalled && boxState.renderResultLines) {
@@ -523,13 +560,20 @@ export function wrapToolRenderer(
             hasResultLines = computed.length > 0;
           }
 
-          return frameBoxLines([headerLine, ...callLines], width, theme, {
-            borderStyle: cfg.borderStyle,
-            accentStripe: cfg.accentStripe,
-            stripeToken,
-            includeTop: true,
-            includeBottom: !hasResultLines,
-          });
+          const framed = frameBoxLines(
+            [headerLine, ...callLines],
+            width,
+            theme,
+            {
+              borderStyle: cfg.borderStyle,
+              accentStripe: cfg.accentStripe,
+              stripeToken,
+              includeTop: true,
+              includeBottom: !hasResultLines,
+            },
+          );
+          boxState.cachedCallRender = { key: cacheKey, lines: framed };
+          return framed;
         },
       };
     },
@@ -541,6 +585,8 @@ export function wrapToolRenderer(
       boxState.resultCalled = true;
       boxState.resultIsError = Boolean(result.isError);
       boxState.cachedResult = undefined;
+      boxState.cachedResultRender = undefined;
+      boxState.cachedCallRender = undefined;
 
       const innerResultContext: ToolRenderContext = {
         ...effectiveContext,
@@ -585,10 +631,17 @@ export function wrapToolRenderer(
       return {
         invalidate(): void {
           boxState.cachedResult = undefined;
+          boxState.cachedResultRender = undefined;
+          boxState.cachedCallRender = undefined;
           innerResult?.invalidate?.();
         },
         render(width: number): string[] {
           const cfg = getConfig();
+          const cacheKey = `${width}:${getConfigCacheKey(cfg)}`;
+          if (boxState.cachedResultRender?.key === cacheKey) {
+            return boxState.cachedResultRender.lines;
+          }
+
           const innerWidth = getInnerWidth(
             width,
             cfg.borderStyle,
@@ -600,6 +653,7 @@ export function wrapToolRenderer(
               : computeLines(innerWidth);
 
           if (lines.length === 0) {
+            boxState.cachedResultRender = { key: cacheKey, lines: [] };
             return [];
           }
 
@@ -613,13 +667,15 @@ export function wrapToolRenderer(
           const displayLines =
             boxState.hasCall && boxState.hasCallLines ? ["", ...lines] : lines;
 
-          return frameBoxLines(displayLines, width, theme, {
+          const framed = frameBoxLines(displayLines, width, theme, {
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
             stripeToken,
             includeTop: !boxState.hasCall,
             includeBottom: true,
           });
+          boxState.cachedResultRender = { key: cacheKey, lines: framed };
+          return framed;
         },
       };
     },
