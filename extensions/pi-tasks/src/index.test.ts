@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
@@ -416,5 +422,91 @@ describe("pi-tasks extension", () => {
       startedAt: 7000,
       exitCode: 0,
     });
+  });
+
+  it("supports /task settings and /task config with completions, interactive toggles, and OS permission errors", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const command = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions?: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+    };
+
+    expect(
+      (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
+    ).toEqual(["logs", "settings", "config"]);
+    expect(
+      (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
+    ).toEqual(["config"]);
+
+    let component:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, s: string) => s, bold: (s: string) => s },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const notify = vi.fn();
+    const ctx = {
+      ...createCtx(workspaceDir),
+      mode: "tui",
+      ui: { notify, setStatus: vi.fn(), custom },
+    };
+
+    const pending = command.handler("config", ctx);
+    await vi.waitFor(() => expect(component).toBeDefined());
+    const rendered = component?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Tasks settings");
+    expect(rendered).toContain("Bubblewrap (bwrap):");
+    // Toggle sandbox enabled (item 1) and sandbox offline (item 2)
+    component?.handleInput("\r");
+    component?.handleInput("\x1b[B");
+    component?.handleInput("\r");
+    component?.handleInput("\x1b");
+    await pending;
+
+    const saved = JSON.parse(
+      readFileSync(join(mockAgentDir, "tasks.json"), "utf8"),
+    ) as { sandbox?: { enabled?: boolean; offline?: boolean } };
+    expect(saved.sandbox).toEqual({ enabled: true, offline: true });
+    expect(notify).toHaveBeenCalledWith("Tasks settings saved", "info");
+
+    if (process.getuid?.() !== 0) {
+      const cfgPath = join(mockAgentDir, "tasks.json");
+      chmodSync(cfgPath, 0o000);
+      try {
+        const permNotify = vi.fn();
+        await command.handler("settings", {
+          ...createCtx(workspaceDir),
+          mode: "print",
+          ui: { notify: permNotify, setStatus: vi.fn() },
+        });
+        expect(permNotify).toHaveBeenCalledWith(
+          expect.stringContaining("OS permission denied"),
+          "error",
+        );
+      } finally {
+        chmodSync(cfgPath, 0o600);
+      }
+    }
   });
 });

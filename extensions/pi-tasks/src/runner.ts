@@ -5,7 +5,12 @@ import {
 } from "@hollowheap/runtime/process";
 export { readProcStartTime } from "@hollowheap/runtime/process";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
+import {
+  type SandboxOptions,
+  wrapSandboxCommand,
+} from "@hollowheap/runtime/sandbox";
 import { LockedProcessStore } from "@hollowheap/runtime/store";
+import { loadTasksConfig, resolveTasksSandboxOptions } from "./config.js";
 import {
   type TaskMetadata,
   type TaskRecord,
@@ -63,6 +68,7 @@ export interface SpawnShellTaskOptions {
   id?: string;
   shell?: string;
   dependsOn?: string[];
+  sandbox?: boolean | SandboxOptions;
 }
 
 export async function spawnShellTask(
@@ -71,6 +77,22 @@ export async function spawnShellTask(
   const id = opts.id ?? generateTaskId();
   const startedAt = Date.now();
   const shellBin = opts.shell ?? process.env.SHELL ?? "/bin/sh";
+  let spawnCommand = shellBin;
+  let spawnArgs = ["-c", opts.command];
+  const effectiveSandbox =
+    opts.sandbox !== undefined
+      ? opts.sandbox
+      : resolveTasksSandboxOptions(loadTasksConfig(opts.agentDir).sandbox);
+  if (effectiveSandbox) {
+    const sandboxOpts: SandboxOptions =
+      typeof effectiveSandbox === "object"
+        ? { ...effectiveSandbox, cwd: effectiveSandbox.cwd ?? opts.cwd }
+        : { cwd: opts.cwd };
+    const wrapped = wrapSandboxCommand(spawnCommand, spawnArgs, sandboxOpts);
+    spawnCommand = wrapped.command;
+    spawnArgs = wrapped.args;
+  }
+
   const initialMeta: TaskMetadata = {
     id,
     kind: "shell",
@@ -95,8 +117,9 @@ export async function spawnShellTask(
         metaPath,
         logPath,
         opts.cwd,
-        shellBin,
-        opts.command,
+        spawnCommand,
+        "--args-json",
+        JSON.stringify(spawnArgs),
       ],
       cwd: opts.cwd,
       logPath,

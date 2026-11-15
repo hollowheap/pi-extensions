@@ -3,12 +3,14 @@ import {
   type ExtensionContext,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
-import { loadPermissions } from "@hollowheap/core/config";
+import { isPermissionError, loadPermissions } from "@hollowheap/core/config";
 import { displayTarget, truncateText } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
 import { effectiveCwd } from "@hollowheap/core/state";
+import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
 import { taskAlertTracker } from "./alerts.js";
+import { loadTasksConfig, resolveTasksSandboxOptions } from "./config.js";
 import { generateTaskId } from "./registry.js";
 import { type TaskRecord, taskLogPath } from "./registry.js";
 import {
@@ -311,6 +313,16 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           }
         }
 
+        const tasksConfig = loadTasksConfig(agentDir, (message) => {
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `pi-tasks: ${message}`,
+              isPermissionError(message) ? "error" : "warning",
+            );
+          }
+        });
+        const sandbox = resolveTasksSandboxOptions(tasksConfig.sandbox);
+
         const cwd = effectiveCwd(ctx.cwd, ctx.sessionManager);
         const taskId = generateTaskId();
         const workspace = await allocateTaskWorkspace({
@@ -326,10 +338,23 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
             command,
             cwd: workspace.path,
             dependsOn: deps.length > 0 ? deps : undefined,
+            sandbox: sandbox ?? false,
           });
         } catch (error) {
           await cleanupTaskWorkspace(workspace).catch(() => {});
-          throw error;
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (
+            ctx.hasUI &&
+            (isPermissionError(error) || isOsPermissionError(error))
+          ) {
+            ctx.ui.notify(`pi-tasks: ${message}`, "error");
+          }
+          const runningCount = refreshRunningCount();
+          return textResult(`pi-tasks: failed to start task: ${message}`, {
+            action,
+            runningCount,
+          });
         }
         taskWorkspaceTracker.track(record.id, workspace);
         taskAlertTracker.seed(record);

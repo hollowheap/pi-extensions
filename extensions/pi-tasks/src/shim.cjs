@@ -10,7 +10,8 @@ const {
 } = require("node:fs");
 const { dirname, join } = require("node:path");
 
-const [metaPath, logPath, cwd, shellBin, command] = process.argv.slice(1);
+const [metaPath, logPath, cwd, spawnBin, arg4, arg5] = process.argv.slice(1);
+const childArgs = arg4 === "--args-json" ? JSON.parse(arg5) : ["-c", arg4];
 
 function readStartTime(pid) {
   try {
@@ -62,7 +63,7 @@ updateMeta({
   ...(selfStart !== undefined ? { startTime: selfStart } : {}),
 });
 
-const child = spawn(shellBin, ["-c", command], {
+const child = spawn(spawnBin, childArgs, {
   cwd,
   detached: true,
   stdio: ["ignore", logFd, logFd],

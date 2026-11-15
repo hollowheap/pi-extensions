@@ -3,15 +3,22 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { isPermissionError } from "@hollowheap/core/config";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { taskAlertTracker } from "./alerts.js";
+import {
+  type TasksSettings,
+  loadTasksConfig,
+  saveTasksSettings,
+} from "./config.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
 export * from "@hollowheap/runtime/lifecycle";
+export * from "./config.js";
 export * from "./registry.js";
 export * from "./runner.js";
 export * from "@hollowheap/runtime/store";
@@ -209,17 +216,25 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("task", {
-    description: "Task management: /task [logs] [id]",
+    description: "Task management: /task [logs] [id] | /task settings|config",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
-        return ["logs"]
-          .filter((action) => action.startsWith((parts[0] ?? "").toLowerCase()))
-          .map((action) => ({
-            value: action,
-            label: action,
-            description: "show task log",
-          }));
+        const actions = [
+          { value: "logs", label: "logs", description: "show task log" },
+          {
+            value: "settings",
+            label: "settings",
+            description: "configure task sandbox settings",
+          },
+          {
+            value: "config",
+            label: "config",
+            description: "configure task sandbox settings",
+          },
+        ];
+        const query = (parts[0] ?? "").toLowerCase();
+        return actions.filter((action) => action.value.startsWith(query));
       }
       if (parts[0] !== "logs") return null;
       const query = (parts[1] ?? "").toLowerCase();
@@ -233,17 +248,61 @@ export default function (pi: ExtensionAPI) {
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
-      if (parts.length === 0 || (parts[0] === "logs" && !parts[1])) {
+      const subcommand = (parts[0] ?? "").toLowerCase();
+      if (subcommand === "settings" || subcommand === "config") {
+        const agentDir = getAgentDir();
+        const config = loadTasksConfig(agentDir);
+        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+          if (ctx.hasUI) {
+            for (const diagnostic of config.diagnostics) {
+              ctx.ui.notify(
+                `pi-tasks: ${diagnostic}`,
+                isPermissionError(diagnostic) ? "error" : "warning",
+              );
+            }
+            ctx.ui.notify(
+              `Task settings require TUI mode; edit ${config.path}`,
+              "info",
+            );
+          }
+          return;
+        }
+        for (const diagnostic of config.diagnostics) {
+          ctx.ui.notify(
+            `pi-tasks: ${diagnostic}`,
+            isPermissionError(diagnostic) ? "error" : "warning",
+          );
+        }
+        let saved = false;
+        const { showTasksSettings } = await import("./settings.js");
+        await showTasksSettings(ctx, config, (settings: TasksSettings) => {
+          try {
+            saveTasksSettings(agentDir, settings);
+            saved = true;
+          } catch (error) {
+            ctx.ui.notify(
+              `pi-tasks: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+          }
+        });
+        if (saved) ctx.ui.notify("Tasks settings saved", "info");
+        return;
+      }
+      if (parts.length === 0 || (subcommand === "logs" && !parts[1])) {
         const id = await pickTask(ctx);
         if (id !== undefined) await openTaskLog(ctx, id);
         return;
       }
-      if (parts[0] === "logs" && parts[1]) {
+      if (subcommand === "logs" && parts[1]) {
         await openTaskLog(ctx, parts[1]);
         return;
       }
       if (ctx.hasUI) {
-        ctx.ui.notify("Usage: /task [logs] [id]", "info");
+        ctx.ui.notify(
+          "Usage: /task [logs] [id] | /task settings|config",
+          "info",
+        );
       }
     },
   });

@@ -1,7 +1,14 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { CONFIG_FILE_NAME } from "./config.js";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 import {
   cancelTask,
@@ -195,5 +202,69 @@ describe("pi-tasks runner", () => {
       if (alive) process.kill(bgPid, "SIGKILL");
     } catch {}
     expect(alive).toBe(false);
+  });
+
+  it("wraps only the inner task command with bwrap when sandbox is enabled in tasks.json", async () => {
+    const binDir = mkdtempSync(join(tmpdir(), "pi-tasks-bwrap-"));
+    const argsLog = join(binDir, "bwrap-args.txt");
+    const fakeBwrap = join(binDir, "bwrap");
+    writeFileSync(
+      fakeBwrap,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
+const sep = args.indexOf("--");
+const cmd = args[sep + 1];
+const cmdArgs = args.slice(sep + 2);
+const res = spawnSync(cmd, cmdArgs, { stdio: "inherit" });
+process.exit(res.status ?? 1);
+`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(agentDir, CONFIG_FILE_NAME),
+      JSON.stringify({ sandbox: { enabled: true, offline: true } }),
+    );
+    const workDir = mkdtempSync(join(tmpdir(), "pi-tasks-cwd-"));
+    try {
+      const task = await spawnShellTask({
+        agentDir,
+        command: "echo sandboxed-task-ok",
+        cwd: workDir,
+        sandbox: { offline: true, bwrapBinary: fakeBwrap },
+      });
+      const finished = await waitForTask(agentDir, task.id, 5_000);
+      expect(finished?.status).toBe("completed");
+      expect(await finished?.output()).toContain("sandboxed-task-ok");
+      const recorded = JSON.parse(readFileSync(argsLog, "utf8")) as string[];
+      expect(recorded).toContain("--ro-bind");
+      expect(recorded).toContain("--unshare-net");
+      expect(recorded).toContain(workDir);
+    } finally {
+      rmSync(binDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed with OS permission error when bwrap is not executable", async () => {
+    if (process.getuid?.() === 0) return;
+    const binDir = mkdtempSync(join(tmpdir(), "pi-tasks-bwrap-perm-"));
+    const fakeBwrap = join(binDir, "bwrap");
+    writeFileSync(fakeBwrap, "#!/bin/sh\nexit 0\n");
+    chmodSync(fakeBwrap, 0o644);
+    try {
+      await expect(
+        spawnShellTask({
+          agentDir,
+          command: "echo hi",
+          cwd: process.cwd(),
+          sandbox: { bwrapBinary: fakeBwrap },
+        }),
+      ).rejects.toThrow(/permission/i);
+    } finally {
+      rmSync(binDir, { recursive: true, force: true });
+    }
   });
 });
