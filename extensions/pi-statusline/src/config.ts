@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThemeBg, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Color } from "@earendil-works/pi-tui";
-import { updateJsonConfig } from "@hollowheap/core/config";
+import {
+  formatFsPermissionError,
+  isPermissionError,
+  updateJsonConfig,
+} from "@hollowheap/core/config";
 import { parseColorSpec } from "./colors.js";
 import { BUILTINS } from "./components.js";
 
@@ -412,8 +416,16 @@ export function loadConfig(agentDir: string): {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
-  } catch {
-    return { config: defaultConfig(), diagnostics: [], path };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return { config: defaultConfig(), diagnostics: [], path };
+    }
+    const message = isPermissionError(error)
+      ? formatFsPermissionError("read statusline config", path, error)
+      : `cannot read ${path}: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+    return { config: defaultConfig(), diagnostics: [message], path };
   }
   let parsed: unknown;
   try {

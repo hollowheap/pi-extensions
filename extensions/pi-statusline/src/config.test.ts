@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -317,5 +323,38 @@ describe("loadConfig", () => {
     expect(() => saveOptions(dir, defaultConfig().options)).toThrow();
 
     expect(readFileSync(path, "utf8")).toBe(broken);
+  });
+
+  it("surfaces permission diagnostics when statusline.json cannot be read", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    const path = join(dir, "statusline.json");
+    writeFileSync(path, "{}");
+    chmodSync(path, 0o000);
+    try {
+      const { config, diagnostics } = loadConfig(dir);
+      expect(config).toEqual(defaultConfig());
+      if (process.getuid?.() !== 0) {
+        expect(diagnostics.length).toBeGreaterThan(0);
+        expect(diagnostics[0]).toMatch(/permission|EACCES/i);
+      }
+    } finally {
+      chmodSync(path, 0o600);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws a permission error when saving options into a read-only directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    chmodSync(dir, 0o500);
+    try {
+      if (process.getuid?.() !== 0) {
+        expect(() => saveOptions(dir, defaultConfig().options)).toThrow(
+          /permission|EACCES/i,
+        );
+      }
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

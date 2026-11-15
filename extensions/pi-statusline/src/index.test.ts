@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setCwd } from "@hollowheap/core";
@@ -232,6 +232,91 @@ describe("pi-statusline extension", () => {
 
     await command.handler("thinking reasoning", ctx);
     expect(ctx.ui.setHiddenThinkingLabel).toHaveBeenCalledWith("reasoning");
+  });
+
+  it("supports /statusline config as an alias for settings and exposes completions", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "statusline",
+    )?.[1] as {
+      getArgumentCompletions: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    expect(
+      command.getArgumentCompletions("")?.map((item) => item.value),
+    ).toEqual(["click", "settings", "config", "working", "thinking"]);
+    expect(
+      command.getArgumentCompletions("con")?.map((item) => item.value),
+    ).toEqual(["config"]);
+    expect(
+      command.getArgumentCompletions("working ")?.map((item) => item.value),
+    ).toEqual(["default", "pulse", "compact", "hidden"]);
+
+    const custom = vi.fn().mockResolvedValue(undefined);
+    const ctx = createMockCtx({
+      mode: "tui",
+      ui: { ...createMockCtx().ui, custom },
+    });
+    await command.handler("config", ctx);
+    expect(custom).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies with an error when saving /statusline config fails with EACCES", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-eacces-"));
+    state.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "statusline",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+        },
+      ) => {
+        const comp = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_t: string, s: string) => s,
+            bg: (_t: string, s: string) => s,
+            bold: (s: string) => s,
+          },
+          {},
+          () => {},
+        );
+        chmodSync(dir, 0o500);
+        comp.handleInput("\r");
+      },
+    );
+    const ctx = createMockCtx({
+      mode: "tui",
+      ui: { ...createMockCtx().ui, custom },
+    });
+    try {
+      if (process.getuid?.() !== 0) {
+        await command.handler("config", ctx);
+        expect(ctx.ui.notify).toHaveBeenCalledWith(
+          expect.stringMatching(/failed to save settings.*permission|EACCES/i),
+          "error",
+        );
+      }
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("maps default slash actions", async () => {

@@ -93,6 +93,10 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   });
 
+  pi.events.on("tui:config-changed", () => {
+    requestRender?.();
+  });
+
   function neededNames(): string[] {
     const names = new Set<string>();
     for (const specs of Object.values(config.sections)) {
@@ -267,8 +271,52 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  const STATUSLINE_SUBCOMMANDS = [
+    "click",
+    "settings",
+    "config",
+    "working",
+    "thinking",
+  ] as const;
+  const WORKING_PRESETS = ["default", "pulse", "compact", "hidden"] as const;
+
   pi.registerCommand("statusline", {
-    description: "Statusline actions: click, settings, working, or thinking",
+    description:
+      "Statusline actions: click, settings, config, working, or thinking",
+    getArgumentCompletions: (prefix: string) => {
+      const trimmedStart = prefix.trimStart();
+      const trailingSpace = /\s$/.test(prefix);
+      const parts = trimmedStart.split(/\s+/).filter(Boolean);
+      if (parts.length === 0 || (parts.length === 1 && !trailingSpace)) {
+        const query = (parts[0] ?? "").toLowerCase();
+        return STATUSLINE_SUBCOMMANDS.filter((cmd) =>
+          cmd.startsWith(query),
+        ).map((cmd) => ({ value: cmd, label: cmd }));
+      }
+      if (
+        parts[0] === "working" &&
+        (parts.length === 1 || (parts.length === 2 && !trailingSpace))
+      ) {
+        const query = (parts[1] ?? "").toLowerCase();
+        return WORKING_PRESETS.filter((preset) => preset.startsWith(query)).map(
+          (preset) => ({ value: preset, label: preset }),
+        );
+      }
+      if (
+        parts[0] === "click" &&
+        (parts.length === 1 || (parts.length === 2 && !trailingSpace))
+      ) {
+        const query = (parts[1] ?? "").toLowerCase();
+        const segments = new Set([
+          ...Object.keys(DEFAULT_CLICK_ACTIONS),
+          ...Object.keys(config.clickActions ?? {}),
+        ]);
+        return [...segments]
+          .filter((segment) => segment.toLowerCase().startsWith(query))
+          .map((segment) => ({ value: segment, label: segment }));
+      }
+      return null;
+    },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts[0] === "working") {
@@ -324,7 +372,7 @@ export default function (pi: ExtensionAPI) {
         }
         return;
       }
-      if (parts[0] === "settings") {
+      if (parts[0] === "settings" || parts[0] === "config") {
         if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
           if (ctx.hasUI)
             ctx.ui.notify(
@@ -392,7 +440,7 @@ export default function (pi: ExtensionAPI) {
       }
       if (ctx.hasUI) {
         ctx.ui.notify(
-          "Usage: /statusline click <segment> | /statusline settings",
+          "Usage: /statusline click <segment> | /statusline settings|config",
           "info",
         );
       }
