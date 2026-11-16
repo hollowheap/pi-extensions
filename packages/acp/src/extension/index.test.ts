@@ -199,7 +199,7 @@ describe("bundled extension", () => {
       {},
     )) as { modes: { name: string; description?: string }[] };
     expect(reply.modes.map((mode) => mode.name)).toEqual(
-      expect.arrayContaining(["ask", "edit", "plan"]),
+      expect.arrayContaining(["manual", "edit", "plan"]),
     );
   });
 

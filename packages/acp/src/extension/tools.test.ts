@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setMode } from "@hollowheap/core";
+import { registerMode } from "@hollowheap/core/modes";
+import { setMode } from "@hollowheap/core/state";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it, vi } from "vitest";
 import type { ClientCaps } from "./client.js";
 import {
@@ -10,6 +12,8 @@ import {
   createAcpTools,
   hasConflictMarkers,
 } from "./tools.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 const runBinaryMock = vi.hoisted(() =>
   vi.fn(async (_command: string, _args: string[]) => ""),

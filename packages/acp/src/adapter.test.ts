@@ -14,10 +14,10 @@ import {
 
 const FAKE_MODES = [
   { name: "plan" },
-  { name: "ask" },
+  { name: "manual" },
   { name: "edit" },
   {
-    name: "autopilot",
+    name: "auto",
     description: "Writes and non-dangerous bash run without asking",
   },
 ];
@@ -366,16 +366,16 @@ describe("adapter sessions", () => {
     const options = created.configOptions[0].options;
     expect(options.map((option) => option.value)).toEqual([
       "plan",
-      "ask",
+      "manual",
       "edit",
-      "autopilot",
+      "auto",
     ]);
-    expect(
-      options.find((option) => option.value === "autopilot")?.description,
-    ).toBe("Writes and non-dangerous bash run without asking");
-    expect(options.find((option) => option.value === "ask")?.description).toBe(
-      "Reads auto-run; writes and bash ask",
+    expect(options.find((option) => option.value === "auto")?.description).toBe(
+      "Writes and non-dangerous bash run without asking",
     );
+    expect(
+      options.find((option) => option.value === "manual")?.description,
+    ).toBe("Reads auto-run; writes and bash ask");
   });
 
   it("accepts a mode the extension registered", async () => {
@@ -384,9 +384,9 @@ describe("adapter sessions", () => {
     const result = (await adapter.handle("session/set_config_option", {
       sessionId: "pi-1",
       configId: "mode",
-      value: "autopilot",
+      value: "auto",
     })) as { configOptions: { currentValue: string }[] };
-    expect(result.configOptions[0].currentValue).toBe("autopilot");
+    expect(result.configOptions[0].currentValue).toBe("auto");
   });
 
   it("auto-selects opencode-go model when initial model is unknown", async () => {

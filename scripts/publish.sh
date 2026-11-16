@@ -6,7 +6,7 @@ packages=(
   @hollowheap/core
   @hollowheap/tui
   @hollowheap/policy
-  @hollowheap/pi-autopilot
+  @hollowheap/pi-modes
   @hollowheap/pi-dashboard
   @hollowheap/pi-decide
   @hollowheap/pi-hooks
@@ -23,7 +23,7 @@ packages=(
   @hollowheap/pi-tasks
   @hollowheap/pi-guard
   @hollowheap/pi-subagents
-  @hollowheap/pi-acp
+  @hollowheap/acp
 )
 
 for package in "${packages[@]}"; do

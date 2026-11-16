@@ -1,5 +1,5 @@
 {
-  "name": "@hollowheap/pi-acp",
+  "name": "@hollowheap/acp",
   "version": "0.3.0",
   "type": "module",
   "description": "ACP adapter letting ACP clients drive pi (stdio JSON-RPC server + bundled pi extension)",

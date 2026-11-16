@@ -10,9 +10,11 @@ import {
   enterMode,
   evaluate,
   modeLayers,
+  registerMode,
   replaceConfigModes,
 } from "@hollowheap/core/modes";
 import type { Tag } from "@hollowheap/core/types";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import {
   TOOL_TAGS,
   readCommandArg,
@@ -158,6 +160,7 @@ function connectAdapter(ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
   for (const tool of createAcpTools(toolDeps)) pi.registerTool(tool);
   pi.on("session_start", (_event, ctx) => {
     connectAdapter(ctx);

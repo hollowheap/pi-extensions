@@ -5,7 +5,7 @@ Pi coding agent extension monorepo delivering guardrails, statusline, budgeting,
 ## Essential Commands
 
 - Install dependencies: `npm install`
-- Typecheck & ACP build: `npm run typecheck` (`npx tsc -p packages/pi-acp` rebuilds gitignored `packages/pi-acp/dist`)
+- Typecheck & ACP build: `npm run typecheck` (`npx tsc -p packages/acp` rebuilds gitignored `packages/acp/dist`)
 - Lint: `npm run lint` (`npm run lint:fix` writes fixes)
 - Full test suite: `npm test`
 - Single test / module: `npx vitest run <file-or-dir>`

@@ -1,11 +1,11 @@
-# pi-acp
+# @hollowheap/acp
 
 ACP adapter letting ACP clients (e.g. Neovim Avante) drive pi. A stdio JSON-RPC 2.0 server with one runtime dependency (`@hollowheap/core`): one `pi --mode rpc` process per ACP session, plus a bundled pi extension (`src/extension/`) for the `acp_*` tools.
 
 This package is not a pi extension itself — do not load it with `pi -e`. Build it, then point the client at the bundle:
 
 ```bash
-npx tsc -p packages/pi-acp
+npx tsc -p packages/acp
 ```
 
 ## Avante
@@ -15,7 +15,7 @@ require("avante").setup({
   acp_providers = {
     ["pi"] = {
       command = "node",
-      args = { "/home/hollowheap/repos/my-pi-agent/packages/pi-acp/dist/main.js" },
+      args = { "/home/hollowheap/repos/my-pi-agent/packages/acp/dist/main.js" },
       env = {},
     },
   },
@@ -39,6 +39,6 @@ The extension depends on `@hollowheap/core` (`dependencies`, `^0.2.0`); the adap
 - `fs/*` and `terminal/*` requests time out after 10 seconds. Terminal commands run to completion via `terminal/output` polling, never `wait_for_exit`, and the polling loop is bounded by a wall-clock deadline.
 - Permissions offer exactly `allow_once` / `reject_once` through `session/request_permission`, carrying the real pi tool-call id; denied calls never reach the client. Without a connected client, an `ask` verdict resolves to a block.
 - The active mode is pushed to the extension on every connect and reconnect; a mode change requested before the handshake completes is buffered and applied on connect.
-- The adapter asks the extension for the mode list (`get-modes` over the socket) and offers every registered mode to the client, so a mode contributed by an extension (`autopilot`) is selectable. A mode notice rides in the returned mode config option's description, so the client renders it without a separate channel.
+- The adapter asks the extension for the mode list (`get-modes` over the socket) and offers every registered mode to the client, so a mode contributed by an extension (`auto`) is selectable. A mode notice rides in the returned mode config option's description, so the client renders it without a separate channel.
 - `session/load` replays `get_messages` history as updates. Model usage is not reported (out of scope).
 - `eza`, `fd`, and `rg` binaries must be installed for those tools; otherwise they fail with a clear error.

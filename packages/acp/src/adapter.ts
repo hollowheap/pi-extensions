@@ -27,7 +27,7 @@ export const ADAPTER_VERSION = "0.2.0";
 
 export type Mode = string;
 
-export const MODES: Mode[] = ["plan", "ask", "edit"];
+export const MODES: Mode[] = ["plan", "manual", "edit"];
 
 export interface ModeDescriptor {
   name: string;
@@ -36,7 +36,7 @@ export interface ModeDescriptor {
 
 const MODE_DESCRIPTIONS: Record<string, string> = {
   plan: "Reads auto-run; writes limited to artifacts/plan.md and artifacts/specs.md; bash asks",
-  ask: "Reads auto-run; writes and bash ask",
+  manual: "Reads auto-run; writes and bash ask",
   edit: "Writes auto-run; bash asks",
 };
 
@@ -508,7 +508,7 @@ export class Adapter {
     cwd: string,
     sessionFile: string | undefined,
     title: string,
-    mode: Mode = "ask",
+    mode: Mode = "manual",
     modelOverride?: string,
   ): Promise<LiveSession> {
     const socketPath = this.socketPath();

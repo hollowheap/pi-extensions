@@ -20,10 +20,10 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/tui`](./packages/tui) | `0.3.0` | Shared frames, pickers, pagers, progress, and code viewer |
 | [`@hollowheap/policy`](./packages/policy) | `0.3.0` | Headless permission policy and shared tool-target helpers |
 | [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.3.0` | Configurable lualine-style statusline footer |
-| [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.3.0` | Policy enforcement, approvals, shell safety gates, and modes |
+| [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.3.0` | Policy enforcement, approvals, and shell safety gates |
 | [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.3.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
 | [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.3.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-autopilot`](./extensions/pi-autopilot) | `0.3.0` | Hands-free autopilot mode for autonomous workflow loops |
+| [`@hollowheap/pi-modes`](./extensions/pi-modes) | `0.3.0` | Approval modes with `/mode` and `alt+m` |
 | [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.3.0` | Workspace `/cd` control |
 | [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.3.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
 | [`@hollowheap/pi-memory`](./extensions/pi-memory) | `0.3.0` | Opt-in observational memory with compaction injection and branch-local observations |
@@ -34,7 +34,9 @@ Every package here is completely plug-and-play. You can grab individual packages
 | [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.3.0` | Advisory decision tool with structured `decide` calls |
 | [`@hollowheap/pi-web`](./extensions/pi-web) | `0.3.0` | Codemode `web_search` and `web_fetch` tools for current docs and web results |
 | [`@hollowheap/pi-usage`](./extensions/pi-usage) | `0.3.0` | Usage presentation, optional `/usage cap`, and statusline usage |
-| [`@hollowheap/pi-acp`](./packages/pi-acp) | `0.3.0` | ACP adapter server plus bundled pi extension (needs `npx tsc -p packages/pi-acp` to build) |
+| [`@hollowheap/acp`](./packages/acp) | `0.3.0` | ACP adapter plus bundled extension |
+
+Build the ACP adapter with `npx tsc -p packages/acp`.
 
 ---
 
