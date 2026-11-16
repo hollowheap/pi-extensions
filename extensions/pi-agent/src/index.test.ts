@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getModeLayer } from "@hollowheap/core/modes";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension, { ACTIVE_AGENT_TYPE, createAgentExtension } from "./index.js";
@@ -55,6 +56,7 @@ function createMockPi() {
       { name: "codemode", exposure: "model-only" },
     ]),
     setModel: vi.fn().mockResolvedValue(true),
+    getThinkingLevel: vi.fn(() => "medium"),
     setThinkingLevel: vi.fn(),
     setSessionName: vi.fn((name: string) => {
       currentSessionName = name;
@@ -158,6 +160,11 @@ afterEach(() => {
 });
 
 describe("pi-agent extension", () => {
+  it("registers builtin mode layers without pi-modes", () => {
+    createAgentExtension()(createMockPi() as never);
+    expect(getModeLayer("manual")).toBeDefined();
+    expect(getModeLayer("plan")).toBeDefined();
+  });
   it("registers /agent command and lifecycle hooks", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -376,6 +383,28 @@ describe("pi-agent extension", () => {
     expect(ctx.ui.custom).toHaveBeenCalled();
   });
 
+  it("names a nameless session after the agent instead of 'session'", async () => {
+    const pi = createMockPi();
+    pi.getSessionName = vi.fn(() => undefined);
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    await pi.getCommand("agent").handler("engineer", ctx);
+
+    expect(pi.setSessionName).toHaveBeenCalledWith("[engineer] engineer");
+  });
+
+  it("replaces a legacy bare 'session' title with the agent name", async () => {
+    const pi = createMockPi();
+    pi.getSessionName = vi.fn(() => "[engineer] session");
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    await pi.getCommand("agent").handler("scout", ctx);
+
+    expect(pi.setSessionName).toHaveBeenCalledWith("[scout] scout");
+  });
+
   it("filters skills without injecting agent instructions", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();
@@ -454,6 +483,10 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
+    expect(pi.setThinkingLevel).not.toHaveBeenCalled();
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({ name: "engineer", thinking: "medium" }),
+    );
 
     const event = {
       systemPromptOptions: {

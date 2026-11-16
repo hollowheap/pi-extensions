@@ -24,7 +24,7 @@ export async function showAgentSwitchPopup(
 
         const label = (value: string) => theme.fg("muted", value);
         const contentLines = [
-          `${label("  Mode:     ")}${agent.mode ?? "ask"}`,
+          `${label("  Mode:     ")}${agent.mode ?? "manual"}`,
           `${label("  Model:    ")}${agent.model ?? "default"}`,
           `${label("  Effort:   ")}${agent.thinking ?? agent.effort ?? "default"}`,
           `${label("  Tools:    ")}${agent.tools ? agent.tools.join(", ") : "all"}`,
@@ -66,7 +66,7 @@ export async function showAgentSwitchPopup(
       : "";
     await ctx.ui.confirm(
       `Agent: ${agent.name}`,
-      `Mode: ${agent.mode ?? "ask"} | Model: ${agent.model ?? "default"} | Tools: ${agent.tools ? agent.tools.join(", ") : "all"}${forkMsg}`,
+      `Mode: ${agent.mode ?? "manual"} | Model: ${agent.model ?? "default"} | Tools: ${agent.tools ? agent.tools.join(", ") : "all"}${forkMsg}`,
     );
   } else {
     ctx.ui?.notify?.(

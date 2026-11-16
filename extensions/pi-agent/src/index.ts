@@ -6,8 +6,9 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { enterMode } from "@hollowheap/core/modes";
+import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { loadAgentConfig } from "./config.js";
 
@@ -36,6 +37,36 @@ const VALID_THINKING_LEVELS = new Set<string>([
   "xhigh",
   "max",
 ]);
+
+function firstUserMessageText(branch: readonly unknown[]): string | undefined {
+  for (const item of branch) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as {
+      type?: unknown;
+      message?: { role?: unknown; content?: unknown };
+    };
+    if (entry.type !== "message" || entry.message?.role !== "user") continue;
+    const content = entry.message.content;
+    const text =
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content
+              .filter(
+                (part): part is { type: "text"; text: string } =>
+                  typeof part === "object" &&
+                  part !== null &&
+                  (part as { type?: unknown }).type === "text" &&
+                  typeof (part as { text?: unknown }).text === "string",
+              )
+              .map((part) => part.text)
+              .join(" ")
+          : "";
+    const cleaned = sanitizeTerminalText(text).replace(/\s+/g, " ").trim();
+    if (cleaned !== "") return cleaned.slice(0, 60);
+  }
+  return undefined;
+}
 
 function toAgentEntryData(agent: AgentConfig): {
   name: string;
@@ -82,6 +113,7 @@ function formatModelId(model: unknown): string {
 
 export function createAgentExtension(): (pi: ExtensionAPI) => void {
   return (pi: ExtensionAPI): void => {
+    for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
     let activeAgent: AgentConfig | undefined;
     let lastCwd = process.cwd();
     let lastTrusted = false;
@@ -162,7 +194,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       agent: AgentConfig,
       ctx: ExtensionCommandContext | ExtensionContext,
       piApi: ExtensionAPI,
-      options: { persist?: boolean; notify?: boolean } = {},
+      options: {
+        persist?: boolean;
+        notify?: boolean;
+        preserveThinking?: boolean;
+      } = {},
     ): Promise<void> => {
       if (activeAgent === undefined && options.persist) {
         captureBaseActiveTools(piApi);
@@ -184,7 +220,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           name: agent.name,
           description: agent.description,
           model: agent.model,
-          thinking: agent.thinking ?? agent.effort,
+          ...(options.preserveThinking === true
+            ? typeof piApi.getThinkingLevel === "function"
+              ? { thinking: piApi.getThinkingLevel() }
+              : {}
+            : { thinking: agent.thinking ?? agent.effort }),
           mode: agent.mode,
           tools: agent.tools,
           skills: agent.skills,
@@ -227,7 +267,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       const thinking = agent.thinking ?? agent.effort;
-      if (thinking) {
+      if (thinking && options.preserveThinking !== true) {
         const level = thinking.toLowerCase();
         if (
           VALID_THINKING_LEVELS.has(level) &&
@@ -276,7 +316,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       if (options.persist && previousAgent?.mode && ctx.sessionManager) {
-        enterMode(ctx.sessionManager, "ask");
+        enterMode(ctx.sessionManager, "manual");
       }
 
       restoreBaseActiveTools(piApi);
@@ -297,8 +337,15 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           (entry as { message?: { role?: string } }).message?.role === "user",
       );
 
-      const baseName = pi.getSessionName() ?? "session";
-      const sessionName = `[${agent.name}] ${baseName.replace(/^\[[^\]]+\]\s*/, "")}`;
+      const existingName = pi.getSessionName()?.trim();
+      const strippedName = existingName?.replace(/^\[[^\]]+\]\s*/, "").trim();
+      const baseName =
+        strippedName !== undefined &&
+        strippedName !== "" &&
+        strippedName !== "session"
+          ? strippedName
+          : (firstUserMessageText(branch) ?? agent.name);
+      const sessionName = `[${agent.name}] ${baseName}`;
 
       ctx.ui?.setStatus?.("agent", agent.name);
 
@@ -395,7 +442,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           (a) => a.name.toLowerCase() === persistedName?.toLowerCase(),
         );
         if (matched) {
-          await applyAgent(matched, ctx, pi, { persist: false, notify: false });
+          await applyAgent(matched, ctx, pi, {
+            persist: false,
+            notify: false,
+            preserveThinking: true,
+          });
           return;
         }
       }

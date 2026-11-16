@@ -107,7 +107,7 @@ export async function showAgentPicker(
             theme.fg("accent", theme.bold(agent.description)),
             theme.fg(
               "muted",
-              `model: ${agent.model ?? "default"}  mode: ${agent.mode ?? "ask"}  thinking: ${agent.thinking ?? agent.effort ?? "default"}`,
+              `model: ${agent.model ?? "default"}  mode: ${agent.mode ?? "manual"}  thinking: ${agent.thinking ?? agent.effort ?? "default"}`,
             ),
             theme.fg("muted", `tools: ${agent.tools?.join(", ") ?? "all"}`),
             theme.fg(
