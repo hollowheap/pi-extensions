@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session } from "@hollowheap/core";
 import { describe, expect, it, vi } from "vitest";
-import autopilotExtension from "../../pi-autopilot/src/index.js";
+import modesExtension from "../../pi-modes/src/index.js";
 import toolsExtension from "../../pi-tools/src/index.js";
 import usageExtension from "../../pi-usage/src/index.js";
 import extension from "./index.js";
@@ -38,7 +38,7 @@ function mockPi(bus: EventEmitter) {
   };
 }
 
-function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
+function setupAll(rulesFile: string = ALL_ALLOW) {
   const bus = new EventEmitter();
   bus.setMaxListeners(20);
   const dir = mkdtempSync(join(tmpdir(), "pi-split-"));
@@ -47,14 +47,12 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
   const guardPi = mockPi(bus);
   extension(guardPi as never);
+  const modesPi = mockPi(bus);
+  modesExtension(modesPi as never);
   const toolsPi = mockPi(bus);
   toolsExtension(toolsPi as never);
   const usagePi = mockPi(bus);
   usageExtension(usagePi as never);
-  if (withAutopilot) {
-    const autoPi = mockPi(bus);
-    autopilotExtension(autoPi as never);
-  }
   const sessionManager = {};
   const ctx = {
     cwd: dir,
@@ -74,8 +72,8 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
   const usageHandlers = Object.fromEntries(
     usagePi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
-  const guardCommands = Object.fromEntries(
-    guardPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  const modesCommands = Object.fromEntries(
+    modesPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
   const usageCommands = Object.fromEntries(
     usagePi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
@@ -83,14 +81,18 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
   const toolsCommands = Object.fromEntries(
     toolsPi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
   );
+  const modesHandlers = Object.fromEntries(
+    modesPi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
   return {
     dir,
     ctx,
     start: () => {
+      modesHandlers.session_start(undefined as never, ctx as never);
       guardHandlers.session_start(undefined as never, ctx as never);
       usageHandlers.session_start(undefined as never, ctx as never);
     },
-    mode: (args: string) => guardCommands.mode.handler(args, ctx as never),
+    mode: (args: string) => modesCommands.mode.handler(args, ctx as never),
     usage: (args: string) => usageCommands.usage.handler(args, ctx as never),
     cd: (args: string) => toolsCommands.cd.handler(args, ctx as never),
     hook: (toolName: string, input: Record<string, unknown>) =>
@@ -99,30 +101,19 @@ function setupAll(rulesFile: string = ALL_ALLOW, withAutopilot = true) {
         ctx as never,
       ) as Promise<unknown>,
     shortcut: () =>
-      guardPi.registerShortcut.mock.calls[0][1].handler(ctx as never),
+      modesPi.registerShortcut.mock.calls[0][1].handler(ctx as never),
   };
 }
 
 describe("split extensions over the event bus", () => {
-  it("treats autopilot as unknown without pi-autopilot", async () => {
-    const env = setupAll(ALL_ALLOW, false);
-    env.start();
-    await env.mode("autopilot");
-    expect(env.ctx.ui.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("unknown mode"),
-      "error",
-    );
-    expect(session(env.ctx.sessionManager).mode).toBe("ask");
-  });
-
-  it("enters autopilot without a mandatory cap", async () => {
+  it("enters auto without a mandatory cap", async () => {
     const env = setupAll();
     env.start();
-    expect(session(env.ctx.sessionManager).mode).toBe("ask");
-    await env.mode("autopilot");
-    expect(session(env.ctx.sessionManager).mode).toBe("autopilot");
+    expect(session(env.ctx.sessionManager).mode).toBe("manual");
+    await env.mode("auto");
+    expect(session(env.ctx.sessionManager).mode).toBe("auto");
     expect(env.ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("autopilot on"),
+      expect.stringContaining("auto on"),
       "warning",
     );
     const input = { path: "src/x.ts" };
@@ -132,7 +123,7 @@ describe("split extensions over the event bus", () => {
     ).resolves.toBeUndefined();
     expect(env.ctx.ui.confirm).not.toHaveBeenCalled();
     await env.shortcut();
-    expect(session(env.ctx.sessionManager).mode).toBe("ask");
+    expect(session(env.ctx.sessionManager).mode).toBe("manual");
   });
 
   it("rewrites hook paths after /cd across extensions", async () => {
@@ -172,7 +163,7 @@ describe("split extensions over the event bus", () => {
     )?.[1] as (event: never, ctx: never) => void;
     guardStart(undefined as never, ctx as never);
     usageStart(undefined as never, ctx as never);
-    expect(seen).toContainEqual({ name: "mode-guard", text: "ASK" });
+    expect(seen).toContainEqual({ name: "mode-guard", text: "MANUAL" });
     expect(seen).toContainEqual({ name: "usage", text: "" });
   });
 });

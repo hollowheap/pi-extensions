@@ -1,6 +1,6 @@
 # pi-guard
 
-Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns the TUI side of the policy: approval prompts, `/mode`, `alt+m`, and the `mode-guard` statusline value. Verdicts come from `@hollowheap/core`, so the ACP extension enforces exactly the same rules.
+Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns approval prompts and the `mode-guard` statusline value; mode switching lives in `pi-modes` (`/mode`, `alt+m`). Verdicts come from `@hollowheap/core`, so the ACP extension enforces exactly the same rules.
 
 ## Try it
 
@@ -36,7 +36,7 @@ Verdicts resolve in a fixed order, so the order of rules in the file never decid
 4. matching `allow`/`ask` rules by highest pattern specificity, ties toward the stricter effect;
 5. the active mode's default for the tag.
 
-With no rules at all the mode default decides: `ask` mode asks for edits and shell, `edit` mode allows edits, and reads and searches run.
+With no rules at all the mode default decides: `manual` mode asks for edits and shell, `edit` mode allows edits, and reads and searches run.
 
 ## Hooked tools
 
@@ -87,7 +87,10 @@ Chains split on newlines, `&`, `&&`, `||`, `;`, and `|`; every part is analysed 
 
 ## Modes
 
-`/mode [name]` shows or switches the mode; mode names autocomplete and `alt+m` cycles the registered modes. Core registers `ask`, `edit`, and `plan`; installing `pi-autopilot` adds `autopilot`; `<agentDir>/modes.json` can add custom layers:
+Mode switching lives in `pi-modes` (`/mode`, `alt+m`). `pi-guard` enforces
+the active layer and publishes the statusline badge. Built-ins are `manual`
+(default), `edit`, `plan`, and `auto`; the legacy names `ask` and `autopilot`
+resolve to `manual` and `auto`. `<agentDir>/modes.json` adds custom layers:
 
 ```json
 {
@@ -100,20 +103,28 @@ Chains split on newlines, `&`, `&&`, `||`, `;`, and `|`; every part is analysed 
 }
 ```
 
-`defaults` must cover all four tags, overrides accept only `ask`/`deny`, and names that collide with a built-in or package mode are rejected with a diagnostic.
+`defaults` must cover all four tags, overrides accept only `ask`/`deny`, and
+names that collide with a built-in or package mode are rejected with a
+diagnostic.
 
 Defaults per mode:
 
 | mode | read | search | edit | shell |
 |---|---|---|---|---|
-| `ask` (default) | allow | allow | ask | ask |
+| `manual` (default) | allow | allow | ask | ask |
 | `edit` | allow | allow | allow | ask |
 | `plan` | allow | allow | deny | ask |
-| `autopilot` | allow | allow | allow | allow |
+| `auto` | allow | allow | allow | allow |
 
-`plan` additionally asks for edits to `artifacts/plan.md` and `artifacts/specs.md` (resolved against the effective working directory) and denies other edits. A `deny` rule still wins over the mode.
+`plan` additionally asks for edits to `artifacts/plan.md` and
+`artifacts/specs.md` (resolved against the effective working directory) and
+denies other edits. A `deny` rule still wins over the mode.
 
-The active mode is persisted in the session file as the custom entry `hollowheap.core.mode`, so `session resume` and `session fork` keep it. A restored mode that no longer exists falls back to `ask` with a diagnostic, and restoring re-runs the entry gates. Entering `autopilot` has no mandatory budget cap; `/usage cap` is optional.
+The active mode is persisted in the session file as the custom entry
+`hollowheap.core.mode`, so `session resume` and `session fork` keep it. A
+restored mode that no longer exists falls back to `manual` with a diagnostic,
+and restoring re-runs the entry gates. Entering `auto` has no mandatory budget
+cap; `/usage cap` is optional.
 
 ## Temporary grants
 

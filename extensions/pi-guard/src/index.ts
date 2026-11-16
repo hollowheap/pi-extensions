@@ -5,35 +5,24 @@ import {
   type ToolCallEvent,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
-import {
-  loadModesConfig,
-  loadPermissions,
-  loadToolTags,
-} from "@hollowheap/core/config";
+import { loadPermissions, loadToolTags } from "@hollowheap/core/config";
 import {
   displayTarget,
   sanitizeTerminalText,
   truncateText,
 } from "@hollowheap/core/format";
-import {
-  enterMode,
-  evaluate,
-  modeNames,
-  replaceConfigModes,
-  resetSession,
-} from "@hollowheap/core/modes";
+import { evaluate, registerMode } from "@hollowheap/core/modes";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { dropSession, effectiveCwd, session } from "@hollowheap/core/state";
 import type { Tag } from "@hollowheap/core/types";
 import {
+  BUILTIN_MODE_LAYERS,
   TOOL_TAGS,
   isPassthroughTaskCall,
   readCommandArg,
   readToolTarget,
 } from "@hollowheap/policy";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
 import { loadGuardConfig } from "./config.js";
 import {
   calculateContextBreakdown,
@@ -42,6 +31,7 @@ import {
 import {
   type DecisionEffect,
   checkPathTrust,
+  isSubpath,
   persistDecision,
 } from "./rules.js";
 import { formatGuardStatus, showGuardSettings } from "./settings.js";
@@ -254,22 +244,8 @@ function loadContextToolTags(ctx: ExtensionContext) {
   });
 }
 
-const SHORT_GUARD_MODE_MAP: Record<string, string> = {
-  ASK: "A",
-  EDIT: "E",
-  PLAN: "P",
-  AUTOPILOT: "AP",
-};
-
-export function formatGuardModeBadge(
-  mode: string,
-  shortMode = getActiveTuiConfig().shortMode,
-): string {
-  const upper = mode.trim().toUpperCase();
-  if (!shortMode) return upper;
-  const mapped = SHORT_GUARD_MODE_MAP[upper];
-  if (mapped !== undefined) return mapped;
-  return upper.slice(0, 1);
+export function formatGuardModeBadge(mode: string): string {
+  return mode.trim().toUpperCase();
 }
 
 function publishValues(runtime: GuardRuntime, owner: unknown): void {
@@ -286,14 +262,6 @@ function publishValues(runtime: GuardRuntime, owner: unknown): void {
     name: "mode-guard",
     text: formatGuardModeBadge(session(owner).mode),
   });
-}
-
-function nextMode(current: string): string {
-  const names = modeNames();
-  if (names.length === 0) return current;
-  const index = names.indexOf(current);
-  if (index < 0) return names[0] ?? current;
-  return names[(index + 1) % names.length] ?? current;
 }
 
 async function requestApproval(
@@ -332,32 +300,6 @@ async function requestApproval(
   return undefined;
 }
 
-async function switchMode(
-  runtime: GuardRuntime,
-  ctx: ExtensionContext,
-  raw: string,
-): Promise<void> {
-  const result = enterMode(ctx.sessionManager, raw);
-  if (result.diagnostic !== undefined) {
-    ctx.ui.notify(`pi-guard: ${result.diagnostic}`, "error");
-    return;
-  }
-  if (result.veto !== undefined) {
-    // A veto means the mode never became active, so its "on" notices would
-    // misreport the session; only the refusal is shown.
-    ctx.ui.notify(`pi-guard: ${result.veto}`, "error");
-    return;
-  }
-  if (result.notices.length > 0) {
-    for (const notice of result.notices) {
-      ctx.ui.notify(`pi-guard: ${notice.text}`, notice.level);
-    }
-  } else {
-    ctx.ui.notify(`pi-guard: mode ${result.mode}`);
-  }
-  publishValues(runtime, ctx.sessionManager);
-}
-
 async function pickGrantTarget(
   runtime: GuardRuntime,
   ctx: ExtensionContext,
@@ -394,6 +336,7 @@ async function pickGrantDuration(
 }
 
 export default function (pi: ExtensionAPI) {
+  for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
   const runtime: GuardRuntime = {
     sessionDecisions: new Map(),
     sessionGrants: new Map(),
@@ -413,6 +356,11 @@ export default function (pi: ExtensionAPI) {
       publishValues(runtime, runtime.lastOwner);
     }
   });
+  pi.events.on("mode:changed", () => {
+    if (runtime.lastOwner !== undefined) {
+      publishValues(runtime, runtime.lastOwner);
+    }
+  });
   const handleToolCall = async (
     event: ToolCallEvent,
     ctx: ExtensionContext,
@@ -423,7 +371,7 @@ export default function (pi: ExtensionAPI) {
     const tag: Tag | undefined =
       TOOL_TAGS[event.toolName] ?? loadContextToolTags(ctx)[event.toolName];
     if (tag === undefined) {
-      if (session(ctx.sessionManager).mode === "autopilot") {
+      if (session(ctx.sessionManager).mode === "auto") {
         return undefined;
       }
       const raw = readToolTarget(event.toolName, event.input) ?? ".";
@@ -449,7 +397,8 @@ export default function (pi: ExtensionAPI) {
     rememberTarget(runtime, ctx.sessionManager, target);
 
     if (tag !== "shell") {
-      const guardConfig = loadGuardConfig(getAgentDir(), (msg) => {
+      const agentDir = getAgentDir();
+      const guardConfig = loadGuardConfig(agentDir, (msg) => {
         if (ctx.hasUI) ctx.ui.notify(`pi-guard: ${msg}`, "warning");
       });
       const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
@@ -471,6 +420,12 @@ export default function (pi: ExtensionAPI) {
             block: true,
             reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
           };
+        }
+        if (
+          (tag === "read" || tag === "search") &&
+          isSubpath(agentDir, trust.canonicalPath)
+        ) {
+          return undefined;
         }
         if (trust.isTrusted) {
           if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
@@ -741,16 +696,6 @@ export default function (pi: ExtensionAPI) {
     return { content };
   });
   const restore = (ctx: ExtensionContext) => {
-    const notify = (message: string) =>
-      ctx.ui.notify(`pi-guard: ${message}`, "warning");
-    replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
-    const restored = resetSession(ctx.sessionManager);
-    if (restored.diagnostic !== undefined) {
-      ctx.ui.notify(`pi-guard: ${restored.diagnostic}`, "warning");
-    }
-    if (restored.veto !== undefined) {
-      ctx.ui.notify(`pi-guard: ${restored.veto}`, "error");
-    }
     const trusted = ctx.isProjectTrusted?.() ?? false;
     runtime.trustedByOwner.set(ctx.sessionManager, trusted);
     const restoredAudit = restoreAuditCounters(ctx.sessionManager);
@@ -785,31 +730,6 @@ export default function (pi: ExtensionAPI) {
     runtime.trustedByOwner.delete(ctx.sessionManager);
     dropSession(ctx.sessionManager);
   });
-  pi.registerCommand("mode", {
-    description: "Show or switch the plan/approval mode",
-    getArgumentCompletions: (prefix: string) => {
-      const lower = prefix.trim().toLowerCase();
-      return modeNames()
-        .filter((mode) => mode.startsWith(lower))
-        .map((mode) => ({ value: mode, label: mode }));
-    },
-    handler: async (args, ctx) => {
-      const raw = args.trim().toLowerCase();
-      if (raw === "") {
-        ctx.ui.notify(
-          `pi-guard: mode ${session(ctx.sessionManager).mode} (${modeNames().join(", ")})`,
-        );
-        return;
-      }
-      await switchMode(runtime, ctx, raw);
-    },
-  });
-  pi.registerShortcut(Key.alt("m"), {
-    description: "Cycle plan/approval mode",
-    handler: (ctx) =>
-      switchMode(runtime, ctx, nextMode(session(ctx.sessionManager).mode)),
-  });
-
   pi.registerCommand("grant", {
     description: "Grant temporary permission: /grant [path-or-tool] [duration]",
     getArgumentCompletions: (prefix: string) => {
@@ -989,13 +909,8 @@ export default function (pi: ExtensionAPI) {
           ctx,
           agentDir,
           cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
-          currentMode: session(ctx.sessionManager).mode,
-          availableModes: modeNames(),
           activeGrantCount: () =>
             getActiveGrantCount(runtime, ctx.sessionManager),
-          onModeChange: async (mode) => {
-            await switchMode(runtime, ctx, mode);
-          },
           onClearGrants: () => {
             const prev = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
             const now = Date.now();

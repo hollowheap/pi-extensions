@@ -9,12 +9,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { session, setCwd, withPromptLock } from "@hollowheap/core";
+import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
-import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import {
-  resetActiveTuiConfig,
-  setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { resetActiveTuiConfig } from "@hollowheap/tui/state";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -22,6 +20,8 @@ vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
 });
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension, { GUARD_AUDIT_TYPE, formatGuardModeBadge } from "./index.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 const testAgentState = vi.hoisted(() => ({
   agentDir: "/nonexistent-pi-agent-dir-for-tests",
@@ -149,11 +149,8 @@ describe("pi-guard extension", () => {
       "tool_result",
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commands).toEqual(["mode", "grant", "grants", "context", "guard"]);
-    expect(pi.registerShortcut).toHaveBeenCalledWith(
-      "alt+m",
-      expect.objectContaining({ description: "Cycle plan/approval mode" }),
-    );
+    expect(commands).toEqual(["grant", "grants", "context", "guard"]);
+    expect(pi.registerShortcut).not.toHaveBeenCalled();
   });
 
   it("keeps grant state isolated between extension instances", async () => {
@@ -758,6 +755,26 @@ describe("pi-guard extension", () => {
     expect(selectMock).toHaveBeenCalledTimes(2);
   });
 
+  it("allows reading global skills under the agent directory", async () => {
+    const agentDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+    const skillDir = join(agentDir, "skills", "demo");
+    mkdirSync(skillDir, { recursive: true });
+    const skillFile = join(skillDir, "SKILL.md");
+    writeFileSync(skillFile, "# Demo skill");
+
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const selectMock = vi.fn(async () => "Deny");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: skillFile })).resolves.toBeUndefined();
+    await expect(
+      call("find", { path: join(agentDir, "skills") }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
   it("blocks out-of-workspace child path when denied by project rules even if parent is trusted", async () => {
     const extDir = mkdtempSync(join(tmpdir(), "pi-ext-deny-"));
     const secretFile = join(extDir, "secret.txt");
@@ -799,19 +816,29 @@ function setupMode(rulesFile: string) {
   const dir = mkdtempSync(join(tmpdir(), "pi-mode-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
   writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+  registerMode({
+    name: "auto",
+    defaults: {
+      read: "allow",
+      search: "allow",
+      edit: "allow",
+      shell: "allow",
+      external: "allow",
+    },
+  });
   const pi = createMockPi();
   extension(pi as never);
   const ctx = createContext(dir);
-  const commands = Object.fromEntries(
-    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
-  );
   const handlers = Object.fromEntries(
     pi.on.mock.calls.map(([event, fn]) => [event, fn]),
   );
   return {
     dir,
     ctx,
-    mode: (args: string) => commands.mode.handler(args, ctx as never),
+    mode: async (args: string) => {
+      enterMode(ctx.sessionManager, args);
+    },
     hook: (toolName: string, input: Record<string, unknown>) =>
       handlers.tool_call(
         { type: "tool_call", toolCallId: "1", toolName, input } as never,
@@ -820,15 +847,21 @@ function setupMode(rulesFile: string) {
   };
 }
 
-describe("/mode command", () => {
+describe("approval modes", () => {
   it("rejects unknown modes", async () => {
-    const { ctx, mode } = setupMode('{"rules":[]}');
-    await mode("turbo");
-    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("unknown mode"),
-      "error",
-    );
-    expect(session(ctx.sessionManager).mode).toBe("ask");
+    const { ctx } = setupMode('{"rules":[]}');
+    const result = enterMode(ctx.sessionManager, "turbo");
+    expect(result.diagnostic).toContain("unknown mode");
+    expect(session(ctx.sessionManager).mode).toBe("manual");
+  });
+
+  it("skips approval for untagged tools in auto mode", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("auto");
+    await expect(
+      hook("mcp__docs", { path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
   it("allows plan writes and denies other writes in plan mode", async () => {
@@ -897,16 +930,12 @@ describe("/mode command", () => {
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("rejects autopilot when pi-autopilot is not installed", async () => {
+  it("maps the legacy autopilot name to auto", async () => {
     const { ctx, mode, hook } = setupMode('{"rules":[]}');
     await mode("autopilot");
-    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("unknown mode"),
-      "error",
-    );
-    expect(session(ctx.sessionManager).mode).toBe("ask");
+    expect(session(ctx.sessionManager).mode).toBe("auto");
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 });
 
@@ -942,7 +971,7 @@ describe("statusline values", () => {
     handlers.session_start(undefined as never, ctx as never);
     expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
       name: "mode-guard",
-      text: "ASK",
+      text: "MANUAL",
     });
     expect(pi.events.emit).not.toHaveBeenCalledWith(
       "statusline:values",
@@ -958,197 +987,128 @@ describe("statusline values", () => {
     expect(pi.events.emit.mock.calls.length).toBeGreaterThan(calls);
     expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
       name: "mode-guard",
-      text: "ASK",
+      text: "MANUAL",
     });
   });
 
   it("publishes the new mode after a switch", async () => {
-    const { pi, ctx, commands } = setupProvider();
-    await commands.mode.handler("plan", ctx as never);
+    const { pi, ctx, handlers } = setupProvider();
+    enterMode(ctx.sessionManager, "plan");
+    handlers.session_start(undefined as never, ctx as never);
     expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
       name: "mode-guard",
       text: "PLAN",
     });
   });
 });
-
-function setupKeys(rulesFile: string) {
-  const dir = mkdtempSync(join(tmpdir(), "pi-keys-"));
+it("persists and restores audit counters, publishing guard snapshot", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guard-audit-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
-  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
-  const pi = createMockPi();
-  extension(pi as never);
-  const ctx = createContext(dir);
-  const commands = Object.fromEntries(
-    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  writeFileSync(
+    join(dir, ".pi", "permissions.json"),
+    JSON.stringify({ rules: ["deny edit secret.txt", "allow read *"] }),
   );
-  const shortcut = pi.registerShortcut.mock.calls[0][1].handler;
-  return {
-    ctx,
-    commands,
-    shortcut: (context: unknown) => shortcut(context as never),
+
+  const branch: Array<{ type: string; customType?: string; data?: unknown }> =
+    [];
+  const sessionManager = {
+    getBranch: vi.fn(() => branch),
+    appendCustomEntry: vi.fn((type: string, data: unknown) => {
+      branch.push({ type: "custom", customType: type, data });
+    }),
   };
-}
 
-describe("mode shortcut and completions", () => {
-  it("cycles ask, edit, plan in order", async () => {
-    const { ctx, shortcut } = setupKeys('{"rules":[]}');
-    await shortcut(ctx);
-    expect(session(ctx.sessionManager).mode).toBe("edit");
-    await shortcut(ctx);
-    expect(session(ctx.sessionManager).mode).toBe("plan");
-    await shortcut(ctx);
-    expect(session(ctx.sessionManager).mode).toBe("ask");
-  });
-
-  it("completes mode names", () => {
-    const { commands } = setupKeys('{"rules":[]}');
-    const complete = commands.mode.getArgumentCompletions;
-    expect(complete?.("").map((item: { value: string }) => item.value)).toEqual(
-      ["ask", "edit", "plan"],
-    );
-    expect(
-      complete?.("e").map((item: { value: string }) => item.value),
-    ).toEqual(["edit"]);
-    expect(complete?.("x")).toEqual([]);
-  });
-
-  it("persists and restores audit counters, publishing guard snapshot", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-guard-audit-"));
-    mkdirSync(join(dir, ".pi"), { recursive: true });
-    writeFileSync(
-      join(dir, ".pi", "permissions.json"),
-      JSON.stringify({ rules: ["deny edit secret.txt", "allow read *"] }),
-    );
-
-    const branch: Array<{ type: string; customType?: string; data?: unknown }> =
-      [];
-    const sessionManager = {
-      getBranch: vi.fn(() => branch),
-      appendCustomEntry: vi.fn((type: string, data: unknown) => {
-        branch.push({ type: "custom", customType: type, data });
-      }),
-    };
-
-    const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
-      {};
-    const mockPi = {
-      on: vi.fn(
-        (event: string, fn: (event: unknown, ctx: unknown) => unknown) => {
-          handlers[event] = fn;
-          return () => {};
-        },
-      ),
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-      appendEntry: vi.fn((type: string, data: unknown) => {
-        branch.push({ type: "custom", customType: type, data });
-      }),
-      events: {
-        on: vi.fn(),
-        emit: vi.fn(),
+  const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
+    {};
+  const mockPi = {
+    on: vi.fn(
+      (event: string, fn: (event: unknown, ctx: unknown) => unknown) => {
+        handlers[event] = fn;
+        return () => {};
       },
-    };
+    ),
+    registerTool: vi.fn(),
+    registerCommand: vi.fn(),
+    registerShortcut: vi.fn(),
+    appendEntry: vi.fn((type: string, data: unknown) => {
+      branch.push({ type: "custom", customType: type, data });
+    }),
+    events: {
+      on: vi.fn(),
+      emit: vi.fn(),
+    },
+  };
 
-    extension(mockPi as never);
+  extension(mockPi as never);
 
-    const ctx = {
-      cwd: dir,
-      sessionManager,
-      hasUI: true,
-      isProjectTrusted: () => true,
-      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
-    };
+  const ctx = {
+    cwd: dir,
+    sessionManager,
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+  };
 
-    // session_start restores 0 counters
-    handlers.session_start({}, ctx);
-    let snap = getSessionSnapshot(sessionManager).guard;
-    expect(snap).toBeDefined();
-    expect(snap?.trusted).toBe(true);
-    expect(snap?.decisionCount).toBe(0);
-    expect(snap?.deniedCount).toBe(0);
-    expect(snap?.approvedTagsCount).toBe(0);
+  // session_start restores 0 counters
+  handlers.session_start({}, ctx);
+  let snap = getSessionSnapshot(sessionManager).guard;
+  expect(snap).toBeDefined();
+  expect(snap?.trusted).toBe(true);
+  expect(snap?.decisionCount).toBe(0);
+  expect(snap?.deniedCount).toBe(0);
+  expect(snap?.approvedTagsCount).toBe(0);
 
-    // Call tool that gets denied by rule: deniedCount increments & persists
-    const toolCallHandler = handlers.tool_call;
-    const res = await toolCallHandler(
-      { toolName: "edit", input: { path: "secret.txt" } },
-      ctx,
-    );
-    expect(res).toEqual({
-      block: true,
-      reason: expect.stringContaining("denied"),
-    });
-
-    snap = getSessionSnapshot(sessionManager).guard;
-    expect(snap?.deniedCount).toBe(1);
-    expect(branch.some((e) => e.customType === GUARD_AUDIT_TYPE)).toBe(true);
-
-    // Compacting re-appends audit if non-zero
-    mockPi.appendEntry.mockClear();
-    handlers.session_compact({}, ctx);
-    expect(mockPi.appendEntry).toHaveBeenCalledWith(
-      GUARD_AUDIT_TYPE,
-      expect.objectContaining({
-        deniedCount: 1,
-        decisionCount: 0,
-        approvedTagsCount: 0,
-      }),
-    );
-
-    // Simulate new session restoring from branch
-    const newSessionManager = {
-      getBranch: vi.fn(() => [...branch]),
-      appendCustomEntry: vi.fn(),
-    };
-    const newCtx = {
-      cwd: dir,
-      sessionManager: newSessionManager,
-      hasUI: true,
-      isProjectTrusted: () => true,
-      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
-    };
-
-    handlers.session_start({}, newCtx);
-    const newSnap = getSessionSnapshot(newSessionManager).guard;
-    expect(newSnap?.deniedCount).toBe(1);
+  // Call tool that gets denied by rule: deniedCount increments & persists
+  const toolCallHandler = handlers.tool_call;
+  const res = await toolCallHandler(
+    { toolName: "edit", input: { path: "secret.txt" } },
+    ctx,
+  );
+  expect(res).toEqual({
+    block: true,
+    reason: expect.stringContaining("denied"),
   });
+
+  snap = getSessionSnapshot(sessionManager).guard;
+  expect(snap?.deniedCount).toBe(1);
+  expect(branch.some((e) => e.customType === GUARD_AUDIT_TYPE)).toBe(true);
+
+  // Compacting re-appends audit if non-zero
+  mockPi.appendEntry.mockClear();
+  handlers.session_compact({}, ctx);
+  expect(mockPi.appendEntry).toHaveBeenCalledWith(
+    GUARD_AUDIT_TYPE,
+    expect.objectContaining({
+      deniedCount: 1,
+      decisionCount: 0,
+      approvedTagsCount: 0,
+    }),
+  );
+
+  // Simulate new session restoring from branch
+  const newSessionManager = {
+    getBranch: vi.fn(() => [...branch]),
+    appendCustomEntry: vi.fn(),
+  };
+  const newCtx = {
+    cwd: dir,
+    sessionManager: newSessionManager,
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+  };
+
+  handlers.session_start({}, newCtx);
+  const newSnap = getSessionSnapshot(newSessionManager).guard;
+  expect(newSnap?.deniedCount).toBe(1);
 });
 
-describe("guard shortMode and /guard settings|config|status", () => {
-  it("abbreviates mode-guard statusline badge when active TUI shortMode is enabled", () => {
-    expect(formatGuardModeBadge("ask", false)).toBe("ASK");
-    expect(formatGuardModeBadge("ask", true)).toBe("A");
-    expect(formatGuardModeBadge("edit", true)).toBe("E");
-    expect(formatGuardModeBadge("plan", true)).toBe("P");
-    expect(formatGuardModeBadge("autopilot", true)).toBe("AP");
-
-    const pi = createMockPi();
-    const channelHandlers = new Map<string, (data: unknown) => void>();
-    pi.events.on = vi.fn((channel: string, fn: (data: unknown) => void) => {
-      channelHandlers.set(channel, fn);
-      return () => {};
-    });
-    extension(pi as never);
-    const handlers = Object.fromEntries(
-      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
-    ) as Record<string, (e: unknown, c: unknown) => void>;
-
-    const ctx = createContext(process.cwd());
-    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, shortMode: true });
-    handlers.session_start({}, ctx);
-    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
-      name: "mode-guard",
-      text: "A",
-    });
-
-    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, shortMode: false });
-    channelHandlers.get("tui:config-changed")?.(DEFAULT_TUI_CONFIG);
-    expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
-      name: "mode-guard",
-      text: "ASK",
-    });
+describe("/guard settings|config|status", () => {
+  it("publishes the uppercase mode-guard statusline badge", () => {
+    expect(formatGuardModeBadge("manual")).toBe("MANUAL");
+    expect(formatGuardModeBadge("edit")).toBe("EDIT");
+    expect(formatGuardModeBadge("plan")).toBe("PLAN");
+    expect(formatGuardModeBadge("auto")).toBe("AUTO");
   });
 
   it("registers /guard completions and /guard status notifies summary", async () => {
@@ -1175,7 +1135,7 @@ describe("guard shortMode and /guard settings|config|status", () => {
     const ctx = createContext(dir);
     await guardCmd.handler("status", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("mode=ask · trustedRoots=0"),
+      expect.stringContaining("mode=manual · trustedRoots=0"),
       "info",
     );
   });
@@ -1218,8 +1178,7 @@ describe("guard shortMode and /guard settings|config|status", () => {
         const rendered = comp.render(80).join("\n");
         expect(rendered).toContain("Guard settings");
         expect(rendered).toContain("Trust current workspace");
-        // Move down to "Trust current workspace" and toggle to "trusted"
-        comp.handleInput("\x1b[B");
+        // Toggle "Trust current workspace" to "trusted"
         comp.handleInput("\r");
         comp.handleInput("\x1b");
       },
@@ -1290,7 +1249,6 @@ describe("guard shortMode and /guard settings|config|status", () => {
           {},
           () => {},
         );
-        comp.handleInput("\x1b[B");
         comp.handleInput("\r");
         comp.handleInput("\x1b");
       },

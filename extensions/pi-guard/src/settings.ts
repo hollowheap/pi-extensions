@@ -22,10 +22,7 @@ export interface GuardSettingsOptions {
   ctx: ExtensionContext;
   agentDir: string;
   cwd: string;
-  currentMode: string;
-  availableModes: readonly string[];
   activeGrantCount: () => number;
-  onModeChange: (mode: string) => void | Promise<void>;
   onClearGrants: () => number;
   onClearSavedDecisions?: () => void;
 }
@@ -77,27 +74,11 @@ export async function showGuardSettings(
   await withPromptLock(() =>
     ctx.ui.custom<void>(
       (tui, theme, _keybindings, done) => {
-        let modeValue = options.currentMode;
         const trustValue = (cfg: GuardConfig): string =>
           isWorkspaceTrusted(cfg) ? "trusted" : "prompt";
 
-        const available =
-          options.availableModes.length > 0
-            ? [...options.availableModes]
-            : [modeValue];
-        if (!available.includes(modeValue)) {
-          available.unshift(modeValue);
-        }
-
         const list = new SettingsList(
           [
-            {
-              id: "mode",
-              label: "Approval mode",
-              description: "Active pi-guard policy mode for this session",
-              currentValue: modeValue,
-              values: available,
-            },
             {
               id: "trust-cwd",
               label: "Trust current workspace",
@@ -124,16 +105,6 @@ export async function showGuardSettings(
           6,
           settingsTheme(theme),
           (id, newValue) => {
-            if (id === "mode") {
-              modeValue = newValue;
-              void Promise.resolve(options.onModeChange(newValue)).finally(
-                () => {
-                  tui.requestRender();
-                },
-              );
-              return;
-            }
-
             if (id === "trust-cwd") {
               const prevTrust = trustValue(guardConfig);
               const existingRoots = guardConfig.trustedRoots ?? [];
@@ -218,7 +189,7 @@ export async function showGuardSettings(
             const innerWidth = getFrameInnerWidth(width);
             const summary = theme.fg(
               "muted",
-              `Mode: ${modeValue} · Trusted roots: ${(guardConfig.trustedRoots ?? []).length} · Saved rules: ${Object.keys(guardConfig.decisions ?? {}).length} · Active grants: ${options.activeGrantCount()}`,
+              `Trusted roots: ${(guardConfig.trustedRoots ?? []).length} · Saved rules: ${Object.keys(guardConfig.decisions ?? {}).length} · Active grants: ${options.activeGrantCount()}`,
             );
             return roundedFrame(
               [summary, "", ...list.render(innerWidth)],
