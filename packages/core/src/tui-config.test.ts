@@ -45,7 +45,6 @@ describe("tui-config", () => {
       {
         borderStyle: "square",
         overlaySurface: "card",
-        shortMode: true,
         toolBox: {
           enabled: true,
           verbPack: "playful",
@@ -61,7 +60,6 @@ describe("tui-config", () => {
     expect(cfg).toEqual({
       borderStyle: "square",
       overlaySurface: "card",
-      shortMode: true,
       colored: true,
       loadingIndicator: "crush",
       markdownRender: true,
@@ -114,7 +112,6 @@ describe("tui-config", () => {
 
     const res = updateTuiConfig(dir, (current) => {
       current.borderStyle = "double";
-      current.shortMode = true;
       current.colored = false;
       current.loadingIndicator = "braille";
       current.markdownRender = false;
@@ -130,7 +127,6 @@ describe("tui-config", () => {
     }
     const reloaded = loadTuiConfig(dir);
     expect(reloaded.borderStyle).toBe("double");
-    expect(reloaded.shortMode).toBe(true);
     expect(reloaded.colored).toBe(false);
     expect(reloaded.loadingIndicator).toBe("braille");
     expect(reloaded.markdownRender).toBe(false);
@@ -144,7 +140,7 @@ describe("tui-config", () => {
     if (process.getuid?.() === 0) return;
     const dir = makeTempDir();
     const path = getTuiConfigPath(dir);
-    writeFileSync(path, JSON.stringify({ shortMode: true }), "utf8");
+    writeFileSync(path, JSON.stringify({ borderStyle: "double" }), "utf8");
     chmodSync(path, 0o000);
 
     try {

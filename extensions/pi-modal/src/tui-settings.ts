@@ -69,9 +69,6 @@ function applyTuiSetting(
     case "thinkingAnimate":
       next.thinkingAnimate = value === "true";
       break;
-    case "shortMode":
-      next.shortMode = value === "true";
-      break;
     case "toolBox.enabled":
       next.toolBox.enabled = value === "true";
       break;
@@ -146,13 +143,6 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: ["true", "false"],
     },
     {
-      id: "shortMode",
-      label: "Short mode",
-      description: "Compact single-letter mode badges",
-      currentValue: String(config.shortMode),
-      values: ["false", "true"],
-    },
-    {
       id: "toolBox.enabled",
       label: "Tool box renderer",
       description: "Wrap tool calls in a configurable self-rendered box",
@@ -206,7 +196,6 @@ export function formatTuiStatus(config: TuiConfig): string {
     `markdownRender=${config.markdownRender}`,
     `thinkingDisplay=${config.thinkingDisplay}`,
     `thinkingAnimate=${config.thinkingAnimate}`,
-    `shortMode=${config.shortMode}`,
     `toolBox.enabled=${config.toolBox.enabled}`,
     `toolBox.borderStyle=${config.toolBox.borderStyle}`,
     `toolBox.accentStripe=${config.toolBox.accentStripe}`,

@@ -75,7 +75,6 @@ export interface ToolBoxConfig {
 export interface TuiConfig {
   borderStyle: BorderStyle;
   overlaySurface: OverlaySurfaceMode;
-  shortMode: boolean;
   colored: boolean;
   loadingIndicator: LoadingIndicatorStyle;
   markdownRender: boolean;
@@ -87,7 +86,6 @@ export interface TuiConfig {
 export const DEFAULT_TUI_CONFIG: TuiConfig = {
   borderStyle: "rounded",
   overlaySurface: "transparent",
-  shortMode: false,
   colored: true,
   loadingIndicator: "crush",
   markdownRender: true,
@@ -207,12 +205,6 @@ export function normalizeTuiConfig(
     "overlaySurface",
     diagnostics,
   );
-  const shortMode = parseBoolean(
-    raw.shortMode,
-    defaults.shortMode,
-    "shortMode",
-    diagnostics,
-  );
   const colored = parseBoolean(
     raw.colored,
     defaults.colored,
@@ -312,7 +304,6 @@ export function normalizeTuiConfig(
   return {
     borderStyle,
     overlaySurface,
-    shortMode,
     colored,
     loadingIndicator,
     markdownRender,
@@ -377,7 +368,6 @@ export function updateTuiConfig(
       ...current,
       borderStyle: updated.borderStyle,
       overlaySurface: updated.overlaySurface,
-      shortMode: updated.shortMode,
       colored: updated.colored,
       loadingIndicator: updated.loadingIndicator,
       markdownRender: updated.markdownRender,

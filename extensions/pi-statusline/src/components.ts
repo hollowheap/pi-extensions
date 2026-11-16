@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
 import type { ComponentSpec } from "./config.js";
 
 export interface GitDiffSummary {
@@ -89,35 +88,11 @@ export function shortenPath(
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-const SHORT_MODE_MAP: Readonly<Record<string, string>> = {
-  NORMAL: "N",
-  INSERT: "I",
-  VISUAL: "V",
-  BASH: "!",
-  IDLE: "I",
-  WORKING: "W",
-  ASK: "A",
-  EDIT: "E",
-  PLAN: "P",
-  AUTOPILOT: "AP",
-};
-
-export function shortenModeText(label: string): string {
-  const trimmed = label.trim();
-  if (trimmed === "") return "";
-  const mapped = SHORT_MODE_MAP[trimmed.toUpperCase()];
-  if (mapped !== undefined) return mapped;
-  return trimmed.slice(0, 1).toUpperCase();
-}
-
 const mode: ComponentFn = (spec, ctx) => {
-  const shortMode = getActiveTuiConfig().shortMode;
   if (!ctx.busy) {
-    const idle = optString(spec, "idleText", "IDLE");
-    return shortMode ? shortenModeText(idle) : idle;
+    return optString(spec, "idleText", "IDLE");
   }
-  const rawWorking = optString(spec, "workingText", "WORKING");
-  const text = shortMode ? shortenModeText(rawWorking) : rawWorking;
+  const text = optString(spec, "workingText", "WORKING");
   const animate = optBool(spec, "animate", true);
   if (!animate) return text;
   const frame =

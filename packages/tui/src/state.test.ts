@@ -44,7 +44,6 @@ describe("tui state", () => {
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "double",
       overlaySurface: "card",
-      shortMode: true,
       toolBox: {
         ...DEFAULT_TUI_CONFIG.toolBox,
         enabled: true,
@@ -55,7 +54,6 @@ describe("tui state", () => {
     const active = getActiveTuiConfig();
     expect(active.borderStyle).toBe("double");
     expect(active.overlaySurface).toBe("card");
-    expect(active.shortMode).toBe(true);
     expect(active.toolBox.enabled).toBe(true);
     expect(active.toolBox.verbPack).toBe("playful");
 
@@ -74,7 +72,6 @@ describe("tui state", () => {
       JSON.stringify({
         borderStyle: "square",
         overlaySurface: "contrast",
-        shortMode: true,
       }),
       "utf8",
     );
@@ -86,7 +83,6 @@ describe("tui state", () => {
     expect(diagnostics).toEqual([]);
     expect(loaded.borderStyle).toBe("square");
     expect(loaded.overlaySurface).toBe("contrast");
-    expect(loaded.shortMode).toBe(true);
     expect(getActiveTuiConfig()).toEqual(loaded);
   });
 
@@ -94,7 +90,7 @@ describe("tui state", () => {
     if (process.getuid?.() === 0) return;
     const dir = makeTempDir();
     const path = getTuiConfigPath(dir);
-    writeFileSync(path, JSON.stringify({ shortMode: true }), "utf8");
+    writeFileSync(path, JSON.stringify({ borderStyle: "double" }), "utf8");
     chmodSync(path, 0o000);
 
     try {

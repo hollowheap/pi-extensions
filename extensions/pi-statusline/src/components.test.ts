@@ -1,10 +1,5 @@
 import { basename } from "node:path";
-import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import {
-  resetActiveTuiConfig,
-  setActiveTuiConfig,
-} from "@hollowheap/tui/state";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BUILTINS,
   type ComponentContext,
@@ -14,13 +9,8 @@ import {
   formatClock,
   formatCount,
   parseGitPorcelain,
-  shortenModeText,
   shortenPath,
 } from "./components.js";
-
-afterEach(() => {
-  resetActiveTuiConfig();
-});
 
 function ctx(overrides: Partial<ComponentContext> = {}): ComponentContext {
   return {
@@ -51,20 +41,14 @@ describe("mode", () => {
     ).toBe("run");
   });
 
-  it("abbreviates mode labels when active TUI shortMode is enabled", () => {
-    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, shortMode: true });
-    expect(BUILTINS.mode({ type: "mode" }, ctx())).toBe("I");
+  it("formats the mode component from configured labels", () => {
+    expect(BUILTINS.mode({ type: "mode" }, ctx())).toBe("IDLE");
     expect(
       BUILTINS.mode(
-        { type: "mode", workingText: "WORKING", animate: false },
+        { type: "mode", idleText: "ok", workingText: "run", animate: false },
         ctx({ busy: true }),
       ),
-    ).toBe("W");
-    expect(shortenModeText("NORMAL")).toBe("N");
-    expect(shortenModeText("insert")).toBe("I");
-    expect(shortenModeText("visual")).toBe("V");
-    expect(shortenModeText("bash")).toBe("!");
-    expect(shortenModeText("custom")).toBe("C");
+    ).toBe("run");
   });
 });
 

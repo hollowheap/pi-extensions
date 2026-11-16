@@ -18,7 +18,6 @@ export interface ModalConfig {
   promptChar?: string;
   borderStyle?: BorderStyle;
   borderStyleExplicit?: boolean;
-  shortMode?: boolean;
   keymaps?: ModalKeymapConfig;
 }
 
@@ -161,14 +160,6 @@ export function loadModalConfig(
       onDiagnostic?.(
         'borderStyle must be "rounded", "sharp", "square", "double", "dashed", or "none"; using rounded',
       );
-    }
-  }
-
-  if (parsed.shortMode !== undefined) {
-    if (typeof parsed.shortMode === "boolean") {
-      config.shortMode = parsed.shortMode;
-    } else {
-      onDiagnostic?.("shortMode must be a boolean; ignoring");
     }
   }
 

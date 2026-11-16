@@ -23,21 +23,9 @@ import {
   resolveEffectiveKeymaps,
 } from "./keymap.js";
 
-function formatEditorModeBadge(
-  mode: EditorMode,
-  isBash: boolean,
-  shortMode: boolean,
-): string {
-  if (isBash) return shortMode ? "!" : "BASH";
-  if (!shortMode) return mode.toUpperCase();
-  switch (mode) {
-    case "normal":
-      return "N";
-    case "insert":
-      return "I";
-    case "visual":
-      return "V";
-  }
+function formatEditorModeBadge(mode: EditorMode, isBash: boolean): string {
+  if (isBash) return "BASH";
+  return mode.toUpperCase();
 }
 
 function getGraphemeEnd(text: string, col: number): number {
@@ -56,7 +44,6 @@ export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
   private explicitBorderStyle: BorderStyle | undefined;
-  private explicitShortMode: boolean | undefined;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -86,9 +73,6 @@ export class ModalEditor extends CustomEditor {
     }
     if (config?.borderStyle) {
       this.explicitBorderStyle = config.borderStyle;
-    }
-    if (config?.shortMode !== undefined) {
-      this.explicitShortMode = config.shortMode;
     }
 
     if (config?.initialMode) {
@@ -597,14 +581,9 @@ export class ModalEditor extends CustomEditor {
     return this.explicitBorderStyle ?? getActiveTuiConfig().borderStyle;
   }
 
-  private getEffectiveShortMode(): boolean {
-    return this.explicitShortMode ?? getActiveTuiConfig().shortMode;
-  }
-
   /** Clear constructor overrides so live `/tui` settings take effect immediately. */
   clearExplicitUiOverrides(): void {
     this.explicitBorderStyle = undefined;
-    this.explicitShortMode = undefined;
     this.lastBottomBorder = "";
     this.invalidate();
   }
@@ -639,11 +618,7 @@ export class ModalEditor extends CustomEditor {
   ): string {
     const borderStyle = this.getEffectiveBorderStyle();
     const isBash = this.getText().trimStart().startsWith("!");
-    const badge = formatEditorModeBadge(
-      this.mode,
-      isBash,
-      this.getEffectiveShortMode(),
-    );
+    const badge = formatEditorModeBadge(this.mode, isBash);
     const label = ` ${badge} `;
     if (borderStyle === "none" || width < 2) {
       const base = stripTerminalSequences(
