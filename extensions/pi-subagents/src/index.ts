@@ -4,7 +4,9 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { isPermissionError } from "@hollowheap/core/config";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { escapeMarkdownInline } from "@hollowheap/tui/thinking";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {
@@ -26,7 +28,12 @@ import {
   readSubagentLog,
   sendSubagent,
 } from "./runner.js";
-import { type SubagentState, isInProject } from "./state.js";
+import {
+  type SubagentState,
+  clearSubagentWorkspace,
+  isInProject,
+  subagentDisplayName,
+} from "./state.js";
 import { createSubagentTool } from "./tool.js";
 import { subagentWorkspaceTracker } from "./workspace.js";
 
@@ -154,7 +161,9 @@ export function createSubagentsExtension(
       try {
         const dir = resolveAgentDir();
         const all = await list(dir);
-        void subagentWorkspaceTracker.cleanupTerminal(all);
+        void subagentWorkspaceTracker.cleanupTerminal(all, (id) => {
+          clearSubagentWorkspace(dir, id);
+        });
         const visible = all.filter((state) => isInProject(state, lastCtx?.cwd));
         lastStates = visible.map((state) => ({
           id: state.id,
@@ -217,10 +226,12 @@ export function createSubagentsExtension(
       }
       const log = readSubagentLog(resolveAgentDir(), id);
       const text = log.trim() === "" ? "(no output)" : log;
+      const name = sanitizeTerminalText(subagentDisplayName(state));
+      const workspace = sanitizeTerminalText(state.workspace ?? state.agent);
       const { showMarkdownPager } = await import("@hollowheap/tui/pager");
       await showMarkdownPager(ctx, {
-        title: `Subagent ${id}`,
-        markdown: `~~~~text\n${text}\n~~~~`,
+        title: `Subagent ${name}`,
+        markdown: `**${escapeMarkdownInline(name)}**\n\n${escapeMarkdownInline(workspace)}\n\n~~~~text\n${text}\n~~~~`,
         plainText: text,
       });
     };
@@ -239,10 +250,12 @@ export function createSubagentsExtension(
           title: "Select a subagent",
           items: all.map((state) => ({
             value: state.id,
-            label: state.id,
-            description: `${state.status} — @${state.agent}: ${state.task}`,
+            label: subagentDisplayName(state),
+            description: `${state.status} — @${state.agent}`,
             preview: [
               `${state.status} — @${state.agent}`,
+              `model: ${state.model ?? "default"}`,
+              `workspace: ${state.workspace ?? "unknown"}`,
               `task: ${state.task}`,
               `started: ${new Date(state.startedAt).toISOString()}`,
             ],

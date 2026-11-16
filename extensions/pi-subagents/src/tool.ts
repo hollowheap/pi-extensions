@@ -11,6 +11,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { isPermissionError } from "@hollowheap/core/config";
 import { truncateText } from "@hollowheap/core/format";
+import { resolveModeName } from "@hollowheap/core/modes";
 import { session } from "@hollowheap/core/state";
 import { isProcessAlive } from "@hollowheap/runtime/process";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
@@ -33,7 +34,7 @@ import {
   waitSubagent,
 } from "./runner.js";
 import type { SubagentState } from "./state.js";
-import { isInProject } from "./state.js";
+import { isInProject, subagentDisplayName } from "./state.js";
 import { resolveSubagentModel } from "./swap.js";
 import {
   allocateSubagentWorkspace,
@@ -83,7 +84,8 @@ function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
     sessionPath,
   ];
   if (agent.model !== undefined) args.push("--model", agent.model);
-  if (agent.thinking !== undefined) args.push("--thinking", agent.thinking);
+  const thinking = agent.thinking ?? agent.effort;
+  if (thinking !== undefined) args.push("--thinking", thinking);
   if (agent.tools !== undefined) args.push("--tools", agent.tools.join(","));
   return {
     command: process.env.PI_BIN ?? "pi",
@@ -170,14 +172,24 @@ function summary(state: SubagentState): Record<string, unknown> {
     id: state.id,
     status: state.status,
     agent: state.agent,
+    task: state.task,
     depth: state.depth,
     attempt: state.attempt,
+    ...(state.model !== undefined ? { model: state.model } : {}),
+    ...(state.workspace !== undefined ? { workspace: state.workspace } : {}),
     ...(state.pid !== undefined ? { pid: state.pid } : {}),
     startedAt: state.startedAt,
     ...(state.finishedAt !== undefined ? { finishedAt: state.finishedAt } : {}),
     ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
     ...(state.harness !== undefined ? { harness: state.harness } : {}),
   };
+}
+
+/** Keep `list` compact: the UI only needs a title, while `status` keeps the full task. */
+function listSummary(state: SubagentState): Record<string, unknown> {
+  const task =
+    state.task.length > 80 ? `${state.task.slice(0, 77)}...` : state.task;
+  return { ...summary(state), task };
 }
 
 function stateWithLog(
@@ -351,6 +363,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           id: string;
           status: string;
           agent: string;
+          task?: string;
+          model?: string;
+          workspace?: string;
         }>;
         if (agents.length === 0) {
           text.setText(theme.fg("muted", "No active subagents."));
@@ -364,15 +379,22 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             a.status === "running"
               ? theme.fg("warning", "●")
               : theme.fg("success", "✓");
+          const name = subagentDisplayName({
+            model: a.model,
+            agent: a.agent,
+            task: a.task ?? "",
+          });
+          const location = a.workspace
+            ? ` ${theme.fg("dim", a.workspace)}`
+            : "";
           lines.push(
-            `  ${icon} ${theme.fg("toolTitle", `@${a.id}`)} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("muted", a.agent)}`,
+            `  ${icon} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("toolTitle", name)}${location}`,
           );
         }
         text.setText(lines.join("\n"));
         return text;
       }
 
-      const id = String(details.id ?? "");
       const status = String(details.status ?? "");
       const agent = String(details.agent ?? "");
       const exitCode = details.exitCode;
@@ -389,7 +411,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         icon = theme.fg("muted", "⊘");
       }
 
-      let header = `${icon} ${theme.fg("toolTitle", `@${id}`)} ${theme.fg("accent", `[${status}]`)} ${theme.fg("muted", agent)}`;
+      let header = `${icon} ${theme.fg("accent", `[${status}]`)} ${theme.fg("toolTitle", subagentDisplayName({ model: typeof details.model === "string" ? details.model : undefined, agent, task: typeof details.task === "string" ? details.task : "" }))}`;
+      if (typeof details.workspace === "string") {
+        header += ` ${theme.fg("dim", details.workspace)}`;
+      }
       if (exitCode !== undefined) {
         header += ` ${theme.fg("dim", `(exit ${exitCode})`)}`;
       }
@@ -501,7 +526,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           return textResult({
             agents: agents
               .filter((state) => isInProject(state, ctx.cwd))
-              .map(summary),
+              .map(listSummary),
           });
         }
 
@@ -574,11 +599,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             ? session(ctx.sessionManager).mode
             : undefined;
           const effectiveMode =
-            parentMode && parentMode !== "ask"
+            parentMode && resolveModeName(parentMode) !== "manual"
               ? parentMode
               : effectiveAgent.mode === "plan"
                 ? "plan"
-                : "ask";
+                : "manual";
           const parentSession = ctx.sessionManager?.getSessionId?.();
           const sandbox = resolveSubagentSandboxOptions(
             config,
@@ -597,6 +622,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               command: spec.command,
               args: spec.args,
               cwd: workspace.path,
+              workspace: workspace.path,
               harness: spec.harness,
               inputMode: spec.inputMode,
               ...(spec.initialInput !== undefined
@@ -785,11 +811,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             ? session(ctx.sessionManager).mode
             : undefined;
           const effectiveMode =
-            parentMode && parentMode !== "ask"
+            parentMode && resolveModeName(parentMode) !== "manual"
               ? parentMode
               : effectiveAgent.mode === "plan"
                 ? "plan"
-                : "ask";
+                : "manual";
           const resumed = await startSubagent({
             agentDir,
             id,
@@ -804,6 +830,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             command: spec.command,
             args: spec.args,
             cwd: ctx.cwd,
+            workspace: ctx.cwd,
             harness: spec.harness,
             inputMode: spec.inputMode,
             ...(spec.initialInput !== undefined

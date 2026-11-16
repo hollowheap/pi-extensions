@@ -1,7 +1,11 @@
+import { enterMode, registerMode } from "@hollowheap/core/modes";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import type { SubagentState } from "./state.js";
 import { SUBAGENT_RUN_TYPE, createSubagentTool } from "./tool.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 const mocks = vi.hoisted(() => ({
   getAgentDir: vi.fn(),
@@ -67,6 +71,8 @@ const running: SubagentState = {
   depth: 1,
   attempt: 1,
   project: "/repo",
+  model: "test/fast",
+  workspace: "/repo/subagents/sub-1",
   startedAt: 1,
   socket: "/tmp/sub.sock",
 };
@@ -218,7 +224,7 @@ describe("subagent tool", () => {
         parentSession: "session-1",
         env: expect.objectContaining({
           PI_SUBAGENT_DEPTH: "1",
-          PI_SUBAGENT_MODE: "ask",
+          PI_SUBAGENT_MODE: "manual",
         }),
       }),
     );
@@ -458,6 +464,31 @@ describe("subagent tool", () => {
     expect(detailsOf(result).status).toBe("running");
   });
 
+  it("passes agent effort as the child thinking level", async () => {
+    const tool = createSubagentTool({
+      getSessionAgents: () => [
+        {
+          name: "scout",
+          description: "Session scout",
+          systemPrompt: "You are a session scout.",
+          effort: "low",
+          source: "session",
+        },
+      ],
+    });
+
+    await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    const spec = mocks.startSubagent.mock.calls[0]?.[0] as { args: string[] };
+    expect(spec.args[spec.args.indexOf("--thinking") + 1]).toBe("low");
+  });
+
   it("validates session agent definition input", async () => {
     const defineSessionAgent = vi.fn();
     const tool = createSubagentTool({ defineSessionAgent });
@@ -508,7 +539,6 @@ describe("subagent tool", () => {
 
     // 1. Parent in edit mode overrides agent mode "plan"
     const editOwner = {};
-    const { enterMode } = await import("@hollowheap/core");
     enterMode(editOwner, "edit");
     await tool.execute(
       "1",
@@ -523,9 +553,9 @@ describe("subagent tool", () => {
       }),
     );
 
-    // 2. Parent in default ask falls back to agent mode "plan"
+    // 2. Parent in default manual falls back to agent mode "plan"
     const askOwner = {};
-    enterMode(askOwner, "ask");
+    enterMode(askOwner, "manual");
     await tool.execute(
       "2",
       { action: "start", agent: "scout", task: "find" },
@@ -857,7 +887,7 @@ describe("subagent tool", () => {
     expect(mocks.startSubagent).not.toHaveBeenCalled();
   });
 
-  it("caps child mode at the parent's ask mode even when session definition sets edit or autopilot", async () => {
+  it("caps child mode at the parent's manual mode even when session definition sets edit or auto", async () => {
     mocks.discoverAgents.mockReturnValue({ agents: [] });
     const tool = createSubagentTool({
       getSessionAgents: () => [
@@ -872,7 +902,7 @@ describe("subagent tool", () => {
           name: "auto-writer",
           description: "Session auto",
           systemPrompt: "Auto code.",
-          mode: "autopilot",
+          mode: "auto",
           source: "session",
         },
       ],
@@ -888,7 +918,7 @@ describe("subagent tool", () => {
     expect(mocks.startSubagent).toHaveBeenLastCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({
-          PI_SUBAGENT_MODE: "ask",
+          PI_SUBAGENT_MODE: "manual",
         }),
       }),
     );
@@ -903,7 +933,7 @@ describe("subagent tool", () => {
     expect(mocks.startSubagent).toHaveBeenLastCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({
-          PI_SUBAGENT_MODE: "ask",
+          PI_SUBAGENT_MODE: "manual",
         }),
       }),
     );
@@ -974,7 +1004,10 @@ describe("subagent tool", () => {
       mockTheme,
       {} as never,
     );
-    expect(listComp?.render(80).join("\n")).toContain("@sub-1");
+    expect(listComp?.render(80).join("\n")).toContain("scout");
+    expect(listComp?.render(80).join("\n")).toContain("test/fast");
+    expect(listComp?.render(80).join("\n")).toContain("/repo/subagents/sub-1");
+    expect(listComp?.render(80).join("\n")).not.toContain("@sub-1");
 
     const statusRes = await tool.execute(
       "2",
@@ -990,8 +1023,29 @@ describe("subagent tool", () => {
       {} as never,
     );
     const rendered = statusComp?.render(80).join("\n") ?? "";
-    expect(rendered).toContain("@sub-1");
+    expect(rendered).toContain("test/fast");
+    expect(rendered).toContain("/repo/subagents/sub-1");
+    expect(rendered).not.toContain("@sub-1");
     expect(rendered).toContain("line 1");
+  });
+
+  it("truncates task text in list results", async () => {
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, task: "x".repeat(200) },
+    ]);
+    const tool = createTool();
+    const result = await tool.execute(
+      "1",
+      { action: "list" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const details = detailsOf(result) as {
+      agents: Array<{ task: string }>;
+    };
+    expect(details.agents[0]?.task).toHaveLength(80);
+    expect(details.agents[0]?.task.endsWith("...")).toBe(true);
   });
 
   it("persists SUBAGENT_RUN_TYPE entry when a subagent is spawned", async () => {

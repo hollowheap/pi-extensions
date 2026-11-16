@@ -60,6 +60,7 @@ export class SubagentWorkspaceTracker {
 
   async cleanupTerminal(
     states: readonly SubagentWorkspaceState[],
+    onCleaned?: (id: string) => void,
   ): Promise<void> {
     for (const state of states) {
       if (!TERMINAL.has(state.status)) continue;
@@ -68,6 +69,7 @@ export class SubagentWorkspaceTracker {
       this.workspaces.delete(state.id);
       try {
         await this.cleanup(workspace);
+        onCleaned?.(state.id);
       } catch {
         // A failed cleanup must not affect subagent state.
       }

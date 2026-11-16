@@ -9,7 +9,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SubagentStore, requireTrustedProject, subagentsDir } from "./state.js";
+import {
+  SubagentStore,
+  clearSubagentWorkspace,
+  requireTrustedProject,
+  subagentsDir,
+} from "./state.js";
 
 const dirs: string[] = [];
 
@@ -26,6 +31,24 @@ afterEach(() => {
 });
 
 describe("SubagentStore", () => {
+  it("persists and clears the workspace path", () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "sub-1",
+      status: "completed",
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+      workspace: "/repo/.pi/worktrees/sub-1",
+      startedAt: 1,
+    });
+
+    expect(store.read("sub-1")?.workspace).toBe("/repo/.pi/worktrees/sub-1");
+    clearSubagentWorkspace(root, "sub-1");
+    expect(store.read("sub-1")?.workspace).toBeUndefined();
+  });
   it("stores allowed state with restrictive permissions", () => {
     const root = agentDir();
     const store = new SubagentStore(root);

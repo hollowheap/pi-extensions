@@ -40,6 +40,7 @@ export interface StartSubagentOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   model?: string;
+  workspace?: string;
   sessionPath?: string;
   harness?: string;
   inputMode?: "jsonl" | "text";
@@ -120,6 +121,9 @@ export async function startSubagent(
     harness: options.harness ?? "pi",
     inputMode: options.inputMode ?? "jsonl",
     ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.workspace !== undefined
+      ? { workspace: options.workspace }
+      : {}),
     ...(options.sessionPath !== undefined
       ? { session: options.sessionPath }
       : {}),

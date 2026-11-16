@@ -153,6 +153,8 @@ The directory is `0700`; files and sockets are `0600`. The parent can exit and a
 
 Subagent state carries the project folder that started the child. Lists, the picker, statusline counts, todo widgets, completion alerts, and id actions only see children whose recorded folder matches the current working directory. Children from other folders and legacy states without a recorded folder stay hidden.
 
+Lists and the picker label a child by agent, model, and task summary instead of its full id, and show the recorded workspace path. Ids remain the input for `status`, `send`, `wait`, `cancel`, `resume`, and `/subagent logs`.
+
 ## Write serialization
 
 `write`, `edit`, and `bash` acquire one cross-process lock at `<agentDir>/subagents/write.lock`. The lock stores the owner PID and process start time; stale owners are reclaimed. Read-only tool calls do not acquire it. The child releases the lock on tool result, tool execution end, abort, or a 10-minute safety timeout.

@@ -70,4 +70,19 @@ describe("subagent workspace tracker", () => {
       isolated: true,
     });
   });
+
+  it("reports cleaned workspaces so stale paths can be cleared", async () => {
+    const tracker = new SubagentWorkspaceTracker(vi.fn(async () => {}));
+    const onCleaned = vi.fn();
+    tracker.track("subagent-1", {
+      path: "/repo/isolated",
+      isolated: true,
+    });
+
+    await tracker.cleanupTerminal(
+      [{ id: "subagent-1", status: "completed" }],
+      onCleaned,
+    );
+    expect(onCleaned).toHaveBeenCalledWith("subagent-1");
+  });
 });

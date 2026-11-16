@@ -26,6 +26,7 @@ export interface SubagentState extends ProcessState {
   socket?: string;
   session?: string;
   model?: string;
+  workspace?: string;
   activeTool?: string;
   activeToolStartedAt?: number;
 }
@@ -46,6 +47,19 @@ export function requireTrustedProject(trusted: boolean): void {
   if (!trusted) {
     throw new Error("subagent requires a trusted project");
   }
+}
+
+/** Model and task summary used instead of the full subagent id in UI surfaces. */
+export function subagentDisplayName(
+  state: Pick<SubagentState, "model" | "agent" | "task">,
+): string {
+  const model = state.model ?? state.agent;
+  const task = state.task.replace(/\s+/g, " ").trim();
+  const prefix =
+    state.model === undefined ? state.agent : `${state.agent} (${model})`;
+  if (task === "") return prefix;
+  const summary = task.length > 48 ? `${task.slice(0, 45)}...` : task;
+  return `${prefix} \u00b7 ${summary}`;
 }
 
 function sanitize(state: SubagentState): ProcessState {
@@ -74,6 +88,7 @@ function sanitize(state: SubagentState): ProcessState {
     ...(state.socket !== undefined ? { socket: state.socket } : {}),
     ...(state.session !== undefined ? { session: state.session } : {}),
     ...(state.model !== undefined ? { model: state.model } : {}),
+    ...(state.workspace !== undefined ? { workspace: state.workspace } : {}),
     ...(state.activeTool !== undefined ? { activeTool: state.activeTool } : {}),
     ...(state.activeToolStartedAt !== undefined
       ? { activeToolStartedAt: state.activeToolStartedAt }
@@ -146,5 +161,14 @@ export class SubagentStore {
 
   log(id: string): string {
     return this.store.log(id);
+  }
+}
+
+/** Drop the workspace path once its isolated directory has been removed. */
+export function clearSubagentWorkspace(agentDir: string, id: string): void {
+  try {
+    new SubagentStore(agentDir).update(id, { workspace: undefined });
+  } catch {
+    // A failed state update must not affect workspace cleanup.
   }
 }
