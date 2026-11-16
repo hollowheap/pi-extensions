@@ -17,6 +17,7 @@ export interface SubagentState extends ProcessState {
   task: string;
   depth: number;
   attempt: number;
+  project?: string;
   parentSession?: string;
   runnerPid?: number;
   runnerStartTime?: number;
@@ -31,6 +32,14 @@ export interface SubagentState extends ProcessState {
 
 export function subagentsDir(agentDir: string): string {
   return join(agentDir, SUBAGENTS_DIR);
+}
+
+/** Subagents are only visible to sessions running in the folder that started them. */
+export function isInProject(
+  state: Pick<SubagentState, "project">,
+  project: string | undefined,
+): boolean {
+  return project !== undefined && state.project === project;
 }
 
 export function requireTrustedProject(trusted: boolean): void {
@@ -48,6 +57,7 @@ function sanitize(state: SubagentState): ProcessState {
     task: state.task,
     depth: state.depth,
     attempt: state.attempt,
+    ...(state.project !== undefined ? { project: state.project } : {}),
     ...(state.parentSession !== undefined
       ? { parentSession: state.parentSession }
       : {}),

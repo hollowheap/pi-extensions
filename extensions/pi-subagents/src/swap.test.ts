@@ -67,6 +67,7 @@ function started(params: { model?: string }) {
     task: "test",
     depth: 1,
     attempt: 1,
+    project: "/repo",
     startedAt: 1,
     socket: "/tmp/sub.sock",
     ...(params.model !== undefined ? { model: params.model } : {}),
@@ -304,6 +305,7 @@ describe("subagent tool model swap integration and caller parameter guard", () =
       task: "resumed task",
       depth: 1,
       attempt: 1,
+      project: "/repo",
       startedAt: 1,
       model: "swapped/active-model",
     });

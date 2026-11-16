@@ -21,10 +21,12 @@ import {
 } from "./definitions.js";
 import {
   abortSubagent,
+  attachSubagent,
   listSubagents,
   readSubagentLog,
   sendSubagent,
 } from "./runner.js";
+import { type SubagentState, isInProject } from "./state.js";
 import { createSubagentTool } from "./tool.js";
 import { subagentWorkspaceTracker } from "./workspace.js";
 
@@ -67,6 +69,7 @@ export function createSubagentsExtension(
         id: string;
         agent: string;
         status: string;
+        project?: string;
         task?: string;
         activeTool?: string;
       }>,
@@ -74,7 +77,8 @@ export function createSubagentsExtension(
       if (!lastCtx?.sessionManager) return;
       try {
         const fullList = all ?? (await list(resolveAgentDir()));
-        const active = fullList.filter(
+        const visible = fullList.filter((s) => isInProject(s, lastCtx?.cwd));
+        const active = visible.filter(
           (s) => s.status === "running" || s.status === "starting",
         );
         const items = active.map((s) => ({
@@ -86,7 +90,7 @@ export function createSubagentsExtension(
         }));
         updateSessionSnapshot(lastCtx.sessionManager, "subagents", {
           running: active.length,
-          total: fullList.length,
+          total: visible.length,
           sessionDefinitions: [...sessionAgents.keys()],
           items,
           updatedAt: Date.now(),
@@ -151,13 +155,14 @@ export function createSubagentsExtension(
         const dir = resolveAgentDir();
         const all = await list(dir);
         void subagentWorkspaceTracker.cleanupTerminal(all);
-        lastStates = all.map((state) => ({
+        const visible = all.filter((state) => isInProject(state, lastCtx?.cwd));
+        lastStates = visible.map((state) => ({
           id: state.id,
           status: state.status,
           agent: state.agent,
           task: state.task,
         }));
-        const active = all.filter(
+        const active = visible.filter(
           (s) => s.status === "running" || s.status === "starting",
         );
 
@@ -175,7 +180,9 @@ export function createSubagentsExtension(
 
         pi.events?.emit?.("subagents:state", items);
         publishStatusline(items.length);
-        void subagentAlertTracker.observe(all);
+        void subagentAlertTracker.observe(
+          visible.map(({ id, status }) => ({ id, status })),
+        );
         void syncSubagentsSnapshot(all);
 
         if (items.length > 0) {
@@ -201,7 +208,13 @@ export function createSubagentsExtension(
     const openSubagentLog = async (
       ctx: ExtensionContext,
       id: string,
+      known?: SubagentState,
     ): Promise<void> => {
+      const state = known ?? (await attachSubagent(resolveAgentDir(), id));
+      if (state === undefined || !isInProject(state, ctx.cwd)) {
+        if (ctx.hasUI) ctx.ui.notify(`Unknown subagent ${id}`, "error");
+        return;
+      }
       const log = readSubagentLog(resolveAgentDir(), id);
       const text = log.trim() === "" ? "(no output)" : log;
       const { showMarkdownPager } = await import("@hollowheap/tui/pager");
@@ -213,7 +226,9 @@ export function createSubagentsExtension(
     };
 
     const pickSubagent = async (ctx: ExtensionContext): Promise<void> => {
-      const all = await list(resolveAgentDir());
+      const all = (await list(resolveAgentDir())).filter((state) =>
+        isInProject(state, ctx.cwd),
+      );
       if (all.length === 0) {
         if (ctx.hasUI) ctx.ui.notify("No subagents found.", "info");
         return;
@@ -234,7 +249,13 @@ export function createSubagentsExtension(
           })),
           emptyText: "No matching subagents",
         });
-        if (picked !== undefined) await openSubagentLog(ctx, picked);
+        if (picked !== undefined) {
+          await openSubagentLog(
+            ctx,
+            picked,
+            all.find((state) => state.id === picked),
+          );
+        }
         return;
       }
       if (ctx.hasUI) {
@@ -375,6 +396,11 @@ export function createSubagentsExtension(
         }
         if (action === "pause") {
           try {
+            const current = await attachSubagent(agentDir, id);
+            if (current === undefined || !isInProject(current, ctx.cwd)) {
+              if (ctx.hasUI) ctx.ui.notify(`Unknown subagent ${id}`, "error");
+              return;
+            }
             await abortSubagent(agentDir, id);
             if (ctx.hasUI) ctx.ui.notify(`Paused subagent ${id}`, "info");
           } catch (e) {
@@ -414,6 +440,11 @@ export function createSubagentsExtension(
             return;
           }
           try {
+            const current = await attachSubagent(agentDir, id);
+            if (current === undefined || !isInProject(current, ctx.cwd)) {
+              if (ctx.hasUI) ctx.ui.notify(`Unknown subagent ${id}`, "error");
+              return;
+            }
             await sendSubagent(agentDir, id, { type: "steer", message });
             if (ctx.hasUI) ctx.ui.notify(`Steered subagent ${id}`, "info");
           } catch (e) {

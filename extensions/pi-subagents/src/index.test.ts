@@ -47,9 +47,25 @@ describe("pi-subagents extension", () => {
         status: "running",
         agent: "scout",
         task: "Analyze auth",
+        project: "/repo",
         startedAt: 1000,
         activeTool: "edit",
         activeToolStartedAt: 1050,
+      },
+      {
+        id: "sub-foreign",
+        status: "running",
+        agent: "scout",
+        task: "Other repo work",
+        project: "/elsewhere",
+        startedAt: 900,
+      },
+      {
+        id: "sub-legacy",
+        status: "running",
+        agent: "scout",
+        task: "Legacy run",
+        startedAt: 800,
       },
     ]);
     const ext = createSubagentsExtension({
@@ -80,7 +96,10 @@ describe("pi-subagents extension", () => {
     const sessionStartHandler = pi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1];
-    sessionStartHandler?.({}, { sessionManager: { getBranch: () => [] } });
+    sessionStartHandler?.(
+      {},
+      { cwd: "/repo", sessionManager: { getBranch: () => [] } },
+    );
 
     await vi.waitFor(() => {
       expect(pi.events.emit).toHaveBeenCalledWith("subagents:state", [
@@ -121,6 +140,7 @@ describe("pi-subagents extension", () => {
         status: "running",
         agent: "scout",
         task: "Analyze auth",
+        project: "/repo",
         startedAt: 1000,
       },
     ]);
@@ -187,6 +207,7 @@ describe("pi-subagents extension", () => {
         status: "running",
         agent: "scout",
         task: "Analyze auth",
+        project: "/repo",
         startedAt: 1000,
       },
     ]);
@@ -198,7 +219,10 @@ describe("pi-subagents extension", () => {
     const sessionStart = pi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1];
-    sessionStart?.({}, { sessionManager: { getBranch: () => [] } });
+    sessionStart?.(
+      {},
+      { cwd: "/repo", sessionManager: { getBranch: () => [] } },
+    );
     await vi.waitFor(() => expect(mockList).toHaveBeenCalled());
 
     const command = pi.registerCommand.mock.calls[0]?.[1] as {
@@ -233,6 +257,7 @@ describe("pi-subagents extension", () => {
         status: "running",
         agent: "scout",
         task: "Inspect",
+        project: "/repo",
         startedAt: 1000,
       },
       {
@@ -240,6 +265,7 @@ describe("pi-subagents extension", () => {
         status: "completed",
         agent: "coder",
         task: "Build",
+        project: "/repo",
         startedAt: 900,
       },
     ]);
@@ -253,7 +279,7 @@ describe("pi-subagents extension", () => {
     const sessionStart = pi.on.mock.calls.find(
       ([event]) => event === "session_start",
     )?.[1];
-    sessionStart?.({}, { sessionManager });
+    sessionStart?.({}, { cwd: "/repo", sessionManager });
 
     await vi.waitFor(() => {
       const snap = getSessionSnapshot(sessionManager);

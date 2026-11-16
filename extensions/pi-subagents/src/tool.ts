@@ -33,6 +33,7 @@ import {
   waitSubagent,
 } from "./runner.js";
 import type { SubagentState } from "./state.js";
+import { isInProject } from "./state.js";
 import { resolveSubagentModel } from "./swap.js";
 import {
   allocateSubagentWorkspace,
@@ -497,7 +498,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
 
         if (action === "list") {
           const agents = await listSubagents(agentDir);
-          return textResult({ agents: agents.map(summary) });
+          return textResult({
+            agents: agents
+              .filter((state) => isInProject(state, ctx.cwd))
+              .map(summary),
+          });
         }
 
         if (action === "start") {
@@ -587,6 +592,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               agent: effectiveAgent.name,
               task,
               depth,
+              project: ctx.cwd,
               ...(parentSession !== undefined ? { parentSession } : {}),
               command: spec.command,
               args: spec.args,
@@ -641,7 +647,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         if (id === "") return errorResult(`${String(action)} requires id`);
         if (action === "status") {
           const state = await attachSubagent(agentDir, id);
-          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          if (state === undefined || !isInProject(state, ctx.cwd)) {
+            return errorResult(`unknown id: ${id}`);
+          }
           return textResult(stateWithLog(agentDir, state));
         }
         if (action === "send") {
@@ -649,7 +657,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           if (message === "") return errorResult("send requires message");
           const mode = params.mode ?? "steer";
           const state = await attachSubagent(agentDir, id);
-          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          if (state === undefined || !isInProject(state, ctx.cwd)) {
+            return errorResult(`unknown id: ${id}`);
+          }
           await sendSubagent(
             agentDir,
             id,
@@ -666,29 +676,30 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         }
         if (action === "wait") {
           const timeoutMs = Math.min(params.timeoutMs ?? 30_000, 600_000);
-          const { withCancellableProgress } = await import(
-            "@hollowheap/tui/progress"
-          );
-          const waited = await withCancellableProgress(
-            ctx,
-            `Waiting for subagent ${id}`,
-            (waitSignal) => waitSubagent(agentDir, id, timeoutMs, waitSignal),
-            signal,
-          );
+          const current = await attachSubagent(agentDir, id);
+          if (current === undefined || !isInProject(current, ctx.cwd)) {
+            return errorResult(`unknown id: ${id}`);
+          }
+          // Stay non-modal: the editor keeps working, so the user can queue a
+          // steering message while the child runs. Aborting the turn stops the wait.
+          const state = await waitSubagent(agentDir, id, timeoutMs, signal);
           options.onSubagentsChange?.();
-          if (waited.status === "cancelled") {
-            const current = await waitSubagent(agentDir, id, 0);
-            if (current === undefined) return errorResult(`unknown id: ${id}`);
+          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          if (signal?.aborted) {
+            const latest = await waitSubagent(agentDir, id, 0);
+            if (latest === undefined) return errorResult(`unknown id: ${id}`);
             return textResult({
-              ...stateWithLog(agentDir, current),
+              ...stateWithLog(agentDir, latest),
               waitCancelled: true,
             });
           }
-          const state = waited.value;
-          if (state === undefined) return errorResult(`unknown id: ${id}`);
           return textResult(stateWithLog(agentDir, state));
         }
         if (action === "cancel") {
+          const current = await attachSubagent(agentDir, id);
+          if (current === undefined || !isInProject(current, ctx.cwd)) {
+            return errorResult(`unknown id: ${id}`);
+          }
           await abortSubagent(agentDir, id);
           const state = await waitSubagent(agentDir, id, 1_000);
           options.onSubagentsChange?.();
@@ -700,7 +711,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             return errorResult("resume requires a trusted project");
           }
           const state = await attachSubagent(agentDir, id);
-          if (state === undefined) return errorResult(`unknown id: ${id}`);
+          if (state === undefined || !isInProject(state, ctx.cwd)) {
+            return errorResult(`unknown id: ${id}`);
+          }
           if (state.status !== "failed") {
             return errorResult(
               `only failed subagents can resume: ${state.status}`,
@@ -784,6 +797,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             task: state.task,
             depth: state.depth,
             attempt: state.attempt + 1,
+            project: ctx.cwd,
             ...(state.parentSession !== undefined
               ? { parentSession: state.parentSession }
               : {}),

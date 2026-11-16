@@ -122,7 +122,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 | `list` | none | Summaries of persisted children. |
 | `status` | `id` | State plus bounded log output. |
 | `send` | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`) | Writes an RPC message to the live child. |
-| `wait` | `id`, optional `timeoutMs` | Waits for a terminal state; TUI sessions show a cancellable loader, and Escape stops waiting without cancelling the child. |
+| `wait` | `id`, optional `timeoutMs` | Waits for a terminal state without taking over the screen: the editor stays usable, so a steering message can be queued while the child runs. Aborting the turn stops waiting without cancelling the child. |
 | `cancel` | `id` | Aborts the child and waits briefly. |
 | `resume` | `id` | Restarts a failed child from its session, same id, next attempt. |
 
@@ -150,6 +150,8 @@ Each child has a detached runner and a Unix control socket. State lives under `<
 - `<id>.session.jsonl` — Pi session file.
 
 The directory is `0700`; files and sockets are `0600`. The parent can exit and a later session can read the state and connect to the socket. Child processes survive parent exit; there is no central daemon.
+
+Subagent state carries the project folder that started the child. Lists, the picker, statusline counts, todo widgets, completion alerts, and id actions only see children whose recorded folder matches the current working directory. Children from other folders and legacy states without a recorded folder stay hidden.
 
 ## Write serialization
 

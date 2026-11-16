@@ -33,6 +33,7 @@ export interface StartSubagentOptions {
   task: string;
   depth: number;
   attempt?: number;
+  project?: string;
   parentSession?: string;
   command: string;
   args?: readonly string[];
@@ -110,6 +111,7 @@ export async function startSubagent(
     task: options.task,
     depth: options.depth,
     attempt: options.attempt ?? 1,
+    ...(options.project !== undefined ? { project: options.project } : {}),
     ...(options.parentSession !== undefined
       ? { parentSession: options.parentSession }
       : {}),

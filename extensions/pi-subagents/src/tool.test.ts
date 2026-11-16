@@ -66,6 +66,7 @@ const running: SubagentState = {
   task: "find",
   depth: 1,
   attempt: 1,
+  project: "/repo",
   startedAt: 1,
   socket: "/tmp/sub.sock",
 };
@@ -119,57 +120,84 @@ afterEach(() => {
 });
 
 describe("subagent tool", () => {
-  it("stops a TUI wait without cancelling the child", async () => {
-    let component:
-      | { handleInput(data: string): void; render(width: number): string[] }
-      | undefined;
+  it("keeps a non-modal wait abortable without cancelling the child", async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    mocks.waitSubagent.mockImplementation((async (
+      _dir: string,
+      _id: string,
+      _timeout: number,
+      sig?: AbortSignal,
+    ) => {
+      seenSignal = sig;
+      if (sig === undefined || sig.aborted) return running;
+      await new Promise<void>((resolve) => {
+        sig.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return running;
+    }) as never);
+    mocks.attachSubagent.mockResolvedValue(running);
     const uiCtx = {
       ...ctx,
       mode: "tui",
       hasUI: true,
-      ui: {
-        notify: vi.fn(),
-        custom: vi.fn(
-          (
-            factory: (
-              tui: unknown,
-              theme: unknown,
-              keybindings: unknown,
-              done: (result: unknown) => void,
-            ) => {
-              handleInput(data: string): void;
-              render(width: number): string[];
-            },
-          ) =>
-            new Promise((resolve) => {
-              component = factory(
-                { requestRender: vi.fn() },
-                { fg: (_token: string, text: string) => text },
-                {},
-                resolve,
-              );
-            }),
-        ),
-      },
+      ui: { notify: vi.fn(), custom: vi.fn() },
     };
-    mocks.waitSubagent
-      .mockImplementationOnce(() => new Promise(() => {}))
-      .mockResolvedValueOnce(running);
     const tool = createTool();
 
     const pending = tool.execute(
       "1",
       { action: "wait", id: "sub-1", timeoutMs: 10_000 },
-      undefined,
+      controller.signal,
       undefined,
       uiCtx as never,
     );
-    await vi.waitFor(() => expect(component).toBeDefined());
-    component?.handleInput("\x1b");
+    await vi.waitFor(() => expect(seenSignal).toBe(controller.signal));
+    controller.abort();
     const result = await pending;
 
+    expect(uiCtx.ui.custom).not.toHaveBeenCalled();
     expect(textOf(result)).toContain('"waitCancelled":true');
     expect(detailsOf(result).status).toBe("running");
+  });
+
+  it("hides subagents started from another folder", async () => {
+    const foreign: SubagentState = {
+      ...running,
+      id: "sub-other",
+      project: "/elsewhere",
+    };
+    const legacy: SubagentState = {
+      ...running,
+      id: "sub-legacy",
+      project: undefined,
+    };
+    mocks.listSubagents.mockResolvedValue([running, foreign, legacy]);
+    const tool = createTool();
+    const exec = (params: Record<string, unknown>) =>
+      tool.execute("1", params, undefined, undefined, ctx as never);
+
+    const listed = detailsOf(await exec({ action: "list" })).agents as Array<{
+      id: string;
+    }>;
+    expect(listed.map((state) => state.id)).toEqual(["sub-1"]);
+
+    mocks.attachSubagent.mockResolvedValue(foreign);
+    expect(textOf(await exec({ action: "status", id: "sub-other" }))).toContain(
+      "unknown id",
+    );
+    expect(
+      textOf(await exec({ action: "send", id: "sub-other", message: "hi" })),
+    ).toContain("unknown id");
+    expect(textOf(await exec({ action: "cancel", id: "sub-other" }))).toContain(
+      "unknown id",
+    );
+    expect(mocks.abortSubagent).not.toHaveBeenCalled();
+
+    mocks.attachSubagent.mockResolvedValue(legacy);
+    expect(
+      textOf(await exec({ action: "status", id: "sub-legacy" })),
+    ).toContain("unknown id");
   });
 
   it("starts a trusted agent and sends the task prompt", async () => {
@@ -186,6 +214,7 @@ describe("subagent tool", () => {
         agent: "scout",
         task: "find",
         depth: 1,
+        project: "/repo",
         parentSession: "session-1",
         env: expect.objectContaining({
           PI_SUBAGENT_DEPTH: "1",
