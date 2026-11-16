@@ -23,6 +23,8 @@ export const TOOL_TAGS: Record<string, Tag> = {
   question: "read",
   todo: "read",
   todos: "read",
+  memory_search: "read",
+  memory_remember: "read",
 };
 
 export const PASSTHROUGH_ACTIONS = new Set([
@@ -56,6 +58,9 @@ export function readToolTarget(
   if (toolName === "codemode") return "codemode";
   if (toolName === "question") return "question";
   if (toolName === "todo" || toolName === "todos") return "todo";
+  if (toolName === "memory_search" || toolName === "memory_remember") {
+    return "memory";
+  }
   return readPathArg(input);
 }
 

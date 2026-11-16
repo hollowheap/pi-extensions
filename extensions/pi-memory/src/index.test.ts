@@ -23,6 +23,7 @@ function createMockPi() {
   return {
     on: vi.fn(),
     registerCommand: vi.fn(),
+    registerTool: vi.fn(),
     appendEntry: vi.fn(),
     events: {
       emit: vi.fn(),
@@ -109,6 +110,20 @@ function memoryCommand(pi: ReturnType<typeof createMockPi>) {
     ([name]) => name === "memory",
   )?.[1] as
     | { handler: (args: string, ctx: unknown) => Promise<void> }
+    | undefined;
+}
+
+function memoryTool(pi: ReturnType<typeof createMockPi>, name: string) {
+  return pi.registerTool.mock.calls.find(([tool]) => tool.name === name)?.[0] as
+    | {
+        execute: (
+          id: string,
+          params: Record<string, unknown>,
+          signal: undefined,
+          onUpdate: undefined,
+          ctx: unknown,
+        ) => Promise<{ content: Array<{ text: string }> }>;
+      }
     | undefined;
 }
 
@@ -504,5 +519,63 @@ describe("pi-memory extension", () => {
     snap = getSessionSnapshot(ctx.sessionManager).memory;
     expect(snap?.observations).toBe(0);
     expect(snap?.latestObservation).toBeUndefined();
+  });
+
+  it("searches stored observations with the memory_search tool", async () => {
+    const pi = createMockPi();
+    const dir = configDir();
+    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
+    const ctx = createCtx([observationEntry("Prefer pnpm over npm")]);
+    await handler(pi, "session_start")?.({}, ctx);
+
+    const tool = memoryTool(pi, "memory_search");
+    const result = await tool?.execute(
+      "call-1",
+      { query: "pnpm" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    const payload = JSON.parse(result?.content[0]?.text ?? "{}");
+    expect(payload.total).toBe(1);
+    expect(payload.results[0]).toEqual(
+      expect.objectContaining({
+        kind: "observation",
+        text: "Prefer pnpm over npm",
+      }),
+    );
+  });
+
+  it("stores durable facts and deduplicates memory_remember", async () => {
+    const pi = createMockPi();
+    const dir = configDir();
+    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
+    const ctx = createCtx([messageEntry("m1", "hello")]);
+    await handler(pi, "session_start")?.({}, ctx);
+
+    const tool = memoryTool(pi, "memory_remember");
+    const first = await tool?.execute(
+      "call-1",
+      { text: "Use flake checks", relevance: 5 },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const second = await tool?.execute(
+      "call-2",
+      { text: "Use flake checks", relevance: 5 },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      MEMORY_OBSERVATION_TYPE,
+      expect.objectContaining({ text: "Use flake checks", relevance: 5 }),
+    );
+    expect(JSON.parse(first?.content[0]?.text ?? "{}").duplicate).toBe(false);
+    expect(JSON.parse(second?.content[0]?.text ?? "{}").duplicate).toBe(true);
   });
 });

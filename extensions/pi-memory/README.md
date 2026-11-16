@@ -46,6 +46,13 @@ Create `<agentDir>/memory.json`:
 
 Memory is branch-local and never writes a separate memory file. Navigating to a branch without an observation removes it from that branch.
 
+## Tools
+
+- `memory_search` searches active observations and reflections by keyword. It returns up to 20 matches (default 5) with IDs, relevance, and timestamps.
+- `memory_remember` stores one durable fact as an observation. It deduplicates exact text and honors `redactSecrets`.
+
+Both tools require `enabled: true`. They are agent-invoked only, so they add no per-turn context cost.
+
 ## Commands
 
 - `/memory status` shows enabled state, model, observation count, pending tokens, last observer usage, and config diagnostics.
@@ -61,7 +68,7 @@ Memory is branch-local and never writes a separate memory file. Navigating to a 
 
 ## Limits
 
-- Observer-only in this version. Reflections, a dropper, and a `recall` tool are not implemented.
+- Reflections and a dropper are not implemented. `memory_search` and `memory_remember` are the agent-facing tools.
 - No ongoing context injection outside compaction.
 - No debug log or file-based memory store.
 - ACP sessions do not register the extension.

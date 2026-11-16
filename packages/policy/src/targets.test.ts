@@ -18,6 +18,8 @@ describe("policy targets", () => {
     expect(TOOL_TAGS.question).toBe("read");
     expect(TOOL_TAGS.todo).toBe("read");
     expect(TOOL_TAGS.todos).toBe("read");
+    expect(TOOL_TAGS.memory_search).toBe("read");
+    expect(TOOL_TAGS.memory_remember).toBe("read");
   });
 
   it("extracts non-path targets", () => {
@@ -32,6 +34,10 @@ describe("policy targets", () => {
     expect(readToolTarget("question", { prompt: "hi" })).toBe("question");
     expect(readToolTarget("todo", { action: "list" })).toBe("todo");
     expect(readToolTarget("todos", { action: "list" })).toBe("todo");
+    expect(readToolTarget("memory_search", { query: "commits" })).toBe(
+      "memory",
+    );
+    expect(readToolTarget("memory_remember", { text: "fact" })).toBe("memory");
     expect(readToolTarget("read", { path: "src/x.ts" })).toBe("src/x.ts");
   });
 

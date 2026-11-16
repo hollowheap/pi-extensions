@@ -6,6 +6,7 @@ import {
   type SessionBeforeCompactResult,
   compact as compactSession,
   convertToLlm,
+  defineTool,
   getAgentDir,
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
@@ -20,6 +21,7 @@ import {
   recordTurnUsage,
   restoreSessionUsage,
 } from "@hollowheap/core/usage";
+import { Type } from "typebox";
 import {
   type MemoryConfig,
   isMemoryActive,
@@ -454,6 +456,170 @@ export function createMemoryExtension(
           return undefined;
         }
       },
+    );
+
+    pi.registerTool(
+      defineTool({
+        name: "memory_search",
+        label: "memory_search",
+        description:
+          "Search session observations and reflections for durable facts from earlier in this session. Use when prior decisions, constraints, or context may matter.",
+        exposure: "direct",
+        parameters: Type.Object({
+          query: Type.String({ minLength: 1 }),
+          limit: Type.Optional(Type.Number({ minimum: 1, maximum: 20 })),
+        }),
+        async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+          const config = loadConfig();
+          if (!isMemoryActive(config)) {
+            return {
+              content: [{ type: "text", text: "memory is disabled" }],
+              details: {},
+            };
+          }
+          const terms = params.query.toLowerCase().split(/\s+/).filter(Boolean);
+          const matches: Array<{
+            kind: "observation" | "reflection";
+            id: string;
+            text: string;
+            relevance: number;
+            createdAt: number;
+            score: number;
+          }> = [];
+          const score = (text: string): number => {
+            const lower = text.toLowerCase();
+            let total = 0;
+            for (const term of terms) {
+              let index = lower.indexOf(term);
+              while (index !== -1) {
+                total += 1;
+                index = lower.indexOf(term, index + term.length);
+              }
+            }
+            return total;
+          };
+          for (const item of ledger.observations) {
+            const value = score(item.text);
+            if (value > 0) {
+              matches.push({
+                kind: "observation",
+                id: item.id,
+                text: item.text,
+                relevance: item.relevance,
+                createdAt: item.createdAt,
+                score: value,
+              });
+            }
+          }
+          for (const item of ledger.reflections) {
+            const value = score(item.text);
+            if (value > 0) {
+              matches.push({
+                kind: "reflection",
+                id: item.id,
+                text: item.text,
+                relevance: 3,
+                createdAt: item.createdAt,
+                score: value,
+              });
+            }
+          }
+          matches.sort(
+            (a, b) =>
+              b.score - a.score ||
+              b.relevance - a.relevance ||
+              b.createdAt - a.createdAt,
+          );
+          const limit = params.limit ?? 5;
+          const results = matches
+            .slice(0, limit)
+            .map(({ score: _, ...item }) => item);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  total: matches.length,
+                  results,
+                }),
+              },
+            ],
+            details: {},
+          };
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool({
+        name: "memory_remember",
+        label: "memory_remember",
+        description:
+          "Store one durable fact or decision in session memory. Use for stable constraints or preferences, not transient details or secrets.",
+        exposure: "direct",
+        parameters: Type.Object({
+          text: Type.String({ minLength: 1, maxLength: 500 }),
+          relevance: Type.Optional(Type.Number({ minimum: 1, maximum: 5 })),
+        }),
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+          const config = loadConfig();
+          if (!isMemoryActive(config)) {
+            return {
+              content: [{ type: "text", text: "memory is disabled" }],
+              details: {},
+            };
+          }
+          const normalized = params.text.replace(/\s+/g, " ").trim();
+          if (normalized === "") {
+            return {
+              content: [{ type: "text", text: "text is required" }],
+              details: {},
+            };
+          }
+          const text = (
+            config.redactSecrets ? redactSecrets(normalized) : normalized
+          ).slice(0, MAX_OBSERVATION_CHARS);
+          const existing = ledger.observations.find(
+            (item) => item.text.toLowerCase() === text.toLowerCase(),
+          );
+          if (existing) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    id: existing.id,
+                    duplicate: true,
+                  }),
+                },
+              ],
+              details: {},
+            };
+          }
+          const observation: MemoryObservation = {
+            id: observationId(),
+            text,
+            relevance: params.relevance ?? 3,
+            createdAt: Date.now(),
+            sourceEntryIds: [],
+          };
+          ledger.observations.push(observation);
+          pi.appendEntry(MEMORY_OBSERVATION_TYPE, observation);
+          publishMemory(ctx);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  id: observation.id,
+                  duplicate: false,
+                }),
+              },
+            ],
+            details: {},
+          };
+        },
+      }),
     );
 
     pi.registerCommand("memory", {
