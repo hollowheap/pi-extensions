@@ -89,10 +89,14 @@ function formatUnknownToolName(toolName: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
+export type ToolBoxRenderConfig = ToolBoxConfig & {
+  verbPack: ToolVerbPack;
+};
+
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
 export function resolveToolVerb(
   toolName: string,
-  config: Pick<ToolBoxConfig, "verbPack" | "customVerbs">,
+  config: Pick<ToolBoxRenderConfig, "verbPack" | "customVerbs">,
 ): CustomToolVerb {
   const custom = config.customVerbs?.[toolName];
   if (custom) return custom;
@@ -518,7 +522,7 @@ export interface WrapToolRendererOptions {
 export function wrapToolRenderer(
   toolName: string,
   base: ToolRenderers | undefined,
-  getConfig: () => ToolBoxConfig,
+  getConfig: () => ToolBoxRenderConfig,
   wrapOptions?: WrapToolRendererOptions,
 ): ToolRenderers {
   const now = wrapOptions?.now ?? Date.now;

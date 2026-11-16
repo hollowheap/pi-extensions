@@ -11,9 +11,9 @@ import {
   type LoadingIndicatorStyle,
   OVERLAY_SURFACE_MODES,
   type OverlaySurfaceMode,
-  THINKING_DISPLAY_MODES,
+  THINKING_VERBOSITY_MODES,
   TOOL_VERB_PACKS,
-  type ThinkingDisplayMode,
+  type ThinkingVerbosityMode,
   type ToolVerbPack,
   type TuiConfig,
   updateTuiConfig,
@@ -63,8 +63,8 @@ function applyTuiSetting(
     case "markdownRender":
       next.markdownRender = value === "true";
       break;
-    case "thinkingDisplay":
-      next.thinkingDisplay = value as ThinkingDisplayMode;
+    case "thinkingVerbosity":
+      next.thinkingVerbosity = value as ThinkingVerbosityMode;
       break;
     case "thinkingAnimate":
       next.thinkingAnimate = value === "true";
@@ -78,8 +78,8 @@ function applyTuiSetting(
     case "toolBox.accentStripe":
       next.toolBox.accentStripe = value === "true";
       break;
-    case "toolBox.verbPack":
-      next.toolBox.verbPack = value as ToolVerbPack;
+    case "verbPack":
+      next.verbPack = value as ToolVerbPack;
       break;
     case "toolBox.outcomeBadges":
       next.toolBox.outcomeBadges = value === "true";
@@ -129,11 +129,11 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: ["true", "false"],
     },
     {
-      id: "thinkingDisplay",
-      label: "Thinking display",
-      description: "Full Markdown or truncated single-line thinking preview",
-      currentValue: config.thinkingDisplay,
-      values: [...THINKING_DISPLAY_MODES],
+      id: "thinkingVerbosity",
+      label: "Thinking verbosity",
+      description: "Full, single-line, or no thinking output",
+      currentValue: config.thinkingVerbosity,
+      values: [...THINKING_VERBOSITY_MODES],
     },
     {
       id: "thinkingAnimate",
@@ -164,10 +164,10 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: ["true", "false"],
     },
     {
-      id: "toolBox.verbPack",
-      label: "Tool box verb pack",
-      description: "Action verb style for tool calls",
-      currentValue: config.toolBox.verbPack,
+      id: "verbPack",
+      label: "Verb pack",
+      description: "Action verb style for tools and thinking",
+      currentValue: config.verbPack,
       values: [...TOOL_VERB_PACKS],
     },
     {
@@ -194,12 +194,12 @@ export function formatTuiStatus(config: TuiConfig): string {
     `overlaySurface=${config.overlaySurface}`,
     `loadingIndicator=${config.loadingIndicator}`,
     `markdownRender=${config.markdownRender}`,
-    `thinkingDisplay=${config.thinkingDisplay}`,
+    `thinkingVerbosity=${config.thinkingVerbosity}`,
     `thinkingAnimate=${config.thinkingAnimate}`,
+    `verbPack=${config.verbPack}`,
     `toolBox.enabled=${config.toolBox.enabled}`,
     `toolBox.borderStyle=${config.toolBox.borderStyle}`,
     `toolBox.accentStripe=${config.toolBox.accentStripe}`,
-    `toolBox.verbPack=${config.toolBox.verbPack}`,
     `toolBox.outcomeBadges=${config.toolBox.outcomeBadges}`,
     `toolBox.reuseSpinner=${config.toolBox.reuseSpinner}`,
   ].join(" · ");

@@ -32,6 +32,12 @@ export * from "./skills.js";
 export * from "./tool-box.js";
 export * from "./tui-settings.js";
 
+const THINKING_PREFIXES = {
+  standard: "Thinking: ",
+  terse: "think: ",
+  playful: "Pondering: ",
+} as const;
+
 function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   let code: string | undefined;
   for (const entry of ctx.sessionManager.getBranch()) {
@@ -82,70 +88,8 @@ export default function (pi: ExtensionAPI): void {
   let activeTui:
     | {
         requestRender?: (force?: boolean) => void;
-        terminal?: { columns?: number };
       }
     | undefined;
-  let latestThinkingText = "";
-  let thinkingStep = 0;
-  let thinkingTimer: ReturnType<typeof setInterval> | undefined;
-
-  const stopThinkingShimmer = (resetLabel: boolean): void => {
-    if (thinkingTimer !== undefined) {
-      clearInterval(thinkingTimer);
-      thinkingTimer = undefined;
-    }
-    latestThinkingText = "";
-    thinkingStep = 0;
-    if (
-      resetLabel &&
-      activeCtx?.hasUI &&
-      typeof activeCtx.ui?.setHiddenThinkingLabel === "function"
-    ) {
-      activeCtx.ui.setHiddenThinkingLabel(undefined);
-    }
-  };
-
-  const renderThinkingLabel = (): void => {
-    if (
-      !activeCtx?.hasUI ||
-      typeof activeCtx.ui?.setHiddenThinkingLabel !== "function"
-    ) {
-      return;
-    }
-    const cfg = getActiveTuiConfig();
-    if (cfg.thinkingDisplay !== "one-line" || latestThinkingText === "") return;
-    const maxWidth = Math.max(24, (activeTui?.terminal?.columns ?? 80) - 4);
-    const line = formatOneLineThinkingText(latestThinkingText, maxWidth, {
-      pick: "latest",
-    });
-    const label =
-      cfg.thinkingAnimate && cfg.colored
-        ? renderThinkingShimmerFrame(
-            stripMarkdownInline(line),
-            thinkingStep,
-            activeCtx.ui.theme,
-            true,
-          )
-        : stripMarkdownInline(line);
-    activeCtx.ui.setHiddenThinkingLabel(label);
-  };
-
-  const startThinkingShimmer = (): void => {
-    renderThinkingLabel();
-    const cfg = getActiveTuiConfig();
-    if (
-      cfg.thinkingDisplay === "one-line" &&
-      cfg.thinkingAnimate &&
-      cfg.colored &&
-      thinkingTimer === undefined
-    ) {
-      thinkingTimer = setInterval(() => {
-        thinkingStep = (thinkingStep + 1) % 256;
-        renderThinkingLabel();
-      }, 70);
-      thinkingTimer.unref?.();
-    }
-  };
 
   const applyWorkingIndicator = (ctx: ExtensionContext | undefined): void => {
     if (!ctx?.hasUI || typeof ctx.ui?.setWorkingIndicator !== "function") {
@@ -180,11 +124,10 @@ export default function (pi: ExtensionAPI): void {
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
     if (getActiveTuiConfig().toolBox.enabled) {
-      return wrapToolRenderer(
-        toolName,
-        base,
-        () => getActiveTuiConfig().toolBox,
-      );
+      return wrapToolRenderer(toolName, base, () => {
+        const active = getActiveTuiConfig();
+        return { ...active.toolBox, verbPack: active.verbPack };
+      });
     }
     const renderCall = base?.renderCall;
     if (toolName !== "codemode" || renderCall === undefined) return base;
@@ -199,14 +142,16 @@ export default function (pi: ExtensionAPI): void {
   pi.registerMarkdownTransformer?.((markdown, context) => {
     const cfg = getActiveTuiConfig();
     if (context.messageType === "assistant-thinking") {
-      if (cfg.thinkingDisplay !== "one-line") return markdown;
+      if (cfg.thinkingVerbosity === "verbose") return markdown;
+      if (cfg.thinkingVerbosity === "none") return "";
       const line = formatOneLineThinkingText(markdown, context.availableWidth, {
-        pick: context.isStreaming ? "latest" : "first",
+        pick: "first",
+        prefix: THINKING_PREFIXES[cfg.verbPack],
       });
       if (context.isStreaming && cfg.thinkingAnimate && cfg.colored) {
         return renderThinkingShimmerFrame(
           stripMarkdownInline(line),
-          thinkingStep,
+          Math.floor(Date.now() / 70),
           activeCtx?.ui?.theme,
           true,
         );
@@ -251,9 +196,6 @@ export default function (pi: ExtensionAPI): void {
         await showTuiSettings(ctx, getAgentDir(), (next) => {
           applyWorkingIndicator(ctx);
           activeEditor?.clearExplicitUiOverrides();
-          if (next.thinkingDisplay !== "one-line") {
-            stopThinkingShimmer(true);
-          }
           activeTui?.requestRender?.(true);
           pi.events?.emit?.("tui:config-changed", next);
         });
@@ -377,56 +319,8 @@ export default function (pi: ExtensionAPI): void {
     publishModalSnapshot(ctx);
   });
 
-  pi.on("message_update", (event, ctx) => {
-    activeCtx = ctx;
-    const cfg = getActiveTuiConfig();
-    if (cfg.thinkingDisplay !== "one-line") {
-      if (thinkingTimer !== undefined) stopThinkingShimmer(true);
-      return;
-    }
-    const evtType = event.assistantMessageEvent?.type;
-    if (evtType === "thinking_start" || evtType === "thinking_delta") {
-      const msg = event.message as {
-        role?: string;
-        content?: Array<{ type?: string; thinking?: string }>;
-      };
-      if (msg?.role === "assistant" && Array.isArray(msg.content)) {
-        const combined = msg.content
-          .filter(
-            (c): c is { type: "thinking"; thinking: string } =>
-              c?.type === "thinking" && typeof c.thinking === "string",
-          )
-          .map((c) => c.thinking)
-          .join("\n\n");
-        if (combined) latestThinkingText = combined;
-      }
-      startThinkingShimmer();
-    } else if (
-      evtType === "thinking_end" ||
-      evtType === "text_start" ||
-      evtType === "toolcall_start" ||
-      evtType === "done" ||
-      evtType === "error"
-    ) {
-      stopThinkingShimmer(true);
-    }
-  });
-
-  pi.on("message_end", () => {
-    stopThinkingShimmer(true);
-  });
-
-  pi.on("agent_end", () => {
-    stopThinkingShimmer(true);
-  });
-
-  pi.on("session_shutdown", () => {
-    stopThinkingShimmer(true);
-  });
-
   pi.on("session_start", (_event, ctx) => {
     activeCtx = ctx;
-    stopThinkingShimmer(true);
     syncFromBranch(ctx);
     loadAndActivateTuiConfig(getAgentDir(), (msg) =>
       ctx.ui?.notify?.(`pi-modal: ${msg}`, "warning"),

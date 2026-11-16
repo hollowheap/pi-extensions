@@ -63,13 +63,13 @@ describe("tui-config", () => {
       colored: true,
       loadingIndicator: "crush",
       markdownRender: true,
-      thinkingDisplay: "default",
+      thinkingVerbosity: "verbose",
       thinkingAnimate: true,
+      verbPack: "playful",
       toolBox: {
         enabled: true,
         borderStyle: "square",
         accentStripe: true,
-        verbPack: "playful",
         outcomeBadges: true,
         reuseSpinner: true,
         customVerbs: {
@@ -86,7 +86,7 @@ describe("tui-config", () => {
         borderStyle: "zigzag",
         overlaySurface: "neon",
         loadingIndicator: "sparkles",
-        thinkingDisplay: "full",
+        thinkingVerbosity: "loud",
         colored: "yes",
         toolBox: { verbPack: "chaotic" },
       },
@@ -96,10 +96,19 @@ describe("tui-config", () => {
     expect(cfg.borderStyle).toBe("rounded");
     expect(cfg.overlaySurface).toBe("transparent");
     expect(cfg.loadingIndicator).toBe("crush");
-    expect(cfg.thinkingDisplay).toBe("default");
+    expect(cfg.thinkingVerbosity).toBe("verbose");
     expect(cfg.colored).toBe(true);
-    expect(cfg.toolBox.verbPack).toBe("standard");
+    expect(cfg.verbPack).toBe("standard");
     expect(diagnostics).toHaveLength(6);
+  });
+
+  it("maps legacy thinkingDisplay values to verbosity", () => {
+    expect(
+      normalizeTuiConfig({ thinkingDisplay: "one-line" }).thinkingVerbosity,
+    ).toBe("minimal");
+    expect(
+      normalizeTuiConfig({ thinkingDisplay: "default" }).thinkingVerbosity,
+    ).toBe("verbose");
   });
 
   it("updates tui.json atomically and preserves unknown keys", () => {
@@ -115,10 +124,10 @@ describe("tui-config", () => {
       current.colored = false;
       current.loadingIndicator = "braille";
       current.markdownRender = false;
-      current.thinkingDisplay = "one-line";
+      current.thinkingVerbosity = "minimal";
       current.thinkingAnimate = false;
       current.toolBox.enabled = true;
-      current.toolBox.verbPack = "terse";
+      current.verbPack = "terse";
     });
 
     expect(res.ok).toBe(true);
@@ -130,10 +139,10 @@ describe("tui-config", () => {
     expect(reloaded.colored).toBe(false);
     expect(reloaded.loadingIndicator).toBe("braille");
     expect(reloaded.markdownRender).toBe(false);
-    expect(reloaded.thinkingDisplay).toBe("one-line");
+    expect(reloaded.thinkingVerbosity).toBe("minimal");
     expect(reloaded.thinkingAnimate).toBe(false);
     expect(reloaded.toolBox.enabled).toBe(true);
-    expect(reloaded.toolBox.verbPack).toBe("terse");
+    expect(reloaded.verbPack).toBe("terse");
   });
 
   it("reports OS permission errors clearly on unreadable tui.json", () => {

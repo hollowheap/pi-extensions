@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_TUI_CONFIG,
   type ToolBoxConfig,
+  type ToolVerbPack,
 } from "@hollowheap/core/tui-config";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -20,9 +21,12 @@ import {
   wrapToolRenderer,
 } from "./tool-box.js";
 
-function makeConfig(overrides: Partial<ToolBoxConfig> = {}): ToolBoxConfig {
+function makeConfig(
+  overrides: Partial<ToolBoxConfig & { verbPack: ToolVerbPack }> = {},
+): ToolBoxConfig & { verbPack: ToolVerbPack } {
   return {
     ...DEFAULT_TUI_CONFIG.toolBox,
+    verbPack: DEFAULT_TUI_CONFIG.verbPack,
     enabled: true,
     ...overrides,
   };

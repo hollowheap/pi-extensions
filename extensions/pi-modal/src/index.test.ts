@@ -1826,10 +1826,10 @@ describe("TUI config, /tui command, and tool-box integration", () => {
     extension(pi as never);
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
+      verbPack: "terse",
       toolBox: {
         ...DEFAULT_TUI_CONFIG.toolBox,
         enabled: true,
-        verbPack: "terse",
       },
     });
 
@@ -1938,7 +1938,7 @@ describe("TUI config, /tui command, and tool-box integration", () => {
 
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
-      thinkingDisplay: "one-line",
+      thinkingVerbosity: "minimal",
       thinkingAnimate: true,
       colored: true,
     });
@@ -1953,7 +1953,7 @@ describe("TUI config, /tui command, and tool-box integration", () => {
     );
     expect(transformedThinking).toContain("\x1b[38;");
     expect(stripTerminalSequences(transformedThinking ?? "")).toContain(
-      "Thinking: Step 2",
+      "Thinking: Step 1",
     );
 
     const markdownThinking = markdownTransformer?.(
@@ -1984,58 +1984,56 @@ describe("TUI config, /tui command, and tool-box integration", () => {
       }),
     ).toBe("Thinking: Earlier thought");
 
-    const setHiddenThinkingLabel = vi.fn();
-    const setWorkingIndicator = vi.fn();
-    const setEditorComponent = vi.fn();
-    const sessionCtx = {
-      hasUI: true,
-      mode: "tui",
-      ui: {
-        notify,
-        setHiddenThinkingLabel,
-        setWorkingIndicator,
-        setEditorComponent,
-        theme: {
-          colors: {
-            accent: rgbColor(80, 120, 255),
-            borderAccent: rgbColor(80, 220, 255),
-            success: rgbColor(80, 220, 120),
-            warning: rgbColor(255, 200, 80),
-            error: rgbColor(255, 80, 80),
-            thinkingText: rgbColor(160, 140, 200),
-            text: rgbColor(230, 230, 230),
-            muted: rgbColor(120, 120, 120),
-          },
-          getColorMode: () => "truecolor" as const,
-        },
-      },
-    };
-    handlers.session_start?.({}, sessionCtx);
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
-      thinkingDisplay: "one-line",
-      thinkingAnimate: true,
-      colored: true,
+      thinkingVerbosity: "verbose",
     });
+    expect(
+      markdownTransformer?.("Alpha **bold**", {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      }),
+    ).toBe("Alpha **bold**");
 
-    handlers.message_update?.(
-      {
-        type: "message_update",
-        assistantMessageEvent: { type: "thinking_delta" },
-        message: {
-          role: "assistant",
-          content: [
-            { type: "thinking", thinking: "Line 1\nLine 2 inspecting" },
-          ],
-        },
-      },
-      sessionCtx,
-    );
-    expect(setHiddenThinkingLabel).toHaveBeenCalledWith(
-      expect.stringContaining("\x1b[38;"),
-    );
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      thinkingVerbosity: "minimal",
+      thinkingAnimate: false,
+      verbPack: "terse",
+    });
+    expect(
+      markdownTransformer?.("Alpha\nBeta", {
+        messageType: "assistant-thinking",
+        isStreaming: true,
+        availableWidth: 60,
+      }),
+    ).toBe("think: Alpha");
 
-    handlers.message_end?.({ type: "message_end", message: {} }, sessionCtx);
-    expect(setHiddenThinkingLabel).toHaveBeenLastCalledWith(undefined);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      thinkingVerbosity: "minimal",
+      thinkingAnimate: false,
+      verbPack: "playful",
+    });
+    expect(
+      markdownTransformer?.("Alpha\nBeta", {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      }),
+    ).toBe("Pondering: Alpha");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      thinkingVerbosity: "none",
+    });
+    expect(
+      markdownTransformer?.("Line 1\nLine 2 inspecting", {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      }),
+    ).toBe("");
   });
 });

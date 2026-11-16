@@ -50,11 +50,12 @@ export const LOADING_INDICATOR_STYLES: readonly LoadingIndicatorStyle[] = [
   "hidden",
 ];
 
-export type ThinkingDisplayMode = "default" | "one-line";
+export type ThinkingVerbosityMode = "verbose" | "minimal" | "none";
 
-export const THINKING_DISPLAY_MODES: readonly ThinkingDisplayMode[] = [
-  "default",
-  "one-line",
+export const THINKING_VERBOSITY_MODES: readonly ThinkingVerbosityMode[] = [
+  "verbose",
+  "minimal",
+  "none",
 ];
 
 export interface CustomToolVerb {
@@ -66,7 +67,6 @@ export interface ToolBoxConfig {
   enabled: boolean;
   borderStyle: BorderStyle;
   accentStripe: boolean;
-  verbPack: ToolVerbPack;
   outcomeBadges: boolean;
   reuseSpinner: boolean;
   customVerbs: Record<string, CustomToolVerb>;
@@ -78,8 +78,9 @@ export interface TuiConfig {
   colored: boolean;
   loadingIndicator: LoadingIndicatorStyle;
   markdownRender: boolean;
-  thinkingDisplay: ThinkingDisplayMode;
+  thinkingVerbosity: ThinkingVerbosityMode;
   thinkingAnimate: boolean;
+  verbPack: ToolVerbPack;
   toolBox: ToolBoxConfig;
 }
 
@@ -89,13 +90,13 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   colored: true,
   loadingIndicator: "crush",
   markdownRender: true,
-  thinkingDisplay: "default",
+  thinkingVerbosity: "verbose",
   thinkingAnimate: true,
+  verbPack: "standard",
   toolBox: {
     enabled: false,
     borderStyle: "rounded",
     accentStripe: true,
-    verbPack: "standard",
     outcomeBadges: true,
     reuseSpinner: true,
     customVerbs: {},
@@ -224,11 +225,17 @@ export function normalizeTuiConfig(
     "markdownRender",
     diagnostics,
   );
-  const thinkingDisplay = parseEnum(
-    raw.thinkingDisplay,
-    THINKING_DISPLAY_MODES,
-    defaults.thinkingDisplay,
-    "thinkingDisplay",
+  const legacyThinkingVerbosity =
+    raw.thinkingDisplay === "one-line"
+      ? "minimal"
+      : raw.thinkingDisplay === "default"
+        ? "verbose"
+        : undefined;
+  const thinkingVerbosity = parseEnum(
+    raw.thinkingVerbosity ?? legacyThinkingVerbosity,
+    THINKING_VERBOSITY_MODES,
+    defaults.thinkingVerbosity,
+    "thinkingVerbosity",
     diagnostics,
   );
   const thinkingAnimate = parseBoolean(
@@ -239,6 +246,16 @@ export function normalizeTuiConfig(
   );
 
   const rawToolBox = raw.toolBox;
+  const legacyVerbPack = isPlainObject(rawToolBox)
+    ? rawToolBox.verbPack
+    : undefined;
+  const verbPack = parseEnum(
+    raw.verbPack ?? legacyVerbPack,
+    TOOL_VERB_PACKS,
+    defaults.verbPack,
+    "verbPack",
+    diagnostics,
+  );
   const toolBox: ToolBoxConfig = {
     ...defaults.toolBox,
     borderStyle,
@@ -267,14 +284,6 @@ export function normalizeTuiConfig(
         rawToolBox.accentStripe,
         defaults.toolBox.accentStripe,
         "toolBox.accentStripe",
-        diagnostics,
-      );
-
-      toolBox.verbPack = parseEnum(
-        rawToolBox.verbPack,
-        TOOL_VERB_PACKS,
-        defaults.toolBox.verbPack,
-        "toolBox.verbPack",
         diagnostics,
       );
 
@@ -307,8 +316,9 @@ export function normalizeTuiConfig(
     colored,
     loadingIndicator,
     markdownRender,
-    thinkingDisplay,
+    thinkingVerbosity,
     thinkingAnimate,
+    verbPack,
     toolBox,
   };
 }
@@ -371,13 +381,13 @@ export function updateTuiConfig(
       colored: updated.colored,
       loadingIndicator: updated.loadingIndicator,
       markdownRender: updated.markdownRender,
-      thinkingDisplay: updated.thinkingDisplay,
+      thinkingVerbosity: updated.thinkingVerbosity,
       thinkingAnimate: updated.thinkingAnimate,
+      verbPack: updated.verbPack,
       toolBox: {
         enabled: updated.toolBox.enabled,
         borderStyle: updated.toolBox.borderStyle,
         accentStripe: updated.toolBox.accentStripe,
-        verbPack: updated.toolBox.verbPack,
         outcomeBadges: updated.toolBox.outcomeBadges,
         reuseSpinner: updated.toolBox.reuseSpinner,
         customVerbs: { ...updated.toolBox.customVerbs },

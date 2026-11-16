@@ -86,7 +86,7 @@ describe("showTuiSettings", () => {
     expect(status).toContain("colored=true");
     expect(status).toContain("loadingIndicator=crush");
     expect(status).toContain("markdownRender=true");
-    expect(status).toContain("thinkingDisplay=default");
+    expect(status).toContain("thinkingVerbosity=verbose");
     expect(status).toContain("thinkingAnimate=true");
     expect(status).toContain("toolBox.enabled=false");
   });
@@ -104,7 +104,7 @@ describe("showTuiSettings", () => {
     expect(rendered).toContain("Border style");
     expect(rendered).toContain("Colored UI");
     expect(rendered).toContain("Loading indicator");
-    expect(rendered).toContain("Thinking display");
+    expect(rendered).toContain("Thinking verbosity");
 
     // Cycle borderStyle from "rounded" -> "sharp"
     env.component()?.handleInput("\r");
