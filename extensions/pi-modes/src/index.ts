@@ -144,7 +144,7 @@ export default function (pi: ExtensionAPI): void {
   pi.registerShortcut(Key.alt("m"), {
     description: "Cycle approval mode",
     handler: async (ctx) => {
-      const names = modeNames().filter((name) => name !== "auto");
+      const names = modeNames();
       if (names.length === 0) return;
       const current = session(ctx.sessionManager).mode;
       const index = names.indexOf(current);

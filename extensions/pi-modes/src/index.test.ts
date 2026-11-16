@@ -116,7 +116,7 @@ describe("pi-modes extension", () => {
     );
   });
 
-  it("cycles manual, edit, and plan with alt+m without entering auto", async () => {
+  it("cycles manual, edit, plan, and auto with alt+m", async () => {
     const pi = createMockPi();
     extension(pi as never);
     const ctx = createContext();
@@ -127,9 +127,7 @@ describe("pi-modes extension", () => {
     await shortcut.handler(ctx);
     expect(session(ctx.sessionManager).mode).toBe("plan");
     await shortcut.handler(ctx);
-    expect(session(ctx.sessionManager).mode).toBe("manual");
-
-    await pi.command("mode").handler("auto", ctx);
+    expect(session(ctx.sessionManager).mode).toBe("auto");
     await shortcut.handler(ctx);
     expect(session(ctx.sessionManager).mode).toBe("manual");
   });

@@ -21,8 +21,7 @@ persisted sessions and agent frontmatter keep working.
 
 - `/mode` — fuzzy picker in the TUI, mode list otherwise.
 - `/mode <name>` — switch to a mode.
-- `alt+m` — cycle `manual` → `edit` → `plan` → `manual`. `auto` is
-  available through `/mode auto` or the picker, not the shortcut.
+- `alt+m` — cycle `manual` → `edit` → `plan` → `auto` → `manual`.
 
 The active mode is persisted as the `hollowheap.core.mode` session entry and
 restored on `session_start` and `session_tree`. A missing restored mode falls
