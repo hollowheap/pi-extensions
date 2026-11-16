@@ -36,6 +36,30 @@ function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+const BAR_WIDTH = 16;
+const MODEL_NAME_WIDTH = 20;
+const SUBAGENT_LABEL_WIDTH = 30;
+const SUBAGENT_MODEL_WIDTH = 14;
+const SUBAGENT_BAR_WIDTH = 12;
+
+function usageBar(value: number, total: number, width = BAR_WIDTH): string {
+  if (total <= 0 || value <= 0) return "░".repeat(width);
+  const ratio = Math.min(1, value / total);
+  const filled = Math.max(1, Math.round(ratio * width));
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+function share(part: number, total: number): string {
+  if (total <= 0) return "0.0%";
+  return `${((part / total) * 100).toFixed(1)}%`;
+}
+
+function compactTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
 export function formatUsageReport(
   usage: CumulativeUsage,
   subagents: readonly SubagentUsage[] = usage.subagents ?? [],
@@ -47,24 +71,46 @@ export function formatUsageReport(
 
   const lines = [
     `Cumulative session usage: ${usage.totalTokens.toLocaleString("en-US")} tokens (${usage.inputTokens.toLocaleString("en-US")} in, ${usage.outputTokens.toLocaleString("en-US")} out, ${usage.cacheReadTokens.toLocaleString("en-US")} cache-read, ${usage.cacheWriteTokens.toLocaleString("en-US")} cache-write) | Cost: ${costStr}`,
+    "",
+    "Token breakdown",
   ];
+
+  const composition: Array<[string, number]> = [
+    ["in", usage.inputTokens],
+    ["out", usage.outputTokens],
+    ["read", usage.cacheReadTokens],
+    ["write", usage.cacheWriteTokens],
+  ];
+  for (const [label, value] of composition) {
+    lines.push(
+      `  ${label.padEnd(5)} ${usageBar(value, usage.totalTokens)} ${share(value, usage.totalTokens).padStart(6)} ${value.toLocaleString("en-US").padStart(10)}`,
+    );
+  }
 
   const models = Object.values(usage.byModel);
   if (models.length > 0) {
-    lines.push("Per-model breakdown:");
+    lines.push("", "Per-model breakdown");
+    lines.push(
+      `  ${"model".padEnd(MODEL_NAME_WIDTH)} ${"tokens".padStart(8)} ${"share".padStart(6)} ${"bar".padEnd(BAR_WIDTH)} ${"cost".padStart(7)}`,
+    );
     for (const m of models) {
+      const tokens =
+        m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheWriteTokens;
       const mCost =
         m.cost < 0.01 && m.cost > 0
           ? `$${m.cost.toFixed(4)}`
           : `$${m.cost.toFixed(2)}`;
       lines.push(
-        `  ${m.model}: ${m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheWriteTokens} tokens | ${mCost}`,
+        `  ${m.model.slice(0, MODEL_NAME_WIDTH).padEnd(MODEL_NAME_WIDTH)} ${compactTokens(tokens).padStart(8)} ${share(tokens, usage.totalTokens).padStart(6)} ${usageBar(tokens, usage.totalTokens)} ${mCost.padStart(7)}`,
       );
     }
   }
 
   if (subagents.length > 0) {
-    lines.push("Subagents:");
+    lines.push("", "Subagents");
+    lines.push(
+      `  ${"agent/id".padEnd(SUBAGENT_LABEL_WIDTH)} ${"model".padEnd(SUBAGENT_MODEL_WIDTH)} ${"tokens".padStart(8)} ${"bar".padEnd(SUBAGENT_BAR_WIDTH)} ${"cost".padStart(7)}`,
+    );
     for (const subagent of subagents) {
       if (!subagent.available) {
         lines.push(
@@ -72,15 +118,25 @@ export function formatUsageReport(
         );
         continue;
       }
+      const label = `@${subagent.id} (${subagent.agent}) [${subagent.status}]`;
+      const labelText =
+        label.length > SUBAGENT_LABEL_WIDTH
+          ? `${label.slice(0, SUBAGENT_LABEL_WIDTH - 1)}…`
+          : label.padEnd(SUBAGENT_LABEL_WIDTH);
+      const modelText =
+        subagent.model.length > SUBAGENT_MODEL_WIDTH
+          ? `${subagent.model.slice(0, SUBAGENT_MODEL_WIDTH - 1)}…`
+          : subagent.model.padEnd(SUBAGENT_MODEL_WIDTH);
       lines.push(
-        `  @${subagent.id} (${subagent.agent}) [${subagent.status}] ${subagent.model}: ${subagent.totalTokens.toLocaleString("en-US")} tokens | ${formatDollarCost(subagent.cost)}`,
+        `  ${labelText} ${modelText} ${compactTokens(subagent.totalTokens).padStart(8)} ${usageBar(subagent.totalTokens, usage.totalTokens, SUBAGENT_BAR_WIDTH)} ${formatDollarCost(subagent.cost).padStart(7)}`,
       );
     }
   }
 
   if (usage.budgetCap !== undefined) {
     lines.push(
-      `Budget: $${usage.totalCost.toFixed(2)} / $${usage.budgetCap.toFixed(2)}`,
+      "",
+      `Budget ${usageBar(usage.totalCost, usage.budgetCap)} ${formatDollarCost(usage.totalCost)} / ${formatDollarCost(usage.budgetCap)}`,
     );
   }
   if (usage.budgetWarning && usage.budgetCap !== undefined) {

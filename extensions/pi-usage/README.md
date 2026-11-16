@@ -14,7 +14,8 @@ Records and restores cumulative token counts and dollar cost in session custom e
 
 ## Commands
 
-- `/usage` — Show cumulative token and dollar usage for the active session.
+- `/usage` — Show cumulative usage as token bars, a per-model grid,
+  subagent rows, and a budget bar.
 - `/usage cap $5` — Set a dollar budget cap for the session.
 - `/usage cap off` — Clear the session budget cap.
 

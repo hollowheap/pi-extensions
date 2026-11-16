@@ -516,6 +516,57 @@ describe("formatUsageReport", () => {
     expect(text).toContain("2,000 tokens");
     expect(text).toContain("1,200 in, 800 out");
     expect(text).toContain("$0.05");
+    expect(text).toContain("Token breakdown");
+    expect(text).toMatch(/in\s+[█░]{16}\s+60\.0%/);
+    expect(text).toMatch(/out\s+[█░]{16}\s+40\.0%/);
+  });
+
+  it("draws model, subagent, and budget bars", () => {
+    const text = formatUsageReport(
+      {
+        inputTokens: 600,
+        outputTokens: 400,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 1000,
+        totalCost: 2.5,
+        budgetCap: 5,
+        budgetWarning: true,
+        byModel: {
+          "model-a": {
+            model: "model-a",
+            inputTokens: 600,
+            outputTokens: 400,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            cost: 2.5,
+          },
+        },
+      },
+      [
+        {
+          id: "sub-1",
+          agent: "scout",
+          status: "completed",
+          model: "model-a",
+          available: true,
+          inputTokens: 50,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 100,
+          cost: 0.1,
+          byModel: {},
+        },
+      ],
+    );
+    expect(text).toContain("Per-model breakdown");
+    expect(text).toMatch(/model-a\s+1\.0k\s+100\.0% [█░]{16}/);
+    expect(text).toMatch(
+      /@sub-1 \(scout\) \[completed\]\s+model-a\s+100 [█░]{12}/,
+    );
+    expect(text).toMatch(/Budget [█░]{16} \$2\.50 \/ \$5\.00/);
+    expect(text).toContain("⚠ Budget warning: 2.50 / 5.00");
   });
 });
 
