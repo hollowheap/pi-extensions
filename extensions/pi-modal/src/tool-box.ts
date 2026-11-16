@@ -9,7 +9,11 @@ type ToolRenderContext = Parameters<
   NonNullable<ToolRenderers["renderCall"]>
 >[2];
 import {
+  type Color,
   type Component,
+  type TerminalColorMode,
+  foregroundAnsi,
+  indexedColor,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -265,6 +269,82 @@ function bold(theme: Theme | undefined, value: string): string {
   return typeof theme?.bold === "function" ? theme.bold(value) : value;
 }
 
+type ToolBoxStateToken = "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
+
+const STATE_FALLBACK_TOKEN: Readonly<
+  Record<ToolBoxStateToken, "accent" | "success" | "error">
+> = {
+  toolPendingBg: "accent",
+  toolSuccessBg: "success",
+  toolErrorBg: "error",
+};
+
+interface ColorTheme {
+  colors?: Readonly<Record<string, Color | undefined>>;
+  getColorMode?: () => TerminalColorMode;
+}
+
+/** ANSI 8 base colors become their brighter ANSI 16 variants for foreground use. */
+function brightenBaseAnsi(color: Color): Color {
+  return color.kind === "indexed" && color.index < 8
+    ? indexedColor(color.index + 8)
+    : color;
+}
+
+function stateAnsi(
+  theme: Theme | undefined,
+  token: ToolBoxStateToken,
+  colored: boolean,
+): string | undefined {
+  if (!colored || theme === undefined) return undefined;
+  const candidate = theme as unknown as ColorTheme;
+  const color = candidate.colors?.[token];
+  if (color === undefined || typeof candidate.getColorMode !== "function") {
+    return undefined;
+  }
+  return foregroundAnsi(brightenBaseAnsi(color), candidate.getColorMode());
+}
+
+function paintState(
+  theme: Theme | undefined,
+  token: ToolBoxStateToken,
+  colored: boolean,
+  value: string,
+): string {
+  const ansi = stateAnsi(theme, token, colored);
+  if (ansi !== undefined) return `${ansi}${value}\x1b[39m`;
+  return fg(theme, STATE_FALLBACK_TOKEN[token], value, colored);
+}
+
+const ESC = String.fromCharCode(27);
+const SGR_PATTERN = new RegExp(`${ESC}\\[([0-9;]*)m`, "g");
+
+/** Drop inherited background colors so only the tool box state color remains. */
+export function stripBackgroundSgr(text: string): string {
+  return text.replace(SGR_PATTERN, (match, params: string) => {
+    if (params === "") return match;
+    const parts = params.split(";");
+    const kept: string[] = [];
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index] ?? "";
+      const code = Number.parseInt(part === "" ? "0" : part, 10);
+      if (code === 48) {
+        const mode = parts[index + 1];
+        if (mode === "5") {
+          index += 2;
+        } else if (mode === "2") {
+          index += 4;
+        }
+        continue;
+      }
+      if (code === 49) continue;
+      if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) continue;
+      kept.push(part);
+    }
+    return kept.length === 0 ? "" : `\x1b[${kept.join(";")}m`;
+  });
+}
+
 function getInnerWidth(
   width: number,
   borderStyle: BorderStyle,
@@ -285,7 +365,7 @@ function frameBoxLines(
   options: {
     borderStyle: BorderStyle;
     accentStripe: boolean;
-    stripeToken: "accent" | "success" | "error";
+    stateToken: ToolBoxStateToken;
     includeTop: boolean;
     includeBottom: boolean;
     colored?: boolean;
@@ -294,9 +374,10 @@ function frameBoxLines(
   const safeWidth = Math.max(4, width);
   const colored = options.colored ?? true;
   const bordered = options.borderStyle !== "none" && safeWidth >= 6;
-  const stripe = options.accentStripe
-    ? fg(theme, options.stripeToken, "▎", colored)
-    : "";
+  const paint = (value: string) =>
+    paintState(theme, options.stateToken, colored, value);
+  const stripe = options.accentStripe ? paint("▎") : "";
+  const content = lines.map(stripBackgroundSgr);
   const innerWidth = getInnerWidth(
     safeWidth,
     options.borderStyle,
@@ -304,7 +385,7 @@ function frameBoxLines(
   );
 
   if (!bordered) {
-    return lines.map((line) => {
+    return content.map((line) => {
       const fitted =
         visibleWidth(line) > innerWidth
           ? truncateToWidth(line, innerWidth, "")
@@ -320,7 +401,7 @@ function frameBoxLines(
   }
 
   const chars = getBorderChars(options.borderStyle);
-  const borderPaint = (value: string) => fg(theme, "border", value);
+  const borderPaint = paint;
   const out: string[] = [];
 
   if (options.includeTop) {
@@ -335,7 +416,7 @@ function frameBoxLines(
     borderPaint(chars.vertical) + (options.accentStripe ? `${stripe} ` : " ");
   const rightEdge = ` ${borderPaint(chars.vertical)}`;
 
-  for (const line of lines) {
+  for (const line of content) {
     const fitted =
       visibleWidth(line) > innerWidth
         ? truncateToWidth(line, innerWidth, "")
@@ -502,11 +583,11 @@ export function wrapToolRenderer(
 
           const settled = !context.isPartial;
           const isError = Boolean(context.isError || boxState.resultIsError);
-          const stripeToken = !settled
-            ? "accent"
+          const stateToken: ToolBoxStateToken = !settled
+            ? "toolPendingBg"
             : isError
-              ? "error"
-              : "success";
+              ? "toolErrorBg"
+              : "toolSuccessBg";
           const innerWidth = getInnerWidth(
             width,
             cfg.borderStyle,
@@ -591,7 +672,7 @@ export function wrapToolRenderer(
             {
               borderStyle: cfg.borderStyle,
               accentStripe: cfg.accentStripe,
-              stripeToken,
+              stateToken,
               includeTop: true,
               includeBottom: !hasResultLines,
               colored: ui.colored,
@@ -684,11 +765,11 @@ export function wrapToolRenderer(
           }
 
           const settled = !options.isPartial && !context.isPartial;
-          const stripeToken = !settled
-            ? "accent"
+          const stateToken: ToolBoxStateToken = !settled
+            ? "toolPendingBg"
             : context.isError || result.isError
-              ? "error"
-              : "success";
+              ? "toolErrorBg"
+              : "toolSuccessBg";
 
           const displayLines =
             boxState.hasCall && boxState.hasCallLines ? ["", ...lines] : lines;
@@ -696,7 +777,7 @@ export function wrapToolRenderer(
           const framed = frameBoxLines(displayLines, width, theme, {
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
-            stripeToken,
+            stateToken,
             includeTop: !boxState.hasCall,
             includeBottom: true,
             colored: ui.colored,

@@ -17,3 +17,13 @@ state as the `ctrl+o` shortcut, exposed as a command for discoverability.
 
 `ctrl+shift+o` opens the last codemode script on its own in an editor dialog,
 without expanding the rest of the tool output.
+
+## Tool box
+
+With `toolBox.enabled` in `<agentDir>/tui.json`, every tool call renders in a
+self-contained box. The border and accent stripe use the tool state color:
+`toolPendingBg` while running, `toolSuccessBg` when settled, and `toolErrorBg`
+on failure. If a theme defines those tokens with ANSI 8 base colors, the
+brighter ANSI 16 variant supplies the foreground border color. Inherited
+background fills from host renderers are stripped, so the box stays
+background-free and only the border carries the state color.

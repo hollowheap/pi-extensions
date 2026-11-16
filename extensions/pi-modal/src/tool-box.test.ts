@@ -1,5 +1,8 @@
 import {
+  type Color,
   type Component,
+  foregroundAnsi,
+  indexedColor,
   rgbColor,
   stripTerminalSequences,
   visibleWidth,
@@ -13,6 +16,7 @@ import {
   formatToolCallSummary,
   formatToolDuration,
   resolveToolVerb,
+  stripBackgroundSgr,
   wrapToolRenderer,
 } from "./tool-box.js";
 
@@ -44,6 +48,54 @@ const workingTheme = {
   },
   getColorMode: () => "truecolor" as const,
 } as never;
+
+function stateTheme(
+  stateColors: Record<string, Color>,
+  mode: "truecolor" | "256color" = "truecolor",
+) {
+  return {
+    fg: (_token: string, value: string) => value,
+    bold: (value: string) => value,
+    colors: {
+      accent: rgbColor(80, 120, 255),
+      borderAccent: rgbColor(80, 220, 255),
+      success: rgbColor(80, 220, 120),
+      warning: rgbColor(255, 200, 80),
+      error: rgbColor(255, 80, 80),
+      thinkingText: rgbColor(200, 120, 255),
+      text: rgbColor(230, 230, 230),
+      muted: rgbColor(120, 120, 120),
+      ...stateColors,
+    },
+    getColorMode: () => mode,
+  } as never;
+}
+
+function renderCallBox(
+  toolName: string,
+  isPartial: boolean,
+  isError: boolean,
+  theme: unknown,
+): string[] {
+  const renderer = wrapToolRenderer(toolName, undefined, () => makeConfig());
+  const comp = renderer.renderCall?.({ command: "echo ok" }, theme as never, {
+    args: { command: "echo ok" },
+    toolCallId: "state-1",
+    invalidate: vi.fn(),
+    lastComponent: undefined,
+    state: {},
+    cwd: "/tmp",
+    executionStarted: true,
+    argsComplete: true,
+    isPartial,
+    expanded: false,
+    showImages: false,
+    isError,
+    durationMs: isPartial ? undefined : 10,
+    outputPad: 1,
+  });
+  return comp?.render(50) ?? [];
+}
 
 describe("tool-box verbs and helpers", () => {
   it("resolves standard, terse, and playful verb packs plus unknown $ fallback and custom overrides", () => {
@@ -427,6 +479,80 @@ describe("wrapToolRenderer", () => {
       ...(resComp?.render(50) ?? []),
     ];
     expect(lines[1]).toContain("✗");
+  });
+
+  it("paints the border and stripe with the pending, success, and error state colors", () => {
+    const pendingColor = rgbColor(60, 60, 60);
+    const successColor = rgbColor(80, 220, 120);
+    const errorColor = rgbColor(255, 80, 80);
+    const theme = stateTheme({
+      toolPendingBg: pendingColor,
+      toolSuccessBg: successColor,
+      toolErrorBg: errorColor,
+    });
+
+    const pending = renderCallBox("bash", true, false, theme);
+    const pendingAnsi = foregroundAnsi(pendingColor, "truecolor");
+    expect(pending[0]).toContain(pendingAnsi);
+    expect(pending[1]).toContain(pendingAnsi);
+
+    const success = renderCallBox("bash", false, false, theme);
+    const successAnsi = foregroundAnsi(successColor, "truecolor");
+    expect(success[0]).toContain(successAnsi);
+    expect(success[1]).toContain(successAnsi);
+
+    const failed = renderCallBox("bash", false, true, theme);
+    const errorAnsi = foregroundAnsi(errorColor, "truecolor");
+    expect(failed[0]).toContain(errorAnsi);
+    expect(failed[1]).toContain(errorAnsi);
+  });
+
+  it("brightens ANSI 8 state colors to their ANSI 16 variants", () => {
+    const theme = stateTheme({ toolSuccessBg: indexedColor(2) }, "256color");
+    const lines = renderCallBox("bash", false, false, theme);
+    const bright = foregroundAnsi(indexedColor(10), "256color");
+    expect(lines[0]).toContain(bright);
+    expect(lines[0]).not.toContain(foregroundAnsi(indexedColor(2), "256color"));
+  });
+
+  it("strips inherited backgrounds from wrapped tool output", () => {
+    const base = {
+      renderCall: () => ({
+        invalidate: vi.fn(),
+        render: () => ["\x1b[42mgreen\x1b[49m ok", "\x1b[48;5;236mdark\x1b[0m"],
+      }),
+    };
+    const renderer = wrapToolRenderer("read", base, () => makeConfig());
+    const comp = renderer.renderCall?.({ command: "echo ok" }, mockTheme, {
+      args: { command: "echo ok" },
+      toolCallId: "bg-1",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state: {},
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: false,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs: 5,
+      outputPad: 1,
+    });
+    const joined = (comp?.render(50) ?? []).join("\n");
+    expect(joined).not.toContain("\x1b[42m");
+    expect(joined).not.toContain("\x1b[49m");
+    expect(joined).not.toContain("\x1b[48;5;236m");
+    expect(stripTerminalSequences(joined)).toContain("green ok");
+    expect(stripTerminalSequences(joined)).toContain("dark");
+  });
+
+  it("strips only background SGR parameters and keeps foreground styling", () => {
+    expect(stripBackgroundSgr("\x1b[32mok\x1b[39m")).toBe("\x1b[32mok\x1b[39m");
+    expect(stripBackgroundSgr("\x1b[1;42mbold\x1b[0m")).toBe(
+      "\x1b[1mbold\x1b[0m",
+    );
+    expect(stripBackgroundSgr("\x1b[mreset")).toBe("\x1b[mreset");
   });
 
   it("locks header spinner on tall executing boxes and invalidates cache cleanly on config changes", () => {
