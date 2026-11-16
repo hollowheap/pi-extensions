@@ -306,6 +306,18 @@ describe("mode registry", () => {
     dropSession(owner);
   });
 
+  it("can enter a mode without persisting it", () => {
+    const append = vi.fn();
+    const owner = { appendCustomEntry: append };
+
+    const result = enterMode(owner, "plan", { persist: false });
+
+    expect(result.mode).toBe("plan");
+    expect(session(owner).mode).toBe("plan");
+    expect(append).not.toHaveBeenCalled();
+    dropSession(owner);
+  });
+
   it("replaces a keyed gate instead of stacking it", () => {
     const name = "keyed-test";
     registerMode({ name, defaults: ALLOW });

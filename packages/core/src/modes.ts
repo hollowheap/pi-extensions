@@ -161,7 +161,11 @@ function runGates(
   return { veto, notices };
 }
 
-export function enterMode(owner: unknown, name: string): ModeEnterResult {
+export function enterMode(
+  owner: unknown,
+  name: string,
+  options: { persist?: boolean } = {},
+): ModeEnterResult {
   const resolved = resolveModeName(name);
   if (getModeLayer(resolved) === undefined) {
     return {
@@ -178,7 +182,7 @@ export function enterMode(owner: unknown, name: string): ModeEnterResult {
       notices: gates.notices,
     };
   }
-  setMode(owner, resolved);
+  setMode(owner, resolved, { persist: options.persist });
   return { mode: resolved, notices: gates.notices };
 }
 

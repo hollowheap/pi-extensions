@@ -1,8 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModeLayer } from "@hollowheap/core/modes";
+import { getModeLayer, resetSession } from "@hollowheap/core/modes";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { session } from "@hollowheap/core/state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension, { ACTIVE_AGENT_TYPE, createAgentExtension } from "./index.js";
 
@@ -497,12 +498,48 @@ describe("pi-agent extension", () => {
     expect(event.systemPromptOptions.sections.agent).toBeUndefined();
   });
 
+  it("keeps thinking when the agent model is already active", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext({
+      model: { provider: "opencode-go", id: "deepseek-v4.1-flash" },
+    });
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      { id: "thinking-1", type: "thinking_level_change" } as never,
+    );
+
+    let level = "max";
+    pi.getThinkingLevel.mockImplementation(() => level as never);
+    pi.setThinkingLevel.mockImplementation((next: unknown) => {
+      level = String(next);
+    });
+    pi.setModel.mockImplementation(async () => {
+      level = "low";
+      return true;
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(pi.setModel).not.toHaveBeenCalled();
+    expect(level).toBe("max");
+  });
+
   it("reapplies session thinking after a restore model switch", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();
     ext(pi as never);
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({
+      model: { provider: "opencode-go", id: "beam-free" },
+    });
     ctx.branch.push(
       {
         id: "custom-1",
@@ -531,6 +568,36 @@ describe("pi-agent extension", () => {
     );
   });
 
+  it("keeps persisted session mode when restoring an active agent", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "mode-1",
+        type: "custom",
+        customType: "hollowheap.core.mode",
+        data: { mode: "plan" },
+      },
+    );
+
+    resetSession(ctx.sessionManager);
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(session(ctx.sessionManager).mode).toBe("plan");
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({ name: "engineer", mode: "plan" }),
+    );
+  });
+
   it("preserves restored thinking when applying a default agent", async () => {
     writeFileSync(
       join(testDir, "agent.json"),
@@ -541,10 +608,25 @@ describe("pi-agent extension", () => {
     ext(pi as never);
 
     const ctx = createMockContext();
-    ctx.branch.push({
-      id: "thinking-1",
-      type: "thinking_level_change",
-    } as never);
+    ctx.branch.push(
+      {
+        id: "thinking-1",
+        type: "thinking_level_change",
+      } as never,
+      {
+        id: "msg-1",
+        type: "message",
+        message: { role: "user", content: "resume" },
+      } as never,
+      {
+        id: "mode-1",
+        type: "custom",
+        customType: "hollowheap.core.mode",
+        data: { mode: "plan" },
+      },
+    );
+
+    resetSession(ctx.sessionManager);
 
     let level = "max";
     pi.getThinkingLevel.mockImplementation(() => level as never);
@@ -559,6 +641,7 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(pi.setThinkingLevel).toHaveBeenCalledWith("max");
+    expect(session(ctx.sessionManager).mode).toBe("plan");
     expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
       expect.objectContaining({ name: "engineer", thinking: "max" }),
     );

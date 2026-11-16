@@ -8,6 +8,7 @@ import {
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { readPersistedMode, session } from "@hollowheap/core/state";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { loadAgentConfig } from "./config.js";
@@ -198,6 +199,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         persist?: boolean;
         notify?: boolean;
         preserveThinking?: boolean;
+        preserveMode?: boolean;
       } = {},
     ): Promise<void> => {
       const preservedThinking =
@@ -228,15 +230,20 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           ...(preservedThinking !== undefined
             ? { thinking: preservedThinking }
             : { thinking: agent.thinking ?? agent.effort }),
-          mode: agent.mode,
+          mode:
+            options.preserveMode === true && ctx.sessionManager
+              ? session(ctx.sessionManager).mode
+              : agent.mode,
           tools: agent.tools,
           skills: agent.skills,
           updatedAt: Date.now(),
         });
       }
 
-      if (agent.mode && ctx.sessionManager) {
-        const result = enterMode(ctx.sessionManager, agent.mode);
+      if (agent.mode && ctx.sessionManager && options.preserveMode !== true) {
+        const result = enterMode(ctx.sessionManager, agent.mode, {
+          persist: false,
+        });
         const error = result.diagnostic ?? result.veto;
         if (error && options.notify) {
           ctx.ui?.notify?.(`Mode error: ${error}`, "error");
@@ -254,12 +261,20 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           );
         });
         if (matched) {
-          const ok = await piApi.setModel(matched);
-          if (!ok && options.notify) {
-            ctx.ui?.notify?.(
-              `Failed to set model to "${agent.model}" (authentication unconfigured)`,
-              "warning",
-            );
+          const currentModelId = formatModelId(ctx.model);
+          const targetModelId = formatModelId(matched);
+          // Re-setting the same model resets thinking to the model or global
+          // default, discarding the level restored from the session.
+          const alreadyActive =
+            currentModelId !== "" && currentModelId === targetModelId;
+          if (!alreadyActive) {
+            const ok = await piApi.setModel(matched);
+            if (!ok && options.notify) {
+              ctx.ui?.notify?.(
+                `Failed to set model to "${agent.model}" (authentication unconfigured)`,
+                "warning",
+              );
+            }
           }
         } else if (options.notify) {
           ctx.ui?.notify?.(
@@ -417,7 +432,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       lastTrusted = ctx.isProjectTrusted();
 
       let hasAgentEntry = false;
-      let hasThinkingEntry = false;
+      let hasHistory = false;
       let persistedName: string | undefined;
       const entries =
         (typeof ctx.sessionManager?.getBranch === "function"
@@ -431,8 +446,8 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           customType?: string;
           data?: unknown;
         };
-        if (raw.type === "thinking_level_change") {
-          hasThinkingEntry = true;
+        if (raw.type === "message") {
+          hasHistory = true;
         }
         if (
           (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
@@ -449,6 +464,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       const discovery = resolveAgentDiscovery(ctx.cwd, ctx.isProjectTrusted());
+      const preserveMode = readPersistedMode(ctx.sessionManager) !== undefined;
       for (const d of discovery.diagnostics) {
         ctx.ui?.notify?.(`pi-agent: ${d}`, "warning");
       }
@@ -462,6 +478,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             persist: false,
             notify: false,
             preserveThinking: true,
+            preserveMode,
           });
           return;
         }
@@ -486,7 +503,8 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
               await applyAgent(matched, ctx, pi, {
                 persist: false,
                 notify: false,
-                preserveThinking: hasThinkingEntry,
+                preserveThinking: hasHistory,
+                preserveMode,
               });
               return;
             }
