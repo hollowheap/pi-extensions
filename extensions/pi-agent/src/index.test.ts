@@ -497,6 +497,73 @@ describe("pi-agent extension", () => {
     expect(event.systemPromptOptions.sections.agent).toBeUndefined();
   });
 
+  it("reapplies session thinking after a restore model switch", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      { id: "thinking-1", type: "thinking_level_change" } as never,
+    );
+
+    let level = "max";
+    pi.getThinkingLevel.mockImplementation(() => level as never);
+    pi.setThinkingLevel.mockImplementation((next: unknown) => {
+      level = String(next);
+    });
+    pi.setModel.mockImplementation(async () => {
+      level = "medium";
+      return true;
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(pi.setThinkingLevel).toHaveBeenCalledWith("max");
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({ name: "engineer", thinking: "max" }),
+    );
+  });
+
+  it("preserves restored thinking when applying a default agent", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "thinking-1",
+      type: "thinking_level_change",
+    } as never);
+
+    let level = "max";
+    pi.getThinkingLevel.mockImplementation(() => level as never);
+    pi.setThinkingLevel.mockImplementation((next: unknown) => {
+      level = String(next);
+    });
+    pi.setModel.mockImplementation(async () => {
+      level = "low";
+      return true;
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(pi.setThinkingLevel).toHaveBeenCalledWith("max");
+    expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+      expect.objectContaining({ name: "engineer", thinking: "max" }),
+    );
+  });
+
   it("ignores malformed persisted agent entries", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();

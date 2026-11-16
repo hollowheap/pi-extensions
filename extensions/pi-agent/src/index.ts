@@ -200,6 +200,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         preserveThinking?: boolean;
       } = {},
     ): Promise<void> => {
+      const preservedThinking =
+        options.preserveThinking === true &&
+        typeof piApi.getThinkingLevel === "function"
+          ? piApi.getThinkingLevel()
+          : undefined;
       if (activeAgent === undefined && options.persist) {
         captureBaseActiveTools(piApi);
       }
@@ -220,10 +225,8 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           name: agent.name,
           description: agent.description,
           model: agent.model,
-          ...(options.preserveThinking === true
-            ? typeof piApi.getThinkingLevel === "function"
-              ? { thinking: piApi.getThinkingLevel() }
-              : {}
+          ...(preservedThinking !== undefined
+            ? { thinking: preservedThinking }
             : { thinking: agent.thinking ?? agent.effort }),
           mode: agent.mode,
           tools: agent.tools,
@@ -267,7 +270,16 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       const thinking = agent.thinking ?? agent.effort;
-      if (thinking && options.preserveThinking !== true) {
+      if (preservedThinking !== undefined) {
+        // setModel resets thinking to the model/global default, so reapply
+        // the level restored from the session transcript.
+        if (
+          piApi.getThinkingLevel?.() !== preservedThinking &&
+          typeof piApi.setThinkingLevel === "function"
+        ) {
+          piApi.setThinkingLevel(preservedThinking);
+        }
+      } else if (thinking) {
         const level = thinking.toLowerCase();
         if (
           VALID_THINKING_LEVELS.has(level) &&
@@ -405,6 +417,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       lastTrusted = ctx.isProjectTrusted();
 
       let hasAgentEntry = false;
+      let hasThinkingEntry = false;
       let persistedName: string | undefined;
       const entries =
         (typeof ctx.sessionManager?.getBranch === "function"
@@ -418,6 +431,9 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           customType?: string;
           data?: unknown;
         };
+        if (raw.type === "thinking_level_change") {
+          hasThinkingEntry = true;
+        }
         if (
           (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
           raw.type === ACTIVE_AGENT_TYPE
@@ -470,6 +486,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
               await applyAgent(matched, ctx, pi, {
                 persist: false,
                 notify: false,
+                preserveThinking: hasThinkingEntry,
               });
               return;
             }
