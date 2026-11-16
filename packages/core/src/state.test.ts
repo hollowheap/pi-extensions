@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import {
   enterMode,
   registerMode,
@@ -23,13 +24,15 @@ const ALLOW: Record<Tag, Effect> = {
   external: "allow",
 };
 
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+
 describe("session state", () => {
-  it("defaults to ask and stores mode per owner", () => {
+  it("defaults to manual and stores mode per owner", () => {
     const owner = {};
-    expect(session(owner)).toEqual({ mode: "ask" });
+    expect(session(owner)).toEqual({ mode: "manual" });
     setMode(owner, "plan");
     expect(session(owner).mode).toBe("plan");
-    expect(session({}).mode).toBe("ask");
+    expect(session({}).mode).toBe("manual");
     dropSession(owner);
   });
 
@@ -37,10 +40,10 @@ describe("session state", () => {
     const owner = {};
     expect(effectiveCwd("/work", owner)).toBe("/work");
     setCwd(owner, "/work/sub");
-    expect(session(owner)).toEqual({ mode: "ask", cwd: "/work/sub" });
+    expect(session(owner)).toEqual({ mode: "manual", cwd: "/work/sub" });
     expect(effectiveCwd("/work", owner)).toBe("/work/sub");
     setCwd(owner, undefined);
-    expect(session(owner)).toEqual({ mode: "ask" });
+    expect(session(owner)).toEqual({ mode: "manual" });
     expect(effectiveCwd("/work", owner)).toBe("/work");
     dropSession(owner);
   });
@@ -50,7 +53,7 @@ describe("session state", () => {
     setMode(owner, "edit");
     setCwd(owner, "/work/sub");
     dropSession(owner);
-    expect(session(owner)).toEqual({ mode: "ask" });
+    expect(session(owner)).toEqual({ mode: "manual" });
     expect(effectiveCwd("/work", owner)).toBe("/work");
   });
 
@@ -104,7 +107,7 @@ describe("session state", () => {
     const fresh = await import("./state.js");
     expect(fresh.session(owner)).toEqual({ mode: "plan", cwd: "/work/sub" });
     fresh.dropSession(owner);
-    expect(session(owner)).toEqual({ mode: "ask" });
+    expect(session(owner)).toEqual({ mode: "manual" });
   });
 });
 
@@ -124,7 +127,7 @@ describe("session restore", () => {
       { customType: "hollowheap.core.mode", data: { mode: "plan" } },
       { customType: "hollowheap.core.mode", data: { mode: "edit" } },
     ]);
-    setMode(owner, "ask");
+    setMode(owner, "manual");
     setCwd(owner, "/work/sub");
     const result = resetSession(owner);
     expect(result.mode).toBe("edit");
@@ -145,14 +148,14 @@ describe("session restore", () => {
     dropSession(forked);
   });
 
-  it("falls back to ask when the restored layer is gone", () => {
+  it("falls back to manual when the restored layer is gone", () => {
     const owner = ownerWith([
       { customType: "hollowheap.core.mode", data: { mode: "removed" } },
     ]);
     const result = resetSession(owner);
-    expect(result.mode).toBe("ask");
+    expect(result.mode).toBe("manual");
     expect(result.diagnostic).toContain("no longer exists");
-    expect(session(owner).mode).toBe("ask");
+    expect(session(owner).mode).toBe("manual");
     dropSession(owner);
   });
 
@@ -165,9 +168,9 @@ describe("session restore", () => {
       { customType: "hollowheap.core.mode", data: { mode: "restore-gated" } },
     ]);
     const result = resetSession(owner);
-    expect(result.mode).toBe("ask");
+    expect(result.mode).toBe("manual");
     expect(result.veto).toBe("no budget");
-    expect(session(owner).mode).toBe("ask");
+    expect(session(owner).mode).toBe("manual");
     stop();
     dropSession(owner);
   });

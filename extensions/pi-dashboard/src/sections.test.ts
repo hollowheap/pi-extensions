@@ -23,7 +23,6 @@ describe("renderStateSection", () => {
         snapshot: {
           mode: { name: "plan", updatedAt: 1 },
           agent: { name: "worker\x1b]0;evil\x07", updatedAt: 1 },
-          autopilot: { active: true, updatedAt: 1 },
           guard: {
             trusted: true,
             decisionCount: 4,
@@ -92,7 +91,6 @@ describe("renderStateSection", () => {
     expect(text).toContain("my-pi-agent");
     expect(text).toContain("plan");
     expect(text).toContain("@worker");
-    expect(text).toContain("autopilot");
     expect(text).toContain("trusted (1 denied)");
     expect(text).toContain("1.5k tok");
     expect(text).toContain("$0.42/$1.00!");

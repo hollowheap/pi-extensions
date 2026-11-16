@@ -39,9 +39,9 @@ export function createChildLockExtension(
 
     pi.on("session_start", (_event, ctx) => {
       replaceConfigModes(loadModesConfig(resolveAgentDir()));
-      if (!getModeLayer("autopilot")) {
+      if (!getModeLayer("auto")) {
         registerMode({
-          name: "autopilot",
+          name: "auto",
           description:
             "Autonomous mode; read, search, edit, shell, and external are allowed",
           defaults: {

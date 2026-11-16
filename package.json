@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Powerpack extensions for the Pi coding agent: guardrails, statusline, budgeting, autopilot, and power tools",
+  "description": "Powerpack extensions for the Pi coding agent: guardrails, statusline, budgeting, modes, and power tools",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -18,7 +18,7 @@
       "./extensions/pi-question/index.ts",
       "./extensions/pi-dashboard/index.ts",
       "./extensions/pi-tools/index.ts",
-      "./extensions/pi-autopilot/index.ts",
+      "./extensions/pi-modes/index.ts",
       "./extensions/pi-todos/index.ts",
       "./extensions/pi-language-tools/index.ts",
       "./extensions/pi-tasks/index.ts",

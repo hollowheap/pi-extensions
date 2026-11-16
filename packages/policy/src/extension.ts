@@ -6,7 +6,8 @@ import type {
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadPermissions, loadToolTags } from "@hollowheap/core/config";
 import { displayTarget } from "@hollowheap/core/format";
-import { evaluate } from "@hollowheap/core/modes";
+import { evaluate, registerMode } from "@hollowheap/core/modes";
+import { BUILTIN_MODE_LAYERS } from "./modes.js";
 import {
   TOOL_TAGS,
   isPassthroughTaskCall,
@@ -91,6 +92,9 @@ async function handleToolCall(
 }
 
 export default function (pi: ExtensionAPI): void {
+  for (const layer of BUILTIN_MODE_LAYERS) {
+    registerMode(layer);
+  }
   pi.on("tool_call", async (event, ctx) => {
     try {
       return await handleToolCall(event, ctx);

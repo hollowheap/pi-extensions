@@ -1,8 +1,8 @@
 {
-  "name": "@hollowheap/pi-autopilot",
+  "name": "@hollowheap/pi-modes",
   "version": "0.3.0",
   "type": "module",
-  "description": "pi-autopilot Pi coding agent extension",
+  "description": "Approval modes (manual, edit, plan, auto) with /mode and alt+m",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -20,7 +20,9 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.3.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/policy": "^0.3.0",
+    "@hollowheap/tui": "^0.3.0"
   },
   "publishConfig": {
     "access": "public"

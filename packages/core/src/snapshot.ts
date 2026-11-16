@@ -148,11 +148,6 @@ export interface ModalSnapshot {
   updatedAt: number;
 }
 
-export interface AutopilotSnapshot {
-  active: boolean;
-  updatedAt: number;
-}
-
 export interface SessionSnapshot {
   mode?: ModeSnapshot;
   cwd?: CwdSnapshot;
@@ -169,7 +164,6 @@ export interface SessionSnapshot {
   questions?: QuestionsSnapshot;
   decide?: DecideSnapshot;
   modal?: ModalSnapshot;
-  autopilot?: AutopilotSnapshot;
 }
 
 export type SnapshotListener = (snapshot: SessionSnapshot) => void;

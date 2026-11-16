@@ -8,8 +8,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import { loadModesConfig, loadPermissions, loadToolTags } from "./config.js";
-import { modeNames, replaceConfigModes } from "./modes.js";
+import { modeNames, registerMode, replaceConfigModes } from "./modes.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 function workspace(): string {
   return mkdtempSync(join(tmpdir(), "pi-core-config-"));
@@ -468,7 +471,7 @@ describe("loadModesConfig", () => {
       agentDir,
       JSON.stringify({
         modes: {
-          ask: {
+          manual: {
             defaults: {
               read: "allow",
               search: "allow",

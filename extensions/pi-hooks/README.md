@@ -75,7 +75,7 @@ A post-tool hook receives the same fields with `"event": "post_tool"`.
 
 ## Trust
 
-A hook runs a command at session start or on every matching tool call. The project file is honoured in trusted projects; an untrusted project's hooks are ignored. The model can write `hooks.json` with its file tools, and `pi-guard` still gates that write: in `ask` mode it asks first, in `edit` and `autopilot` it does not.
+A hook runs a command at session start or on every matching tool call. The project file is honoured in trusted projects; an untrusted project's hooks are ignored. The model can write `hooks.json` with its file tools, and `pi-guard` still gates that write: in `manual` mode it asks first, in `edit` and `auto` it does not.
 
 ## Notes
 

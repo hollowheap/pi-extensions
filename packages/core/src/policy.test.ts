@@ -2,10 +2,13 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { evaluate } from "./modes.js";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
+import { evaluate, registerMode } from "./modes.js";
 import { checkPath, matchPath } from "./policy.js";
 import { dropSession, setMode } from "./state.js";
 import type { Effect, Rule, Tag } from "./types.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 const ROOT = "/root";
 

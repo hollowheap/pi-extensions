@@ -84,9 +84,6 @@ export function renderStateSection(
   if (snap.agent?.name) {
     identityParts.push(theme.fg("success", `@${clean(snap.agent.name)}`));
   }
-  if (snap.autopilot?.active) {
-    identityParts.push(theme.fg("warning", "autopilot"));
-  }
   if (snap.guard) {
     const trustText = snap.guard.trusted ? "trusted" : "restricted";
     const denySuffix =

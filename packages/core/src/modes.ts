@@ -33,54 +33,24 @@ import type {
 
 export type { ModeGate } from "./registry.js";
 
-const DEFAULT_MODE = "ask";
+const DEFAULT_MODE = "manual";
+
+/** Renamed modes keep working for persisted sessions and agent frontmatter. */
+const LEGACY_MODE_ALIASES: Readonly<Record<string, string>> = {
+  ask: "manual",
+  autopilot: "auto",
+};
+
+/** Map a legacy mode name to its current name; other names pass through. */
+export function resolveModeName(name: string): string {
+  return LEGACY_MODE_ALIASES[name] ?? name;
+}
 
 const SEVERITY: Record<Verdict, number> = {
   allow: 0,
   ask: 1,
   deny: 2,
 };
-
-const BUILTIN_LAYERS: ModeLayer[] = [
-  {
-    name: "ask",
-    source: "builtin",
-    defaults: {
-      read: "allow",
-      search: "allow",
-      edit: "ask",
-      shell: "ask",
-      external: "allow",
-    },
-  },
-  {
-    name: "edit",
-    source: "builtin",
-    defaults: {
-      read: "allow",
-      search: "allow",
-      edit: "allow",
-      shell: "ask",
-      external: "allow",
-    },
-  },
-  {
-    name: "plan",
-    source: "builtin",
-    defaults: {
-      read: "allow",
-      search: "allow",
-      edit: "deny",
-      shell: "ask",
-      external: "allow",
-    },
-    overrides: [
-      { tag: "edit", pattern: "artifacts/plan.md", effect: "ask" },
-      { tag: "edit", pattern: "artifacts/specs.md", effect: "ask" },
-      { tag: "edit", pattern: "*", effect: "deny" },
-    ],
-  },
-];
 
 export interface ModeEnterResult {
   mode: string;
@@ -168,7 +138,9 @@ export function modeNames(): string[] {
 }
 
 export function getModeLayer(name: string): ModeLayer | undefined {
-  return getState().layers.find((entry) => entry.layer.name === name)?.layer;
+  const resolved = resolveModeName(name);
+  return getState().layers.find((entry) => entry.layer.name === resolved)
+    ?.layer;
 }
 
 function runGates(
@@ -190,14 +162,15 @@ function runGates(
 }
 
 export function enterMode(owner: unknown, name: string): ModeEnterResult {
-  if (getModeLayer(name) === undefined) {
+  const resolved = resolveModeName(name);
+  if (getModeLayer(resolved) === undefined) {
     return {
       mode: session(owner).mode,
       notices: [],
       diagnostic: `unknown mode: ${name}`,
     };
   }
-  const gates = runGates(owner, name);
+  const gates = runGates(owner, resolved);
   if (gates.veto !== undefined) {
     return {
       mode: session(owner).mode,
@@ -205,29 +178,30 @@ export function enterMode(owner: unknown, name: string): ModeEnterResult {
       notices: gates.notices,
     };
   }
-  setMode(owner, name);
-  return { mode: name, notices: gates.notices };
+  setMode(owner, resolved);
+  return { mode: resolved, notices: gates.notices };
 }
 
 export function resetSession(owner: unknown): ModeEnterResult {
   dropSession(owner);
   const stored = readPersistedMode(owner);
-  if (stored === undefined || stored === DEFAULT_MODE) {
+  const resolved = stored === undefined ? undefined : resolveModeName(stored);
+  if (resolved === undefined || resolved === DEFAULT_MODE) {
     return { mode: DEFAULT_MODE, notices: [] };
   }
-  if (getModeLayer(stored) === undefined) {
+  if (getModeLayer(resolved) === undefined) {
     return {
       mode: DEFAULT_MODE,
       notices: [],
-      diagnostic: `restored mode "${stored}" no longer exists; using ask`,
+      diagnostic: `restored mode "${stored}" no longer exists; using ${DEFAULT_MODE}`,
     };
   }
-  const gates = runGates(owner, stored);
+  const gates = runGates(owner, resolved);
   if (gates.veto !== undefined) {
     return { mode: DEFAULT_MODE, veto: gates.veto, notices: gates.notices };
   }
-  setMode(owner, stored, { persist: false });
-  return { mode: stored, notices: gates.notices };
+  setMode(owner, resolved, { persist: false });
+  return { mode: resolved, notices: gates.notices };
 }
 
 function strictest(left: Verdict, right: Verdict): Verdict {
@@ -390,5 +364,3 @@ export function evaluate(options: EvaluateOptions): Verdict {
   }
   return evaluateExternal(options, layer, fallback);
 }
-
-for (const layer of BUILTIN_LAYERS) registerMode(layer);

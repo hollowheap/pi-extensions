@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import {
   enterMode,
   evaluate,
@@ -10,6 +11,8 @@ import {
 } from "./modes.js";
 import { dropSession, session, setCwd, setMode } from "./state.js";
 import type { Effect, Rule, Tag } from "./types.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 const ALLOW: Record<Tag, Effect> = {
   read: "allow",
@@ -42,8 +45,8 @@ afterEach(() => {
 });
 
 describe("built-in modes", () => {
-  it("matches the ask, edit, and plan matrix", () => {
-    expect(getModeLayer("ask")?.defaults).toEqual({
+  it("matches the manual, edit, and plan matrix", () => {
+    expect(getModeLayer("manual")?.defaults).toEqual({
       read: "allow",
       search: "allow",
       edit: "ask",
@@ -174,30 +177,30 @@ describe("built-in modes", () => {
     dropSession(owner);
   });
 
-  it("allows everything in autopilot except hard safety and denies", () => {
-    replaceConfigModes([{ name: "autopilot", defaults: ALLOW }]);
-    expect(evaluateAs("autopilot", "edit", "src/a.ts")).toBe("allow");
-    expect(evaluateAs("autopilot", "edit", "artifacts/plan.md")).toBe("allow");
-    expect(evaluateAs("autopilot", "shell", "git status && ls")).toBe("allow");
-    expect(evaluateAs("autopilot", "shell", "bash -c 'echo hi'")).toBe("deny");
-    expect(evaluateAs("autopilot", "shell", "echo $(date)")).toBe("deny");
-    expect(evaluateAs("autopilot", "edit", "../outside.ts")).toBe("deny");
+  it("allows everything in auto except hard safety and denies", () => {
+    replaceConfigModes([{ name: "auto", defaults: ALLOW }]);
+    expect(evaluateAs("auto", "edit", "src/a.ts")).toBe("allow");
+    expect(evaluateAs("auto", "edit", "artifacts/plan.md")).toBe("allow");
+    expect(evaluateAs("auto", "shell", "git status && ls")).toBe("allow");
+    expect(evaluateAs("auto", "shell", "bash -c 'echo hi'")).toBe("deny");
+    expect(evaluateAs("auto", "shell", "echo $(date)")).toBe("deny");
+    expect(evaluateAs("auto", "edit", "../outside.ts")).toBe("deny");
     expect(
-      evaluateAs("autopilot", "shell", "rm -rf build", [
+      evaluateAs("auto", "shell", "rm -rf build", [
         rule("deny", "shell", "rm"),
       ]),
     ).toBe("deny");
   });
 
-  it("asks for destructive shell commands in every mode including autopilot unless explicitly allowed", () => {
+  it("asks for destructive shell commands in every mode including auto unless explicitly allowed", () => {
     replaceConfigModes([
       {
-        name: "autopilot",
+        name: "auto",
         defaults: ALLOW,
         overrides: [{ tag: "shell", pattern: "rm", effect: "allow" as never }],
       },
     ]);
-    for (const mode of ["ask", "edit", "autopilot"]) {
+    for (const mode of ["manual", "edit", "auto"]) {
       for (const cmd of [
         "rm -rf /",
         "rm -rf ~",
@@ -249,14 +252,15 @@ describe("mode overrides", () => {
 describe("mode registry", () => {
   it("registers layers first-wins with a diagnostic", () => {
     const diagnostics: string[] = [];
+    registerMode({ name: "custom-dupe", defaults: ALLOW });
     expect(
-      registerMode({ name: "ask", defaults: ALLOW }, (message) =>
+      registerMode({ name: "custom-dupe", defaults: ALLOW }, (message) =>
         diagnostics.push(message),
       ),
     ).toBe(false);
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("already registered");
-    expect(getModeLayer("ask")?.defaults.edit).toBe("ask");
+    expect(getModeLayer("custom-dupe")?.defaults.edit).toBe("allow");
   });
 
   it("runs entry gates in order, keeps the first veto, and collects every notice", () => {
@@ -287,13 +291,13 @@ describe("mode registry", () => {
     const owner = {};
     const result = enterMode(owner, name);
     expect(calls).toEqual(["a", "b", "c", "d"]);
-    expect(result.mode).toBe("ask");
+    expect(result.mode).toBe("manual");
     expect(result.veto).toBe("blocked");
     expect(result.notices).toEqual([
       { text: "a", level: "info" },
       { text: "c", level: "info" },
     ]);
-    expect(session(owner).mode).toBe("ask");
+    expect(session(owner).mode).toBe("manual");
 
     stopA();
     stopB();

@@ -362,7 +362,7 @@ describe("pi-hooks extension", () => {
     expect(JSON.parse(readFileSync(log, "utf8"))).toEqual({
       event: "session_start",
       cwd: agentDir,
-      mode: "ask",
+      mode: "manual",
     });
   });
 

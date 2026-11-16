@@ -61,7 +61,7 @@ The project overlay is ignored (with a diagnostic) when the project is not trust
 
 ## Mode layers
 
-Modes are declarative layers: `defaults` per tag plus restrictive `overrides`. Core registers `ask`, `edit`, and `plan`; `pi-autopilot` registers `autopilot`; user layers come from `<agentDir>/modes.json`:
+Modes are declarative layers: `defaults` per tag plus restrictive `overrides`. `pi-modes`, the `@hollowheap/policy` extension, and the ACP extension register the built-in layers `manual`, `edit`, `plan`, and `auto`; legacy `ask`/`autopilot` names resolve to `manual`/`auto`; user layers come from `<agentDir>/modes.json`:
 
 ```json
 {
@@ -90,7 +90,7 @@ A layer may carry a `description` (one line of prose). Core does not render it; 
 
 ## Mode persistence
 
-The active mode is appended to the session as the custom entry `hollowheap.core.mode` (`{ "mode": "…" }`) whenever it changes, and `resetSession` restores it from `getEntries()` on resume or fork. A restored mode that no longer exists falls back to `ask` with a diagnostic, and restoring re-runs the entry gates (a veto falls back to `ask`).
+The active mode is appended to the session as the custom entry `hollowheap.core.mode` (`{ "mode": "…" }`) whenever it changes, and `resetSession` restores it from `getEntries()` on resume or fork. A restored mode that no longer exists falls back to `manual` with a diagnostic, and restoring re-runs the entry gates (a veto falls back to `manual`).
 
 ## State ownership
 

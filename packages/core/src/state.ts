@@ -5,7 +5,7 @@ export type { SessionState } from "./registry.js";
 
 const MODE_ENTRY = "hollowheap.core.mode";
 export const CWD_ENTRY = "hollowheap.core.cwd";
-const DEFAULT_MODE = "ask";
+const DEFAULT_MODE = "manual";
 
 interface EntryLike {
   customType?: unknown;

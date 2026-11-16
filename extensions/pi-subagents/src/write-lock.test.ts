@@ -92,9 +92,9 @@ describe("write lock", () => {
     first();
   });
 
-  it("registers and enters autopilot mode in child sessions when PI_SUBAGENT_MODE=autopilot", () => {
+  it("registers and enters auto mode in child sessions when PI_SUBAGENT_MODE=auto", () => {
     const dir = agentDir();
-    process.env.PI_SUBAGENT_MODE = "autopilot";
+    process.env.PI_SUBAGENT_MODE = "auto";
     const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
     const ext = createChildLockExtension({ agentDir: () => dir });
     ext({
@@ -104,6 +104,6 @@ describe("write lock", () => {
     } as never);
     const sessionManager = {};
     handlers.get("session_start")?.({}, { sessionManager });
-    expect(session(sessionManager).mode).toBe("autopilot");
+    expect(session(sessionManager).mode).toBe("auto");
   });
 });
