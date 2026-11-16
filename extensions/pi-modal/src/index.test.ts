@@ -1976,6 +1976,13 @@ describe("TUI config, /tui command, and tool-box integration", () => {
       },
     );
     expect(settledThinking).toBe("Thinking: Inspecting **border** and `clip`");
+    expect(
+      markdownTransformer?.("Earlier thought\nmore detail", {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      }),
+    ).toBe("Thinking: Earlier thought");
 
     const setHiddenThinkingLabel = vi.fn();
     const setWorkingIndicator = vi.fn();
