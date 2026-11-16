@@ -95,6 +95,7 @@ export async function showMarkdownPager(
           };
 
           return {
+            capturesViewportInput: true,
             render(renderWidth: number): string[] {
               width = renderWidth;
               const innerWidth = Math.max(1, renderWidth - 4);

@@ -12,9 +12,9 @@ import {
   loadAndActivateTuiConfig,
 } from "@hollowheap/tui/state";
 import {
-  escapeMarkdownInline,
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
+  stripMarkdownInline,
 } from "@hollowheap/tui/thinking";
 import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
@@ -121,12 +121,12 @@ export default function (pi: ExtensionAPI): void {
     const label =
       cfg.thinkingAnimate && cfg.colored
         ? renderThinkingShimmerFrame(
-            line,
+            stripMarkdownInline(line),
             thinkingStep,
             activeCtx.ui.theme,
             true,
           )
-        : line;
+        : stripMarkdownInline(line);
     activeCtx.ui.setHiddenThinkingLabel(label);
   };
 
@@ -205,14 +205,13 @@ export default function (pi: ExtensionAPI): void {
       });
       if (context.isStreaming && cfg.thinkingAnimate && cfg.colored) {
         return renderThinkingShimmerFrame(
-          line,
+          stripMarkdownInline(line),
           thinkingStep,
           activeCtx?.ui?.theme,
           true,
-          { escapeMarkdown: true },
         );
       }
-      return escapeMarkdownInline(line);
+      return line;
     }
     return cfg.markdownRender ? normalizeAgentMarkdown(markdown) : markdown;
   });

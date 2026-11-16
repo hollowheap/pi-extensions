@@ -1644,49 +1644,46 @@ Perform operation two.`,
   });
 });
 
-describe("TUI config, shortMode, /tui command, and tool-box integration", () => {
-  it("renders shortMode badges and inherits borderStyle from active TUI config", () => {
+describe("TUI config, /tui command, and tool-box integration", () => {
+  it("renders full mode badges and inherits borderStyle from active TUI config", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "double",
-      shortMode: true,
     });
     const { editor } = createMockEditor({ initialMode: "normal" });
     const doubleLines = editor.render(40).map(stripTerminalSequences);
     expect(doubleLines[0]).toContain("╔══");
     expect(doubleLines[0]).not.toContain("─");
-    expect(doubleLines.at(-1)).toContain("══ N ╝");
+    expect(doubleLines.at(-1)).toContain("══ NORMAL ╝");
 
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "dashed",
-      shortMode: true,
       colored: false,
     });
     const monoDashedRaw = editor.render(40);
     const monoDashed = monoDashedRaw.map(stripTerminalSequences);
     expect(monoDashed[0]).toContain("┌┈┈");
     expect(monoDashedRaw[0]).not.toContain("\x1b[36m");
-    expect(monoDashed.at(-1)).toContain("┈┈ N ┘");
+    expect(monoDashed.at(-1)).toContain("┈┈ NORMAL ┘");
 
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "none",
-      shortMode: true,
     });
     const borderless = editor.render(40).map(stripCursorMarkers);
     expect(borderless[0]).not.toContain("─");
     expect(borderless.at(-1)).not.toContain("─");
-    expect(borderless.at(-1)).toContain(" N ");
+    expect(borderless.at(-1)).toContain(" NORMAL ");
 
     editor.setMode("insert");
-    expect(editor.render(40).at(-1)).toContain(" I ");
+    expect(editor.render(40).at(-1)).toContain(" INSERT ");
 
     editor.setMode("visual");
-    expect(editor.render(40).at(-1)).toContain(" V ");
+    expect(editor.render(40).at(-1)).toContain(" VISUAL ");
 
     editor.setText("!ls");
-    expect(editor.render(40).at(-1)).toContain(" ! ");
+    expect(editor.render(40).at(-1)).toContain(" BASH ");
   });
 
   it("loads tui.json on session_start and warns on EACCES", () => {
@@ -1694,7 +1691,7 @@ describe("TUI config, shortMode, /tui command, and tool-box integration", () => 
     const dir = createTempDir();
     process.env.PI_CODING_AGENT_DIR = dir;
     const path = getTuiConfigPath(dir);
-    writeFileSync(path, JSON.stringify({ shortMode: true }), "utf8");
+    writeFileSync(path, JSON.stringify({ borderStyle: "double" }), "utf8");
     chmodSync(path, 0o000);
 
     try {
@@ -1724,7 +1721,7 @@ describe("TUI config, shortMode, /tui command, and tool-box integration", () => 
         expect.stringMatching(/EACCES|permission denied/i),
         "warning",
       );
-      expect(getActiveTuiConfig().shortMode).toBe(false);
+      expect(getActiveTuiConfig()).toEqual(DEFAULT_TUI_CONFIG);
     } finally {
       chmodSync(path, 0o600);
     }
@@ -1958,6 +1955,27 @@ describe("TUI config, shortMode, /tui command, and tool-box integration", () => 
     expect(stripTerminalSequences(transformedThinking ?? "")).toContain(
       "Thinking: Step 2",
     );
+
+    const markdownThinking = markdownTransformer?.(
+      "Inspecting **border** and `clip`",
+      {
+        messageType: "assistant-thinking",
+        isStreaming: true,
+        availableWidth: 60,
+      },
+    );
+    expect(stripTerminalSequences(markdownThinking ?? "")).toBe(
+      "Thinking: Inspecting border and clip",
+    );
+    const settledThinking = markdownTransformer?.(
+      "Inspecting **border** and `clip`",
+      {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      },
+    );
+    expect(settledThinking).toBe("Thinking: Inspecting **border** and `clip`");
 
     const setHiddenThinkingLabel = vi.fn();
     const setWorkingIndicator = vi.fn();

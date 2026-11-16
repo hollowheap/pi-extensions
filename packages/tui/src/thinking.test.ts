@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
+  stripMarkdownInline,
 } from "./thinking.js";
 
 const theme = {
@@ -51,5 +52,15 @@ describe("thinking display helpers", () => {
   it("returns plain text when colored is false", () => {
     const line = "Thinking: checking layout";
     expect(renderThinkingShimmerFrame(line, 4, theme, false)).toBe(line);
+  });
+
+  it("strips inline markdown for one-line labels and shimmer spans", () => {
+    expect(
+      stripMarkdownInline(
+        "Inspecting **border** and `clip` in [editor](src/editor.ts) ~~now~~",
+      ),
+    ).toBe("Inspecting border and clip in editor now");
+    expect(stripMarkdownInline("snake_case stays")).toBe("snake_case stays");
+    expect(stripMarkdownInline("*emphasis* text")).toBe("emphasis text");
   });
 });

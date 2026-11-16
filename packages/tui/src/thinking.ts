@@ -44,13 +44,33 @@ export function formatOneLineThinkingText(
 
 const MARKDOWN_INLINE_RE = /[\\`*_~<>[\]]/g;
 
-/** Escape inline Markdown punctuation so plain text survives Markdown rendering literally. */
+/** Escape inline Markdown punctuation for literal plain-text fields such as titles. */
 export function escapeMarkdownInline(text: string): string {
   return text.replace(MARKDOWN_INLINE_RE, (ch) => `\\${ch}`);
 }
 
+const MARKDOWN_STRIP_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/`([^`\n]*)`/g, "$1"],
+  [/!\[([^\]]*)\]\([^)]*\)/g, "$1"],
+  [/\[([^\]]+)\]\([^)]*\)/g, "$1"],
+  [/\*\*([^*]+)\*\*/g, "$1"],
+  [/__([^_]+)__/g, "$1"],
+  [/~~([^~]+)~~/g, "$1"],
+  [/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "$1"],
+  [/(?<![\w_])_([^_\n]+)_(?![\w_])/g, "$1"],
+];
+
+/** Remove inline Markdown syntax for plain-text labels and color spans. */
+export function stripMarkdownInline(text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of MARKDOWN_STRIP_RULES) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
+/** @deprecated Shimmer no longer escapes Markdown; retained for source compatibility. */
 export interface ShimmerOptions {
-  /** Escape Markdown inline punctuation inside each color span (used before `Markdown` lexing). */
   escapeMarkdown?: boolean;
 }
 
@@ -60,11 +80,10 @@ export function renderThinkingShimmerFrame(
   step: number,
   theme?: unknown,
   colored = true,
-  options?: ShimmerOptions,
+  _options?: ShimmerOptions,
 ): string {
-  const escapeMd = options?.escapeMarkdown ?? false;
   if (!colored || text.length === 0) {
-    return escapeMd ? escapeMarkdownInline(text) : text;
+    return text;
   }
   const chars = Array.from(text);
   const workingTheme = isWorkingTheme(theme) ? theme : undefined;
@@ -82,7 +101,7 @@ export function renderThinkingShimmerFrame(
   let out = "";
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i] ?? "";
-    const token = escapeMd ? escapeMarkdownInline(ch) : ch;
+    const token = ch;
     const distance = Math.abs(i - center);
     if (distance >= DEFAULT_SHIMMER_BAND) {
       out += `${foregroundAnsi(baseColor, mode)}${token}`;

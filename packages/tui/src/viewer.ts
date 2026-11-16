@@ -41,6 +41,7 @@ export async function showCodeViewer(
         Math.max(0, codeLines.length - viewportHeight());
 
       return {
+        capturesViewportInput: true,
         render(width: number): string[] {
           const safeWidth = Math.max(4, width);
           const { borderStyle, overlaySurface, colored } = getActiveTuiConfig();

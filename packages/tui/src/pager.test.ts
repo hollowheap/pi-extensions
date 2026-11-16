@@ -16,6 +16,7 @@ function pagerContext() {
   const notify = vi.fn();
   let component:
     | {
+        capturesViewportInput?: boolean;
         render(width: number): string[];
         handleInput(data: string): void;
       }
@@ -66,6 +67,7 @@ describe("showMarkdownPager", () => {
 
     const component = env.component();
     expect(component).toBeDefined();
+    expect(component?.capturesViewportInput).toBe(true);
     const first = component?.render(60) ?? [];
     expect(first[0]).toContain("Task task-1");
     expect(first[0]).toContain("╭");
