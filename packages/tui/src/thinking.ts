@@ -9,6 +9,18 @@ import { isWorkingTheme } from "./spinner.js";
 
 const RESET_FG = "\x1b[39m";
 const DEFAULT_SHIMMER_BAND = 10;
+/** Base shimmer frame interval; the sweep accelerates with line length. */
+export const SHIMMER_BASE_INTERVAL_MS = 45;
+const SHIMMER_ACCELERATION_CHARS = 60;
+const MAX_SHIMMER_SPEED = 6;
+
+/** Sweep speed multiplier: longer lines cycle the highlight faster. */
+export function shimmerSpeed(textLength: number): number {
+  return Math.min(
+    MAX_SHIMMER_SPEED,
+    1 + Math.max(0, textLength) / SHIMMER_ACCELERATION_CHARS,
+  );
+}
 
 export interface FormatThinkingOptions {
   /** Select `"latest"` while streaming so the preview tracks current thoughts, or `"first"` when settled. */
@@ -95,8 +107,9 @@ export function renderThinkingShimmerFrame(
     workingTheme?.colors.borderAccent ?? rgbColor(140, 220, 255);
 
   const span = chars.length + DEFAULT_SHIMMER_BAND * 2;
+  const speed = shimmerSpeed(chars.length);
   const center =
-    (((Math.floor(step) % span) + span) % span) - DEFAULT_SHIMMER_BAND;
+    (((Math.floor(step * speed) % span) + span) % span) - DEFAULT_SHIMMER_BAND;
 
   let out = "";
   for (let i = 0; i < chars.length; i++) {

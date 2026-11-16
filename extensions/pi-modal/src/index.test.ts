@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AutocompleteProvider,
+  Loader,
   rgbColor,
   stripTerminalSequences,
   visibleWidth,
@@ -745,6 +746,34 @@ describe("extension registration", () => {
       "ctrl+shift+k",
       expect.objectContaining({ handler: expect.any(Function) }),
     );
+  });
+
+  it("applies the configured loading indicator to host loaders", () => {
+    const pi = {
+      on: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+    };
+    extension(pi as never);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      loadingIndicator: "pulse",
+      colored: false,
+    });
+
+    const loader = new Loader(
+      { requestRender: vi.fn() } as never,
+      (text) => text,
+      (text) => text,
+    );
+    try {
+      expect(stripTerminalSequences(loader.render(20).join("\n"))).toContain(
+        "∙",
+      );
+    } finally {
+      loader.stop();
+      resetActiveTuiConfig();
+    }
   });
 
   it("registers /expand and toggles tool output", async () => {

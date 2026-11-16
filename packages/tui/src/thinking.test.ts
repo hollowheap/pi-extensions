@@ -5,8 +5,10 @@ import {
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
+  SHIMMER_BASE_INTERVAL_MS,
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
+  shimmerSpeed,
   stripMarkdownInline,
 } from "./thinking.js";
 
@@ -52,6 +54,13 @@ describe("thinking display helpers", () => {
   it("returns plain text when colored is false", () => {
     const line = "Thinking: checking layout";
     expect(renderThinkingShimmerFrame(line, 4, theme, false)).toBe(line);
+  });
+
+  it("accelerates the shimmer for longer lines and starts faster", () => {
+    expect(SHIMMER_BASE_INTERVAL_MS).toBe(45);
+    expect(shimmerSpeed(0)).toBe(1);
+    expect(shimmerSpeed(120)).toBe(3);
+    expect(shimmerSpeed(10_000)).toBe(6);
   });
 
   it("strips inline markdown for one-line labels and shimmer spans", () => {

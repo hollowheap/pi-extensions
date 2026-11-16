@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Loader } from "@earendil-works/pi-tui";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -12,6 +13,7 @@ import {
   loadAndActivateTuiConfig,
 } from "@hollowheap/tui/state";
 import {
+  SHIMMER_BASE_INTERVAL_MS,
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
   stripMarkdownInline,
@@ -37,6 +39,37 @@ const THINKING_PREFIXES = {
   terse: "think: ",
   playful: "Pondering: ",
 } as const;
+
+const LOADER_INDICATOR_PATCH = Symbol.for(
+  "@hollowheap/pi-modal/loader-indicator-patch",
+);
+let loaderIndicatorTheme: unknown;
+
+/** Style host-owned loaders (shell execution, compaction) like our spinner. */
+function installLoaderIndicatorPatch(): void {
+  const registry = globalThis as unknown as Record<symbol, unknown>;
+  if (registry[LOADER_INDICATOR_PATCH] === true) return;
+  registry[LOADER_INDICATOR_PATCH] = true;
+
+  const original = Loader.prototype.setIndicator;
+  Loader.prototype.setIndicator = function (indicator) {
+    if (indicator === undefined) {
+      const cfg = getActiveTuiConfig();
+      if (cfg.loadingIndicator !== "host") {
+        const custom = createWorkingIndicator(
+          cfg.loadingIndicator,
+          loaderIndicatorTheme,
+          cfg.colored,
+        );
+        if (custom !== undefined) {
+          original.call(this, custom);
+          return;
+        }
+      }
+    }
+    original.call(this, indicator);
+  };
+}
 
 function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   let code: string | undefined;
@@ -78,6 +111,7 @@ function readPersistedExpanded(ctx: ExtensionContext): boolean | undefined {
 }
 
 export default function (pi: ExtensionAPI): void {
+  installLoaderIndicatorPatch();
   let lastCodemodeCode: string | undefined;
   let lastToolCall:
     | { name: string; input: Record<string, unknown> }
@@ -96,6 +130,7 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     const cfg = getActiveTuiConfig();
+    loaderIndicatorTheme = ctx.ui.theme;
     ctx.ui.setWorkingIndicator(
       createWorkingIndicator(cfg.loadingIndicator, ctx.ui.theme, cfg.colored),
     );
@@ -151,7 +186,7 @@ export default function (pi: ExtensionAPI): void {
       if (context.isStreaming && cfg.thinkingAnimate && cfg.colored) {
         return renderThinkingShimmerFrame(
           stripMarkdownInline(line),
-          Math.floor(Date.now() / 70),
+          Math.floor(Date.now() / SHIMMER_BASE_INTERVAL_MS),
           activeCtx?.ui?.theme,
           true,
         );

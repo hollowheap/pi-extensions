@@ -27,3 +27,9 @@ on failure. If a theme defines those tokens with ANSI 8 base colors, the
 brighter ANSI 16 variant supplies the foreground border color. Inherited
 background fills from host renderers are stripped, so the box stays
 background-free and only the border carries the state color.
+
+## Indicators
+
+`loadingIndicator` also styles host-owned loaders for shell execution and
+context compaction, including the `colored` setting. Use `host` to leave those
+loaders on Pi's default spinner.
