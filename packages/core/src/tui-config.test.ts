@@ -62,6 +62,11 @@ describe("tui-config", () => {
       borderStyle: "square",
       overlaySurface: "card",
       shortMode: true,
+      colored: true,
+      loadingIndicator: "crush",
+      markdownRender: true,
+      thinkingDisplay: "default",
+      thinkingAnimate: true,
       toolBox: {
         enabled: true,
         borderStyle: "square",
@@ -82,6 +87,9 @@ describe("tui-config", () => {
       {
         borderStyle: "zigzag",
         overlaySurface: "neon",
+        loadingIndicator: "sparkles",
+        thinkingDisplay: "full",
+        colored: "yes",
         toolBox: { verbPack: "chaotic" },
       },
       diagnostics,
@@ -89,8 +97,11 @@ describe("tui-config", () => {
 
     expect(cfg.borderStyle).toBe("rounded");
     expect(cfg.overlaySurface).toBe("transparent");
+    expect(cfg.loadingIndicator).toBe("crush");
+    expect(cfg.thinkingDisplay).toBe("default");
+    expect(cfg.colored).toBe(true);
     expect(cfg.toolBox.verbPack).toBe("standard");
-    expect(diagnostics).toHaveLength(3);
+    expect(diagnostics).toHaveLength(6);
   });
 
   it("updates tui.json atomically and preserves unknown keys", () => {
@@ -104,6 +115,11 @@ describe("tui-config", () => {
     const res = updateTuiConfig(dir, (current) => {
       current.borderStyle = "double";
       current.shortMode = true;
+      current.colored = false;
+      current.loadingIndicator = "braille";
+      current.markdownRender = false;
+      current.thinkingDisplay = "one-line";
+      current.thinkingAnimate = false;
       current.toolBox.enabled = true;
       current.toolBox.verbPack = "terse";
     });
@@ -115,6 +131,11 @@ describe("tui-config", () => {
     const reloaded = loadTuiConfig(dir);
     expect(reloaded.borderStyle).toBe("double");
     expect(reloaded.shortMode).toBe(true);
+    expect(reloaded.colored).toBe(false);
+    expect(reloaded.loadingIndicator).toBe("braille");
+    expect(reloaded.markdownRender).toBe(false);
+    expect(reloaded.thinkingDisplay).toBe("one-line");
+    expect(reloaded.thinkingAnimate).toBe(false);
     expect(reloaded.toolBox.enabled).toBe(true);
     expect(reloaded.toolBox.verbPack).toBe("terse");
   });

@@ -13,9 +13,7 @@ interface TuiStateStore {
 
 function cloneConfig(config: TuiConfig): TuiConfig {
   return {
-    borderStyle: config.borderStyle,
-    overlaySurface: config.overlaySurface,
-    shortMode: config.shortMode,
+    ...config,
     toolBox: {
       ...config.toolBox,
       customVerbs: { ...config.toolBox.customVerbs },

@@ -1,4 +1,5 @@
 import { type Color, foregroundAnsi, mixColors } from "@earendil-works/pi-tui";
+import type { LoadingIndicatorStyle } from "@hollowheap/core/tui-config";
 
 const GLYPHS = "0123456789abcdef~!@#$%^&*";
 const COLUMNS = 8;
@@ -15,6 +16,17 @@ const GRADIENT_TOKENS = [
   "text",
 ] as const;
 
+const REQUIRED_WORKING_COLOR_TOKENS = [
+  "error",
+  "warning",
+  "success",
+  "borderAccent",
+  "accent",
+  "thinkingText",
+  "text",
+  "muted",
+] as const;
+
 export interface WorkingTheme {
   readonly colors: {
     readonly accent: Color;
@@ -29,6 +41,28 @@ export interface WorkingTheme {
   getColorMode(): "256color" | "truecolor";
 }
 
+export interface WorkingIndicatorFrames {
+  frames: string[];
+  intervalMs: number;
+}
+
+/** Check whether an object provides the color tokens required by dynamic gradient indicators. */
+export function isWorkingTheme(theme: unknown): theme is WorkingTheme {
+  if (typeof theme !== "object" || theme === null) return false;
+  const candidate = theme as Partial<WorkingTheme>;
+  if (
+    typeof candidate.getColorMode !== "function" ||
+    typeof candidate.colors !== "object" ||
+    candidate.colors === null
+  ) {
+    return false;
+  }
+  const colors = candidate.colors as unknown as Record<string, unknown>;
+  return REQUIRED_WORKING_COLOR_TOKENS.every(
+    (token) => colors[token] !== undefined && colors[token] !== null,
+  );
+}
+
 function sampleGradient(stops: readonly Color[], position: number): Color {
   const wrapped = ((position % 1) + 1) % 1;
   const scaled = wrapped * stops.length;
@@ -39,10 +73,10 @@ function sampleGradient(stops: readonly Color[], position: number): Color {
   return mixColors(from, to, scaled - Math.floor(scaled));
 }
 
-export function crushWorkingIndicator(theme: WorkingTheme): {
-  frames: string[];
-  intervalMs: number;
-} {
+export function crushWorkingIndicator(
+  theme: WorkingTheme,
+  colored = true,
+): WorkingIndicatorFrames {
   const mode = theme.getColorMode();
   const stops = GRADIENT_TOKENS.map((token) => theme.colors[token]);
   const frames = Array.from({ length: FRAME_COUNT }, (_, frame) => {
@@ -52,6 +86,10 @@ export function crushWorkingIndicator(theme: WorkingTheme): {
     let text = "";
     for (let column = 0; column < COLUMNS; column++) {
       const glyph = GLYPHS[(frame * 2 + column * 5) % GLYPHS.length];
+      if (!colored) {
+        text += glyph;
+        continue;
+      }
       const gradient = sampleGradient(
         stops,
         position + (column / (COLUMNS - 1)) * 0.5,
@@ -63,7 +101,102 @@ export function crushWorkingIndicator(theme: WorkingTheme): {
       );
       text += `${foregroundAnsi(color, mode)}${glyph}`;
     }
-    return `${text}${RESET_FG}`;
+    return colored ? `${text}${RESET_FG}` : text;
   });
   return { frames, intervalMs: 50 };
+}
+
+function tintSimpleFrames(
+  glyphs: readonly string[],
+  intervalMs: number,
+  theme: unknown,
+  colored: boolean,
+): WorkingIndicatorFrames {
+  if (!colored || !isWorkingTheme(theme)) {
+    return { frames: [...glyphs], intervalMs };
+  }
+  const mode = theme.getColorMode();
+  const stops = [
+    theme.colors.accent,
+    theme.colors.borderAccent,
+    theme.colors.thinkingText,
+  ] as const;
+  const frames = glyphs.map((frame, index) => {
+    const color = sampleGradient(stops, index / Math.max(1, glyphs.length));
+    return `${foregroundAnsi(color, mode)}${frame}${RESET_FG}`;
+  });
+  return { frames, intervalMs };
+}
+
+/** Build working indicator frames for a configured style, or `undefined` for the host default. */
+export function createWorkingIndicator(
+  style: LoadingIndicatorStyle,
+  theme?: unknown,
+  colored = true,
+): WorkingIndicatorFrames | undefined {
+  switch (style) {
+    case "host":
+      return undefined;
+    case "hidden":
+      return { frames: [], intervalMs: 1000 };
+    case "braille":
+      return tintSimpleFrames(
+        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+        80,
+        theme,
+        colored,
+      );
+    case "pulse":
+      return tintSimpleFrames(
+        ["∙", "•", "●", "◉", "●", "•"],
+        120,
+        theme,
+        colored,
+      );
+    case "arc":
+      return tintSimpleFrames(
+        ["◜", "◠", "◝", "◞", "◡", "◟"],
+        100,
+        theme,
+        colored,
+      );
+    case "bars":
+      return tintSimpleFrames(
+        [
+          "▁▂▃▄",
+          "▂▃▄▅",
+          "▃▄▅▆",
+          "▄▅▆▇",
+          "▅▆▇█",
+          "▆▇█▇",
+          "▇█▇▆",
+          "█▇▆▅",
+          "▇▆▅▄",
+          "▆▅▄▃",
+          "▅▄▃▂",
+          "▄▃▂▁",
+          "▃▂▁▂",
+          "▂▁▂▃",
+        ],
+        80,
+        theme,
+        colored,
+      );
+    case "dots":
+      return tintSimpleFrames(
+        ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],
+        80,
+        theme,
+        colored,
+      );
+    default:
+      return isWorkingTheme(theme)
+        ? crushWorkingIndicator(theme, colored)
+        : tintSimpleFrames(
+            ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+            80,
+            theme,
+            colored,
+          );
+  }
 }

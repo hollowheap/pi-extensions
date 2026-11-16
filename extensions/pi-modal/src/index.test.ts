@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   type AutocompleteProvider,
   rgbColor,
+  stripTerminalSequences,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import {
@@ -1651,8 +1652,32 @@ describe("TUI config, shortMode, /tui command, and tool-box integration", () => 
       shortMode: true,
     });
     const { editor } = createMockEditor({ initialMode: "normal" });
-    expect(editor.render(40)[0]).toContain("╔");
-    expect(editor.render(40).at(-1)).toContain(" N ");
+    const doubleLines = editor.render(40).map(stripTerminalSequences);
+    expect(doubleLines[0]).toContain("╔══");
+    expect(doubleLines[0]).not.toContain("─");
+    expect(doubleLines.at(-1)).toContain("══ N ╝");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "dashed",
+      shortMode: true,
+      colored: false,
+    });
+    const monoDashedRaw = editor.render(40);
+    const monoDashed = monoDashedRaw.map(stripTerminalSequences);
+    expect(monoDashed[0]).toContain("┌┈┈");
+    expect(monoDashedRaw[0]).not.toContain("\x1b[36m");
+    expect(monoDashed.at(-1)).toContain("┈┈ N ┘");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "none",
+      shortMode: true,
+    });
+    const borderless = editor.render(40).map(stripCursorMarkers);
+    expect(borderless[0]).not.toContain("─");
+    expect(borderless.at(-1)).not.toContain("─");
+    expect(borderless.at(-1)).toContain(" N ");
 
     editor.setMode("insert");
     expect(editor.render(40).at(-1)).toContain(" I ");
@@ -1847,5 +1872,145 @@ describe("TUI config, shortMode, /tui command, and tool-box integration", () => 
       expect.objectContaining({ expanded: true }),
     );
     expect(lines.join("\n")).toContain("code");
+  });
+
+  it("aliases /tui as /ui, transforms markdown & one-line thinking, and animates streaming thinking", async () => {
+    const dir = createTempDir();
+    process.env.PI_CODING_AGENT_DIR = dir;
+    const commands: Record<
+      string,
+      {
+        handler: (args: string, ctx: unknown) => Promise<void>;
+        getArgumentCompletions?: (prefix: string) => Array<{ value: string }>;
+      }
+    > = {};
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    let markdownTransformer:
+      | ((
+          md: string,
+          ctx: {
+            messageType: "user" | "assistant" | "assistant-thinking";
+            isStreaming: boolean;
+            availableWidth: number;
+          },
+        ) => string)
+      | undefined;
+
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn((name: string, def: (typeof commands)[string]) => {
+        commands[name] = def;
+      }),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      registerMarkdownTransformer: vi.fn(
+        (fn: NonNullable<typeof markdownTransformer>) => {
+          markdownTransformer = fn;
+        },
+      ),
+      events: { emit: vi.fn() },
+    };
+    extension(pi as never);
+
+    expect(commands.ui).toBeDefined();
+    expect(
+      commands.ui?.getArgumentCompletions?.("").map((item) => item.value),
+    ).toEqual(["settings", "config", "status"]);
+
+    const notify = vi.fn();
+    await commands.ui?.handler("status", {
+      hasUI: true,
+      mode: "print",
+      ui: { notify },
+    });
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("loadingIndicator=crush"),
+      "info",
+    );
+
+    expect(markdownTransformer).toBeDefined();
+    expect(
+      markdownTransformer?.("Summary\n===\nNext", {
+        messageType: "assistant",
+        isStreaming: false,
+        availableWidth: 60,
+      }),
+    ).toBe("Summary\n\n---\nNext");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      thinkingDisplay: "one-line",
+      thinkingAnimate: true,
+      colored: true,
+    });
+
+    const transformedThinking = markdownTransformer?.(
+      "Step 1: check config\nStep 2: verify border rendering",
+      {
+        messageType: "assistant-thinking",
+        isStreaming: true,
+        availableWidth: 40,
+      },
+    );
+    expect(transformedThinking).toContain("\x1b[38;");
+    expect(stripTerminalSequences(transformedThinking ?? "")).toContain(
+      "Thinking: Step 2",
+    );
+
+    const setHiddenThinkingLabel = vi.fn();
+    const setWorkingIndicator = vi.fn();
+    const setEditorComponent = vi.fn();
+    const sessionCtx = {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        notify,
+        setHiddenThinkingLabel,
+        setWorkingIndicator,
+        setEditorComponent,
+        theme: {
+          colors: {
+            accent: rgbColor(80, 120, 255),
+            borderAccent: rgbColor(80, 220, 255),
+            success: rgbColor(80, 220, 120),
+            warning: rgbColor(255, 200, 80),
+            error: rgbColor(255, 80, 80),
+            thinkingText: rgbColor(160, 140, 200),
+            text: rgbColor(230, 230, 230),
+            muted: rgbColor(120, 120, 120),
+          },
+          getColorMode: () => "truecolor" as const,
+        },
+      },
+    };
+    handlers.session_start?.({}, sessionCtx);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      thinkingDisplay: "one-line",
+      thinkingAnimate: true,
+      colored: true,
+    });
+
+    handlers.message_update?.(
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_delta" },
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Line 1\nLine 2 inspecting" },
+          ],
+        },
+      },
+      sessionCtx,
+    );
+    expect(setHiddenThinkingLabel).toHaveBeenCalledWith(
+      expect.stringContaining("\x1b[38;"),
+    );
+
+    handlers.message_end?.({ type: "message_end", message: {} }, sessionCtx);
+    expect(setHiddenThinkingLabel).toHaveBeenLastCalledWith(undefined);
   });
 });

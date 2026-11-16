@@ -5,4 +5,5 @@ export * from "./progress.js";
 export * from "./spinner.js";
 export * from "./state.js";
 export * from "./surface.js";
+export * from "./thinking.js";
 export * from "./viewer.js";

@@ -52,6 +52,7 @@ function createSettingsContext() {
       }
     | undefined;
   const notify = vi.fn();
+  const requestRender = vi.fn();
   const ctx = {
     mode: "tui",
     hasUI: true,
@@ -70,25 +71,27 @@ function createSettingsContext() {
           },
         ) =>
           new Promise<void>((resolve) => {
-            component = factory({ requestRender: vi.fn() }, theme, {}, resolve);
+            component = factory({ requestRender }, theme, {}, resolve);
           }),
       ),
     },
   };
-  return { ctx, notify, component: () => component };
+  return { ctx, notify, requestRender, component: () => component };
 }
 
 describe("showTuiSettings", () => {
   it("formats status cleanly", () => {
-    expect(formatTuiStatus(DEFAULT_TUI_CONFIG)).toContain(
-      "borderStyle=rounded",
-    );
-    expect(formatTuiStatus(DEFAULT_TUI_CONFIG)).toContain(
-      "toolBox.enabled=false",
-    );
+    const status = formatTuiStatus(DEFAULT_TUI_CONFIG);
+    expect(status).toContain("borderStyle=rounded");
+    expect(status).toContain("colored=true");
+    expect(status).toContain("loadingIndicator=crush");
+    expect(status).toContain("markdownRender=true");
+    expect(status).toContain("thinkingDisplay=default");
+    expect(status).toContain("thinkingAnimate=true");
+    expect(status).toContain("toolBox.enabled=false");
   });
 
-  it("cycles settings live, updates active state, and persists tui.json", async () => {
+  it("cycles settings live, triggers full repaint, updates active state, and persists tui.json", async () => {
     const dir = makeTempDir();
     const env = createSettingsContext();
     const onChange = vi.fn();
@@ -99,11 +102,15 @@ describe("showTuiSettings", () => {
     const rendered = env.component()?.render(80).join("\n") ?? "";
     expect(rendered).toContain("TUI settings");
     expect(rendered).toContain("Border style");
+    expect(rendered).toContain("Colored UI");
+    expect(rendered).toContain("Loading indicator");
+    expect(rendered).toContain("Thinking display");
 
     // Cycle borderStyle from "rounded" -> "sharp"
     env.component()?.handleInput("\r");
     expect(getActiveTuiConfig().borderStyle).toBe("sharp");
     expect(onChange).toHaveBeenCalledTimes(1);
+    expect(env.requestRender).toHaveBeenCalledWith(true);
 
     const saved = JSON.parse(readFileSync(getTuiConfigPath(dir), "utf8")) as {
       borderStyle: string;
@@ -111,6 +118,7 @@ describe("showTuiSettings", () => {
     expect(saved.borderStyle).toBe("sharp");
 
     env.component()?.handleInput("\x1b");
+    expect(env.requestRender).toHaveBeenLastCalledWith(true);
     await pending;
   });
 

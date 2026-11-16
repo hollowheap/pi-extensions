@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "./frame.js";
+import { getActiveTuiConfig } from "./state.js";
 
 export interface FuzzyPickerItem extends SelectItem {
   preview?: string[];
@@ -21,13 +22,15 @@ export interface FuzzyPickerOptions {
   emptyText?: string;
 }
 
-function selectTheme(theme: Theme): SelectListTheme {
+function selectTheme(theme: Theme, colored: boolean): SelectListTheme {
+  const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
+    colored ? theme.fg(token, text) : text;
   return {
-    selectedPrefix: (text) => theme.fg("accent", text),
-    selectedText: (text) => theme.fg("accent", text),
-    description: (text) => theme.fg("muted", text),
-    scrollInfo: (text) => theme.fg("muted", text),
-    noMatch: (text) => theme.fg("muted", text),
+    selectedPrefix: (text) => fg("accent", text),
+    selectedText: (text) => fg("accent", text),
+    description: (text) => fg("muted", text),
+    scrollInfo: (text) => fg("muted", text),
+    noMatch: (text) => fg("muted", text),
   };
 }
 
@@ -74,7 +77,7 @@ export async function showFuzzyPicker(
           list = new SelectList(
             filtered,
             Math.max(3, Math.min(filtered.length, 8)),
-            selectTheme(theme),
+            selectTheme(theme, getActiveTuiConfig().colored),
           );
           list.onSelectionChange = (item) => {
             selected = item as FuzzyPickerItem;
@@ -86,19 +89,20 @@ export async function showFuzzyPicker(
             (list.getSelectedItem() as FuzzyPickerItem | null) ?? undefined;
         };
 
+        const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
+          getActiveTuiConfig().colored ? theme.fg(token, text) : text;
+
         const preview = (): string[] => {
           if (!selected) {
-            return [theme.fg("muted", options.emptyText ?? "No matches")];
+            return [fg("muted", options.emptyText ?? "No matches")];
           }
           if (selected.preview && selected.preview.length > 0) {
             return selected.preview.map((line, index) =>
-              index === 0
-                ? theme.fg("accent", theme.bold(line))
-                : theme.fg("muted", line),
+              index === 0 ? fg("accent", theme.bold(line)) : fg("muted", line),
             );
           }
           return selected.description
-            ? [theme.fg("muted", selected.description)]
+            ? [fg("muted", selected.description)]
             : [];
         };
 
@@ -107,7 +111,7 @@ export async function showFuzzyPicker(
           render(width: number): string[] {
             const innerWidth = Math.max(1, width - 4);
             const lines = [
-              theme.fg(
+              fg(
                 "muted",
                 query === "" ? "Filter: (type to search)" : `Filter: ${query}`,
               ),
@@ -115,10 +119,7 @@ export async function showFuzzyPicker(
               "",
               ...preview(),
               "",
-              theme.fg(
-                "dim",
-                "↑↓ move  Enter select  Esc cancel  type to filter",
-              ),
+              fg("dim", "↑↓ move  Enter select  Esc cancel  type to filter"),
             ];
             return roundedFrame(lines, width, theme, options.title);
           },

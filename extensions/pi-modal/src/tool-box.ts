@@ -17,13 +17,12 @@ import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import type {
   CustomToolVerb,
+  LoadingIndicatorStyle,
   ToolBoxConfig,
   ToolVerbPack,
 } from "@hollowheap/core/tui-config";
-import {
-  type WorkingTheme,
-  crushWorkingIndicator,
-} from "@hollowheap/tui/spinner";
+import { createWorkingIndicator } from "@hollowheap/tui/spinner";
+import { getActiveTuiConfig } from "@hollowheap/tui/state";
 
 const FALLBACK_SPINNER_FRAMES = [
   "⠋",
@@ -163,24 +162,6 @@ export function formatToolCallSummary(
   return path ?? pattern ?? pick("command") ?? pick("query") ?? pick("url");
 }
 
-function isWorkingTheme(theme: unknown): theme is WorkingTheme {
-  if (typeof theme !== "object" || theme === null) return false;
-  const candidate = theme as Partial<WorkingTheme>;
-  return (
-    typeof candidate.getColorMode === "function" &&
-    typeof candidate.colors === "object" &&
-    candidate.colors !== null &&
-    "accent" in candidate.colors &&
-    "borderAccent" in candidate.colors &&
-    "success" in candidate.colors &&
-    "warning" in candidate.colors &&
-    "error" in candidate.colors &&
-    "thinkingText" in candidate.colors &&
-    "text" in candidate.colors &&
-    "muted" in candidate.colors
-  );
-}
-
 interface ToolBoxState {
   hasCall?: boolean;
   hasCallLines?: boolean;
@@ -188,6 +169,7 @@ interface ToolBoxState {
   resultIsError?: boolean;
   startedAt?: number;
   spinnerTheme?: unknown;
+  spinnerKey?: string;
   spinner?: { frames: string[]; intervalMs: number };
   lockedSpinnerFrame?: string;
   innerCallComponent?: Component;
@@ -199,8 +181,11 @@ interface ToolBoxState {
   cachedResultRender?: { key: string; lines: string[] };
 }
 
-function getConfigCacheKey(cfg: ToolBoxConfig): string {
-  return JSON.stringify(cfg);
+function getConfigCacheKey(
+  cfg: ToolBoxConfig,
+  ui: { colored: boolean; loadingIndicator: LoadingIndicatorStyle },
+): string {
+  return `${JSON.stringify(cfg)}:${ui.colored}:${ui.loadingIndicator}`;
 }
 
 const BOX_STATES = new WeakMap<object, ToolBoxState>();
@@ -265,8 +250,13 @@ function normalizeInnerCallLines(
   return trimEdgeBlankLines(trimmed.slice(1));
 }
 
-function fg(theme: Theme | undefined, token: string, value: string): string {
-  return typeof theme?.fg === "function"
+function fg(
+  theme: Theme | undefined,
+  token: string,
+  value: string,
+  colored = true,
+): string {
+  return colored && typeof theme?.fg === "function"
     ? theme.fg(token as never, value)
     : value;
 }
@@ -298,12 +288,14 @@ function frameBoxLines(
     stripeToken: "accent" | "success" | "error";
     includeTop: boolean;
     includeBottom: boolean;
+    colored?: boolean;
   },
 ): string[] {
   const safeWidth = Math.max(4, width);
+  const colored = options.colored ?? true;
   const bordered = options.borderStyle !== "none" && safeWidth >= 6;
   const stripe = options.accentStripe
-    ? fg(theme, options.stripeToken, "▎")
+    ? fg(theme, options.stripeToken, "▎", colored)
     : "";
   const innerWidth = getInnerWidth(
     safeWidth,
@@ -385,6 +377,7 @@ function renderFallbackResultLines(
   result: AgentToolResult<unknown>,
   options: ToolRenderResultOptions,
   theme: Theme | undefined,
+  colored = true,
 ): string[] {
   const output = extractResultText(result);
   if (!output) return [];
@@ -392,10 +385,10 @@ function renderFallbackResultLines(
   const visible = options.expanded
     ? rawLines
     : rawLines.slice(0, FALLBACK_RESULT_PREVIEW_LINES);
-  const lines = visible.map((line) => fg(theme, "toolOutput", line));
+  const lines = visible.map((line) => fg(theme, "toolOutput", line, colored));
   const remaining = rawLines.length - visible.length;
   if (remaining > 0) {
-    lines.push(fg(theme, "muted", `... (${remaining} more lines)`));
+    lines.push(fg(theme, "muted", `... (${remaining} more lines)`, colored));
   }
   return lines;
 }
@@ -404,29 +397,40 @@ function getSpinnerFrame(
   boxState: ToolBoxState,
   theme: Theme | undefined,
   nowMs: number,
+  style: LoadingIndicatorStyle,
+  colored: boolean,
 ): string {
   if (boxState.startedAt === undefined) {
     boxState.startedAt = nowMs;
   }
   const startedAt = boxState.startedAt;
   const elapsed = Math.max(0, nowMs - startedAt);
-  if (isWorkingTheme(theme)) {
-    if (boxState.spinnerTheme !== theme || !boxState.spinner) {
-      boxState.spinnerTheme = theme;
-      boxState.spinner = crushWorkingIndicator(theme);
-    }
-    const { frames, intervalMs } = boxState.spinner;
-    const idx = Math.floor(elapsed / intervalMs) % frames.length;
-    return frames[idx] ?? frames[0] ?? "";
+  const key = `${style}:${colored}`;
+  if (
+    boxState.spinnerTheme !== theme ||
+    boxState.spinnerKey !== key ||
+    boxState.spinner === undefined
+  ) {
+    boxState.spinnerTheme = theme;
+    boxState.spinnerKey = key;
+    boxState.spinner = createWorkingIndicator(style, theme, colored) ?? {
+      frames: [...FALLBACK_SPINNER_FRAMES],
+      intervalMs: FALLBACK_SPINNER_INTERVAL_MS,
+    };
   }
-  const idx =
-    Math.floor(elapsed / FALLBACK_SPINNER_INTERVAL_MS) %
-    FALLBACK_SPINNER_FRAMES.length;
-  return fg(theme, "accent", FALLBACK_SPINNER_FRAMES[idx] ?? "⠋");
+  const { frames, intervalMs } = boxState.spinner;
+  if (frames.length === 0) return "";
+  const idx = Math.floor(elapsed / intervalMs) % frames.length;
+  const frame = frames[idx] ?? frames[0] ?? "";
+  return style === "host" ? fg(theme, "accent", frame, colored) : frame;
 }
 
 export interface WrapToolRendererOptions {
   now?: () => number;
+  getUiOptions?: () => {
+    colored: boolean;
+    loadingIndicator: LoadingIndicatorStyle;
+  };
 }
 
 /** Wrap a tool's renderers with configurable tool-box framing, verbs, spinner, and badges. */
@@ -437,6 +441,15 @@ export function wrapToolRenderer(
   wrapOptions?: WrapToolRendererOptions,
 ): ToolRenderers {
   const now = wrapOptions?.now ?? Date.now;
+  const getUi =
+    wrapOptions?.getUiOptions ??
+    (() => {
+      const active = getActiveTuiConfig();
+      return {
+        colored: active.colored,
+        loadingIndicator: active.loadingIndicator,
+      };
+    });
 
   return {
     renderShell: "self",
@@ -481,7 +494,8 @@ export function wrapToolRenderer(
         },
         render(width: number): string[] {
           const cfg = getConfig();
-          const cacheKey = `${width}:${getConfigCacheKey(cfg)}`;
+          const ui = getUi();
+          const cacheKey = `${width}:${getConfigCacheKey(cfg, ui)}`;
           if (boxState.cachedCallRender?.key === cacheKey) {
             return boxState.cachedCallRender.lines;
           }
@@ -526,28 +540,38 @@ export function wrapToolRenderer(
               boxState.lockedSpinnerFrame !== undefined;
             const spinnerFrame = freezeSpinner
               ? (boxState.lockedSpinnerFrame as string)
-              : getSpinnerFrame(boxState, theme, now());
+              : getSpinnerFrame(
+                  boxState,
+                  theme,
+                  now(),
+                  ui.loadingIndicator,
+                  ui.colored,
+                );
             if (!freezeSpinner) {
               boxState.lockedSpinnerFrame = spinnerFrame;
             }
-            headerParts.push(spinnerFrame);
+            if (spinnerFrame !== "") {
+              headerParts.push(spinnerFrame);
+            }
           }
 
-          headerParts.push(bold(theme, fg(theme, "toolTitle", verbLabel)));
+          headerParts.push(
+            bold(theme, fg(theme, "toolTitle", verbLabel, ui.colored)),
+          );
 
           const summary = formatToolCallSummary(toolName, args);
           if (summary !== undefined) {
-            headerParts.push(fg(theme, "muted", summary));
+            headerParts.push(fg(theme, "muted", summary, ui.colored));
           }
 
           if (settled && cfg.outcomeBadges) {
             const badge = isError
-              ? fg(theme, "error", "✗")
-              : fg(theme, "success", "✓");
+              ? fg(theme, "error", "✗", ui.colored)
+              : fg(theme, "success", "✓", ui.colored);
             headerParts.push(badge);
             const duration = formatToolDuration(context.durationMs);
             if (duration !== undefined) {
-              headerParts.push(fg(theme, "dim", duration));
+              headerParts.push(fg(theme, "dim", duration, ui.colored));
             }
           }
 
@@ -570,6 +594,7 @@ export function wrapToolRenderer(
               stripeToken,
               includeTop: true,
               includeBottom: !hasResultLines,
+              colored: ui.colored,
             },
           );
           boxState.cachedCallRender = { key: cacheKey, lines: framed };
@@ -621,7 +646,7 @@ export function wrapToolRenderer(
           }
         }
         return trimEdgeBlankLines(
-          renderFallbackResultLines(result, options, theme),
+          renderFallbackResultLines(result, options, theme, getUi().colored),
         );
       };
 
@@ -637,7 +662,8 @@ export function wrapToolRenderer(
         },
         render(width: number): string[] {
           const cfg = getConfig();
-          const cacheKey = `${width}:${getConfigCacheKey(cfg)}`;
+          const ui = getUi();
+          const cacheKey = `${width}:${getConfigCacheKey(cfg, ui)}`;
           if (boxState.cachedResultRender?.key === cacheKey) {
             return boxState.cachedResultRender.lines;
           }
@@ -673,6 +699,7 @@ export function wrapToolRenderer(
             stripeToken,
             includeTop: !boxState.hasCall,
             includeBottom: true,
+            colored: ui.colored,
           });
           boxState.cachedResultRender = { key: cacheKey, lines: framed };
           return framed;

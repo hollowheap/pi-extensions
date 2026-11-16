@@ -8,6 +8,7 @@ import { paintSurfaceLine } from "./surface.js";
 export interface FrameOptions {
   borderStyle?: BorderStyle;
   overlaySurface?: OverlaySurfaceMode;
+  colored?: boolean;
 }
 
 /** Return usable content width inside a frame for the active border style. */
@@ -32,11 +33,16 @@ export function roundedFrame(
   const active = getActiveTuiConfig();
   const borderStyle = options?.borderStyle ?? active.borderStyle;
   const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
+  const colored = options?.colored ?? active.colored;
 
   const border = (value: string) =>
-    typeof theme?.fg === "function" ? theme.fg("border", value) : value;
+    colored && typeof theme?.fg === "function"
+      ? theme.fg("border", value)
+      : value;
   const fg = (token: string, value: string) =>
-    typeof theme?.fg === "function" ? theme.fg(token as never, value) : value;
+    colored && typeof theme?.fg === "function"
+      ? theme.fg(token as never, value)
+      : value;
   const bold = (value: string) =>
     typeof theme?.bold === "function" ? theme.bold(value) : value;
 
@@ -48,11 +54,15 @@ export function roundedFrame(
         safeWidth,
         "",
       );
-      rows.push(paintSurfaceLine(titleLine, safeWidth, theme, overlaySurface));
+      rows.push(
+        paintSurfaceLine(titleLine, safeWidth, theme, overlaySurface, colored),
+      );
     }
     for (const line of lines) {
       const fitted = truncateToWidth(line, safeWidth, "");
-      rows.push(paintSurfaceLine(fitted, safeWidth, theme, overlaySurface));
+      rows.push(
+        paintSurfaceLine(fitted, safeWidth, theme, overlaySurface, colored),
+      );
     }
     return rows;
   }
@@ -78,10 +88,10 @@ export function roundedFrame(
   });
 
   const framed = [top, ...body, bottom];
-  if (overlaySurface === "transparent") {
+  if (overlaySurface === "transparent" || !colored) {
     return framed;
   }
   return framed.map((row) =>
-    paintSurfaceLine(row, safeWidth, theme, overlaySurface),
+    paintSurfaceLine(row, safeWidth, theme, overlaySurface, colored),
   );
 }

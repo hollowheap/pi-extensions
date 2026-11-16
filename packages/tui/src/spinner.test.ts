@@ -4,7 +4,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { crushWorkingIndicator } from "./spinner.js";
+import { createWorkingIndicator, crushWorkingIndicator } from "./spinner.js";
 
 const theme = {
   colors: {
@@ -29,5 +29,19 @@ describe("crushWorkingIndicator", () => {
       expect(visibleWidth(frame)).toBe(8);
       expect(stripTerminalSequences(frame)).toMatch(/^[0-9a-f~!@#$%^&*]{8}$/);
     }
+  });
+
+  it("supports presets and monochrome mode via createWorkingIndicator", () => {
+    expect(createWorkingIndicator("host", theme)).toBeUndefined();
+    expect(createWorkingIndicator("hidden", theme)?.frames).toEqual([]);
+    const mono = createWorkingIndicator("crush", theme, false);
+    expect(mono?.frames[0]).not.toContain("\x1b[");
+    expect(mono?.frames[0]).toMatch(/^[0-9a-f~!@#$%^&*]{8}$/);
+    const braille = createWorkingIndicator("braille", theme, true);
+    expect(braille?.frames).toHaveLength(10);
+    expect(braille?.frames[0]).toContain("\x1b[");
+    const monoBars = createWorkingIndicator("bars", theme, false);
+    expect(monoBars?.frames).toHaveLength(14);
+    expect(monoBars?.frames[0]).toBe("▁▂▃▄");
   });
 });

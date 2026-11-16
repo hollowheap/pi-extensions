@@ -29,6 +29,34 @@ export const TOOL_VERB_PACKS: readonly ToolVerbPack[] = [
   "playful",
 ];
 
+export type LoadingIndicatorStyle =
+  | "crush"
+  | "braille"
+  | "pulse"
+  | "arc"
+  | "bars"
+  | "dots"
+  | "host"
+  | "hidden";
+
+export const LOADING_INDICATOR_STYLES: readonly LoadingIndicatorStyle[] = [
+  "crush",
+  "braille",
+  "pulse",
+  "arc",
+  "bars",
+  "dots",
+  "host",
+  "hidden",
+];
+
+export type ThinkingDisplayMode = "default" | "one-line";
+
+export const THINKING_DISPLAY_MODES: readonly ThinkingDisplayMode[] = [
+  "default",
+  "one-line",
+];
+
 export interface CustomToolVerb {
   active: string;
   settled: string;
@@ -48,6 +76,11 @@ export interface TuiConfig {
   borderStyle: BorderStyle;
   overlaySurface: OverlaySurfaceMode;
   shortMode: boolean;
+  colored: boolean;
+  loadingIndicator: LoadingIndicatorStyle;
+  markdownRender: boolean;
+  thinkingDisplay: ThinkingDisplayMode;
+  thinkingAnimate: boolean;
   toolBox: ToolBoxConfig;
 }
 
@@ -55,6 +88,11 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   borderStyle: "rounded",
   overlaySurface: "transparent",
   shortMode: false,
+  colored: true,
+  loadingIndicator: "crush",
+  markdownRender: true,
+  thinkingDisplay: "default",
+  thinkingAnimate: true,
   toolBox: {
     enabled: false,
     borderStyle: "rounded",
@@ -68,9 +106,7 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
 
 function cloneDefaults(): TuiConfig {
   return {
-    borderStyle: DEFAULT_TUI_CONFIG.borderStyle,
-    overlaySurface: DEFAULT_TUI_CONFIG.overlaySurface,
-    shortMode: DEFAULT_TUI_CONFIG.shortMode,
+    ...DEFAULT_TUI_CONFIG,
     toolBox: {
       ...DEFAULT_TUI_CONFIG.toolBox,
       customVerbs: {},
@@ -133,6 +169,18 @@ function parseCustomVerbs(
   return result;
 }
 
+function parseBoolean(
+  value: unknown,
+  fallback: boolean,
+  field: string,
+  diagnostics?: string[],
+): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value === "boolean") return value;
+  diagnostics?.push(`tui.json: ${field} must be a boolean`);
+  return fallback;
+}
+
 export function normalizeTuiConfig(
   raw: unknown,
   diagnostics?: string[],
@@ -159,11 +207,44 @@ export function normalizeTuiConfig(
     "overlaySurface",
     diagnostics,
   );
-  const shortMode =
-    typeof raw.shortMode === "boolean" ? raw.shortMode : defaults.shortMode;
-  if (raw.shortMode !== undefined && typeof raw.shortMode !== "boolean") {
-    diagnostics?.push("tui.json: shortMode must be a boolean");
-  }
+  const shortMode = parseBoolean(
+    raw.shortMode,
+    defaults.shortMode,
+    "shortMode",
+    diagnostics,
+  );
+  const colored = parseBoolean(
+    raw.colored,
+    defaults.colored,
+    "colored",
+    diagnostics,
+  );
+  const loadingIndicator = parseEnum(
+    raw.loadingIndicator,
+    LOADING_INDICATOR_STYLES,
+    defaults.loadingIndicator,
+    "loadingIndicator",
+    diagnostics,
+  );
+  const markdownRender = parseBoolean(
+    raw.markdownRender,
+    defaults.markdownRender,
+    "markdownRender",
+    diagnostics,
+  );
+  const thinkingDisplay = parseEnum(
+    raw.thinkingDisplay,
+    THINKING_DISPLAY_MODES,
+    defaults.thinkingDisplay,
+    "thinkingDisplay",
+    diagnostics,
+  );
+  const thinkingAnimate = parseBoolean(
+    raw.thinkingAnimate,
+    defaults.thinkingAnimate,
+    "thinkingAnimate",
+    diagnostics,
+  );
 
   const rawToolBox = raw.toolBox;
   const toolBox: ToolBoxConfig = {
@@ -175,11 +256,12 @@ export function normalizeTuiConfig(
     if (!isPlainObject(rawToolBox)) {
       diagnostics?.push("tui.json: toolBox must be an object");
     } else {
-      if (typeof rawToolBox.enabled === "boolean") {
-        toolBox.enabled = rawToolBox.enabled;
-      } else if (rawToolBox.enabled !== undefined) {
-        diagnostics?.push("tui.json: toolBox.enabled must be a boolean");
-      }
+      toolBox.enabled = parseBoolean(
+        rawToolBox.enabled,
+        defaults.toolBox.enabled,
+        "toolBox.enabled",
+        diagnostics,
+      );
 
       toolBox.borderStyle = parseEnum(
         rawToolBox.borderStyle,
@@ -189,11 +271,12 @@ export function normalizeTuiConfig(
         diagnostics,
       );
 
-      if (typeof rawToolBox.accentStripe === "boolean") {
-        toolBox.accentStripe = rawToolBox.accentStripe;
-      } else if (rawToolBox.accentStripe !== undefined) {
-        diagnostics?.push("tui.json: toolBox.accentStripe must be a boolean");
-      }
+      toolBox.accentStripe = parseBoolean(
+        rawToolBox.accentStripe,
+        defaults.toolBox.accentStripe,
+        "toolBox.accentStripe",
+        diagnostics,
+      );
 
       toolBox.verbPack = parseEnum(
         rawToolBox.verbPack,
@@ -203,17 +286,19 @@ export function normalizeTuiConfig(
         diagnostics,
       );
 
-      if (typeof rawToolBox.outcomeBadges === "boolean") {
-        toolBox.outcomeBadges = rawToolBox.outcomeBadges;
-      } else if (rawToolBox.outcomeBadges !== undefined) {
-        diagnostics?.push("tui.json: toolBox.outcomeBadges must be a boolean");
-      }
+      toolBox.outcomeBadges = parseBoolean(
+        rawToolBox.outcomeBadges,
+        defaults.toolBox.outcomeBadges,
+        "toolBox.outcomeBadges",
+        diagnostics,
+      );
 
-      if (typeof rawToolBox.reuseSpinner === "boolean") {
-        toolBox.reuseSpinner = rawToolBox.reuseSpinner;
-      } else if (rawToolBox.reuseSpinner !== undefined) {
-        diagnostics?.push("tui.json: toolBox.reuseSpinner must be a boolean");
-      }
+      toolBox.reuseSpinner = parseBoolean(
+        rawToolBox.reuseSpinner,
+        defaults.toolBox.reuseSpinner,
+        "toolBox.reuseSpinner",
+        diagnostics,
+      );
 
       toolBox.customVerbs = parseCustomVerbs(
         rawToolBox.customVerbs,
@@ -228,6 +313,11 @@ export function normalizeTuiConfig(
     borderStyle,
     overlaySurface,
     shortMode,
+    colored,
+    loadingIndicator,
+    markdownRender,
+    thinkingDisplay,
+    thinkingAnimate,
     toolBox,
   };
 }
@@ -288,6 +378,11 @@ export function updateTuiConfig(
       borderStyle: updated.borderStyle,
       overlaySurface: updated.overlaySurface,
       shortMode: updated.shortMode,
+      colored: updated.colored,
+      loadingIndicator: updated.loadingIndicator,
+      markdownRender: updated.markdownRender,
+      thinkingDisplay: updated.thinkingDisplay,
+      thinkingAnimate: updated.thinkingAnimate,
       toolBox: {
         enabled: updated.toolBox.enabled,
         borderStyle: updated.toolBox.borderStyle,

@@ -24,9 +24,16 @@ export async function showCodeViewer(
 
   await ctx.ui.custom<void>(
     (tui, theme, _keybindings, done) => {
-      const border = (value: string) => theme.fg("border", value);
-      const titlePaint = (value: string) =>
-        theme.fg("accent", theme.bold(value));
+      const border = (value: string) =>
+        getActiveTuiConfig().colored ? theme.fg("border", value) : value;
+      const titlePaint = (value: string) => {
+        const bolded = theme.bold(value);
+        return getActiveTuiConfig().colored
+          ? theme.fg("accent", bolded)
+          : bolded;
+      };
+      const dimPaint = (value: string) =>
+        getActiveTuiConfig().colored ? theme.fg("dim", value) : value;
 
       const viewportHeight = (): number =>
         Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 2);
@@ -36,7 +43,7 @@ export async function showCodeViewer(
       return {
         render(width: number): string[] {
           const safeWidth = Math.max(4, width);
-          const { borderStyle, overlaySurface } = getActiveTuiConfig();
+          const { borderStyle, overlaySurface, colored } = getActiveTuiConfig();
           const height = viewportHeight();
           offset = Math.max(0, Math.min(offset, maxOffset()));
           const visible = codeLines.slice(offset, offset + height);
@@ -51,6 +58,7 @@ export async function showCodeViewer(
               safeWidth,
               theme,
               overlaySurface,
+              colored,
             );
             const content = visible.map((line) =>
               paintSurfaceLine(
@@ -58,18 +66,20 @@ export async function showCodeViewer(
                 safeWidth,
                 theme,
                 overlaySurface,
+                colored,
               ),
             );
             while (content.length < height) {
               content.push(
-                paintSurfaceLine("", safeWidth, theme, overlaySurface),
+                paintSurfaceLine("", safeWidth, theme, overlaySurface, colored),
               );
             }
             const bottom = paintSurfaceLine(
-              truncateToWidth(theme.fg("dim", hint.trim()), safeWidth, ""),
+              truncateToWidth(dimPaint(hint.trim()), safeWidth, ""),
               safeWidth,
               theme,
               overlaySurface,
+              colored,
             );
             return [top, ...content, bottom];
           }
@@ -103,17 +113,17 @@ export async function showCodeViewer(
           );
           const bottom =
             border(`${chars.bottomLeft}${chars.horizontal}`) +
-            theme.fg("dim", hint) +
+            dimPaint(hint) +
             border(
               `${chars.horizontal.repeat(bottomFill)}${chars.bottomRight}`,
             );
 
           const rows = [top, ...content, bottom];
-          if (overlaySurface === "transparent") {
+          if (overlaySurface === "transparent" || !colored) {
             return rows;
           }
           return rows.map((row) =>
-            paintSurfaceLine(row, safeWidth, theme, overlaySurface),
+            paintSurfaceLine(row, safeWidth, theme, overlaySurface, colored),
           );
         },
         handleInput(data: string): void {

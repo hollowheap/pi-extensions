@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "./frame.js";
+import { getActiveTuiConfig } from "./state.js";
 
 export interface MarkdownPagerOptions {
   title: string;
@@ -20,18 +21,20 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function pagerMarkdownTheme(theme: Theme): MarkdownTheme {
+function pagerMarkdownTheme(theme: Theme, colored: boolean): MarkdownTheme {
+  const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
+    colored ? theme.fg(token, text) : text;
   return {
-    heading: (text) => theme.fg("accent", theme.bold(text)),
-    link: (text) => theme.fg("accent", text),
-    linkUrl: (text) => theme.fg("dim", text),
-    code: (text) => theme.fg("toolOutput", text),
-    codeBlock: (text) => theme.fg("toolOutput", text),
-    codeBlockBorder: (text) => theme.fg("border", text),
-    quote: (text) => theme.fg("muted", text),
-    quoteBorder: (text) => theme.fg("border", text),
-    hr: (text) => theme.fg("border", text),
-    listBullet: (text) => theme.fg("accent", text),
+    heading: (text) => fg("accent", theme.bold(text)),
+    link: (text) => fg("accent", text),
+    linkUrl: (text) => fg("dim", text),
+    code: (text) => fg("toolOutput", text),
+    codeBlock: (text) => fg("toolOutput", text),
+    codeBlockBorder: (text) => fg("border", text),
+    quote: (text) => fg("muted", text),
+    quoteBorder: (text) => fg("border", text),
+    hr: (text) => fg("border", text),
+    listBullet: (text) => fg("accent", text),
     bold: (text) => theme.bold(text),
     italic: (text) => theme.italic(text),
     strikethrough: (text) => theme.strikethrough(text),
@@ -48,11 +51,12 @@ export async function showMarkdownPager(
     await withPromptLock(() =>
       ctx.ui.custom<void>(
         (tui, theme, _keybindings, done) => {
+          const colored = getActiveTuiConfig().colored;
           const markdown = new Markdown(
             options.markdown,
             0,
             0,
-            pagerMarkdownTheme(theme),
+            pagerMarkdownTheme(theme, colored),
           );
           let offset = 0;
           let width = 80;
@@ -102,14 +106,13 @@ export async function showMarkdownPager(
                 .map((line) => truncateToWidth(line, innerWidth, ""));
               const first = lines.length === 0 ? 0 : offset + 1;
               const last = Math.min(lines.length, offset + size);
-              const footer = truncateToWidth(
-                theme.fg(
-                  "muted",
-                  `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
-                ),
-                innerWidth,
-                "",
-              );
+              const coloredFooter = getActiveTuiConfig().colored
+                ? theme.fg(
+                    "muted",
+                    `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
+                  )
+                : `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`;
+              const footer = truncateToWidth(coloredFooter, innerWidth, "");
               return roundedFrame(
                 [...visible, footer],
                 renderWidth,

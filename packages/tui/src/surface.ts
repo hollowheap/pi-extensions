@@ -25,6 +25,7 @@ export function paintSurfaceLine(
   width: number,
   theme?: Pick<Theme, "bg">,
   mode: OverlaySurfaceMode = getActiveTuiConfig().overlaySurface,
+  colored: boolean = getActiveTuiConfig().colored,
 ): string {
   const safeWidth = Math.max(0, width);
   const fitted =
@@ -34,7 +35,7 @@ export function paintSurfaceLine(
   const padding = Math.max(0, safeWidth - visibleWidth(fitted));
   const padded = padding > 0 ? `${fitted}${" ".repeat(padding)}` : fitted;
   const token = getSurfaceBgToken(mode);
-  if (token === undefined || typeof theme?.bg !== "function") {
+  if (!colored || token === undefined || typeof theme?.bg !== "function") {
     return padded;
   }
   return theme.bg(token, padded);

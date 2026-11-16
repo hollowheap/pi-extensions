@@ -7,9 +7,13 @@ import {
 import { BORDER_STYLES, type BorderStyle } from "@hollowheap/core/border";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import {
+  LOADING_INDICATOR_STYLES,
+  type LoadingIndicatorStyle,
   OVERLAY_SURFACE_MODES,
   type OverlaySurfaceMode,
+  THINKING_DISPLAY_MODES,
   TOOL_VERB_PACKS,
+  type ThinkingDisplayMode,
   type ToolVerbPack,
   type TuiConfig,
   updateTuiConfig,
@@ -17,15 +21,17 @@ import {
 import { roundedFrame } from "@hollowheap/tui/frame";
 import { getActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/tui/state";
 
-function settingsTheme(theme: Theme): SettingsListTheme {
+function settingsTheme(theme: Theme, colored: boolean): SettingsListTheme {
+  const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
+    colored ? theme.fg(token, text) : text;
   return {
     label: (text, selected) =>
-      selected ? theme.fg("accent", text) : theme.fg("text", text),
+      selected ? fg("accent", text) : fg("text", text),
     value: (text, selected) =>
-      selected ? theme.fg("accent", text) : theme.fg("muted", text),
-    description: (text) => theme.fg("muted", text),
-    cursor: theme.fg("accent", "› "),
-    hint: (text) => theme.fg("dim", text),
+      selected ? fg("accent", text) : fg("muted", text),
+    description: (text) => fg("muted", text),
+    cursor: fg("accent", "› "),
+    hint: (text) => fg("dim", text),
   };
 }
 
@@ -45,8 +51,23 @@ function applyTuiSetting(
     case "borderStyle":
       next.borderStyle = value as BorderStyle;
       break;
+    case "colored":
+      next.colored = value === "true";
+      break;
     case "overlaySurface":
       next.overlaySurface = value as OverlaySurfaceMode;
+      break;
+    case "loadingIndicator":
+      next.loadingIndicator = value as LoadingIndicatorStyle;
+      break;
+    case "markdownRender":
+      next.markdownRender = value === "true";
+      break;
+    case "thinkingDisplay":
+      next.thinkingDisplay = value as ThinkingDisplayMode;
+      break;
+    case "thinkingAnimate":
+      next.thinkingAnimate = value === "true";
       break;
     case "shortMode":
       next.shortMode = value === "true";
@@ -83,11 +104,46 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: [...BORDER_STYLES],
     },
     {
+      id: "colored",
+      label: "Colored UI",
+      description: "Enable theme foreground, surface, and spinner colors",
+      currentValue: String(config.colored),
+      values: ["true", "false"],
+    },
+    {
       id: "overlaySurface",
       label: "Overlay surface",
       description: "Background surface fill for TUI overlays",
       currentValue: config.overlaySurface,
       values: [...OVERLAY_SURFACE_MODES],
+    },
+    {
+      id: "loadingIndicator",
+      label: "Loading indicator",
+      description: "Working spinner preset for status and tool boxes",
+      currentValue: config.loadingIndicator,
+      values: [...LOADING_INDICATOR_STYLES],
+    },
+    {
+      id: "markdownRender",
+      label: "Markdown dividers",
+      description: "Normalize --- and === into rendered Markdown rules",
+      currentValue: String(config.markdownRender),
+      values: ["true", "false"],
+    },
+    {
+      id: "thinkingDisplay",
+      label: "Thinking display",
+      description: "Full Markdown or truncated single-line thinking preview",
+      currentValue: config.thinkingDisplay,
+      values: [...THINKING_DISPLAY_MODES],
+    },
+    {
+      id: "thinkingAnimate",
+      label: "Thinking shimmer",
+      description: "Animate scrolling color sweep across one-line thinking",
+      currentValue: String(config.thinkingAnimate),
+      values: ["true", "false"],
     },
     {
       id: "shortMode",
@@ -144,7 +200,12 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
 export function formatTuiStatus(config: TuiConfig): string {
   return [
     `borderStyle=${config.borderStyle}`,
+    `colored=${config.colored}`,
     `overlaySurface=${config.overlaySurface}`,
+    `loadingIndicator=${config.loadingIndicator}`,
+    `markdownRender=${config.markdownRender}`,
+    `thinkingDisplay=${config.thinkingDisplay}`,
+    `thinkingAnimate=${config.thinkingAnimate}`,
     `shortMode=${config.shortMode}`,
     `toolBox.enabled=${config.toolBox.enabled}`,
     `toolBox.borderStyle=${config.toolBox.borderStyle}`,
@@ -168,23 +229,33 @@ export async function showTuiSettings(
     ctx.ui.custom<void>(
       (tui, theme, _keybindings, done) => {
         let current = getActiveTuiConfig();
-        const list = new SettingsList(
-          buildSettingItems(current),
-          10,
-          settingsTheme(theme),
-          (id, value) => {
-            current = applyTuiSetting(current, id, value);
-            setActiveTuiConfig(current);
-            const res = updateTuiConfig(agentDir, () => current);
-            if (!res.ok) {
-              ctx.ui?.notify?.(res.error, "error");
-            }
-            onChange?.(current);
-            tui.requestRender();
-          },
-          () => done(),
-          { enableSearch: true },
-        );
+        const close = (): void => {
+          done();
+          tui.requestRender(true);
+        };
+        const buildList = () =>
+          new SettingsList(
+            buildSettingItems(current),
+            12,
+            settingsTheme(theme, current.colored),
+            (id, value) => {
+              const prevColored = current.colored;
+              current = applyTuiSetting(current, id, value);
+              setActiveTuiConfig(current);
+              const res = updateTuiConfig(agentDir, () => current);
+              if (!res.ok) {
+                ctx.ui?.notify?.(res.error, "error");
+              }
+              onChange?.(current);
+              if (prevColored !== current.colored) {
+                list = buildList();
+              }
+              tui.requestRender(true);
+            },
+            close,
+            { enableSearch: true },
+          );
+        let list = buildList();
 
         return {
           render(width: number): string[] {
@@ -197,6 +268,7 @@ export async function showTuiSettings(
             return roundedFrame(lines, width, theme, "TUI settings", {
               borderStyle: active.borderStyle,
               overlaySurface: active.overlaySurface,
+              colored: active.colored,
             });
           },
           handleInput(data: string): void {

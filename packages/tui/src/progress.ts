@@ -10,7 +10,7 @@ import type { BorderStyle } from "@hollowheap/core/border";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import { roundedFrame } from "./frame.js";
-import { type WorkingTheme, crushWorkingIndicator } from "./spinner.js";
+import { createWorkingIndicator } from "./spinner.js";
 import { getActiveTuiConfig } from "./state.js";
 
 export type CancellableProgressResult<T> =
@@ -23,33 +23,6 @@ export interface CancellableProgressOptions {
   indicator?: LoaderIndicatorOptions;
 }
 
-const REQUIRED_WORKING_COLOR_TOKENS = [
-  "error",
-  "warning",
-  "success",
-  "borderAccent",
-  "accent",
-  "thinkingText",
-  "text",
-  "muted",
-] as const;
-
-function isWorkingTheme(theme: unknown): theme is WorkingTheme {
-  if (typeof theme !== "object" || theme === null) return false;
-  const candidate = theme as Partial<WorkingTheme>;
-  if (
-    typeof candidate.getColorMode !== "function" ||
-    typeof candidate.colors !== "object" ||
-    candidate.colors === null
-  ) {
-    return false;
-  }
-  const colors = candidate.colors as unknown as Record<string, unknown>;
-  return REQUIRED_WORKING_COLOR_TOKENS.every(
-    (token) => typeof colors[token] === "string",
-  );
-}
-
 function progressComponent(
   tui: ConstructorParameters<typeof CancellableLoader>[0],
   theme: Theme,
@@ -57,17 +30,20 @@ function progressComponent(
   onAbort: () => void,
   options?: CancellableProgressOptions,
 ) {
+  const active = getActiveTuiConfig();
   const indicator =
     options?.indicator ??
-    (isWorkingTheme(theme) ? crushWorkingIndicator(theme) : undefined);
+    createWorkingIndicator(active.loadingIndicator, theme, active.colored);
+  const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
+    active.colored ? theme.fg(token, text) : text;
   const loader = new CancellableLoader(
     tui,
-    (text) => theme.fg("accent", text),
-    (text) => theme.fg("muted", text),
+    (text) => fg("accent", text),
+    (text) => fg("muted", text),
     message,
     indicator,
   );
-  const hint = new Text(theme.fg("dim", "Esc to cancel"), 1, 0);
+  const hint = new Text(fg("dim", "Esc to cancel"), 1, 0);
   loader.onAbort = onAbort;
   return {
     loader,

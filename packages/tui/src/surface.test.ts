@@ -1,4 +1,5 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetActiveTuiConfig, setActiveTuiConfig } from "./state.js";
 import { getSurfaceBgToken, paintSurfaceLine } from "./surface.js";
@@ -31,24 +32,22 @@ describe("surface", () => {
     expect(visibleWidth("hello")).toBe(5);
   });
 
-  it("defaults to active TUI config overlaySurface", () => {
-    const current = {
-      borderStyle: "rounded" as const,
-      overlaySurface: "surface" as const,
-      shortMode: false,
-      toolBox: {
-        enabled: false,
-        borderStyle: "rounded" as const,
-        accentStripe: true,
-        verbPack: "standard" as const,
-        outcomeBadges: true,
-        reuseSpinner: true,
-        customVerbs: {},
-      },
-    };
-    setActiveTuiConfig(current);
+  it("defaults to active TUI config overlaySurface and respects colored=false", () => {
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      overlaySurface: "surface",
+    });
     const bg = vi.fn((token: string, text: string) => `[${token}:${text}]`);
     const result = paintSurfaceLine("ok", 4, { bg } as never);
     expect(result).toBe("[customMessageBg:ok  ]");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      overlaySurface: "card",
+      colored: false,
+    });
+    bg.mockClear();
+    expect(paintSurfaceLine("ok", 4, { bg } as never)).toBe("ok  ");
+    expect(bg).not.toHaveBeenCalled();
   });
 });

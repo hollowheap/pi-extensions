@@ -573,6 +573,9 @@ export class ModalEditor extends CustomEditor {
   }
 
   private borderPaint(): (text: string) => string {
+    if (!getActiveTuiConfig().colored) {
+      return (text) => text;
+    }
     const appTheme = this.modeTheme;
     if (!appTheme) return this.borderColor;
     if (this.searchMode) return (text) => appTheme.fg("success", text);
@@ -598,13 +601,23 @@ export class ModalEditor extends CustomEditor {
     return this.explicitShortMode ?? getActiveTuiConfig().shortMode;
   }
 
+  /** Clear constructor overrides so live `/tui` settings take effect immediately. */
+  clearExplicitUiOverrides(): void {
+    this.explicitBorderStyle = undefined;
+    this.explicitShortMode = undefined;
+    this.lastBottomBorder = "";
+    this.invalidate();
+  }
+
   protected override renderTopBorder(
     width: number,
     hiddenLineCount: number,
   ): string {
     const borderStyle = this.getEffectiveBorderStyle();
+    const colored = getActiveTuiConfig().colored;
     if (borderStyle === "none" || width < 2) {
-      return super.renderTopBorder(width, hiddenLineCount);
+      const raw = super.renderTopBorder(width, hiddenLineCount);
+      return (colored ? raw : stripTerminalSequences(raw)).replaceAll("─", " ");
     }
     const paint = this.borderPaint();
     const borderChars = getBorderChars(borderStyle);
@@ -614,7 +627,7 @@ export class ModalEditor extends CustomEditor {
         ? paint(
             stripTerminalSequences(
               super.renderTopBorder(innerWidth, hiddenLineCount),
-            ),
+            ).replaceAll("─", borderChars.horizontal),
           )
         : "";
     return paint(borderChars.topLeft) + inner + paint(borderChars.topRight);
@@ -633,11 +646,10 @@ export class ModalEditor extends CustomEditor {
     );
     const label = ` ${badge} `;
     if (borderStyle === "none" || width < 2) {
-      const line = fitRightLabel(
+      const base = stripTerminalSequences(
         super.renderBottomBorder(width, hiddenLineCount),
-        width,
-        label,
-      );
+      ).replaceAll("─", " ");
+      const line = fitRightLabel(base, width, label);
       this.lastBottomBorder = line;
       return line;
     }
@@ -649,7 +661,7 @@ export class ModalEditor extends CustomEditor {
         ? paint(
             stripTerminalSequences(
               super.renderBottomBorder(innerWidth, hiddenLineCount),
-            ),
+            ).replaceAll("─", borderChars.horizontal),
           )
         : "";
     const line =
