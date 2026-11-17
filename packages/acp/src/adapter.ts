@@ -12,6 +12,7 @@ import {
   readClientTerminal,
   releaseClientTerminal,
   requestPermission,
+  withTimeout,
   writeClientFile,
 } from "./client-requests.js";
 import type { ModelDescriptorInfo, PiRpc } from "./pi-rpc.js";
@@ -71,12 +72,16 @@ interface LiveSession {
   server: ReturnType<typeof createServer>;
   socketPath: string;
   sockets: Set<Socket>;
+  terminalIds: Set<string>;
   tracker: RequestTracker;
   pendingPrompts: {
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
   }[];
-  pendingClient: { reject: (error: Error) => void }[];
+  pendingClient: {
+    reject: (error: Error) => void;
+    abort: () => void;
+  }[];
 }
 
 function latestSocket(session: LiveSession): Socket | undefined {
@@ -429,8 +434,12 @@ export class Adapter {
     }
   }
 
-  shutdown(): void {
-    for (const [sessionId] of this.sessions) this.closeSession(sessionId);
+  async shutdown(): Promise<void> {
+    await Promise.all(
+      [...this.sessions.keys()].map((sessionId) =>
+        this.closeSession(sessionId),
+      ),
+    );
   }
 
   private initialize(params: { clientCapabilities?: ClientCaps }): unknown {
@@ -609,6 +618,7 @@ export class Adapter {
         server,
         socketPath,
         sockets,
+        terminalIds: new Set(),
         tracker,
         pendingPrompts: [],
         pendingClient: [],
@@ -810,6 +820,11 @@ export class Adapter {
       throw rpcError(-32602, `unknown session: ${params.sessionId}`);
     }
     await live.pi.abort();
+    const error = new Error("cancelled");
+    for (const entry of live.pendingClient.splice(0)) {
+      entry.reject(error);
+      entry.abort();
+    }
     return {};
   }
 
@@ -935,15 +950,26 @@ export class Adapter {
   }
 
   private clientFor(session: LiveSession): ClientRequest {
-    return (method, params, timeoutMs) =>
+    return (method, params, timeoutMs, signal) =>
       new Promise<unknown>((resolve, reject) => {
-        const entry = { reject };
+        const controller = new AbortController();
+        signal?.addEventListener(
+          "abort",
+          () => controller.abort(new Error("cancelled")),
+          { once: true },
+        );
+        const entry = {
+          reject,
+          abort: () => controller.abort(new Error("cancelled")),
+        };
         session.pendingClient.push(entry);
         const settle = () => {
           const index = session.pendingClient.indexOf(entry);
           if (index >= 0) session.pendingClient.splice(index, 1);
         };
-        Promise.resolve(this.deps.client(method, params, timeoutMs)).then(
+        Promise.resolve(
+          this.deps.client(method, params, timeoutMs, controller.signal),
+        ).then(
           (value) => {
             settle();
             resolve(value);
@@ -1028,6 +1054,7 @@ export class Adapter {
           args,
           params.cwd,
         );
+        session.terminalIds.add(terminalId);
         return { terminalId };
       }
       case "terminal-output": {
@@ -1049,6 +1076,7 @@ export class Adapter {
           session.record.sessionId,
           params.terminalId,
         );
+        session.terminalIds.delete(params.terminalId);
         return {};
       }
       case "terminal-kill": {
@@ -1060,6 +1088,7 @@ export class Adapter {
           session.record.sessionId,
           params.terminalId,
         );
+        session.terminalIds.delete(params.terminalId);
         return {};
       }
       default:
@@ -1081,7 +1110,7 @@ export class Adapter {
       this.deps.log(
         `pi session ${sessionId} ended: ${String(detail ?? "child exited")}`,
       );
-      this.closeSession(sessionId);
+      void this.closeSession(sessionId);
       return;
     }
     switch (type) {
@@ -1336,7 +1365,7 @@ export class Adapter {
     return { stopReason: "end_turn" };
   }
 
-  private closeSession(sessionId: string): void {
+  private async closeSession(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (live === undefined) return;
     this.sessions.delete(sessionId);
@@ -1346,11 +1375,31 @@ export class Adapter {
     }
     for (const entry of live.pendingClient.splice(0)) {
       entry.reject(error);
+      entry.abort();
     }
     live.tracker.rejectAll(error);
     live.pi.kill();
     for (const sock of live.sockets) sock.destroy();
-    live.server.close();
+    const client = this.clientFor(live);
+    const terminalIds = [...live.terminalIds];
+    live.terminalIds.clear();
+    for (const terminalId of terminalIds) {
+      await withTimeout(
+        Promise.allSettled([
+          killClientTerminal(client, live.record.sessionId, terminalId),
+          releaseClientTerminal(client, live.record.sessionId, terminalId),
+        ]),
+        "terminal cleanup",
+        1_000,
+      ).catch(() => {});
+    }
+    await new Promise<void>((resolve) => {
+      try {
+        live.server.close(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
     try {
       unlinkSync(live.socketPath);
     } catch {}

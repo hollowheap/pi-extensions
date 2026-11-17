@@ -11,7 +11,11 @@ import {
   sanitizeTerminalText,
   truncateText,
 } from "@hollowheap/core/format";
-import { evaluate, registerMode } from "@hollowheap/core/modes";
+import {
+  type EvaluateOptions,
+  evaluate,
+  registerMode,
+} from "@hollowheap/core/modes";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { dropSession, effectiveCwd, session } from "@hollowheap/core/state";
@@ -401,21 +405,64 @@ export default function (pi: ExtensionAPI) {
         : (readToolTarget(event.toolName, event.input) ?? ".");
     rememberTarget(runtime, ctx.sessionManager, target);
 
-    if (tag !== "shell") {
-      const agentDir = getAgentDir();
-      const guardConfig = loadGuardConfig(agentDir, (msg) => {
-        if (ctx.hasUI)
-          ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(msg)}`, "warning");
-      });
-      const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
-      const trust = checkPathTrust(
-        target,
-        ctx.cwd,
-        guardConfig.trustedRoots ?? [],
-        sessionMap,
-        guardConfig.decisions,
-      );
+    const agentDir = getAgentDir();
+    const guardConfig = loadGuardConfig(agentDir, (msg) => {
+      if (ctx.hasUI)
+        ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(msg)}`, "warning");
+    });
+    const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
+    const decisionOptions: Pick<
+      EvaluateOptions,
+      "trustedRoots" | "sessionDecisions" | "persistentDecisions"
+    > = {
+      trustedRoots: guardConfig.trustedRoots ?? [],
+      sessionDecisions: sessionMap,
+      persistentDecisions: guardConfig.decisions,
+    };
+    const trust = checkPathTrust(
+      target,
+      ctx.cwd,
+      guardConfig.trustedRoots ?? [],
+      sessionMap,
+      guardConfig.decisions,
+    );
 
+    const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
+    const now = Date.now();
+    const activeGrant = grants.find(
+      (grant) => grant.target === target && grant.expiresAt > now,
+    );
+    if (activeGrant) {
+      const verdict = evaluate({
+        owner: ctx.sessionManager,
+        cwd: ctx.cwd,
+        tag,
+        target,
+        rules: [],
+        ...decisionOptions,
+        ...(tag !== "shell"
+          ? {
+              trustedRoots: [
+                ...(decisionOptions.trustedRoots ?? []),
+                trust.canonicalPath,
+              ],
+            }
+          : {}),
+      });
+      if (verdict === "deny") {
+        const audit = getAudit(runtime, ctx.sessionManager);
+        audit.deniedCount++;
+        persistGuardAudit(pi, ctx.sessionManager, audit);
+        publishGuardSnapshot(runtime, ctx.sessionManager);
+        return {
+          block: true,
+          reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
+        };
+      }
+      return undefined;
+    }
+
+    if (tag !== "shell") {
       if (trust.isOutsideWorkspace) {
         if (trust.cachedDecision === "deny") {
           const audit = getAudit(runtime, ctx.sessionManager);
@@ -426,6 +473,9 @@ export default function (pi: ExtensionAPI) {
             block: true,
             reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
           };
+        }
+        if (trust.cachedDecision === "ask") {
+          return requestApproval(runtime, event.toolName, target, ctx, pi);
         }
         if (
           (tag === "read" || tag === "search") &&
@@ -462,6 +512,7 @@ export default function (pi: ExtensionAPI) {
               tag,
               target,
               rules: loadContextPermissions(ctx),
+              ...decisionOptions,
             });
             if (verdict === "deny") {
               const audit = getAudit(runtime, ctx.sessionManager);
@@ -512,7 +563,7 @@ export default function (pi: ExtensionAPI) {
           };
         }
 
-        audit.decisionCount++;
+        if (choice !== "Ask (this session)") audit.decisionCount++;
 
         let currentSessionMap = runtime.sessionDecisions.get(
           ctx.sessionManager,
@@ -635,22 +686,13 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Check temporary grants
-    const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
-    const now = Date.now();
-    const activeGrant = grants.find(
-      (g) => g.target === target && g.expiresAt > now,
-    );
-    if (activeGrant) {
-      return undefined;
-    }
-
     const verdict = evaluate({
       owner: ctx.sessionManager,
       cwd: ctx.cwd,
       tag,
       target,
       rules: loadContextPermissions(ctx),
+      ...decisionOptions,
     });
     if (verdict === "deny") {
       const audit = getAudit(runtime, ctx.sessionManager);

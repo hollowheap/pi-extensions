@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type ClientRequest,
   FS_TIMEOUT_MS,
+  PERMISSION_TIMEOUT_MS,
   createClientTerminal,
   killClientTerminal,
   readClientFile,
@@ -76,6 +77,26 @@ describe("client requests", () => {
         kind: "read",
       }),
     ).rejects.toThrow("cancelled");
+  });
+
+  it("times out an unresponsive permission request", async () => {
+    expect(PERMISSION_TIMEOUT_MS).toBe(10_000);
+    vi.useFakeTimers();
+    try {
+      const hanging: ClientRequest = () => new Promise(() => {});
+      const pending = requestPermission(hanging, "s", {
+        toolCallId: "t",
+        title: "read x",
+        kind: "read",
+      });
+      const assertion = expect(pending).rejects.toThrow(
+        "session/request_permission timed out",
+      );
+      await vi.advanceTimersByTimeAsync(PERMISSION_TIMEOUT_MS);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reads and writes client files", async () => {

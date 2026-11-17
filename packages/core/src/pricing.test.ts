@@ -48,6 +48,18 @@ describe("resolveModelPricing", () => {
     expect(resolveModelPricing(undefined)).toBeUndefined();
   });
 
+  it("does not treat ids that merely contain :free as free", () => {
+    const rates = resolveModelPricing({
+      id: "google/gemini-2.0-flash:freedom",
+    });
+    expect(rates).toBeDefined();
+    expect(rates?.input).toBeGreaterThan(0);
+    expect(resolveModelPricing({ id: "vendor/model:freedom" })).toBeUndefined();
+    expect(resolveModelPricing({ id: "google/gemini-2.0-flash:free" })).toEqual(
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    );
+  });
+
   it("resolves free models to zero pricing rates", () => {
     expect(resolveModelPricing({ id: "openrouter/auto:free" })).toEqual({
       input: 0,

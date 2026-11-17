@@ -1,4 +1,5 @@
 export const FS_TIMEOUT_MS = 10_000;
+export const PERMISSION_TIMEOUT_MS = 10_000;
 
 export type ToolKind =
   | "read"
@@ -35,6 +36,7 @@ export type ClientRequest = (
   method: string,
   params: unknown,
   timeoutMs?: number,
+  signal?: AbortSignal,
 ) => Promise<unknown>;
 
 export async function withTimeout(
@@ -76,15 +78,19 @@ export async function requestPermission(
   sessionId: string,
   toolCall: PermissionCall,
 ): Promise<"allow_once" | "reject_once"> {
-  const result = await client("session/request_permission", {
-    sessionId,
-    toolCall: {
-      toolCallId: toolCall.toolCallId,
-      title: toolCall.title,
-      kind: toolCall.kind,
-    },
-    options: permissionOptions(),
-  });
+  const result = await withTimeout(
+    client("session/request_permission", {
+      sessionId,
+      toolCall: {
+        toolCallId: toolCall.toolCallId,
+        title: toolCall.title,
+        kind: toolCall.kind,
+      },
+      options: permissionOptions(),
+    }),
+    "session/request_permission",
+    PERMISSION_TIMEOUT_MS,
+  );
   return requestPermissionOutcome(result);
 }
 

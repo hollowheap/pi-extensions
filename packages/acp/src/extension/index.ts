@@ -22,7 +22,8 @@ import {
 } from "@hollowheap/policy/targets";
 import { RequestTracker, attachWireHandler } from "../socket.js";
 import { type ClientCaps, SOCKET_ENV, readCaps } from "./client.js";
-import { loadPermissions } from "./permissions.js";
+import { clearSessionDecisions, sessionDecisionsFor } from "./decisions.js";
+import { loadEvaluateOptions, loadPermissions } from "./permissions.js";
 import { type ToolDeps, askPermission, createAcpTools } from "./tools.js";
 
 const ACP_TOOLS = new Set([
@@ -168,7 +169,8 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify(`pi-acp: ${message}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
   });
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", (_event, ctx) => {
+    clearSessionDecisions(ctx?.sessionManager ?? sessionOwner);
     if (sock !== undefined) {
       sock.destroy();
       sock = undefined;
@@ -185,6 +187,7 @@ export default function (pi: ExtensionAPI) {
           readToolTarget(event.toolName, event.input) ?? event.toolName,
           "other",
           event.toolCallId,
+          ctx.sessionManager,
         );
       } catch (error) {
         return {
@@ -204,6 +207,8 @@ export default function (pi: ExtensionAPI) {
       tag,
       target,
       rules: loadPermissions(ctx),
+      ...loadEvaluateOptions(ctx),
+      sessionDecisions: sessionDecisionsFor(ctx.sessionManager),
     });
     if (verdict === "deny") {
       return {
@@ -226,6 +231,7 @@ export default function (pi: ExtensionAPI) {
           target,
           BUILTIN_KINDS[event.toolName] ?? "other",
           event.toolCallId,
+          ctx.sessionManager,
         );
       } catch (error) {
         return {

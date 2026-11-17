@@ -32,6 +32,7 @@ function setup(rules: unknown) {
     JSON.stringify({ rules }),
   );
   state.agentDir = join(root, "agent");
+  mkdirSync(state.agentDir, { recursive: true });
   expect(getAgentDir()).toBe(state.agentDir);
 
   let handler: Handler | undefined;
@@ -63,6 +64,22 @@ describe("headless policy extension", () => {
   it("allows reads under the default mode", async () => {
     const { call } = setup([]);
     await expect(call("read", { path: "src/x.ts" })).resolves.toBeUndefined();
+  });
+
+  it("honours a persisted guard allow for an out-of-workspace path", async () => {
+    const { call } = setup([]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-policy-outside-"));
+    dirs.push(outside);
+    const target = join(outside, "secret.txt");
+    writeFileSync(
+      join(state.agentDir, "guard.json"),
+      JSON.stringify({
+        trustedRoots: [],
+        decisions: { [target]: "allow" },
+      }),
+    );
+
+    await expect(call("read", { path: target })).resolves.toBeUndefined();
   });
 
   it("blocks denied shell commands", async () => {

@@ -90,12 +90,7 @@ export function resolveModelPricing(
 
   if (typeof typed.id === "string") {
     const id = typed.id.toLowerCase();
-    if (
-      id.endsWith(":free") ||
-      id.endsWith("-free") ||
-      id.includes(":free") ||
-      id.endsWith("/free")
-    ) {
+    if (/(^|[:/-])free($|[:/-])/.test(id)) {
       return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     }
     const sortedKeys = Object.keys(DEFAULT_MODEL_PRICING).sort(

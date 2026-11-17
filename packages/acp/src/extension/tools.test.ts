@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerMode } from "@hollowheap/core/modes";
@@ -9,6 +15,7 @@ import type { ClientCaps } from "./client.js";
 import {
   type ToolDeps,
   applyEdits,
+  askPermission,
   createAcpTools,
   hasConflictMarkers,
 } from "./tools.js";
@@ -18,6 +25,12 @@ for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 const runBinaryMock = vi.hoisted(() =>
   vi.fn(async (_command: string, _args: string[]) => ""),
 );
+const agentState = vi.hoisted(() => ({ dir: "" }));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => agentState.dir,
+}));
 
 vi.mock("@hollowheap/runtime/exec", async (importOriginal) => {
   const actual =
@@ -31,6 +44,9 @@ function project(rules: string[]): {
 } {
   const dir = mkdtempSync(join(tmpdir(), "pi-acp-tools-"));
   mkdirSync(join(dir, ".pi"), { recursive: true });
+  const agent = join(dir, "agent");
+  mkdirSync(agent, { recursive: true });
+  agentState.dir = agent;
   writeFileSync(
     join(dir, ".pi", "permissions.json"),
     JSON.stringify({ rules }),
@@ -135,6 +151,33 @@ describe("content helpers", () => {
   });
 });
 
+describe("askPermission", () => {
+  it("rejects an in-flight approval when the tool is aborted", async () => {
+    let rejectSocket: (error: Error) => void = () => {};
+    const deps: ToolDeps = {
+      getCaps: () => ({}),
+      connected: () => true,
+      callSocket: () =>
+        new Promise((_resolve, reject) => {
+          rejectSocket = reject;
+        }),
+    };
+    const controller = new AbortController();
+    const pending = askPermission(
+      deps,
+      "acp_read",
+      "/x",
+      "read",
+      "1",
+      {},
+      controller.signal,
+    );
+    controller.abort();
+    await expect(pending).rejects.toThrow(/abort/i);
+    expect(rejectSocket).toBeDefined();
+  });
+});
+
 describe("acp_read", () => {
   it("auto-runs allowed reads without touching the socket", async () => {
     const { dir, ctx } = project(["allow read *"]);
@@ -161,6 +204,25 @@ describe("acp_read", () => {
     );
     expect(await run(read, "1", { path: "a.txt" }, ctx)).toBe("buffer");
     expect(calls.map((call) => call.method)).toEqual(["fs-read"]);
+  });
+
+  it("honours a persisted guard allow for an out-of-workspace path", async () => {
+    const { ctx } = project([]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-acp-outside-"));
+    const target = join(outside, "secret.txt");
+    writeFileSync(target, "secret");
+    agentState.dir = mkdtempSync(join(tmpdir(), "pi-acp-agent-"));
+    writeFileSync(
+      join(agentState.dir, "guard.json"),
+      JSON.stringify({ trustedRoots: [], decisions: { [target]: "allow" } }),
+    );
+    const { deps, calls } = scriptedDeps({}, ALLOW);
+    const [read] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_read",
+    );
+
+    expect(await run(read, "1", { path: target }, ctx)).toBe("secret");
+    expect(calls).toEqual([]);
   });
 
   it("allows reads without rules and blocks on deny without reaching the client", async () => {
@@ -209,6 +271,27 @@ describe("acp_write", () => {
     ).rejects.toThrow("already exists");
   });
 
+  it("remembers an approval for the session", async () => {
+    const { dir, ctx } = project([]);
+    const target = join(dir, "note.txt");
+    const { deps, calls } = scriptedDeps({}, (method) =>
+      method === "permission" ? { decision: "allow_once" } : {},
+    );
+    const [write] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_write",
+    );
+
+    await run(write, "1", { path: "note.txt", content: "a" }, ctx);
+    expect(calls.filter((call) => call.method === "permission")).toHaveLength(
+      1,
+    );
+    rmSync(target);
+    await run(write, "2", { path: "note.txt", content: "b" }, ctx);
+    expect(calls.filter((call) => call.method === "permission")).toHaveLength(
+      1,
+    );
+  });
+
   it("treats a successful client read as existing", async () => {
     const { ctx } = project(["allow edit *"]);
     const { deps } = scriptedDeps({ fs: { readTextFile: true } }, (method) =>
@@ -240,6 +323,27 @@ describe("acp_write", () => {
       run(write, "1", { path: "n.txt", content: "new" }, ctx),
     ).rejects.toThrow("editor read failed");
     expect(written.map((call) => call.method)).toEqual(["fs-read"]);
+  });
+
+  it("creates through the client when the editor reports the new path as missing", async () => {
+    const { ctx } = project(["allow edit *"]);
+    const written: { method: string; params: unknown }[] = [];
+    const { deps } = scriptedDeps(
+      { fs: { readTextFile: true, writeTextFile: true } },
+      (method, params) => {
+        written.push({ method, params });
+        if (method === "fs-read") throw new Error("file not found");
+        return {};
+      },
+    );
+    const [write] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_write",
+    );
+
+    expect(
+      await run(write, "1", { path: "new.txt", content: "new" }, ctx),
+    ).toContain("new.txt");
+    expect(written.map((call) => call.method)).toEqual(["fs-read", "fs-write"]);
   });
 
   it("creates through the client when writeTextFile is declared", async () => {
@@ -408,6 +512,40 @@ describe("acp_bash", () => {
       "terminal-output",
       "terminal-release",
     ]);
+  });
+
+  it("kills a client terminal as soon as the tool is aborted", async () => {
+    const { ctx } = project([]);
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const deps: ToolDeps = {
+      getCaps: () => ({ terminal: true }),
+      connected: () => true,
+      callSocket: async (method) => {
+        calls.push(method);
+        if (method === "permission") return { decision: "allow_once" };
+        if (method === "terminal-create") return { terminalId: "t1" };
+        if (method === "terminal-output") {
+          controller.abort();
+          return { output: "done", exitCode: 0 };
+        }
+        return {};
+      },
+    };
+    const [bash] = createAcpTools(deps).filter(
+      (tool) => tool.name === "acp_bash",
+    );
+
+    await expect(
+      bash.execute(
+        "1" as never,
+        { command: "echo hi" } as never,
+        controller.signal as never,
+        (() => {}) as never,
+        ctx as never,
+      ),
+    ).rejects.toThrow(/abort/i);
+    expect(calls).toContain("terminal-kill");
   });
 
   it("runs locally without a terminal", async () => {

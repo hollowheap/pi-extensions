@@ -755,6 +755,84 @@ describe("pi-guard extension", () => {
     expect(selectMock).toHaveBeenCalledTimes(2);
   });
 
+  it("honours a session allow on repeated out-of-workspace reads", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-allow-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes a cached ask decision without reopening the path selector", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-ask-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Ask (this session)");
+    const confirmMock = ctx.ui.confirm as ReturnType<typeof vi.fn>;
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("honours an out-of-workspace grant instead of prompting", async () => {
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-grant-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const selectMock = vi.fn(async () => "Deny (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await commandHandler(pi, "grant")(`${externalFile} 5m`, ctx);
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      `Granted ${externalFile} for 5m`,
+      "info",
+    );
+  });
+
+  it("does not let a grant bypass plan mode or a persisted deny", async () => {
+    const plan = setupProject(EXAMPLE_RULES);
+    enterMode(plan.ctx.sessionManager, "plan");
+    await commandHandler(plan.pi, "grant")("notes.md 5m", plan.ctx);
+    await expect(
+      plan.call("write", { path: "notes.md", content: "x" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-grant-deny-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+    testAgentState.agentDir = makeGuardTempDir();
+    writeFileSync(
+      join(testAgentState.agentDir, "guard.json"),
+      JSON.stringify({
+        trustedRoots: [],
+        decisions: { [externalFile]: "deny" },
+      }),
+    );
+    const denied = setupProject(EXAMPLE_RULES);
+    await commandHandler(denied.pi, "grant")(`${externalFile} 5m`, denied.ctx);
+    await expect(denied.call("read", { path: externalFile })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
   it("allows reading global skills under the agent directory", async () => {
     const agentDir = makeGuardTempDir();
     testAgentState.agentDir = agentDir;

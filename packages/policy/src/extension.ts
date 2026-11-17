@@ -7,6 +7,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadPermissions, loadToolTags } from "@hollowheap/core/config";
 import { displayTarget } from "@hollowheap/core/format";
 import { evaluate, registerMode } from "@hollowheap/core/modes";
+import { loadGuardTrust } from "@hollowheap/core/trust";
 import { BUILTIN_MODE_LAYERS } from "./modes.js";
 import {
   TOOL_TAGS,
@@ -68,12 +69,15 @@ async function handleToolCall(
       ? readCommandArg(event.input)
       : (readToolTarget(event.toolName, event.input) ?? ".");
 
+  const trust = loadGuardTrust(getAgentDir(), notifyDiagnostic(ctx));
   const verdict = evaluate({
     owner: ctx.sessionManager,
     cwd: ctx.cwd,
     tag,
     target,
     rules: rulesFor(ctx),
+    trustedRoots: trust.trustedRoots,
+    persistentDecisions: trust.persistentDecisions,
   });
 
   if (verdict === "deny") {

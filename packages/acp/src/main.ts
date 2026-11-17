@@ -24,6 +24,30 @@ export function storePath(): string {
   return join(home, "sessions.json");
 }
 
+export async function finishShutdown(
+  shutdown: () => void | Promise<void>,
+  exit: (code: number) => void = (code) => process.exit(code),
+): Promise<void> {
+  await shutdown();
+  exit(0);
+}
+
+export function attachStdioShutdown(
+  input: NodeJS.ReadableStream,
+  shutdown: () => void,
+  signals: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT"],
+): void {
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    shutdown();
+  };
+  input.on("end", once);
+  input.on("close", once);
+  for (const signal of signals) process.on(signal, once);
+}
+
 export function extensionPath(): string {
   const here = fileURLToPath(import.meta.url);
   const entry = here.endsWith(".ts") ? "index.ts" : "index.js";
@@ -53,7 +77,7 @@ export async function main(
   const write = (value: unknown) => {
     output.write(encodeMessage(value));
   };
-  const client: ClientRequest = (method, params, timeoutMs) =>
+  const client: ClientRequest = (method, params, timeoutMs, signal) =>
     new Promise<unknown>((resolve, reject) => {
       const id = nextId++;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -73,6 +97,16 @@ export async function main(
           reject(error);
         },
       });
+      signal?.addEventListener(
+        "abort",
+        () => {
+          const entry = pending.get(id);
+          if (entry === undefined) return;
+          pending.delete(id);
+          entry.reject(new Error("cancelled"));
+        },
+        { once: true },
+      );
       write({ jsonrpc: "2.0", id, method, params });
     });
 
@@ -174,11 +208,12 @@ export async function main(
   });
 
   const shutdown = () => {
-    adapter.shutdown();
-    process.exit(0);
+    void finishShutdown(
+      () => adapter.shutdown(),
+      (code) => process.exit(code),
+    );
   };
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  attachStdioShutdown(input, shutdown);
   process.stderr.write(`[pi-acp] listening (tmp: ${tmpdir()})\n`);
 }
 

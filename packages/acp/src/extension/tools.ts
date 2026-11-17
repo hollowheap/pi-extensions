@@ -16,7 +16,8 @@ import { checkPath } from "@hollowheap/core/policy";
 import type { Tag } from "@hollowheap/core/types";
 import { clampMaxResults, runBinary } from "@hollowheap/runtime/exec";
 import type { ClientCaps } from "./client.js";
-import { loadPermissions } from "./permissions.js";
+import { recordSessionDecision, sessionDecisionsFor } from "./decisions.js";
+import { loadEvaluateOptions, loadPermissions } from "./permissions.js";
 
 export const REQUEST_TIMEOUT_MS = 10_000;
 export const TERMINAL_TIMEOUT_MS = 60_000;
@@ -89,24 +90,60 @@ function existsLocal(path: string): boolean {
   }
 }
 
+function isMissingFileError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ENOENT") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /(?:not found|does not exist|ENOENT)/i.test(message);
+}
+
+function withAbort<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) return work;
+  if (signal.aborted) return Promise.reject(new Error("pi-acp: aborted"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error("pi-acp: aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(work).then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function askPermission(
   deps: ToolDeps,
   tool: string,
   target: string,
   kind: "read" | "edit" | "execute" | "search" | "other",
   toolCallId?: string,
+  owner?: unknown,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const result = (await deps.callSocket("permission", {
-    tool,
-    target: displayTarget(target),
-    kind,
-    ...(toolCallId === undefined ? {} : { toolCallId }),
-  })) as { decision?: unknown };
+  const result = (await withAbort(
+    deps.callSocket(
+      "permission",
+      {
+        tool,
+        target: displayTarget(target),
+        kind,
+        ...(toolCallId === undefined ? {} : { toolCallId }),
+      },
+      REQUEST_TIMEOUT_MS,
+    ),
+    signal,
+  )) as { decision?: unknown };
   if (result.decision !== "allow_once") {
     throw new Error(
       `pi-acp: ${tool} ${displayTarget(target)} was not approved`,
     );
   }
+  if (owner !== undefined) recordSessionDecision(owner, target, "allow");
 }
 
 export async function runPolicy(
@@ -117,6 +154,7 @@ export async function runPolicy(
   absPath: string,
   kind: "read" | "edit" | "execute" | "search" | "other",
   toolCallId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const verdict = evaluate({
     owner: ctx.sessionManager,
@@ -124,6 +162,8 @@ export async function runPolicy(
     tag,
     target: absPath,
     rules: loadPermissions(ctx),
+    ...loadEvaluateOptions(ctx),
+    sessionDecisions: sessionDecisionsFor(ctx.sessionManager),
   });
   if (verdict === "deny") {
     throw new Error(
@@ -136,7 +176,15 @@ export async function runPolicy(
         `pi-acp: ${tool} ${displayTarget(absPath)} was not approved (no client connected)`,
       );
     }
-    await askPermission(deps, tool, absPath, kind, toolCallId);
+    await askPermission(
+      deps,
+      tool,
+      absPath,
+      kind,
+      toolCallId,
+      ctx.sessionManager,
+      signal,
+    );
   }
 }
 
@@ -232,11 +280,16 @@ async function runTerminal(
           .catch(() => {});
         throw new Error("command timed out");
       }
-      const state = (await deps.callSocket(
-        "terminal-output",
-        { terminalId },
-        REQUEST_TIMEOUT_MS,
+      const state = (await withAbort(
+        deps.callSocket("terminal-output", { terminalId }, REQUEST_TIMEOUT_MS),
+        signal,
       )) as { output?: unknown; exitCode?: unknown };
+      if (aborted || signal?.aborted) {
+        await deps
+          .callSocket("terminal-kill", { terminalId }, REQUEST_TIMEOUT_MS)
+          .catch(() => {});
+        throw new Error("command aborted");
+      }
       if (typeof state.output === "string") output = state.output;
       if (typeof state.exitCode === "number") {
         if (state.exitCode !== 0) {
@@ -248,6 +301,13 @@ async function runTerminal(
       }
       await sleep(400);
     }
+  } catch (error) {
+    if (signal?.aborted) {
+      await deps
+        .callSocket("terminal-kill", { terminalId }, REQUEST_TIMEOUT_MS)
+        .catch(() => {});
+    }
+    throw error;
   } finally {
     signal?.removeEventListener("abort", onAbort);
     await deps
@@ -273,9 +333,18 @@ export function createAcpTools(deps: ToolDeps) {
         description: "File path, absolute or relative to the session directory",
       }),
     }),
-    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_read", "read", abs, "read", toolCallId);
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_read",
+        "read",
+        abs,
+        "read",
+        toolCallId,
+        signal ?? undefined,
+      );
       const caps = deps.getCaps();
       const text =
         caps.fs?.readTextFile === true
@@ -296,12 +365,21 @@ export function createAcpTools(deps: ToolDeps) {
       }),
       content: Type.String({ description: "Full file content" }),
     }),
-    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       if (hasConflictMarkers(params.content)) {
         throw new Error("pi-acp: content contains conflict markers");
       }
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_write", "edit", abs, "edit", toolCallId);
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_write",
+        "edit",
+        abs,
+        "edit",
+        toolCallId,
+        signal ?? undefined,
+      );
       const caps = deps.getCaps();
       let exists = existsLocal(abs);
       if (!exists && caps.fs?.readTextFile === true) {
@@ -309,9 +387,11 @@ export function createAcpTools(deps: ToolDeps) {
           await readThroughClient(deps, abs);
           exists = true;
         } catch (error) {
-          throw new Error(
-            `pi-acp: cannot verify whether ${abs} exists in editor: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          if (existsLocal(abs) || !isMissingFileError(error)) {
+            throw new Error(
+              `pi-acp: cannot verify whether ${abs} exists in editor: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         }
       }
       if (exists) throw new Error(`pi-acp: path already exists: ${abs}`);
@@ -341,14 +421,23 @@ export function createAcpTools(deps: ToolDeps) {
         }),
       ),
     }),
-    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       for (const edit of params.edits) {
         if (hasConflictMarkers(edit.newText)) {
           throw new Error("pi-acp: content contains conflict markers");
         }
       }
       const abs = resolveAbs(ctx.cwd, params.path);
-      await runPolicy(deps, ctx, "acp_edit", "edit", abs, "edit", toolCallId);
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_edit",
+        "edit",
+        abs,
+        "edit",
+        toolCallId,
+        signal ?? undefined,
+      );
       const caps = deps.getCaps();
       let local: string;
       try {
@@ -394,6 +483,8 @@ export function createAcpTools(deps: ToolDeps) {
         tag: "shell",
         target: params.command,
         rules: loadPermissions(ctx),
+        ...loadEvaluateOptions(ctx),
+        sessionDecisions: sessionDecisionsFor(ctx.sessionManager),
       });
       if (verdict === "deny") {
         throw new Error("pi-acp: bash denied: policy denies shell");
@@ -410,6 +501,8 @@ export function createAcpTools(deps: ToolDeps) {
           params.command,
           "execute",
           toolCallId,
+          ctx.sessionManager,
+          signal ?? undefined,
         );
       }
       const caps = deps.getCaps();
@@ -448,6 +541,7 @@ export function createAcpTools(deps: ToolDeps) {
         searchDir,
         "search",
         toolCallId,
+        signal ?? undefined,
       );
       const stdout = await runBinary(
         "fd",
@@ -505,6 +599,7 @@ export function createAcpTools(deps: ToolDeps) {
         target,
         "search",
         toolCallId,
+        signal ?? undefined,
       );
       const args = [
         "--line-number",
@@ -544,9 +639,18 @@ export function createAcpTools(deps: ToolDeps) {
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list" })),
     }),
-    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const dir = resolve(ctx.cwd, params.path ?? ".");
-      await runPolicy(deps, ctx, "acp_eza", "search", dir, "other", toolCallId);
+      await runPolicy(
+        deps,
+        ctx,
+        "acp_eza",
+        "search",
+        dir,
+        "other",
+        toolCallId,
+        signal ?? undefined,
+      );
       let isDirectory = false;
       try {
         isDirectory = statSync(dir).isDirectory();

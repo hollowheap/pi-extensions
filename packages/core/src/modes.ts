@@ -252,7 +252,7 @@ function evaluatePath(
 
   const hard = matchPath([], options.target, tag, options.cwd);
   const project = matchPath(options.rules, options.target, tag, options.cwd);
-  if (!hard.outside && project.rule?.effect === "deny") return "deny";
+  if (project.rule?.effect === "deny") return "deny";
 
   let bestDecision: Verdict | undefined;
   let bestDepth = -1;

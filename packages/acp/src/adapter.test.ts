@@ -148,10 +148,10 @@ function setup(
   };
 }
 
-const live: { shutdown: () => void }[] = [];
+const live: { shutdown: () => void | Promise<void> }[] = [];
 
-afterEach(() => {
-  for (const entry of live.splice(0)) entry.shutdown();
+afterEach(async () => {
+  await Promise.all(live.splice(0).map((entry) => entry.shutdown()));
   for (const sock of peerSockets.splice(0)) sock.destroy();
 });
 
@@ -315,7 +315,7 @@ describe("adapter sessions", () => {
     } finally {
       sock.destroy();
     }
-    adapter.shutdown();
+    await adapter.shutdown();
   });
 
   it("carries the mode notice into the returned config option", async () => {
@@ -352,7 +352,7 @@ describe("adapter sessions", () => {
     } finally {
       sock.destroy();
     }
-    adapter.shutdown();
+    await adapter.shutdown();
   });
 
   it("offers the modes the extension reports", async () => {
@@ -489,7 +489,7 @@ describe("adapter sessions", () => {
     } finally {
       sock.destroy();
     }
-    adapter.shutdown();
+    await adapter.shutdown();
   });
 
   it("tears down the socket when startup validation fails", async () => {
@@ -602,6 +602,49 @@ describe("socket bridge", () => {
     ]);
   });
 
+  it("cancels an in-flight permission request on session/cancel", async () => {
+    const env = setup(() => new Promise(() => {}));
+    await env.adapter.handle("session/new", { cwd: "/repo" });
+    const { tracker, sock } = await connectPeer(env.spawns[0].socketPath);
+    const pending = sendWireRequest(
+      sock,
+      tracker,
+      "permission",
+      { tool: "acp_read", target: "/x", kind: "read" },
+      3000,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await env.adapter.handle("session/cancel", { sessionId: "pi-1" });
+    await expect(pending).resolves.toMatchObject({ error: "cancelled" });
+    expect(env.aborted.flat()).toContain("abort");
+  });
+
+  it("kills and releases live client terminals when the session closes", async () => {
+    const env = bridged((method) => {
+      if (method === "terminal/create") return { terminalId: "t-live" };
+      return {};
+    });
+    await env.adapter.handle("session/new", { cwd: "/repo" });
+    const { tracker, sock } = await connectPeer(env.spawns[0].socketPath);
+    await sendWireRequest(sock, tracker, "terminal-create", {
+      command: "bash",
+      args: ["-c", "sleep 100"],
+      cwd: "/repo",
+    });
+
+    await env.adapter.shutdown();
+
+    const calls = env.clientCalls.filter((call) =>
+      call.method.startsWith("terminal/"),
+    );
+    expect(calls.map((call) => call.method)).toEqual([
+      "terminal/create",
+      "terminal/kill",
+      "terminal/release",
+    ]);
+    expect(calls[1].params).toMatchObject({ terminalId: "t-live" });
+  });
+
   it("rejects pending client requests when the session closes", async () => {
     const env = setup(() => new Promise(() => {}));
     await env.adapter.handle("session/new", { cwd: "/repo" });
@@ -614,7 +657,7 @@ describe("socket bridge", () => {
       { tool: "acp_read", target: "/x", kind: "read" },
       2000,
     );
-    env.adapter.shutdown();
+    await env.adapter.shutdown();
     await expect(pending).rejects.toThrow();
   });
 
@@ -707,7 +750,7 @@ describe("prompt turns", () => {
       prompt: [{ type: "text", text: "hello" }],
     });
     await tick();
-    adapter.shutdown();
+    await adapter.shutdown();
     await expect(pending).rejects.toThrow("session closed");
   });
 

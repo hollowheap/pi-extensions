@@ -334,6 +334,18 @@ function loadPolicy(options: LoadPermissionsOptions): {
     ? [...rules.filter((rule) => rule.effect === "deny"), ...FALLBACK_ASK_RULES]
     : rules;
 
+  const categories = new Set<string>([
+    ...BUILTIN_TAGS,
+    ...effectiveRules.map((rule) => rule.tag),
+  ]);
+  for (const [name, tag] of Object.entries(toolTags)) {
+    if (categories.has(tag)) continue;
+    delete toolTags[name];
+    diagnostics.push(
+      `ignoring tool tag "${name}": expected a permission category such as edit, read, search, shell, or external`,
+    );
+  }
+
   const entry: PermissionsEntry = {
     rules: Object.freeze(effectiveRules),
     toolTags: Object.freeze(toolTags),
@@ -467,8 +479,22 @@ function parseModeLayer(
       if (rule !== undefined) overrides.push(rule);
     }
   }
+  let description: string | undefined;
+  if (value.description !== undefined) {
+    if (
+      typeof value.description !== "string" ||
+      value.description.trim() === ""
+    ) {
+      diagnostics.push(
+        `ignoring mode layer "${name}": "description" must be a non-empty string`,
+      );
+    } else {
+      description = value.description;
+    }
+  }
   return Object.freeze({
     name,
+    ...(description === undefined ? {} : { description }),
     defaults: Object.freeze(defaults),
     overrides: Object.freeze(overrides),
     source: "config" as const,

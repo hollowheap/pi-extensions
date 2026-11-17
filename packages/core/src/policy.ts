@@ -197,8 +197,8 @@ function resolveMatches(
   const actual = resolveReal(base, path);
   if (actual === undefined) return { outside: true };
   const rel = relative(realRoot, actual);
-  if (rel === ".." || rel.startsWith(`..${sep}`)) return { outside: true };
-  const posix = rel.split(sep).join("/");
+  const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  const posix = (outside ? actual : rel).split(sep).join("/");
 
   let deny: Rule | undefined;
   let best: Rule | undefined;
@@ -225,11 +225,9 @@ function resolveMatches(
     }
   }
   if (denyFirst) {
-    return deny === undefined
-      ? { outside: false, rule: best }
-      : { outside: false, rule: deny };
+    return { outside, rule: deny ?? best };
   }
-  return { outside: false, rule: best };
+  return { outside, rule: best };
 }
 
 export function checkPath(

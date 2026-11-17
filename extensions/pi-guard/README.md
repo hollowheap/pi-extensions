@@ -1,6 +1,6 @@
 # pi-guard
 
-Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns approval prompts and the `mode-guard` statusline value; mode switching lives in `pi-modes` (`/mode`, `alt+m`). Verdicts come from `@hollowheap/core`, so the ACP extension enforces exactly the same rules.
+Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns approval prompts and the `mode-guard` statusline value; mode switching lives in `pi-modes` (`/mode`, `alt+m`). Verdicts come from `@hollowheap/core`; the ACP extension and headless children enforce the same rules, modes, and persisted `guard.json` decisions and trusted roots. Temporary `/grant`s and audit counters are session-local to the TUI.
 
 ## Try it
 

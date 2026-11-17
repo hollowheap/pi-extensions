@@ -10,7 +10,12 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import { loadModesConfig, loadPermissions, loadToolTags } from "./config.js";
-import { modeNames, registerMode, replaceConfigModes } from "./modes.js";
+import {
+  getModeLayer,
+  modeNames,
+  registerMode,
+  replaceConfigModes,
+} from "./modes.js";
 
 for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
@@ -321,6 +326,32 @@ describe("loadToolTags", () => {
     expect(diagnostics).toHaveLength(3);
   });
 
+  it("rejects a tool category that no rule or builtin defines", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({
+        rules: [],
+        tools: { mcp__foo: "seal", mcp__bar: "shell" },
+      }),
+      1_000,
+    );
+
+    expect(
+      loadToolTags({
+        agentDir,
+        workspaceRoot: root,
+        trusted: false,
+        onDiagnostic: (message) => diagnostics.push(message),
+      }),
+    ).toEqual({ mcp__bar: "shell" });
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("mcp__foo");
+    expect(diagnostics[0]).toContain("permission category");
+  });
+
   it("merges the trusted project overlay", () => {
     const root = workspace();
     const agentDir = join(root, "agent");
@@ -411,6 +442,70 @@ describe("loadModesConfig", () => {
       { tag: "edit", pattern: "docs/**", effect: "ask" },
     ]);
     expect(diagnostics).toEqual([]);
+  });
+
+  it("parses a layer description and exposes it through registered layers", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    writeModes(
+      agentDir,
+      JSON.stringify({
+        modes: {
+          readonly: {
+            description: "READ ONLY: blocks all writes",
+            defaults: {
+              read: "allow",
+              search: "allow",
+              edit: "deny",
+              shell: "deny",
+            },
+          },
+        },
+      }),
+      1_000,
+    );
+
+    const layers = loadModesConfig(agentDir, (message) =>
+      diagnostics.push(message),
+    );
+    expect(layers[0].description).toBe("READ ONLY: blocks all writes");
+    replaceConfigModes(layers);
+    expect(getModeLayer("readonly")?.description).toBe(
+      "READ ONLY: blocks all writes",
+    );
+    replaceConfigModes([]);
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("ignores an invalid layer description with a diagnostic", () => {
+    const root = workspace();
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    writeModes(
+      agentDir,
+      JSON.stringify({
+        modes: {
+          readonly: {
+            description: 42,
+            defaults: {
+              read: "allow",
+              search: "allow",
+              edit: "deny",
+              shell: "deny",
+            },
+          },
+        },
+      }),
+      1_000,
+    );
+
+    const layers = loadModesConfig(agentDir, (message) =>
+      diagnostics.push(message),
+    );
+    expect(layers).toHaveLength(1);
+    expect(layers[0].description).toBeUndefined();
+    expect(diagnostics[0]).toContain("description");
   });
 
   it("drops a layer that misses a default tag", () => {
