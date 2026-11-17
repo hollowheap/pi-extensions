@@ -1,11 +1,14 @@
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { describe, expect, it, vi } from "vitest";
+import { alertQuestion } from "./alerts.js";
 import extension, {
   ANSWERS_TYPE,
   askQuestionFlow,
   askSingleQuestion,
   createQuestionTool,
 } from "./index.js";
+
+vi.mock("./alerts.js", () => ({ alertQuestion: vi.fn() }));
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -121,11 +124,11 @@ describe("pi-question extension", () => {
       ctx as never,
     );
 
-    expect(select).toHaveBeenCalledWith("Which option?", [
-      "Option A",
-      "Option B",
-      "Write-in answer",
-    ]);
+    expect(select).toHaveBeenCalledWith(
+      "Which option?",
+      ["Option A", "Option B", "Write-in answer"],
+      { signal: undefined, timeout: undefined },
+    );
     expect(result.details).toMatchObject({
       cancelled: false,
       answers: [{ mode: "single", value: "Option A" }],
@@ -146,7 +149,10 @@ describe("pi-question extension", () => {
       ctx as never,
     );
 
-    expect(input).toHaveBeenCalledWith("What is your name?");
+    expect(input).toHaveBeenCalledWith("What is your name?", undefined, {
+      signal: undefined,
+      timeout: undefined,
+    });
     expect(result.details).toMatchObject({
       cancelled: false,
       answers: [{ mode: "free", value: "My answer" }],
@@ -270,6 +276,111 @@ describe("pi-question extension", () => {
     );
 
     expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("returns an explicit no-UI result in print mode without alerting", async () => {
+    vi.mocked(alertQuestion).mockClear();
+    const tool = createQuestionTool();
+    const select = vi.fn().mockResolvedValue(undefined);
+    const ctx = context(select, vi.fn(), { mode: "print", hasUI: false });
+
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "Pick one", options: ["A", "B"] },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(firstText(result)).toMatch(/interactive/i);
+    expect(result.details).toMatchObject({ cancelled: true, reason: "no-ui" });
+    expect(select).not.toHaveBeenCalled();
+    expect(alertQuestion).not.toHaveBeenCalled();
+  });
+
+  it("forwards the abort signal and timeout to host dialogs", async () => {
+    const tool = createQuestionTool();
+    const controller = new AbortController();
+    const select = vi.fn().mockResolvedValue("Option A");
+    const ctx = context(select);
+
+    await tool.execute(
+      "call-1",
+      { prompt: "Pick one", options: ["Option A"] },
+      controller.signal,
+      undefined,
+      ctx as never,
+    );
+
+    expect(select).toHaveBeenCalledWith(
+      "Pick one",
+      ["Option A", "Write-in answer"],
+      { signal: controller.signal, timeout: undefined },
+    );
+  });
+
+  it("forwards timeoutMs as the host dialog timeout", async () => {
+    const select = vi.fn().mockResolvedValue("A");
+    const ctx = context(select);
+
+    await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+      ctx as never,
+      { signal: new AbortController().signal, timeoutMs: 1234 },
+    );
+
+    expect(select).toHaveBeenCalledWith("Pick", ["A", "Write-in answer"], {
+      signal: expect.any(AbortSignal),
+      timeout: 1234,
+    });
+  });
+
+  it("dismisses a custom dialog when the signal aborts", async () => {
+    const tool = createQuestionTool();
+    const controller = new AbortController();
+    let done = vi.fn();
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keys: unknown,
+          done: unknown,
+        ) => unknown,
+      ) =>
+        new Promise((resolve) => {
+          done = vi.fn((value: unknown) => resolve(value));
+          factory(
+            { requestRender: vi.fn() },
+            {
+              fg: () => (value: string) => value,
+              bold: (value: string) => value,
+            },
+            {},
+            done,
+          );
+        }),
+    );
+    const ctx = context(vi.fn(), vi.fn(), {
+      ui: { select: vi.fn(), input: vi.fn(), custom },
+    });
+
+    const pending = tool.execute(
+      "call-1",
+      { prompt: "Pick many", options: ["A", "B"], multi: true },
+      controller.signal,
+      undefined,
+      ctx as never,
+    );
+
+    await vi.waitFor(() => expect(custom).toHaveBeenCalled());
+    controller.abort();
+    expect(done).toHaveBeenCalledWith({
+      selected: [],
+      writeIn: undefined,
+      cancelled: true,
+    });
+    await pending;
   });
 
   it("restores count and last question/answer on session_start and session_tree", async () => {

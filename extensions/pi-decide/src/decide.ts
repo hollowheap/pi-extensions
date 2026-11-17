@@ -139,6 +139,7 @@ interface Inflight {
   promise: Promise<DecideToolResult>;
   controller: AbortController;
   waiters: number;
+  invalidated?: boolean;
 }
 
 export const DECIDE_STATS_TYPE = "hollowheap.decide";
@@ -284,7 +285,10 @@ export function createDecideTool(pi?: ExtensionAPI) {
         if (settled) return;
         settled = true;
         entry.waiters -= 1;
-        if (entry.waiters === 0) entry.controller.abort();
+        if (entry.waiters === 0) {
+          entry.invalidated = true;
+          entry.controller.abort();
+        }
         resolve(errorResult("aborted"));
       };
       const finish = (result: DecideToolResult) => {
@@ -393,7 +397,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       };
     }
     const existing = inflight.get(key);
-    if (existing !== undefined) {
+    if (existing !== undefined && existing.invalidated !== true) {
       recordDecide(ctx, params.kind, true);
       const result = await waitForResult(existing, signal);
       if (result.details.error !== undefined) {
@@ -505,6 +509,9 @@ export function createDecideTool(pi?: ExtensionAPI) {
           label.description.trim() === ""
         ) {
           return "choice labels and descriptions must be non-empty";
+        }
+        if (Object.hasOwn(criteria, label.label)) {
+          return "choice labels must be unique";
         }
         criteria[label.label] = label.description;
       }

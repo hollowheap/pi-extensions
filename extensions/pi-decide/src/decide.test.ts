@@ -499,6 +499,92 @@ describe("decide", () => {
     expect(classify).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects duplicate choice labels before calling the classifier", async () => {
+    agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({
+        type: "choice",
+        choice: "allow",
+        probabilities: { allow: 0.9, ask: 0.1 },
+        confidence: 0.9,
+      }),
+    );
+    const tool = createDecideTool();
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "choice",
+        input: "x",
+        question: "q",
+        labels: [
+          { label: "allow", description: "first description" },
+          { label: "allow", description: "second description" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(detailsOf(result).error).toMatch(/unique/i);
+    expect(classify).not.toHaveBeenCalled();
+  });
+
+  it("does not let a new call join an inflight entry whose last waiter aborted", async () => {
+    agentDir();
+    let calls = 0;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let release!: (value: unknown) => void;
+    const gate = new Promise<unknown>((resolve) => {
+      release = resolve;
+    });
+    const classify = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        markStarted();
+        await gate;
+      }
+      return classifierResult({ type: "bool", probability: 0.8 });
+    });
+    const tool = createDecideTool();
+    const context = ctx(classify);
+    const params = {
+      kind: "bool" as const,
+      input: "x",
+      question: "q",
+      trueDescription: "yes",
+      falseDescription: "no",
+    };
+    const controller = new AbortController();
+
+    const aborted = tool.execute(
+      "1",
+      params,
+      controller.signal,
+      undefined,
+      context as never,
+    );
+    await started;
+    controller.abort();
+    expect(textOf(await aborted)).toContain("aborted");
+
+    const fresh = tool.execute(
+      "2",
+      params,
+      undefined,
+      undefined,
+      context as never,
+    );
+    release(undefined);
+    expect(calls).toBe(2);
+    expect(detailsOf(await fresh).error).toBeUndefined();
+    expect(detailsOf(await fresh).value).toBe(true);
+  });
+
   it("uses a stable cache key across label order", async () => {
     agentDir();
     const classify = vi.fn(async () =>

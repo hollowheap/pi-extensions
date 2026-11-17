@@ -1,6 +1,7 @@
 import {
   type ExtensionAPI,
   type ExtensionContext,
+  type ExtensionUIDialogOptions,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -62,6 +63,26 @@ function isAbortOrTimeout(error: unknown, signal?: AbortSignal): boolean {
   return false;
 }
 
+function dialogOptions(lockOptions: {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}): ExtensionUIDialogOptions {
+  return { signal: lockOptions.signal, timeout: lockOptions.timeoutMs };
+}
+
+function watchAbort(
+  signal: AbortSignal | undefined,
+  onAbort: () => void,
+): () => void {
+  if (signal === undefined) return () => {};
+  if (signal.aborted) {
+    onAbort();
+    return () => {};
+  }
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
+
 async function askMulti(
   question: Question,
   ctx: ExtensionContext,
@@ -88,11 +109,17 @@ async function askMulti(
 
               const refresh = () => tui.requestRender();
 
+              let stopWatching: () => void = () => {};
               const finish = (result: MultiResult) => {
                 if (finished) return;
                 finished = true;
+                stopWatching();
                 done(result);
               };
+
+              stopWatching = watchAbort(lockOptions.signal, () =>
+                finish({ selected: [], writeIn: undefined, cancelled: true }),
+              );
 
               const submit = () => {
                 finish({
@@ -232,7 +259,7 @@ async function askMulti(
     let picked: string | undefined;
     try {
       picked = await withPromptLock(
-        () => ctx.ui.select(question.prompt, rows),
+        () => ctx.ui.select(question.prompt, rows, dialogOptions(lockOptions)),
         lockOptions,
       );
     } catch (error) {
@@ -286,12 +313,18 @@ async function askWriteIn(
             (tui, theme, _keybindings, done) => {
               let draft = "";
               let settled = false;
+              let stopWatching: () => void = () => {};
 
               const finish = (value: string | undefined): void => {
                 if (settled) return;
                 settled = true;
+                stopWatching();
                 done(value);
               };
+
+              stopWatching = watchAbort(lockOptions.signal, () =>
+                finish(undefined),
+              );
 
               const border = (val: string) =>
                 typeof theme?.fg === "function" ? theme.fg("border", val) : val;
@@ -443,8 +476,8 @@ async function askWriteIn(
     return await withPromptLock(
       () =>
         placeholder === undefined
-          ? ctx.ui.input(title)
-          : ctx.ui.input(title, placeholder),
+          ? ctx.ui.input(title, undefined, dialogOptions(lockOptions))
+          : ctx.ui.input(title, placeholder, dialogOptions(lockOptions)),
       lockOptions,
     );
   } catch (error) {
@@ -484,7 +517,11 @@ export async function askQuestion(
   try {
     picked = await withPromptLock(
       () =>
-        ctx.ui.select(question.prompt, [...question.options, WRITE_IN_LABEL]),
+        ctx.ui.select(
+          question.prompt,
+          [...question.options, WRITE_IN_LABEL],
+          dialogOptions(lockOptions),
+        ),
       lockOptions,
     );
   } catch (error) {
@@ -557,10 +594,11 @@ export async function askQuestions(
     try {
       choice = await withPromptLock(
         () =>
-          ctx.ui.select(`Question page ${page} complete`, [
-            NEXT_PAGE_LABEL,
-            BACK_LABEL,
-          ]),
+          ctx.ui.select(
+            `Question page ${page} complete`,
+            [NEXT_PAGE_LABEL, BACK_LABEL],
+            dialogOptions(lockOptions),
+          ),
         lockOptions,
       );
     } catch (error) {
@@ -744,6 +782,18 @@ export function createQuestionTool(pi?: ExtensionAPI) {
       ),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
+      if (!ctx.hasUI || ctx.mode === "print" || ctx.mode === "json") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Question requires an interactive session (TUI or RPC mode).",
+            },
+          ],
+          details: { cancelled: true, answers: [], reason: "no-ui" },
+        };
+      }
+
       const rawQuestions =
         params.questions ??
         (params.prompt

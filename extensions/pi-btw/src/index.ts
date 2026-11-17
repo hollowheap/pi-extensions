@@ -41,9 +41,15 @@ export function responseText(response: AssistantMessage): string {
     .trim();
 }
 
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || /abort|timeout/i.test(error.message);
+}
+
 async function answer(
   ctx: ExtensionCommandContext,
   question: string,
+  signal: AbortSignal,
 ): Promise<void> {
   const model = ctx.model;
   if (model === undefined) {
@@ -58,7 +64,7 @@ async function answer(
     { systemPrompt: SYSTEM_PROMPT, messages },
     {
       maxTokens: MAX_RESPONSE_TOKENS,
-      signal: ctx.signal,
+      signal,
       cacheRetention: "none",
       sessionId: randomUUID(),
     },
@@ -77,7 +83,7 @@ async function answer(
     return;
   }
 
-  const markdown = `**Question:** ${sanitizeTerminalText(question)}\n\n${text}`;
+  const markdown = `**Question:** ${sanitizeTerminalText(question)}\n\n${sanitizeTerminalText(text)}`;
   await showMarkdownPager(ctx, {
     title: `/btw ${sanitizeTerminalText(question)}`,
     markdown,
@@ -106,16 +112,29 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
 
+      const controller = new AbortController();
+      const onHostAbort = () => controller.abort();
+      ctx.signal?.addEventListener("abort", onHostAbort, { once: true });
+      const disposeTerminalInput = ctx.ui.onTerminalInput?.((data: string) => {
+        if (data === "\x1b" || data === "\x03") {
+          controller.abort();
+          return { consume: true };
+        }
+        return undefined;
+      });
+
       ctx.ui.setStatus?.("btw", "thinking");
       try {
-        await answer(ctx, question);
+        await answer(ctx, question, controller.signal);
       } catch (error) {
-        if (ctx.signal?.aborted) return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         ctx.ui.notify(
-          `pi-btw: ${error instanceof Error ? error.message : String(error)}`,
+          `pi-btw: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
           "error",
         );
       } finally {
+        disposeTerminalInput?.();
+        ctx.signal?.removeEventListener("abort", onHostAbort);
         ctx.ui.setStatus?.("btw", undefined);
       }
     },

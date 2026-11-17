@@ -48,6 +48,10 @@ function createCtx(overrides: Record<string, unknown> = {}) {
       notify: vi.fn(),
       setStatus: vi.fn(),
       input: vi.fn().mockResolvedValue("typed question"),
+      onTerminalInput: vi.fn(
+        (_handler: (data: string) => { consume?: boolean } | undefined) =>
+          vi.fn(),
+      ),
     },
     ...overrides,
   };
@@ -145,6 +149,75 @@ describe("pi-btw", () => {
       expect.stringContaining("exceeds"),
       "warning",
     );
+  });
+
+  it("passes a dedicated cancellable signal to complete()", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+
+    await pi.getCommand()?.handler("why?", ctx as never);
+
+    const options = ctx.modelRegistry.complete.mock.calls[0][2] as {
+      signal?: AbortSignal;
+    };
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.signal?.aborted).toBe(false);
+
+    const onInput = ctx.ui.onTerminalInput.mock.calls[0][0] as (
+      data: string,
+    ) => { consume?: boolean } | undefined;
+    expect(onInput("\x1b")).toEqual({ consume: true });
+    expect(options.signal?.aborted).toBe(true);
+  });
+
+  it("suppresses a thrown abort without an error toast", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    const error = new Error("The operation was aborted");
+    error.name = "AbortError";
+    ctx.modelRegistry.complete.mockRejectedValue(error);
+
+    await pi.getCommand()?.handler("why?", ctx as never);
+
+    expect(ctx.ui.notify).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes control bytes from model text in pager markdown", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    ctx.modelRegistry.complete.mockResolvedValue({
+      role: "assistant",
+      content: [{ type: "text", text: "ok \x1b]0;pwn\x07" }],
+      stopReason: "end",
+    });
+
+    await pi.getCommand()?.handler("why?", ctx as never);
+
+    const markdown = showMarkdownPager.mock.calls[0][1].markdown as string;
+    const hasControl = Array.from(markdown).some((char) => {
+      const code = char.charCodeAt(0);
+      return (
+        (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) ||
+        code === 0x7f
+      );
+    });
+    expect(hasControl).toBe(false);
+  });
+
+  it("sanitizes control bytes in error notifications", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    ctx.modelRegistry.complete.mockRejectedValue(new Error("bad \x1b[31m red"));
+
+    await pi.getCommand()?.handler("why?", ctx as never);
+
+    const message = ctx.ui.notify.mock.calls[0][0] as string;
+    expect(message).not.toContain("\x1b");
+    expect(message).toContain("bad");
   });
 
   it("builds context messages and extracts text", () => {
