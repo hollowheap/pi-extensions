@@ -1,3 +1,8 @@
+import {
+  type KeybindingsConfig,
+  KeybindingsManager,
+  TUI_KEYBINDINGS,
+} from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { DashboardSessionItem } from "./sessions.js";
 import { type DashboardViewResult, showDashboardOverlay } from "./view.js";
@@ -20,13 +25,14 @@ function makeSession(id: string, title: string): DashboardSessionItem {
   };
 }
 
-function overlayHarness() {
+function overlayHarness(userBindings: KeybindingsConfig = {}) {
   let component:
     | {
         render(width: number): string[];
         handleInput(data: string): void;
       }
     | undefined;
+  const done = vi.fn();
   const ctx = {
     mode: "tui",
     ui: {
@@ -41,14 +47,23 @@ function overlayHarness() {
             render(width: number): string[];
             handleInput(data: string): void;
           },
+          _options: unknown,
         ) =>
           new Promise<DashboardViewResult>((resolve) => {
-            component = factory({ requestRender: vi.fn() }, theme, {}, resolve);
+            component = factory(
+              { requestRender: vi.fn() },
+              theme,
+              new KeybindingsManager(TUI_KEYBINDINGS, userBindings),
+              (result) => {
+                done(result);
+                resolve(result);
+              },
+            );
           }),
       ),
     },
   };
-  return { ctx, component: () => component };
+  return { ctx, component: () => component, done };
 }
 
 describe("showDashboardOverlay", () => {
@@ -136,5 +151,100 @@ describe("showDashboardOverlay", () => {
       type: "command",
       command: "/todos",
     });
+  });
+
+  it("ignores multi-character numeric input instead of matching lexicographically", async () => {
+    const h = overlayHarness();
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession(`s${i}`, `task ${i + 1}`),
+    );
+    void showDashboardOverlay(h.ctx as never, {
+      initialSessions: sessions,
+      loadSessions: async () => sessions,
+      getStateInput: () => ({ cwd: "/repo" }),
+      snapshotOwner: {},
+    });
+    await vi.waitFor(() => expect(h.component()).toBeDefined());
+
+    h.component()?.handleInput("10");
+    await Promise.resolve();
+    expect(h.done).not.toHaveBeenCalled();
+  });
+
+  it("numbers only the rows reachable with single-digit shortcuts", async () => {
+    const h = overlayHarness();
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession(`s${i}`, `task ${i + 1}`),
+    );
+    const pending = showDashboardOverlay(h.ctx as never, {
+      initialSessions: sessions,
+      maxItems: 12,
+      loadSessions: async () => sessions,
+      getStateInput: () => ({ cwd: "/repo" }),
+      snapshotOwner: {},
+    });
+    await vi.waitFor(() => expect(h.component()).toBeDefined());
+
+    const rendered = h.component()?.render(90).join("\n") ?? "";
+    expect(rendered).toContain("1-9 resume");
+    expect(rendered).not.toContain("10.");
+    expect(rendered).not.toContain("task 10");
+
+    h.component()?.handleInput("9");
+    await expect(pending).resolves.toEqual({
+      type: "resume",
+      session: sessions[8],
+    });
+  });
+
+  it("keeps arrow navigation within the displayed rows", async () => {
+    const h = overlayHarness();
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession(`s${i}`, `task ${i + 1}`),
+    );
+    const pending = showDashboardOverlay(h.ctx as never, {
+      initialSessions: sessions,
+      maxItems: 12,
+      loadSessions: async () => sessions,
+      getStateInput: () => ({ cwd: "/repo" }),
+      snapshotOwner: {},
+    });
+    await vi.waitFor(() => expect(h.component()).toBeDefined());
+
+    for (let i = 0; i < 10; i += 1) {
+      h.component()?.handleInput("\x1b[B");
+    }
+    h.component()?.handleInput("\r");
+
+    await expect(pending).resolves.toEqual({
+      type: "resume",
+      session: sessions[1],
+    });
+  });
+
+  it("honors remapped select keybindings", async () => {
+    const h = overlayHarness({
+      "tui.select.up": "ctrl+e",
+      "tui.select.down": "ctrl+y",
+      "tui.select.confirm": "ctrl+g",
+      "tui.select.cancel": "ctrl+x",
+    });
+    const s1 = makeSession("s1", "first task");
+    const s2 = makeSession("s2", "second task");
+    const s3 = makeSession("s3", "third task");
+    const pending = showDashboardOverlay(h.ctx as never, {
+      initialSessions: [s1, s2, s3],
+      loadSessions: async () => [s1, s2, s3],
+      getStateInput: () => ({ cwd: "/repo" }),
+      snapshotOwner: {},
+    });
+    await vi.waitFor(() => expect(h.component()).toBeDefined());
+
+    h.component()?.handleInput("\x19");
+    h.component()?.handleInput("\x19");
+    h.component()?.handleInput("\x05");
+    h.component()?.handleInput("\x07");
+
+    await expect(pending).resolves.toEqual({ type: "resume", session: s2 });
   });
 });

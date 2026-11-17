@@ -225,13 +225,21 @@ describe("pi-hooks extension", () => {
     expect(result).toBeUndefined();
   });
 
-  it("fails closed on preTool hook with malformed condition and notifies warning", async () => {
+  it("drops a hook with a malformed condition and still runs sibling hooks", async () => {
     writeHooks({
       preTool: [
         {
           matcher: "bash",
           condition: 'matches(toolName, "[")',
           command: "true",
+        },
+        {
+          matcher: "bash",
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.stdout.write(JSON.stringify({decision:'block',reason:'sibling ran'}))",
+          ],
         },
       ],
     });
@@ -240,11 +248,10 @@ describe("pi-hooks extension", () => {
       toolCall("bash", { command: "ls" }),
       ctx,
     )) as { block: boolean; reason: string } | undefined;
-    expect(result).toBeDefined();
     expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("pre-tool hooks failed");
+    expect(result?.reason).toContain("sibling ran");
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("pre-tool hooks failed"),
+      expect.stringContaining("invalid syntax"),
       "warning",
     );
   });

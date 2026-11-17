@@ -222,6 +222,31 @@ describe("loadHooks", () => {
     expect(config.preTool[0]?.condition).toBe("tool == 'bash'");
   });
 
+  it("drops entries with invalid conditions and keeps valid siblings", () => {
+    const dir = agentDir(
+      JSON.stringify({
+        hooks: {
+          preTool: [
+            { command: "bad-syntax", condition: "nonsense" },
+            { command: "bad-regex", condition: "matches(tool, '[')" },
+            { command: "good", condition: "tool == 'bash'" },
+          ],
+        },
+      }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadHooks({
+      agentDir: dir,
+      workspaceRoot: dir,
+      trusted: true,
+      onDiagnostic: (message) => diagnostics.push(message),
+    });
+    expect(config.preTool.map((hook) => hook.command)).toEqual(["good"]);
+    expect(
+      diagnostics.filter((message) => message.includes("condition")),
+    ).toHaveLength(2);
+  });
+
   it("resolves relative command paths against declaring config directory while leaving bare commands intact", () => {
     const dir = agentDir(
       JSON.stringify({

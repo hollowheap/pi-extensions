@@ -180,6 +180,26 @@ function validMatcher(matcher: string): boolean {
   return star === -1 || star === matcher.length - 1;
 }
 
+function validCondition(value: string): boolean {
+  const raw = value.trim();
+  if (raw === "") return true;
+  const matches = raw.match(
+    /^matches\(\s*([a-zA-Z0-9_]+)\s*,\s*['"](.*)['"]\s*\)$/i,
+  );
+  if (matches) {
+    try {
+      new RegExp(matches[2]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return (
+    /^(?:tool|toolname)\s*(?:==|!=)\s*['"].+['"]$/i.test(raw) ||
+    /^path\s+contains\s+['"].+['"]$/i.test(raw)
+  );
+}
+
 function parseEntry(
   value: unknown,
   kind: HookKind,
@@ -235,6 +255,12 @@ function parseEntry(
   }
   const rawCondition = record.condition ?? record.if;
   const condition = typeof rawCondition === "string" ? rawCondition : undefined;
+  if (condition !== undefined && !validCondition(condition)) {
+    diagnostics.push(
+      `ignoring ${kind}[${index}]: "condition" has invalid syntax`,
+    );
+    return undefined;
+  }
   const format =
     record.format === "markdown" || record.format === "plain"
       ? record.format

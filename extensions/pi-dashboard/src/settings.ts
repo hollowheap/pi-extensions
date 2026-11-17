@@ -1,5 +1,10 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
+import {
+  SettingsList,
+  type SettingsListTheme,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import type {
   DashboardConfig,
@@ -141,6 +146,9 @@ export async function showDashboardSettings(
         },
         handleInput(data: string): void {
           list.handleInput(data);
+        },
+        handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+          return list.handleMouse({ ...event, x: event.x - 2, y: event.y - 1 });
         },
         invalidate(): void {
           list.invalidate();

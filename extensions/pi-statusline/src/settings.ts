@@ -1,5 +1,10 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
+import {
+  SettingsList,
+  type SettingsListTheme,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import type { StatuslineConfig } from "./config.js";
@@ -65,6 +70,12 @@ export async function showStatuslineSettings(
     ctx.ui.custom<void>(
       (tui, theme, _keybindings, done) => {
         let current = config;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          done();
+        };
         const list = new SettingsList(
           [
             {
@@ -93,7 +104,7 @@ export async function showStatuslineSettings(
             onChange(current);
             tui.requestRender();
           },
-          () => done(),
+          finish,
           { enableSearch: true },
         );
 
@@ -106,8 +117,18 @@ export async function showStatuslineSettings(
           handleInput(data: string): void {
             list.handleInput(data);
           },
+          handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+            return list.handleMouse({
+              ...event,
+              x: event.x - 2,
+              y: event.y - 1,
+            });
+          },
           invalidate(): void {
             list.invalidate();
+          },
+          dispose(): void {
+            finish();
           },
         };
       },

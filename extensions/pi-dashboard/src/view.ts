@@ -39,11 +39,12 @@ export async function showDashboardOverlay(
   }
 
   return await ctx.ui.custom<DashboardViewResult>(
-    (tui, theme: Theme, _keybindings, done) => {
+    (tui, theme: Theme, keybindings, done) => {
       const maxItems = Math.max(1, Math.min(20, options.maxItems ?? 8));
       const maxKey = Math.min(maxItems, 9);
       let scope: "cwd" | "all" = options.initialScope ?? "cwd";
       let sessions: DashboardSessionItem[] = options.initialSessions ?? [];
+      const visibleCount = () => Math.min(sessions.length, maxKey);
       let selectedIndex = 0;
       let loading = options.initialSessions === undefined;
       let closed = false;
@@ -73,9 +74,9 @@ export async function showDashboardOverlay(
             if (closed || scope !== targetScope) return;
             sessions = loaded;
             selectedIndex =
-              sessions.length === 0
+              visibleCount() === 0
                 ? 0
-                : Math.min(selectedIndex, sessions.length - 1);
+                : Math.min(selectedIndex, visibleCount() - 1);
             loading = false;
             tui.requestRender();
           })
@@ -112,7 +113,7 @@ export async function showDashboardOverlay(
           } else {
             lines.push(
               ...renderSessionsSection(sessions, theme, innerWidth, {
-                maxItems,
+                maxItems: maxKey,
                 selectedIndex,
                 showHint: true,
               }),
@@ -145,30 +146,26 @@ export async function showDashboardOverlay(
         },
 
         handleInput(data: string): void {
-          if (
-            matchesKey(data, Key.escape) ||
-            matchesKey(data, Key.ctrl("c")) ||
-            data === "q"
-          ) {
+          if (keybindings.matches(data, "tui.select.cancel") || data === "q") {
             finish({ type: "close" });
             return;
           }
-          if (matchesKey(data, Key.up) || data === "k") {
-            if (sessions.length > 0) {
+          if (keybindings.matches(data, "tui.select.up") || data === "k") {
+            if (visibleCount() > 0) {
               selectedIndex =
-                (selectedIndex - 1 + sessions.length) % sessions.length;
+                (selectedIndex - 1 + visibleCount()) % visibleCount();
               tui.requestRender();
             }
             return;
           }
-          if (matchesKey(data, Key.down) || data === "j") {
-            if (sessions.length > 0) {
-              selectedIndex = (selectedIndex + 1) % sessions.length;
+          if (keybindings.matches(data, "tui.select.down") || data === "j") {
+            if (visibleCount() > 0) {
+              selectedIndex = (selectedIndex + 1) % visibleCount();
               tui.requestRender();
             }
             return;
           }
-          if (matchesKey(data, Key.enter)) {
+          if (keybindings.matches(data, "tui.select.confirm")) {
             const picked = sessions[selectedIndex];
             if (picked) finish({ type: "resume", session: picked });
             return;
@@ -189,7 +186,7 @@ export async function showDashboardOverlay(
             finish({ type: "settings" });
             return;
           }
-          if (data >= "1" && data <= String(maxKey)) {
+          if (/^[1-9]$/.test(data) && Number(data) <= maxKey) {
             const idx = Number(data) - 1;
             const picked = sessions[idx];
             if (picked) finish({ type: "resume", session: picked });

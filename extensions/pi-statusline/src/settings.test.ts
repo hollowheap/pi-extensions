@@ -12,6 +12,8 @@ function settingsContext() {
     | {
         render(width: number): string[];
         handleInput(data: string): void;
+        handleMouse?(event: unknown): unknown;
+        dispose?(): void;
       }
     | undefined;
   const ctx = {
@@ -28,6 +30,8 @@ function settingsContext() {
           ) => {
             render(width: number): string[];
             handleInput(data: string): void;
+            handleMouse?(event: unknown): unknown;
+            dispose?(): void;
           },
         ) =>
           new Promise<void>((resolve) => {
@@ -61,5 +65,49 @@ describe("showStatuslineSettings", () => {
 
     env.component()?.handleInput("\x1b");
     await result;
+  });
+
+  it("forwards mouse events to the settings list with frame offset", async () => {
+    const env = settingsContext();
+    const onChange = vi.fn();
+    const result = showStatuslineSettings(
+      env.ctx as never,
+      defaultConfig(),
+      onChange,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    const event = (type: "press" | "click") => ({
+      type,
+      button: "left",
+      x: 6,
+      y: 3,
+      screenX: 6,
+      screenY: 3,
+      width: 80,
+      height: 20,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    });
+    env.component()?.handleMouse?.(event("press"));
+    env.component()?.handleMouse?.(event("click"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    env.component()?.handleInput("\x1b");
+    await result;
+  });
+
+  it("settles the prompt on host teardown", async () => {
+    const env = settingsContext();
+    const result = showStatuslineSettings(
+      env.ctx as never,
+      defaultConfig(),
+      vi.fn(),
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    env.component()?.dispose?.();
+    await expect(result).resolves.toBeUndefined();
   });
 });
