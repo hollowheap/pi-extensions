@@ -186,6 +186,37 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: separate isolation tool; config-only global switch; no tool surface.
   - Consequences: task/subagent start schemas gain `isolated?: boolean`; metadata tracks the workspace; cleanup runs on completed, failed, or cancelled; omitted/false uses the shared cwd.
 
+- [x] D186 [R93]: The classifier check is a layer inside the existing permission handlers, not a new hook, service, or registry. It runs after the rule verdict in every mode, blocks or routes to the existing approval transport, and an unavailable or timed-out classifier leaves the call awaiting normal approval with an audit note. This supersedes the v1-only boundary in D92.
+  - Context: the host's tool-call result can only block; there is no allow verdict for a later handler to emit, and all permission policy already lives in the same handlers.
+  - Alternatives: a separate `tool_call` extension hook; a process-wide classifier service; fail open on classifier errors.
+  - Consequences: `pi-guard`, the ACP extension, and headless policy gain one shared decision path; every tool call pays classifier latency unless cached; v1 advisory-only scope ends.
+  - Supersedes: D92
+
+- [x] D187 [R94]: Question dialogs occupy the prompt surface through one shared prompt-surface seam; the current editor component is hidden while a dialog is active, its full text and cursor are stashed and restored byte-for-byte, and no floating popup is drawn.
+  - Context: the host exposes only `ui.custom` overlays and editor-component replacement; an overlay leaves the original prompt visible underneath.
+  - Alternatives: an opaque overlay covering the prompt rows; a host capability that does not exist; rebuilding the prompt component tree per frame.
+  - Consequences: `pi-modal` and `pi-question` must compose one editor owner; the draft survives cancel and completion; prompt rendering becomes a shared responsibility.
+
+- [x] D188 [R95]: Agent selection is inline slash completion on the agent command prefix; there is no interactive popup. Default-agent settings live under both agent command aliases and persist in the existing agent configuration store.
+  - Context: the modal picker hides the prompt, and default agent selection was file-only.
+  - Alternatives: an `@` trigger; command-only switching; a separate settings command.
+  - Consequences: one completion provider serves both aliases; no agent instructions are injected into the prompt.
+
+- [x] D189 [R91]: Workspace resolution walks upward from the working directory and uses the nearest project-marker directory; if none is found before the repository root, the repository root is the workspace.
+  - Context: monorepos can contain nested project markers, while plain repositories may have none.
+  - Alternatives: git root always; nearest marker only; an explicit configured path.
+  - Consequences: a nested module gets its own memory store; unrelated directories in the same repository do not share memory by default.
+
+- [x] D190 [R100]: Question navigation preserves committed answers; left and right move between answered questions without wrapping; from an open answer the first Escape returns to the choice list and a second Escape cancels the flow; the last answer is followed by an inline review that supports edit, confirm, and cancel.
+  - Context: a single Escape from free text loses work, and users cannot revisit earlier answers before submission.
+  - Alternatives: Escape always cancels; arrows only after commit; wrap-around navigation; a separate validation window.
+  - Consequences: the dialog owns an answer map plus a cursor; cancel must restore prior answers; tests must cover two-stage Escape and review edits.
+
+- [x] D191 [R102]: The active mode renders in the prompt window's bottom-left status row, and a TUI setting hides that indicator when the mode extension is loaded.
+  - Context: vim-style mode feedback belongs in the prompt, and some users want an uncluttered input row.
+  - Alternatives: a statusline footer segment; a toggle under mode settings; hiding all mode surfaces.
+  - Consequences: the TUI configuration owns a visibility flag for a mode-owned indicator; the statusline and mode popup remain unchanged.
+
 ### Module Seams
 
 - [x] D01 [R08]: `@hollowheap/core` becomes the runtime owner of rule parsing, permission-rule loading/caching (`<agentDir>/permissions.json` plus a trusted project overlay), path matching, and shell command analysis
@@ -663,6 +694,16 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Consequences: the model receives partial answers and knows the remaining questions were cancelled; `message_end` sends a follow-up message with `cancelled: true` and formatted partial answers.
   - Resolves: Q25
 
+- [x] D192 [R99]: The thinking-shimmer animator owner lives in the TUI package, the dirty-state flush helper lives in core, and the agent-name resolver lives in the core agent frontmatter module. No other abstraction from the r5 review is extracted yet.
+  - Context: review found three duplicated concerns; each has a natural home in the shared package that already owns it.
+  - Alternatives: one core package for all three; keep each copy in its extension; extract the speculative candidates too.
+  - Consequences: two of the three gain a second caller immediately; the remaining single-caller helpers stay local until a real consumer appears.
+
+- [x] D193 [R97]: Descendant process-group tracking is a runtime primitive; the task shim records its inner child's process identity and both the task and subagent owners call the same teardown path.
+  - Context: a detached shim and its inner command form two process groups, and killing only the shim leaves the command alive.
+  - Alternatives: keep the inner-group logic local to tasks; a descendant registry in each extension.
+  - Consequences: one teardown contract for all nested children; metadata gains inner-process identity; cancellation reports completion only after every group is gone.
+
 ### Framework & Library Choices
 
 - [x] D61 [R19]: A new `extensions/pi-language-tools` extension owns code intelligence and registers one `lang` tool with `exposure: "codemode"`; `pi-tools` stays stateless and core gains no host or process code
@@ -689,6 +730,26 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Context: Dual-purpose hover serves both model reasoning and user inspection.
   - Alternatives: TUI-only hover, tool-only hover.
   - Consequences: Tool returns structured hover data to model; TUI popup shows same data when UI available; popup is dismissible.
+
+- [x] D194 [R91]: Workspace search becomes a codemode-only surface with a scope parameter; the existing session-scoped direct tools keep their names and behavior. The memory status and view commands show workspace counts and entries with session scope as the default filter, and no dashboard section is added.
+  - Context: a direct search tool already exists, but cross-session queries belong in orchestration code and must not clutter the direct schema.
+  - Alternatives: move the existing direct tool entirely; add a scope to both surfaces; add a dashboard memory section.
+  - Consequences: scripts gain a workspace query without a new direct tool; observability stays in the memory commands and statusline value.
+
+- [x] D195 [R96]: The statusline package drops its theme command, picker, and picker tests. Theme selection remains a host responsibility.
+  - Context: the statusline picker duplicated host theme persistence and needed a special name-based restore to avoid reverting on restart.
+  - Alternatives: keep the picker and fix persistence; move the fix into a shared helper.
+  - Consequences: one fewer duplicate theme surface; no statusline code writes theme settings.
+
+- [x] D196 [R101]: The default mode is configured through a settings subcommand on the mode command and persisted in the existing mode configuration. A persisted session mode takes precedence; the default applies only to new sessions.
+  - Context: mode defaults were implicit in code, and resuming a session must not silently change its policy.
+  - Alternatives: put the setting under agent or TUI settings; let the configured default override the session.
+  - Consequences: mode configuration gains one validated field; restore order stays session-first.
+
+- [x] D197 [R98]: Human-authored mode naming uses `manual`; the legacy `ask` and `autopilot` aliases are removed from code and docs with a diagnostic pointing to `manual`. The `ask` rule effect keeps its name.
+  - Context: code already uses `manual` while aliases and documentation still advertise the old names.
+  - Alternatives: rename rule effects; change only displayed labels; keep aliases indefinitely.
+  - Consequences: existing configs using legacy aliases need a one-time edit; rule syntax is unchanged.
 
 ### Data & Contracts
 
@@ -814,6 +875,16 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: back up the broken file and replace it; keep per-extension checks.
   - Consequences: settings changes fail visibly on broken files; untouched fields survive; no backup files accumulate.
   - Resolves: Q18
+
+- [x] D198 [R93]: The guard classifier receives only the tool name, its policy tag, and a bounded summary of the tool input; identical calls share one per-session cached verdict; a five-second deadline and a per-session call cap bound latency and spend; aborted calls are never cached.
+  - Context: classifying every call would otherwise fan out cost and leak private input to the classifier.
+  - Alternatives: full tool input plus cwd; no cache or cap; a configurable per-project budget.
+  - Consequences: accuracy depends on a tight summary; budgets and usage accounting need one shared counter; D93 remains the payload contract for the advisory decide tool.
+
+- [x] D199 [R91]: Workspace memory entries carry workspace origin, session origin, and redaction state; they are bounded, append-only, and never stored in a global store shared by unrelated workspaces. Branch-local session observations and their consumed marker stay separate.
+  - Context: cross-session recall must survive compaction without turning into a global memory dump.
+  - Alternatives: one global store for all workspaces; snapshots instead of append-only entries; no origin metadata.
+  - Consequences: queries filter by workspace and session; redaction is applied before persistence; cleanup is per workspace.
 
 ### Operations & Security
 
@@ -967,3 +1038,99 @@ Settled decisions. Canonical line: `Dxx [Rxx]: decision`, followed by context, a
   - Alternatives: a copied helper module for the shims; running the shims under jiti; a built runtime artifact.
   - Consequences: grandchildren and TERM-ignoring children are reaped; group membership replaces leader liveness as the cancel check; detached tasks still survive a normal parent exit.
   - Resolves: Q20
+
+- [x] D200 [R93]: Classifier unavailability, timeout, malformed answers, and abort all fail closed by leaving the call subject to normal approval, with an audit note and no new dialog. The classifier is invoked directly through the model registry rather than through a nested tool call, and classifier traffic is excluded from recursive evaluation.
+  - Context: a guard that cannot decide must not become an allow, and a nested tool call would re-enter every hook.
+  - Alternatives: fail open with an audit note; a dedicated classifier approval dialog; call the advisory tool from the hook.
+  - Consequences: auto mode can degrade to prompting; audit records distinguish classifier blocks from classifier failures.
+
+- [x] D201 [R97]: Cancellation and reconciliation terminate the shim group and the inner command group with a shared escalation path, and a `cancelled` state is written only after both groups are gone.
+  - Context: the task shim's SIGKILL escalation bypassed the shim's signal forwarding and orphaned the inner command.
+  - Alternatives: keep inner-group tracking local to the task runner; report cancelled optimistically.
+  - Consequences: task and subagent metadata share an inner-process identity field; cancel waits longer but reports truthfully.
+
+- [x] D202 [R103]: TUI settings are registration-based. Each loaded extension contributes its own setting definitions through one shared surface; the TUI owns no static catalog of extension-owned settings.
+  - Context: a static list shows settings for extensions that are not loaded, which is dead configuration and clutter.
+  - Alternatives: probe host commands at render time; keep a static list with availability flags.
+  - Consequences: settings disappear with their owner; the mode indicator visibility flag appears only when the mode extension is loaded.
+
+- [x] D203 [R104]: The dashboard deduplicates recent sessions by id, orders by recency, and refreshes on session change events with a bounded subscription tied to dashboard lifetime.
+  - Context: the header sessions section was one-shot and could show stale or repeated entries.
+  - Alternatives: fix sort order only; replace the section with a full browser.
+  - Consequences: the section stays current without manual reload; refresh stops when the dashboard closes.
+
+- [x] D204 [R105]: Dashboard quick actions are limited to model, thinking, and sessions. Todo, agent, grant, and settings actions are removed from the overlay.
+  - Context: those actions duplicate surfaces owned by other extensions and clutter navigation.
+  - Alternatives: keep all current actions; move the extras into a submenu.
+  - Consequences: session selection is the fast way to leave the dashboard; other surfaces remain in their own commands.
+
+- [x] D205 [R106]: Context, skills, and extensions are separate dashboard sections, each with a count and an empty state, rather than one mixed builtin list.
+  - Context: unrelated builtins in a single list obscured the state of each.
+  - Alternatives: recolor items in one list; collapse all three into counts only.
+  - Consequences: three independent renderers; each section honors configured visibility and order.
+
+- [x] D206 [R107]: Dashboard section configuration is one ordered list of entries. Array position defines display order; an omitted entry or `enabled: false` hides the section; each entry may carry section-specific options such as limits. A missing list falls back to the default order.
+  - Context: an established dashboard configuration model already uses ordered section lists with conditional enablement, and the user wants both inclusion and order configurable.
+  - Alternatives: a name-to-config map with numeric order fields; static flags with a separate order list.
+  - Consequences: user lists replace defaults rather than merge; adding a section requires adding one entry; ordering and visibility share one structure.
+
+- [x] D207 [R108]: Overlays declare whether they need text input. Navigation-only overlays request normal mode from the modal editor and map h/j/k/l through one shared seam; text overlays reuse the prompt draft stash and start in insert mode.
+  - Context: vim mode did not follow into overlays, and text dialogs lost the typed draft.
+  - Alternatives: each dialog maps keys itself; all overlays forced to normal mode.
+  - Consequences: pi-modal owns mode switching for consumers; the prompt draft is stashed by one owner.
+
+- [x] D208 [R109]: The modal keymap gains the missing common motions and operators, and `/vimkeys` renders them from the same map.
+  - Context: the existing bind set omitted everyday vim motions and undo/redo.
+  - Alternatives: motions only; no new binds.
+  - Consequences: keybind reference and behavior cannot drift; no full vim emulation.
+
+- [x] D209 [R110]: Question dialogs start in insert mode; Escape from a free-text answer returns to the multiple-choice list; left/right navigate answered questions; a final inline review confirms answers.
+  - Context: text answers are the default and accidental Escape discarded work.
+  - Alternatives: navigation-first dialogs; no review step.
+  - Consequences: the dialog owns an answer map and a cursor; the review is part of the same prompt surface.
+
+- [x] D210 [R111]: Subagent start is non-blocking. Every child started in a turn is cancelled when that turn ends; explicit wait blocks only inside the turn.
+  - Context: the parent turn could stall on spawn and children survived after the turn.
+  - Alternatives: durable children with explicit cancel only; cancel on child completion.
+  - Consequences: turn ownership tracks child ids; durable exit behavior still applies outside a turn.
+
+- [x] D211 [R112]: Background tasks go through the same permission evaluation as other tool calls, and the task tool is exposed to the parent agent.
+  - Context: the parent never called the task tool and durable shell work could bypass approval.
+  - Alternatives: keep tasks tool-free; guard only at the shell layer.
+  - Consequences: task start can block on approval; headless ask becomes a block.
+
+- [x] D212 [R113]: Subagent rows use `@role-index` labels and a reserved right-aligned elapsed-time column.
+  - Context: rows lacked stable identities and the time was truncated in narrow panels.
+  - Alternatives: wall-clock start time; both times.
+  - Consequences: the renderer reserves width before truncating other text; labels survive resume.
+
+- [x] D213 [R114]: Todos, tasks, and subagents each own one widget row; the shared split panel is removed.
+  - Context: three owners shared one composite panel, so visibility and hints were inconsistent.
+  - Alternatives: keep the composite panel; group only hints.
+  - Consequences: three independent widget registrations; removing one extension leaves the others intact.
+
+- [x] D214 [R115]: Temporary grants are listed by `/grant list`; `/grants` is retired.
+  - Context: two commands exposed one grant surface.
+  - Alternatives: keep both aliases.
+  - Consequences: documentation and completions change; grant storage is unchanged.
+
+- [x] D215 [R116]: The sticky panel command becomes `/widget`, and each widget renders its own hide hotkey in its border; clicking the widget toggles visibility.
+  - Context: `/panel` was broken and no longer matched per-widget ownership.
+  - Alternatives: keep /panel as an alias; picker popup for widgets.
+  - Consequences: one widget registry owns visibility; stale /panel callers get a diagnostic.
+
+- [x] D216 [R117]: Collapse/expand is one tui-owned controller used by panels, widgets, tool calls, and thinking. Click affordances use `+` to expand to high and `-` to collapse to low or medium. Ctrl+o and ctrl+t are routed through our controller; ctrl+shift+o is retired. Thinking and tool verbosity are separate settings with levels low, medium, and high, and our setting always overrides the host.
+  - Context: several owners rendered no hints and host toggles could disagree with our configuration.
+  - Alternatives: keep host toggles; per-extension controllers; hotkey hints on collapsible surfaces.
+  - Consequences: verbosity controls one controller; the host retains no independent tool-output toggle in our surfaces; click is the only expand affordance.
+  - Supersedes: none
+
+- [x] D217 [R118]: The standalone vim keybind command is retired; the modal bind reference is contributed to the host's builtin keybind section from the same map.
+  - Context: the host already exposes a keybind section and our standalone command duplicated it.
+  - Alternatives: keep both surfaces; keep only the standalone command.
+  - Consequences: one source of bind data; callers use the host surface; no new registry in core.
+
+- [x] D218 [R119]: The pager Markdown theme uses the host `highlightCode` callback, which validates languages and supports the registered grammar set; unsupported languages render plain. Blockquote side borders and list bullets come from the host renderer.
+  - Context: the pager theme supplied code and bullet colors but no highlighter, so fenced code lost token coloring.
+  - Alternatives: bundle a new highlighter; leave code plain.
+  - Consequences: supported languages gain coloring without a new dependency; unsupported fences are unchanged.

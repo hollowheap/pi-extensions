@@ -2,6 +2,13 @@
 
 ### Core runtime, policy, and consumers
 
+- [ ] R98: Mode naming uses `manual` for the human-authored mode and no longer accepts the legacy `ask` or `autopilot` aliases.
+  - Verify: `npx vitest run extensions/pi-modes/src extensions/pi-guard/src`
+  - Acceptance: documentation and user-facing mode lists use `manual`; legacy aliases are rejected with a diagnostic that names `manual`; the rule effect named `ask` is unchanged.
+  - Constraints: rule syntax and verdict effects stay stable.
+  - Non-goals: renaming the `ask` rule effect.
+  - Rationale: the mode was already renamed in code while aliases and docs still advertise the old name.
+
 - [x] R08: Shared policy, config, state, and subprocess primitives live in `@hollowheap/core` and every consumer uses them.
   - Verify: Core tests and consumer integration tests pass; no vendored policy copies remain.
   - Acceptance: One implementation serves TUI and ACP; shared state survives module duplication; core stays host-free.
@@ -80,6 +87,20 @@
   - Acceptance: Core owns runtime foundations; guard, tools, usage, autopilot, statusline, dashboard, and question are separate packages.
   - Rationale: The split replaced the monolithic mode-guard package without changing behavior.
 
+- [ ] R100: Question navigation keeps prior answers, a first Escape returns from a free-text answer to the choice list, and the flow ends with an inline review.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Acceptance: left and right move to the previous or next question without wrapping and preserve every committed answer; from an open answer the first Escape returns to the multiple-choice dialog and a second Escape cancels the flow; after the last question an inline review lists all answers and supports jumping back to edit, confirming, and cancelling without data loss.
+  - Constraints: only one dialog is open at a time (R29).
+  - Non-goals: mouse navigation or a separate validation window.
+  - Rationale: accidental Escape loses work, and users need to revisit earlier answers before submitting.
+
+- [ ] R94: A question dialog uses the prompt area itself and never leaves a second prompt visible underneath.
+  - Verify: `npx vitest run extensions/pi-question/src extensions/pi-modal/src`
+  - Acceptance: a dialog appears inside the prompt rows; multi-line typed text, cursor position, and draft are restored byte-for-byte when the dialog closes or cancels; focus returns to the prompt; no separate popup is drawn; only one dialog is open at a time.
+  - Constraints: prompt ownership is shared with the modal editor extension.
+  - Non-goals: upstream host changes or a new terminal rendering engine.
+  - Rationale: a floating dialog over a populated prompt hides the text the user was writing.
+
 ### Web tools
 
 - [x] R01: A standalone web-tools extension exposes `web_search` and `web_fetch` as direct tools and is included in the git suite.
@@ -149,12 +170,26 @@
   - Acceptance: No automatic cwd, session history, tool output, or file contents are included.
   - Rationale: Classifier inputs may contain private text, so the caller must control the payload.
 
+- [ ] R93: Every tool call passes a bounded classifier check layered on existing policy, and an unavailable classifier never silently allows a call.
+  - Verify: `npx vitest run extensions/pi-decide/src extensions/pi-guard/src packages/acp`
+  - Acceptance: all tool calls in all modes receive a classifier verdict after existing rule verdicts; a classifier block stops the call with a reason; a needs-approval verdict uses the existing approval transport for the current harness; timeout, error, or missing configuration means the call still needs approval and records an audit note; the payload contains only tool name, tag, and a bounded input summary; identical calls share one per-session result; a per-session call cap is enforced; classifier work is counted in usage totals.
+  - Constraints: no new dialog surface; the classifier is called directly rather than through a nested tool call; existing hard-deny rules and destructive-shell gates are never weakened.
+  - Non-goals: new classifier providers, a guard service, or automatic redaction of tool input.
+  - Rationale: auto mode currently trusts a broad allow set; a classifier gives it a second opinion without giving up fail-closed behavior.
+
 - [x] R29: Interactive prompts across extensions are serialized so only one dialog or confirmation is open at a time.
   - Verify: Tests cover two concurrent prompt requests, FIFO order, release on resolve and rejection, and adoption by every current prompt site.
   - Acceptance: One process-wide queue; a second prompt waits; a failed or cancelled prompt releases the next; no new runtime dependency.
   - Rationale: Concurrent dialogs can overlap and steal input; one fair queue keeps prompts predictable.
 
 ### Subagents and durable process
+
+- [ ] R97: Cancelling a child tears down every nested process group it created, and a cancelled state is reported only after those descendants are gone.
+  - Verify: `npm test`
+  - Acceptance: a task or subagent that spawns a nested child has that child's group recorded with its metadata; cancel and reconciliation terminate both groups with escalation; a user cancel reports `cancelled` only when no descendant remains; the same teardown primitive serves both owners.
+  - Constraints: detached survivors of a normal parent exit keep their existing behavior.
+  - Non-goals: killing processes a child intentionally reparents outside its groups.
+  - Rationale: the shim and its inner command form two process groups; killing only the shim leaves the command alive.
 
 - [x] R30: A direct `subagent` tool can start one child agent and later reattach, steer, wait, cancel, or resume it.
   - Verify: Tests cover start/status/send/wait/cancel/resume across parent restart and socket reconnect.
@@ -209,6 +244,35 @@
   - Rationale: Dollar tracking matches real cost and survives context compaction.
 
 ### Modal editor, subagent model swap, web codemode, agent switcher, progress, and budget statusline
+
+- [ ] R95: Agent selection happens inline from a slash-command prefix, and a default agent can be configured through an agent settings subcommand available under both agent command names.
+  - Verify: `npx vitest run extensions/pi-agent/src`
+  - Acceptance: typing an agent command prefix lists matching agents with descriptions inline and inserts the chosen name without opening a popup; a default agent chosen in settings survives restart; both agent command aliases expose the same settings; no agent instructions are injected into the system prompt.
+  - Constraints: the default persists in the existing agent configuration store.
+  - Non-goals: a new config file format or an @ mention trigger.
+  - Rationale: the popup hides the prompt and the default agent was previously file-only.
+
+- [ ] R96: The statusline package no longer offers theme selection; color themes remain selectable through the host's own controls.
+  - Verify: `npx vitest run extensions/pi-statusline/src`
+  - Acceptance: statusline exposes no theme command or picker; all other statusline settings and segments keep working; theme changes are not persisted by statusline code.
+  - Constraints: removal must not change host theme handling.
+  - Non-goals: replacing the host theme picker.
+  - Rationale: theme selection belongs to the host, and the statusline picker duplicated persistence behavior.
+
+- [ ] R101: A default mode can be configured through a settings subcommand on the mode command and persisted in the existing mode configuration.
+  - Verify: `npx vitest run extensions/pi-modes/src`
+  - Acceptance: a default mode chosen in settings applies to new sessions; a resumed session keeps its recorded mode; the setting is rejected when it names an unknown mode and reports the reason; all mode command aliases expose the same settings.
+  - Constraints: the existing session mode always takes precedence over the configured default.
+  - Non-goals: changing persisted session modes or a new config format.
+  - Rationale: mode defaults were previously implicit in code rather than user-configurable.
+
+- [ ] R102: The active mode is visible in the prompt window's bottom-left status row, and a TUI setting can hide that indicator while the mode extension is loaded.
+  - Verify: `npx vitest run extensions/pi-modal/src extensions/pi-modes/src`
+  - Acceptance: the current mode appears bottom-left in the prompt row alongside the insert indicator when the mode extension is active; a TUI setting hides only that prompt indicator; other statusline segments and mode switching remain unchanged; toggling the setting takes effect without an extension reload.
+  - Constraints: the setting is owned by the TUI configuration surface even though it controls a mode-owned indicator.
+  - Non-goals: removing the statusline mode segment or the mode popup.
+  - Rationale: users expect vim-style mode feedback in the prompt, with an opt-out for a clean input row.
+
 
 - [x] R40: A configurable modal editor extension (`pi-modal`) provides Vim navigation with global user keybindings.
   - Verify: Editor handles normal, insert, and visual modes; keys map to Vim defaults and can be overridden via `~/.pi/agent/modal.json`.
@@ -456,11 +520,12 @@
   - Acceptance: each observation records the last source entry id it covers; `/memory status` reports coverage (covered/total pending); deterministic compaction is allowed only when coverage is complete before the cutoff.
   - Constraints: watermark is branch-local and survives tree navigation; partial coverage blocks deterministic mode.
   - Non-goals: deterministic compaction itself (R91).
-- [ ] R91: An explicit `/memory handoff` command renders a bounded memory block and creates a branch only on user confirmation.
+- [ ] R91: Memory written in one session is available to later sessions in the same workspace, and a bounded query returns what earlier compactions discarded.
   - Verify: `npx vitest run extensions/pi-memory/src`
-  - Acceptance: command shows memory block, asks once, creates branch only on confirm; never auto-forks; no branch on cancel.
-  - Constraints: no automatic fork; uses existing memory block rendering.
-  - Non-goals: automatic handoff or compaction seed.
+  - Acceptance: an observation saved in one session is found by a later session in the same workspace; workspace resolution uses the nearest project marker directory and otherwise the repository root; results carry session and workspace origin, respect redaction, and are bounded; the existing memory status and view surfaces show workspace counts and entries with session scope as the default filter; a codemode-only query surface exposes the workspace scope.
+  - Constraints: branch-local session memory and its consumed marker stay intact; cross-session entries are never written to a global store shared by unrelated workspaces.
+  - Non-goals: a handoff command, automatic branching, a dashboard section, or memory shared across all workspaces.
+  - Rationale: compaction loses details after several sessions; durable workspace memory lets the agent requery what mattered ten sessions ago.
 - [ ] R92: Observer and compaction spend is measured and surfaced in `/memory status` and the usage ledger.
   - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
   - Acceptance: observer cost appears in `/memory status` (already partial); compaction cost counted; totals agree with usage ledger.
@@ -472,6 +537,13 @@
   - Non-goals: Reflector, dropper, `recall`, ongoing context injection outside compaction, or global memory across sessions.
 
 ### Review remediation
+
+- [ ] R99: Shared animation, state-flush, and agent-name-resolution primitives expose consistent behavior across the surfaces that use them.
+  - Verify: `npm test`
+  - Acceptance: the thinking shimmer and panel spinner use one animation owner; state counters persist through the same lifecycle hook in every slice that records them; agent names resolve through one diagnostic-bearing resolver for parent and child rosters.
+  - Constraints: each primitive lives in the shared package that already owns its concern.
+  - Non-goals: a universal state store or a single abstraction for unrelated tool renderers.
+  - Rationale: review found three independent copies of each concern, and the fixes would otherwise drift again.
 
 - [x] R82: Irreversible shell commands always ask for approval in every mode unless a user rule explicitly allows that command.
   - Verify: `npm test`
@@ -530,3 +602,126 @@
   - Constraints: Recorded only (`2026-11-16`) per user direction; preserve existing `pi` RPC and headless `command`/`args`/`input` harness configs and trust/sandbox boundaries.
   - Non-goals: Implementing ACP client transport in `pi-subagents` right now.
   - Rationale: `extensions/pi-subagents/src/tool.ts` only reads `harness` from `define`/agent config (`tool.ts:101-130, 257-259`), and `extensions/pi-subagents/src/config.ts` only configures headless subprocess `harnesses` (`stdin`/`arg`).
+
+### Dashboard and TUI settings ownership
+
+- [ ] R103: TUI settings are contributed only by extensions that are loaded, and a disabled or absent extension contributes no settings entries.
+  - Verify: `npx vitest run extensions/pi-modal/src extensions/pi-modes/src`
+  - Acceptance: a setting appears only while its owning extension is loaded; unloading or disabling the owner removes the entry without a reload of unrelated settings; the mode indicator visibility setting appears only with the mode extension present.
+  - Constraints: contribution happens at load time through one shared registration surface.
+  - Non-goals: a global static settings list with availability flags.
+  - Rationale: settings for absent extensions are dead configuration and clutter.
+
+- [ ] R104: The dashboard's recent-session list shows each session once, ordered by recency, and reflects session changes without a manual reload.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Acceptance: duplicate session ids are collapsed; newest sessions appear first; creating or switching a session updates the list; the configured scope still filters the result.
+  - Constraints: refresh is bounded and stops when the dashboard closes.
+  - Non-goals: a paginated session browser.
+  - Rationale: stale or duplicated sessions make the dashboard misleading.
+
+- [ ] R105: Dashboard quick actions offer model, thinking, and session switching only; todo, agent, grant, and settings actions are removed.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Acceptance: the quick-action overlay lists exactly model, thinking, and sessions; selecting sessions leaves the dashboard; no todo, agent, grant, or settings actions appear.
+  - Constraints: section visibility still follows configuration.
+  - Non-goals: a new settings or agent surface inside the dashboard.
+  - Rationale: those actions belong to their owning extensions; the dashboard should navigate, not duplicate controls.
+
+- [ ] R106: Context, skills, and extensions render as distinct dashboard sections, each with its own count and empty state.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Acceptance: the three kinds appear as separate sections rather than one mixed list; each shows a count and a meaningful empty state; section order and visibility follow dashboard configuration.
+  - Constraints: each section renders nothing when absent from the configured list or disabled.
+  - Non-goals: a detailed browser for any of the three.
+  - Rationale: mixing unrelated builtins in one list makes the dashboard unreadable.
+
+- [ ] R107: Dashboard settings control every section through one ordered list, where position defines display order and an absent or disabled entry hides the section.
+  - Verify: `npx vitest run extensions/pi-dashboard/src`
+  - Acceptance: moving an entry changes display order; removing an entry hides it; `enabled: false` hides a section while keeping its entry and options; entries carry section-specific options such as limits; an empty or missing list falls back to the default order.
+  - Constraints: the setting replaces the default list rather than merging into it.
+  - Non-goals: a separate numeric order field or a name-to-config map.
+  - Rationale: an ordered list matches the established dashboard configuration model and keeps order and visibility in one place.
+
+### Input modes, verbosity, widgets, and task/subagent surfaces
+
+- [ ] R108: Navigation-only overlays enter normal mode when the modal editor is active, and every overlay that accepts text reuses the prompt draft stash.
+  - Verify: `npx vitest run extensions/pi-modal/src extensions/pi-question/src extensions/pi-agent/src`
+  - Acceptance: selection overlays consume h/j/k/l for navigation and restore the prior editor mode on close; text overlays start in insert mode and preserve the exact draft; the prompt window itself starts in insert mode.
+  - Constraints: one shared prompt-surface and mode-request seam between pi-modal and consumers.
+  - Non-goals: mouse-driven navigation.
+  - Rationale: vim users expect modal behavior to follow into overlays, and text overlays must not lose typed input.
+
+- [ ] R109: The modal editor covers the basic vim motions and change operators, and the keybind reference lists them.
+  - Verify: `npx vitest run extensions/pi-modal/src/keymap.test.ts extensions/pi-modal/src/vimkeys.test.ts`
+  - Acceptance: w/b/e, 0/$, gg/G, dd, yy, p, u, and Ctrl-r are bound in normal mode and appear in `/vimkeys`.
+  - Constraints: existing binds keep their behavior.
+  - Non-goals: a full vim emulator.
+  - Rationale: the current bind set omits common navigation and undo/redo operations.
+
+- [ ] R110: The question flow defaults to insert mode, supports left/right navigation between answered questions, and shows an inline review with a final confirm.
+  - Verify: `npx vitest run extensions/pi-question/src`
+  - Acceptance: opening a question puts the prompt in insert mode; Escape from a free-text answer returns to the choice list; left/right move between answered questions without wrapping; the final review lists all answers with edit, confirm, and cancel.
+  - Constraints: one dialog at a time (R29).
+  - Non-goals: mouse navigation.
+  - Rationale: text answers are the common case and need immediate input.
+
+- [ ] R111: A subagent spawned by the main agent does not block its turn, and all children of a turn are cancelled when that turn ends.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Acceptance: `subagent start` returns while the child runs; an explicit wait still blocks within the turn; when the spawning turn finishes, every child started in it is cancelled and reports `cancelled`.
+  - Constraints: children remain durable across a normal parent exit unless the turn-end rule applies.
+  - Non-goals: automatic resume after cancellation.
+  - Rationale: current behavior can block the parent and leave children running after the turn.
+
+- [ ] R112: Background tasks are guarded by the same permission policy as other tool calls.
+  - Verify: `npx vitest run extensions/pi-tasks/src extensions/pi-guard/src`
+  - Acceptance: starting a task resolves a permission verdict for its command before spawn; deny blocks, ask uses the existing approval transport, and headless blocks on ask; the task tool becomes callable from the parent agent.
+  - Constraints: existing task state and runtime primitives stay unchanged.
+  - Non-goals: per-command classifier evaluation for tasks beyond R93.
+  - Rationale: the main agent never called the task tool and durable shell work bypassed approval.
+
+- [ ] R113: Subagent rows show a stable `@role-index` label and a right-aligned elapsed time with reserved width that is never truncated.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Acceptance: rows use `@engineer-1` style labels with a per-role index; elapsed time occupies a fixed right column in every row; narrow panels still show the full time.
+  - Constraints: the label stays stable across status, send, and resume.
+  - Non-goals: wall-clock start times.
+  - Rationale: rows were hard to identify and the time column was cut off in narrow panels.
+
+- [ ] R114: Todos, tasks, and subagents each render their own widget rows; the shared split panel is removed.
+  - Verify: `npx vitest run extensions/pi-todos/src extensions/pi-tasks/src extensions/pi-subagents/src`
+  - Acceptance: each extension owns one widget with its own border, visibility, and hotkey hint; no composite split panel remains; removing one extension leaves the others intact.
+  - Constraints: existing statusline and dashboard state reads keep working.
+  - Non-goals: a new composite widget.
+  - Rationale: one owner of three kinds of state made each hard to toggle and read.
+
+- [ ] R115: Temporary grants are listed through `/grant list`; the separate `/grants` command is retired.
+  - Verify: `npx vitest run extensions/pi-guard/src`
+  - Acceptance: `/grant list` shows active grants with expiry; `/grants` is no longer registered; other grant actions keep their behavior.
+  - Constraints: persisted grant semantics unchanged.
+  - Non-goals: a new grant store.
+  - Rationale: two commands for one surface is redundant.
+
+- [ ] R116: The sticky panel command is renamed to `/widget`, and each widget border shows the hotkey that hides it.
+  - Verify: `npx vitest run extensions/pi-todos/src extensions/pi-modal/src`
+  - Acceptance: `/widget toggle <name>` replaces `/panel`; each visible widget renders its hide hotkey in the border; the hotkey hides and restores the named widget; clicking a widget toggles its visibility.
+  - Constraints: the command handles absent widget names with a diagnostic.
+  - Non-goals: a widget picker popup.
+  - Rationale: `/panel` is broken and the name no longer matches per-widget ownership.
+
+- [ ] R117: Collapse and expand are one tui-owned controller with click affordances, and our verbosity setting overrides the host for thinking and tool output.
+  - Verify: `npx vitest run packages/tui/src extensions/pi-modal/src`
+  - Acceptance: one controller supplies expand/collapse state for panels, widgets, tool calls, and thinking; a `+` affordance means click to expand to high and `-` means click to collapse to low or medium; ctrl+o and ctrl+t route through our controller; ctrl+shift+o is retired; at low tool verbosity only the command one-liner shows.
+  - Constraints: our setting always wins; thinking and tool verbosity are separate settings.
+  - Non-goals: hotkey hints on collapsible surfaces.
+  - Rationale: multiple owners produced inconsistent hints and stale host toggles.
+
+- [ ] R118: The vim keybind reference is available in the host's builtin keybind section, and the standalone keybind command is retired.
+  - Verify: `npx vitest run extensions/pi-modal/src`
+  - Acceptance: the reference appears in the host keybind surface; no standalone keybind command is registered; the same bind data feeds that surface.
+  - Constraints: no new keybind registry is introduced.
+  - Non-goals: a separate keybind viewer.
+  - Rationale: the host already exposes a keybind section; a second command duplicates it.
+
+- [ ] R119: Fenced code blocks in our Markdown pager are syntax-highlighted when the language is supported and fall back to plain text otherwise; blockquotes keep a side border and lists keep styled bullets.
+  - Verify: `npx vitest run packages/tui/src/pager.test.ts`
+  - Acceptance: a TypeScript or Python fence renders colored tokens; an unsupported language renders plain text without an error; blockquote lines carry `│ ` and list items carry a bullet marker.
+  - Constraints: reuse the host highlighter and its language validation.
+  - Non-goals: adding new language grammars.
+  - Rationale: the pager theme omitted the host's highlighter while the host renderer already supports it.

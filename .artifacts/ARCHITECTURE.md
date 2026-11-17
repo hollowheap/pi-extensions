@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-11-15.
+Last verified: 2026-11-18.
 Scope: `my-pi-agent` workspace.
 
 ## System Shape
@@ -13,11 +13,15 @@ Scope: `my-pi-agent` workspace.
 - `packages/pi-acp` is a standalone ACP server plus a bundled extension. It runs one `pi --mode rpc -ne -e <ext> -nbt` child per session and routes execution through client capabilities.
 - Durable shell tasks and subagents survive parent exit as detached children. `pi-subagents` uses `packages/runtime` and `packages/policy` primitives; ACP keeps subagents inactive.
 - Trust boundaries are the project trust gate, agent-dir config, workspace path rules, provider network calls, and the ACP client.
+- Permission handlers in the TUI, ACP, and headless children are the single decision boundary. A bounded classifier layer runs inside them after rule evaluation in every mode; it can block or route to the existing approval transport, and an unavailable classifier never becomes an allow (D186, D198, D200).
+- `pi-question` and `pi-modal` compose one prompt surface: dialogs hide the editor, stash its draft, render in the prompt rows, and restore it on close (D187, D190). The active mode renders bottom-left in that prompt row, with a TUI-level visibility flag (D191).
+- Workspace memory is scoped to the nearest project-marker directory, or the repository root when no marker exists. It survives sessions and compaction separately from branch-local observations (D189, D199).
 
 ## Module Seams
 
 - `core` is the single policy/config/state owner; consumers keep UI, transport, and adapter behavior.
-- `pi-guard` owns verdict prompts, bash truncation, `/mode`, `/context`, and `alt+m`; it does not parse rules.
+- `pi-guard` owns verdict prompts, bash truncation, `/mode`, `/context`, and `alt+m`; it does not parse rules. The shared classifier decision layer is invoked from the permission handlers in the TUI, ACP, and headless policy; it calls the model registry directly and never re-enters tools.
+- `pi-modes` owns mode naming, `/mode` settings including the default mode, and the prompt-row mode indicator; persisted session modes outrank configured defaults. TUI configuration owns the indicator's visibility flag (D191, D196, D197).
 - `pi-modal` owns the modal editor, `$` skill autocomplete, `/expand` tool-output persistence (`hollowheap.modal.expand`), mode-themed prompt borders, working indicator, rounded code viewer, vim keybind reference, and `ModalSnapshot`.
 - `pi-tools` owns `/cd` (`hollowheap.core.cwd`) only. `pi-language-tools` owns the codemode-only `lang` LSP client, pooled servers, and `LspSnapshot`.
 - The default active tool set excludes host `powershell` and `ls`; `bash` covers listing and shell work.
@@ -25,10 +29,12 @@ Scope: `my-pi-agent` workspace.
 - `pi-question` and `pi-todos` expose codemode tools (`question`, `todo`), keep widget/UI flows, and persist branch custom entries (`hollowheap.question.answers`, `hollowheap.todos`) plus live snapshots.
 - `pi-tasks` owns durable shell tasks (`hollowheap.tasks.run`). `packages/runtime` owns `LockedProcessStore` and detached-spawn helpers; `pi-tasks` re-exports `TaskStore` for compatibility. `pi-subagents` owns child agents (`hollowheap.subagents.run`), harness selection, write locking, resume, and bounded, deletable session-only agent definitions.
 - Upstream async subagent runs are mapper-only: a pure mapping feeds the panel; there is no runtime bridge or upstream dependency (D167).
-- `pi-web` owns provider adapters, URL safety, and `hollowheap.web.history` / `WebSnapshot`; `pi-decide` owns the advisory `decide` tool and `DecideSnapshot`; `pi-agent` owns `defaultAgent` config startup/switching and the rounded agent picker/activation popups.
-- `pi-statusline` owns footer rendering with git-repo `cwd` truncation, click dispatch, and rounded theme/section pickers; `pi-dashboard` owns auto-hiding startup dashboard (`header`, `state`, `sessions`, `actions`, `terminal` sections) and interactive `/dashboard` session-resume/quick-action overlay.
+- `pi-web` owns provider adapters, URL safety, and `hollowheap.web.history` / `WebSnapshot`; `pi-decide` owns the advisory `decide` tool and `DecideSnapshot`; `pi-agent` owns default-agent config startup/switching, inline agent completion, and the parent-side roster resolver; it no longer opens an agent picker popup (D188).
+- `pi-statusline` owns footer rendering with git-repo `cwd` truncation and click dispatch. It no longer owns theme selection; host controls own themes (D195). `pi-dashboard` owns auto-hiding startup dashboard (`header`, `state`, `sessions`, `actions`, `terminal` sections) and interactive `/dashboard` session-resume/quick-action overlay.
+- `pi-agent` owns inline agent completion under both agent command aliases, default-agent settings in the existing agent config, and the parent-side agent-name resolver. `pi-subagents` reuses the same resolver for child rosters; agent selection no longer opens a popup (D188, D192).
 - `pi-usage` owns `/usage` presentation, subagent usage scanning, optional USD cap persistence, and the statusline usage provider; accounting, budget cap persistence, and compaction-safe state live in core.
-- `pi-memory` owns opt-in observer calls, branch-local observations, compaction focus, `/memory` commands, observer usage recording, and `MemorySnapshot`. It does not replace Pi compaction.
+- `pi-memory` owns opt-in observer calls, branch-local observations, workspace-scoped cross-session memory, compaction focus, `/memory` commands with workspace scope, observer usage recording, and `MemorySnapshot`. Workspace recall is a codemode-only query with a scope parameter; the direct session tools keep their names. There is no handoff command, dashboard surface, or global memory store (D194, D199). It does not replace Pi compaction.
+- `pi-tasks` and `pi-subagents` share the runtime descendant-group teardown primitive; the task shim records its inner child's process identity so cancel kills both groups (D193, D201).
 - `pi-acp` adapter owns JSON-RPC framing, session transport, and client capability requests; the bundled extension owns ACP tools and the socket bridge.
 - Dependency direction flows from extensions into shared packages. Host modules remain peer-only.
 - Review V19–V38 remediation extracted shared primitives cleanly (D176–D184: `updateJsonConfig`, `sanitizeTerminalText`, group kill, and signal/timeout `withPromptLock`). Round 3 reviews `V39–V61` are recorded in `.artifacts/REVIEWS.md`.
@@ -48,6 +54,8 @@ Scope: `my-pi-agent` workspace.
 - Codemode uses the host QuickJS surface; web and language tools use it without adding a framework.
 - Sandboxing uses system `bwrap`; missing sandbox support fails closed.
 - No runtime ACP SDK dependency and no central daemon.
+- TUI settings are contributed by loaded extensions through one registration surface; the TUI owns no static catalog of extension-owned settings (D202).
+- Dashboard section configuration is an ordered list of entries; position sets display order, absence or `enabled: false` hides a section, and entries carry section-specific options (D206).
 
 ## Data & Contracts
 
@@ -60,6 +68,10 @@ Scope: `my-pi-agent` workspace.
 - Task records carry id, kind, status, cwd, timestamps, exit code, output, wait, and cancel. Subagent state adds agent, task, PID, start time, socket, session, attempt, and parent session.
 - Usage pricing is per message model; USD caps are optional and cache read/write tokens count.
 - One core cost function prices every model call: provider `usage.cost.total` when finite and above 0, else the price table. Ledger, statusline, subagent scan, observer, and classifier share it; restore reads the active branch (D178).
+- Agent configuration carries the default agent; mode configuration carries the default mode and uses `manual` as the human-authored name. A persisted session mode outranks the configured default (D188, D196, D197).
+- Workspace memory entries carry workspace and session origin plus redaction state; they are bounded and append-only, stored under the nearest project-marker directory or repository root, and never merged into a global store (D189, D199). Branch-local observations and their consumed marker remain separate.
+- Prompt dialogs stash and restore the exact editor draft; question answers survive backward navigation and are reviewed inline before submission (D187, D190).
+- Task and subagent metadata carry inner-process identity so both process groups can be torn down (D193, D201).
 - Settings writers update JSON through one core helper that refuses to overwrite an unparseable file and writes temp+rename (D179).
 
 ## Operations & Security
@@ -69,7 +81,8 @@ Scope: `my-pi-agent` workspace.
 - Permission precedence, first match wins: hard deny, persistent deny, session deny, most specific allow, trusted root, mode default. Read approval never covers write; `~/` and `@` expand before matching; an unparseable permission file makes gated tools ask (D180, planned).
 - Core shell safety owns a destructive-command list that asks in every mode, including autopilot; only an explicit user allow opts out (D181, planned).
 - Untrusted text is sanitized of escape and control bytes before rendering; styling is applied afterwards (D182, planned).
-- Owned children run in their own process group and are killed by group, TERM then KILL, even after the leader exits; plain-`node` shims inline the same calls (D183, planned).
+- Owned children run in their own process group and are killed by group, TERM then KILL, even after the leader exits; plain-`node` shims inline the same calls (D183, planned). Nested inner groups are torn down through the same runtime path before a cancelled state is written (D201).
+- Classifier checks run inside the permission handlers in every mode. An unavailable, timed-out, malformed, or aborted classifier answer leaves the call subject to normal approval and writes an audit note. The payload holds only tool name, tag, and a bounded input summary; a five-second deadline, per-session cache, and per-session call cap bound cost. Classifier traffic cannot re-enter hooks (D186, D198, D200).
 - Relative hook commands resolve against the declaring config directory, never the session cwd; malformed `preTool` conditions block (D184, planned).
 - `web_fetch` accepts only `http`/`https`, rejects loopback/private/link-local/metadata targets on every redirect, and caps redirects.
 - Detached state directories are `0700`; state, log, session, and socket files are `0600`.
@@ -90,6 +103,9 @@ Scope: `my-pi-agent` workspace.
 - Generic CLI harness usage is unavailable and excluded from usage totals.
 - Custom statusline component loading remains deferred.
 - ACP live smoke requires an external client and model, so it is not runnable in-repo.
+- The classifier guard is designed but not implemented; its accuracy depends on a bounded input summary rather than full tool input.
+- Workspace memory persistence and the inline prompt surface are designed but not implemented.
+- Legacy `ask` and `autopilot` mode aliases are scheduled for removal; existing configs using them need a one-time edit.
 
 ## Non-Goals
 
@@ -120,12 +136,21 @@ Scope: `my-pi-agent` workspace.
 - In-process SDK subagents, worktree isolation, auto-resume, recursive depth beyond 3, or central parent-hub routing.
 - Automatic monkey-patching of `ctx.ui` to acquire the prompt lock.
 - Serializing non-blocking UI surfaces such as status, widgets, headers, or todo lists.
+- A theme picker in the statusline; theme ownership stays with the host.
+- A memory handoff command, a global memory store shared across workspaces, or a dashboard memory section.
+- Todo, agent, grant, or settings actions in dashboard quick actions.
+- Legacy `ask` and `autopilot` mode aliases or a rename of the `ask` rule effect.
 
 ## Evidence
 
-- Accepted decisions: `.artifacts/DECISIONS.md` D01-D185.
+- Accepted decisions: `.artifacts/DECISIONS.md` D01-D206.
+- Requirements: `.artifacts/REQUIREMENTS.md` R01-R107.
+- Design intake for this revision: R91 replaced handoff with workspace persistence; D92 superseded by D186; classifier integration research recorded in the design session.
 - Behavioral specs: `.artifacts/SPECS.md` (186 entries, S01-S188; S139-S140 absent).
 - Historical spec prose: `.artifacts/research/spec-prose-archive.md`.
 - Runtime map and commands: `.artifacts/CONTEXT.md`.
 - Requirements: `.artifacts/REQUIREMENTS.md`.
 - Full build, typecheck, lint (334 files), and test suite (1147 tests/124 files) green on 2026-11-15.
+
+- Overlays that need text input reuse one prompt-draft stash and start in insert mode; navigation-only overlays request normal mode from pi-modal. Todos, tasks, and subagents own separate widget rows; `/widget` replaces `/panel`, and `/grant list` replaces `/grants` (D207–D216).
+- Collapse/expand is one tui-owned controller with click-only affordances (`+` expand, `-` collapse). Thinking and tool verbosity are separate low/medium/high settings that override host ctrl+o and ctrl+t; ctrl+shift+o is retired (D216).
