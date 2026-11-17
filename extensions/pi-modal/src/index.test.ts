@@ -697,6 +697,160 @@ describe("ModalEditor modal behavior", () => {
     expect(lines[0]).not.toContain("╭");
     expect(lines.at(-1)).toContain("INSERT");
   });
+
+  it("treats multi-code-unit text as printable in normal and search modes", () => {
+    const { editor: normal } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello" },
+    );
+    normal.handleInput("😀");
+    expect(normal.getText()).toBe("hello");
+
+    const { editor: search } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello 😀 world\nnope" },
+    );
+    search.handleInput("/");
+    search.handleInput("😀");
+    search.handleInput("\r");
+    expect(search.getCursor()).toEqual({ line: 0, col: 6 });
+  });
+
+  it("opens a new line below with o", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello" },
+    );
+    editor.handleInput("o");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe("hello\n");
+    expect(editor.getCursor()).toEqual({ line: 1, col: 0 });
+  });
+
+  it("maps u to the host undo sequence", () => {
+    const { editor } = createMockEditor({ initialMode: "normal" });
+    const superHandle = vi.spyOn(
+      Object.getPrototypeOf(Object.getPrototypeOf(editor)),
+      "handleInput",
+    );
+    try {
+      editor.handleInput("u");
+      expect(superHandle).toHaveBeenCalledWith("\x1f");
+    } finally {
+      superHandle.mockRestore();
+    }
+  });
+
+  it("counts graphemes when moving the cursor to a search match", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "😀hello" },
+    );
+    editor.handleInput("/");
+    for (const key of "hello") editor.handleInput(key);
+    editor.handleInput("\r");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 2 });
+  });
+
+  it("consumes Ctrl+C in visual mode like Escape", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "keep" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    expect(editor.getMode()).toBe("visual");
+    expect(editor.getSelection()).not.toBeNull();
+    const superHandle = vi.spyOn(
+      Object.getPrototypeOf(Object.getPrototypeOf(editor)),
+      "handleInput",
+    );
+    try {
+      editor.handleInput("\x03");
+      expect(superHandle).not.toHaveBeenCalledWith("\x03");
+      expect(editor.getMode()).toBe("normal");
+      expect(editor.getSelectionAnchor()).toBeNull();
+    } finally {
+      superHandle.mockRestore();
+    }
+  });
+
+  it("matches multi-character insert chords from one key per event", () => {
+    const { editor } = createMockEditor({
+      initialMode: "insert",
+      keymaps: { insert: { jk: null } },
+    });
+    editor.handleInput("j");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe("");
+    editor.handleInput("k");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getText()).toBe("");
+  });
+
+  it("inserts a held chord prefix when the chord is not completed", () => {
+    const { editor } = createMockEditor({
+      initialMode: "insert",
+      keymaps: { insert: { jk: null } },
+    });
+    editor.handleInput("j");
+    editor.handleInput("x");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe("jx");
+  });
+
+  it("prefers the longest matching insert chord", () => {
+    const { editor } = createMockEditor({
+      initialMode: "insert",
+      keymaps: { insert: { j: "\x1b[C", jk: null } },
+    });
+    editor.handleInput("j");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe("");
+    editor.handleInput("k");
+    expect(editor.getMode()).toBe("normal");
+  });
+
+  it("does not wrap to the next line when appending at end of a non-final line", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "one\ntwo" },
+    );
+    editor.handleInput("k");
+    editor.handleInput("$");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 3 });
+    editor.handleInput("a");
+    expect(editor.getCursor()).toEqual({ line: 0, col: 3 });
+    editor.handleInput("!");
+    expect(editor.getText()).toBe("one!\ntwo");
+  });
+
+  it("checks user visual keymaps before built-in visual actions", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal", keymaps: { visual: { y: "\x1b[C" } } },
+      { initialText: "abc" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("y");
+    expect(editor.getMode()).toBe("visual");
+    expect(editor.getYankedText()).toBe("");
+  });
+
+  it("clears a pending change when entering command mode", () => {
+    const { editor } = createMockEditor(
+      { initialMode: "normal" },
+      { initialText: "hello" },
+    );
+    editor.handleInput("0");
+    editor.handleInput("c");
+    editor.handleInput(":");
+    editor.handleInput("\x1b");
+    editor.handleInput("x");
+    expect(editor.getText()).toBe("ello");
+  });
 });
 
 describe("extension registration", () => {

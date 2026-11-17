@@ -11,6 +11,7 @@ const SEQUENCE_LABELS: Record<string, string> = {
   "\x05": "line end",
   "\x1b[3~": "delete character",
   "\x1a": "undo",
+  "\x1f": "undo",
 };
 
 const MODE_ACTIONS: Record<string, string> = {

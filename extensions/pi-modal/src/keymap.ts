@@ -31,7 +31,7 @@ export const DEFAULT_NORMAL_KEYS: Record<string, string | null> = {
   "0": "\x01",
   $: "\x05",
   x: "\x1b[3~",
-  u: "\x1a",
+  u: "\x1f",
   i: null,
   a: null,
   I: null,

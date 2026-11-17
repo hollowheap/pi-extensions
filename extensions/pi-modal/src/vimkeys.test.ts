@@ -6,6 +6,7 @@ describe("formatVimKeys", () => {
     const text = formatVimKeys();
     expect(text).toContain("Normal mode");
     expect(text).toContain("h    move left");
+    expect(text).toContain("u    undo");
     expect(text).toContain("i    insert before cursor");
     expect(text).toContain("Insert mode");
     expect(text).toContain("Esc  normal mode");

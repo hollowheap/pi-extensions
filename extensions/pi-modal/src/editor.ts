@@ -40,6 +40,13 @@ function getGraphemeEnd(text: string, col: number): number {
   return col + 1;
 }
 
+function countGraphemes(text: string): number {
+  const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+  let count = 0;
+  for (const _segment of segmenter.segment(text)) count++;
+  return count;
+}
+
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
   private promptChar = "❯";
@@ -54,6 +61,7 @@ export class ModalEditor extends CustomEditor {
   private commandMode = false;
   private commandBuffer = "";
   private pendingChange = false;
+  private pendingInsertChord = "";
   private lastBottomBorder: string | undefined;
   private modeTheme: Theme | undefined;
 
@@ -92,6 +100,9 @@ export class ModalEditor extends CustomEditor {
   }
 
   setMode(mode: EditorMode): void {
+    if (this.mode === "insert" && mode !== "insert") {
+      this.flushPendingInsertChord();
+    }
     this.mode = mode;
     if (mode === "visual" && !this.selectionAnchor) {
       this.selectionAnchor = { ...this.getCursor() };
@@ -237,7 +248,10 @@ export class ModalEditor extends CustomEditor {
       super.handleInput(direction);
     }
     super.handleInput("\x01");
-    for (let i = 0; i < targetCol; i++) {
+    const graphemes = countGraphemes(
+      (lines[targetLine] ?? "").slice(0, targetCol),
+    );
+    for (let i = 0; i < graphemes; i++) {
       super.handleInput("\x1b[C");
     }
   }
@@ -279,6 +293,13 @@ export class ModalEditor extends CustomEditor {
   private moveToMatch(query: string, direction: 1 | -1): void {
     const match = this.findMatch(query, direction);
     if (match) this.moveCursorTo(match.line, match.col);
+  }
+
+  private flushPendingInsertChord(): void {
+    if (!this.pendingInsertChord) return;
+    const pending = this.pendingInsertChord;
+    this.pendingInsertChord = "";
+    super.handleInput(pending);
   }
 
   override handleInput(data: string): void {
@@ -344,6 +365,7 @@ export class ModalEditor extends CustomEditor {
     // Escape key handling
     if (matchesKey(data, "escape")) {
       this.pendingChange = false;
+      this.flushPendingInsertChord();
       if (this.isShowingAutocomplete()) {
         super.handleInput(data);
         return;
@@ -364,19 +386,44 @@ export class ModalEditor extends CustomEditor {
     // Insert mode handling
     if (this.mode === "insert") {
       if (this.isShowingAutocomplete()) {
+        this.flushPendingInsertChord();
         super.handleInput(data);
         return;
       }
-      if (data in this.keymaps.insert) {
-        const seq = this.keymaps.insert[data];
-        if (seq === null || seq === "normal") {
-          this.mode = "normal";
+      const chordKeys = Object.keys(this.keymaps.insert);
+      if (chordKeys.length > 0) {
+        const candidate = this.pendingInsertChord + data;
+        if (
+          chordKeys.some(
+            (key) => key.length > candidate.length && key.startsWith(candidate),
+          )
+        ) {
+          this.pendingInsertChord = candidate;
           return;
         }
-        if (seq) {
-          super.handleInput(seq);
+        let matched: string | undefined;
+        for (const key of chordKeys) {
+          if (
+            key.length <= candidate.length &&
+            candidate.startsWith(key) &&
+            (matched === undefined || key.length > matched.length)
+          ) {
+            matched = key;
+          }
+        }
+        if (matched !== undefined) {
+          this.pendingInsertChord = "";
+          const seq = this.keymaps.insert[matched];
+          if (seq === null || seq === "normal") {
+            this.mode = "normal";
+          } else if (seq) {
+            super.handleInput(seq);
+          } else {
+            super.handleInput(candidate);
+          }
           return;
         }
+        this.flushPendingInsertChord();
       }
       super.handleInput(data);
       return;
@@ -384,7 +431,19 @@ export class ModalEditor extends CustomEditor {
 
     // Visual mode handling
     if (this.mode === "visual") {
-      if (input === "v" || matchesKey(data, "escape")) {
+      if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+        this.selectionAnchor = null;
+        this.mode = "normal";
+        return;
+      }
+
+      const visualSeq = this.keymaps.visual[input];
+      if (typeof visualSeq === "string" && visualSeq.length > 0) {
+        super.handleInput(visualSeq);
+        return;
+      }
+
+      if (input === "v") {
         this.selectionAnchor = null;
         this.mode = "normal";
         return;
@@ -425,15 +484,6 @@ export class ModalEditor extends CustomEditor {
         return;
       }
 
-      // Movement keys from keymaps.visual
-      if (input in this.keymaps.visual) {
-        const seq = this.keymaps.visual[input];
-        if (seq) {
-          super.handleInput(seq);
-          return;
-        }
-      }
-
       // Pass control sequences, block arbitrary typing
       if (printable !== undefined) return;
       super.handleInput(data);
@@ -444,6 +494,7 @@ export class ModalEditor extends CustomEditor {
     if (this.mode === "normal" && input === ":") {
       // Enter command mode - collect until enter
       this.searchMode = false;
+      this.pendingChange = false;
       // For simplicity, handle :%s in handleInput via a separate flag
       this.commandMode = true;
       this.commandBuffer = ":";
@@ -467,6 +518,7 @@ export class ModalEditor extends CustomEditor {
     }
 
     if (input === "/" && this.mode === "normal") {
+      this.pendingChange = false;
       this.searchMode = true;
       this.searchQuery = "";
       return;
@@ -487,7 +539,11 @@ export class ModalEditor extends CustomEditor {
         this.mode = "insert";
       } else if (input === "a") {
         this.mode = "insert";
-        super.handleInput("\x1b[C"); // Move right first
+        const cursor = this.getCursor();
+        const line = this.getLines()[cursor.line] ?? "";
+        if (cursor.col < line.length) {
+          super.handleInput("\x1b[C"); // Move right first
+        }
       } else if (input === "I") {
         this.mode = "insert";
         super.handleInput("\x01"); // Move to start of line
@@ -496,7 +552,8 @@ export class ModalEditor extends CustomEditor {
         super.handleInput("\x05"); // Move to end of line
       } else if (input === "o") {
         this.mode = "insert";
-        super.handleInput("\x05\n"); // End of line + newline
+        super.handleInput("\x05");
+        super.handleInput("\n");
       } else if (input === "v") {
         this.mode = "visual";
         this.selectionAnchor = { ...this.getCursor() };
@@ -727,7 +784,9 @@ export class ModalEditor extends CustomEditor {
 function printableKey(data: string): string | undefined {
   if (data.length === 1 && data.charCodeAt(0) >= 32) return data;
   const key = parseKey(data);
-  if (key === undefined) return undefined;
+  if (key === undefined) {
+    return data.length > 0 && data[0] !== "\x1b" ? data : undefined;
+  }
   if (key.length === 1) return key;
   const shifted = /^shift\+([a-z])$/.exec(key);
   return shifted?.[1]?.toUpperCase();
