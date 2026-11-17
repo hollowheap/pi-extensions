@@ -694,36 +694,39 @@ export function createQuestionTool(pi?: ExtensionAPI) {
     parameters: Type.Object({
       questions: Type.Optional(
         Type.Array(
-          Type.Object({
-            prompt: Type.String({
-              minLength: 1,
-              description: "Question prompt text",
+          Type.Union([
+            Type.String({ minLength: 1, description: "Question prompt text" }),
+            Type.Object({
+              prompt: Type.String({
+                minLength: 1,
+                description: "Question prompt text",
+              }),
+              options: Type.Optional(
+                Type.Array(Type.String(), {
+                  description:
+                    "Available choices. If omitted or empty, asks for free-text input.",
+                }),
+              ),
+              multi: Type.Optional(
+                Type.Boolean({
+                  description: "True to allow selecting multiple options.",
+                }),
+              ),
+              page: Type.Optional(
+                Type.Integer({
+                  minimum: 1,
+                  description:
+                    "Optional page number for multi-page questionnaires.",
+                }),
+              ),
+              condition: Type.Optional(
+                Type.String({
+                  description:
+                    "Optional condition expression (e.g. \"answer1 == 'Yes'\").",
+                }),
+              ),
             }),
-            options: Type.Optional(
-              Type.Array(Type.String(), {
-                description:
-                  "Available choices. If omitted or empty, asks for free-text input.",
-              }),
-            ),
-            multi: Type.Optional(
-              Type.Boolean({
-                description: "True to allow selecting multiple options.",
-              }),
-            ),
-            page: Type.Optional(
-              Type.Integer({
-                minimum: 1,
-                description:
-                  "Optional page number for multi-page questionnaires.",
-              }),
-            ),
-            condition: Type.Optional(
-              Type.String({
-                description:
-                  "Optional condition expression (e.g. \"answer1 == 'Yes'\").",
-              }),
-            ),
-          }),
+          ]),
         ),
       ),
       prompt: Type.Optional(
@@ -765,22 +768,25 @@ export function createQuestionTool(pi?: ExtensionAPI) {
         };
       }
 
-      const questions: Question[] = rawQuestions.map((q) => ({
-        prompt: sanitizeTerminalText(q.prompt),
-        mode:
-          !q.options || q.options.length === 0
-            ? "free"
-            : q.multi
-              ? "multi"
-              : "single",
-        options: (q.options ?? []).map((option) =>
-          sanitizeTerminalText(option),
-        ),
-        page: q.page,
-        condition: q.condition
-          ? sanitizeTerminalText(q.condition)
-          : q.condition,
-      }));
+      const questions: Question[] = rawQuestions.map((q) => {
+        const normalized = typeof q === "string" ? { prompt: q } : q;
+        return {
+          prompt: sanitizeTerminalText(normalized.prompt),
+          mode:
+            !normalized.options || normalized.options.length === 0
+              ? "free"
+              : normalized.multi
+                ? "multi"
+                : "single",
+          options: (normalized.options ?? []).map((option) =>
+            sanitizeTerminalText(option),
+          ),
+          page: normalized.page,
+          condition: normalized.condition
+            ? sanitizeTerminalText(normalized.condition)
+            : normalized.condition,
+        };
+      });
 
       alertQuestion();
 

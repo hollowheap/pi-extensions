@@ -825,4 +825,16 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+
+  pi.on("before_agent_start", (event, ctx) => {
+    if (!ctx?.hasUI) return;
+    if (!event.systemPromptOptions) return;
+    event.systemPromptOptions.sections =
+      event.systemPromptOptions.sections ?? {};
+    event.systemPromptOptions.sections.todos_format =
+      "Todos are managed via tagged markdown blocks (not a direct tool): " +
+      "create with ```create_todos containing an ordered list; " +
+      "complete with ```complete_todos containing IDs. " +
+      "State is branch-local. Use /todos to view progress.";
+  });
 }

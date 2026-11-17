@@ -50,4 +50,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     void disposeIfLoaded();
   });
+
+  pi.on("before_agent_start", (event, ctx) => {
+    if (!ctx?.hasUI) return;
+    if (!event.systemPromptOptions) return;
+    event.systemPromptOptions.sections =
+      event.systemPromptOptions.sections ?? {};
+    event.systemPromptOptions.sections.lang_format =
+      "Code navigation uses the codemode-only `lang` tool (tools.lang). " +
+      "Actions: definition, references, document_symbols, workspace_symbols, hover, " +
+      "signature_help, type_definition, implementation, document_highlights, diagnostics. " +
+      "line and column are 1-based. Requires a trusted project and an installed language server.";
+  });
 }
