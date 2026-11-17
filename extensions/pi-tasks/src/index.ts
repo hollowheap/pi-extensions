@@ -118,7 +118,7 @@ export default function (pi: ExtensionAPI) {
       .map((t) => ({
         id: t.id,
         status: t.status,
-        command: t.command,
+        command: t.command ? sanitizeTerminalText(t.command) : t.command,
         startedAt: t.startedAt,
         exitCode: t.exitCode,
       }));

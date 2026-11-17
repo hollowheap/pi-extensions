@@ -6,6 +6,7 @@ import type {
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { showMarkdownPager } from "@hollowheap/tui/pager";
 
 const MAX_RESPONSE_TOKENS = 1200;
@@ -63,8 +64,11 @@ async function answer(
     },
   );
 
-  if (response.stopReason === "error" || response.stopReason === "aborted") {
+  if (response.stopReason === "error") {
     throw new Error(response.errorMessage || response.stopReason);
+  }
+  if (response.stopReason === "aborted") {
+    return;
   }
 
   const text = responseText(response);
@@ -73,10 +77,11 @@ async function answer(
     return;
   }
 
+  const markdown = `**Question:** ${sanitizeTerminalText(question)}\n\n${text}`;
   await showMarkdownPager(ctx, {
-    title: `/btw ${question}`,
-    markdown: text,
-    plainText: text,
+    title: `/btw ${sanitizeTerminalText(question)}`,
+    markdown,
+    plainText: `Question: ${sanitizeTerminalText(question)}\n\n${sanitizeTerminalText(text)}`,
   });
 }
 

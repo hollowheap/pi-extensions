@@ -162,11 +162,42 @@ const gitDiff: ComponentFn = (spec, ctx) => {
   return parts.join(" ");
 };
 
+export function shortenModel(modelId: string): string {
+  if (!modelId) return "";
+  const slash = modelId.lastIndexOf("/");
+  let name = slash >= 0 ? modelId.slice(slash + 1) : modelId;
+  name = name.replace(/-\d{8}$/, "");
+  name = name.replace(/^claude-/i, "");
+  name = name.replace(/^gemini-/i, "");
+  name = name.replace(/-preview$/i, "");
+  return name.trim() || modelId;
+}
+
 const model: ComponentFn = (spec, ctx) => {
   if (!ctx.modelId) return "";
   if (!optBool(spec, "shorten", true)) return ctx.modelId;
   const slash = ctx.modelId.lastIndexOf("/");
   return slash >= 0 ? ctx.modelId.slice(slash + 1) : ctx.modelId;
+};
+
+const modelEffort: ComponentFn = (spec, ctx) => {
+  if (!ctx.modelId) return "";
+  const modelText = optBool(spec, "shorten", true)
+    ? shortenModel(ctx.modelId)
+    : ctx.modelId;
+  const effort = (ctx.thinkingLevel ?? "").trim().toLowerCase();
+  const EFFORT_SHORT: Record<string, string> = {
+    off: "off",
+    minimal: "min",
+    low: "L",
+    medium: "M",
+    high: "H",
+    xhigh: "XH",
+    max: "MAX",
+  };
+  const effortShort = EFFORT_SHORT[effort] ?? effort;
+  if (!effortShort) return modelText;
+  return `${modelText} · ${effortShort}`;
 };
 
 const tokens: ComponentFn = (spec, ctx) => {
@@ -200,6 +231,8 @@ export const BUILTINS: Record<string, ComponentFn> = {
   git_branch: gitBranch,
   git_diff: gitDiff,
   model,
+  "model-effort": modelEffort,
+  model_effort: modelEffort,
   tokens,
   cost,
   context,

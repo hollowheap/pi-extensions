@@ -15,6 +15,7 @@ import {
   getCapabilities,
   hyperlink,
 } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { Type } from "typebox";
 import { loadWebConfig } from "./config.js";
@@ -253,9 +254,9 @@ function formatSearchMarkdown(
   const lines: string[] = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
-    lines.push(`${i + 1}. [${r.title}](${r.url})`);
+    lines.push(`${i + 1}. [${sanitizeTerminalText(r.title)}](${r.url})`);
     if (r.snippet) {
-      lines.push(`   ${r.snippet.trim()}`);
+      lines.push(`   ${sanitizeTerminalText(r.snippet).trim()}`);
     }
   }
   if (truncated) {
@@ -281,21 +282,21 @@ function formatFetchMarkdown(
   if (finalUrl && finalUrl !== url) {
     parts.push(`*Redirected to: ${markdownUrl(finalUrl)}*\n`);
   }
-  parts.push(content.trim());
+  parts.push(sanitizeTerminalText(content).trim());
   if (isTruncated) {
     parts.push(`\n\n[Content truncated to ${content.length} characters]`);
   }
   if (links.length > 0) {
     parts.push("\n\n## Page Links");
     for (const link of links) {
-      const label = link.text || link.title || link.url;
+      const label = sanitizeTerminalText(link.text || link.title || link.url);
       parts.push(`- [${label}](${link.url})`);
     }
   }
   if (media.length > 0) {
     parts.push("\n\n## Media");
     for (const item of media) {
-      const label = item.alt || `${item.kind} media`;
+      const label = sanitizeTerminalText(item.alt || `${item.kind} media`);
       parts.push(`- [${label}](${item.url})`);
     }
   }
@@ -542,7 +543,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
         return text;
       }
 
-      const content = details?.content ?? textOutput;
+      const content = sanitizeTerminalText(details?.content ?? textOutput);
       const url = details?.finalUrl || details?.url || "web page";
       if (options.expanded) {
         const markdown = new Markdown(
@@ -610,7 +611,9 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
 
       for (const l of displayLines) {
         const snippet = l.length > 120 ? `${l.slice(0, 117)}...` : l;
-        resLines.push(`  ${theme.fg("toolOutput", snippet)}`);
+        resLines.push(
+          `  ${theme.fg("toolOutput", sanitizeTerminalText(snippet))}`,
+        );
       }
 
       if (remaining > 0) {

@@ -6,7 +6,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { isPermissionError } from "@hollowheap/core/config";
-import { truncateText } from "@hollowheap/core/format";
+import { sanitizeTerminalText, truncateText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, session } from "@hollowheap/core/state";
 import {
@@ -266,7 +266,7 @@ export default function (pi: ExtensionAPI) {
           recordHookEvent(pi, ctx, { run: true, error: true }, config);
           notifyMessage(
             ctx,
-            `pi-hooks: ${hook.command} failed: ${result.error}`,
+            `pi-hooks: ${sanitizeTerminalText(hook.command)} failed: ${sanitizeTerminalText(result.error)}`,
             isAnyPermissionFailure(result.error) ? "error" : "warning",
           );
         } else {
@@ -314,7 +314,11 @@ export default function (pi: ExtensionAPI) {
         if (verdict.block) {
           recordHookEvent(pi, ctx, { run: true, block: true }, config);
           if (verdict.reason && isAnyPermissionFailure(verdict.reason)) {
-            notifyMessage(ctx, `pi-hooks: ${verdict.reason}`, "error");
+            notifyMessage(
+              ctx,
+              `pi-hooks: ${sanitizeTerminalText(verdict.reason)}`,
+              "error",
+            );
           }
           return { block: true, reason: `pi-hooks: ${verdict.reason}` };
         }
@@ -324,7 +328,10 @@ export default function (pi: ExtensionAPI) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       recordHookEvent(pi, ctx, { error: true, block: true });
-      notifyWarning(ctx, `pi-hooks: pre-tool hooks failed: ${message}`);
+      notifyWarning(
+        ctx,
+        `pi-hooks: pre-tool hooks failed: ${sanitizeTerminalText(message)}`,
+      );
       return {
         block: true,
         reason: `pi-hooks: pre-tool hooks failed: ${message}`,
@@ -353,7 +360,7 @@ export default function (pi: ExtensionAPI) {
           recordHookEvent(pi, ctx, { run: true, error: true }, config);
           notifyMessage(
             ctx,
-            `pi-hooks: ${hook.command} failed: ${result.error}`,
+            `pi-hooks: ${sanitizeTerminalText(hook.command)} failed: ${sanitizeTerminalText(result.error)}`,
             isAnyPermissionFailure(result.error) ? "error" : "warning",
           );
           previousOutput = "";
@@ -363,7 +370,7 @@ export default function (pi: ExtensionAPI) {
         previousOutput = result.output ?? "";
         if (result.output !== undefined) {
           notes.push(
-            `[pi-hooks: ${hook.command}]\n${truncateText(result.output, "pi-hooks")}`,
+            `[pi-hooks: ${sanitizeTerminalText(hook.command)}]\n${sanitizeTerminalText(truncateText(result.output, "pi-hooks"), { allowSgr: true })}`,
           );
         }
       }
@@ -381,7 +388,7 @@ export default function (pi: ExtensionAPI) {
       recordHookEvent(pi, ctx, { error: true });
       notifyWarning(
         ctx,
-        `pi-hooks: post-tool hooks failed: ${error instanceof Error ? error.message : String(error)}`,
+        `pi-hooks: post-tool hooks failed: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
       );
       return undefined;
     }

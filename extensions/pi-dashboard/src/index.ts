@@ -240,7 +240,9 @@ function terminalSection(
       if (controller.signal.aborted || stopped) {
         aborted = true;
       } else {
-        lines = splitOutput(output);
+        lines = splitOutput(output).map((line) =>
+          sanitizeTerminalText(line, { allowSgr: true }),
+        );
         retryCount = 0;
         if (retryTimer !== undefined) clearTimeout(retryTimer);
         retryTimer = undefined;

@@ -88,7 +88,7 @@ describe("pi-btw", () => {
       ctx,
       expect.objectContaining({
         title: "/btw why?",
-        markdown: "Because the fixture is stale.",
+        markdown: "**Question:** why?\n\nBecause the fixture is stale.",
       }),
     );
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("btw", undefined);

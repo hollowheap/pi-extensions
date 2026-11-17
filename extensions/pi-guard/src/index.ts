@@ -321,7 +321,10 @@ async function pickGrantTarget(
     return showTargetPicker(ctx, targets);
   }
   if (ctx.hasUI) {
-    ctx.ui.notify(`Recent targets:\n${targets.join("\n")}`, "info");
+    ctx.ui.notify(
+      `Recent targets:\n${targets.map((t) => sanitizeTerminalText(t)).join("\n")}`,
+      "info",
+    );
   }
   return undefined;
 }
@@ -801,7 +804,10 @@ export default function (pi: ExtensionAPI) {
       rememberTarget(runtime, ctx.sessionManager, target);
       publishGuardSnapshot(runtime, ctx.sessionManager);
       if (ctx.hasUI) {
-        ctx.ui.notify(`Granted ${target} for ${durationStr}`, "info");
+        ctx.ui.notify(
+          `Granted ${sanitizeTerminalText(target)} for ${durationStr}`,
+          "info",
+        );
       }
     },
   });
@@ -819,7 +825,7 @@ export default function (pi: ExtensionAPI) {
       const text = active
         .map(
           (g) =>
-            `${g.target} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
+            `${sanitizeTerminalText(g.target)} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
         )
         .join("\n");
       if (ctx.hasUI) ctx.ui.notify(text, "info");

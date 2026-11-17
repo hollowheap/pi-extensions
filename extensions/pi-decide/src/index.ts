@@ -3,6 +3,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { loadDecideConfig } from "./config.js";
 import {
   createDecideTool,
@@ -36,7 +37,10 @@ export default function (pi: ExtensionAPI): void {
     if (reported || diagnostics.length === 0) return;
     reported = true;
     for (const message of diagnostics) {
-      ctx.ui?.notify?.(`pi-decide: ${message}`, "warning");
+      ctx.ui?.notify?.(
+        `pi-decide: ${sanitizeTerminalText(message)}`,
+        "warning",
+      );
     }
   });
   pi.on("session_tree", (_event, ctx) => {

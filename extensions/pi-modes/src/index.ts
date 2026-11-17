@@ -6,6 +6,7 @@ import type {
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { loadModesConfig } from "@hollowheap/core/config";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import {
   enterMode,
   getModeLayer,
@@ -50,19 +51,25 @@ async function switchMode(
 ): Promise<void> {
   const result = enterMode(ctx.sessionManager, raw);
   if (result.diagnostic !== undefined) {
-    ctx.ui.notify(`pi-modes: ${result.diagnostic}`, "error");
+    ctx.ui.notify(
+      `pi-modes: ${sanitizeTerminalText(result.diagnostic)}`,
+      "error",
+    );
     return;
   }
   if (result.veto !== undefined) {
-    ctx.ui.notify(`pi-modes: ${result.veto}`, "error");
+    ctx.ui.notify(`pi-modes: ${sanitizeTerminalText(result.veto)}`, "error");
     return;
   }
   if (result.notices.length > 0) {
     for (const notice of result.notices) {
-      ctx.ui.notify(`pi-modes: ${notice.text}`, notice.level);
+      ctx.ui.notify(
+        `pi-modes: ${sanitizeTerminalText(notice.text)}`,
+        notice.level,
+      );
     }
   } else {
-    ctx.ui.notify(`pi-modes: mode ${result.mode}`);
+    ctx.ui.notify(`pi-modes: mode ${sanitizeTerminalText(result.mode)}`);
   }
   publishMode(pi, ctx.sessionManager);
 }

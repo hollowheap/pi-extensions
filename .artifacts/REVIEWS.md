@@ -65,3 +65,25 @@
 | V61 | packages-pi-acp-r3 | `review/packages-pi-acp-r3.md` | robust | packages/pi-acp re-review r3 |
 | V62 | session-enrichment-dashboard-r1 | `review/session-enrichment-dashboard-r1.md` | needs-fixes | uncommitted session snapshots, pi-dashboard, pi-acp, policy + 117285e |
 | V63 | session-enrichment-dashboard-r2 | `review/session-enrichment-dashboard-r2.md` | robust | re-review of V62 fixes + target extraction & sessionManager guards |
+| V64 | pi-btw-r4 | `review/pi-btw-r4.md` | robust | pi-btw re-review r4 |
+| V65 | pi-memory-r4 | `review/pi-memory-r4.md` | robust | pi-memory re-review r4 |
+| V66 | pi-modal-r4 | `review/pi-modal-r4.md` | robust | pi-modal re-review r4 |
+| V67 | pi-usage-r4 | `review/pi-usage-r4.md` | robust | pi-usage re-review r4 |
+| V68 | pi-subagents-r4 | `review/pi-subagents-r4.md` | robust | pi-subagents re-review r4 |
+| V69 | pi-tasks-r4 | `review/pi-tasks-r4.md` | robust | pi-tasks re-review r4 |
+| V70 | pi-hooks-r4 | `review/pi-hooks-r4.md` | robust | pi-hooks re-review r4 |
+| V71 | pi-guard-r4 | `review/pi-guard-r4.md` | robust | pi-guard re-review r4 |
+| V72 | pi-web-r4 | `review/pi-web-r4.md` | robust | pi-web re-review r4 |
+| V73 | pi-language-tools-r4 | `review/pi-language-tools-r4.md` | robust | pi-language-tools re-review r4 |
+| V74 | pi-todos-r4 | `review/pi-todos-r4.md` | robust | pi-todos re-review r4 |
+| V75 | pi-dashboard-r4 | `review/pi-dashboard-r4.md` | robust | pi-dashboard re-review r4 |
+| V76 | pi-decide-r4 | `review/pi-decide-r4.md` | robust | pi-decide re-review r4 |
+| V77 | pi-modes-r4 | `review/pi-modes-r4.md` | robust | pi-modes re-review r4 |
+| V78 | pi-tools-r4 | `review/pi-tools-r4.md` | robust | pi-tools re-review r4 |
+| V79 | pi-question-r4 | `review/pi-question-r4.md` | robust | pi-question re-review r4 |
+| V80 | pi-agent-r4 | `review/pi-agent-r4.md` | robust | pi-agent re-review r4 |
+| V81 | pi-statusline-r4 | `review/pi-statusline-r4.md` | robust | pi-statusline re-review r4 |
+| V82 | packages-tui-r4 | `review/packages-tui-r4.md` | robust | packages/tui re-review r4 |
+| V83 | packages-runtime-r4 | `review/packages-runtime-r4.md` | robust | packages/runtime re-review r4 |
+| V84 | packages-core-r4 | `review/packages-core-r4.md` | robust | packages/core re-review r4 |
+| V85 | packages-pi-acp-r4 | `review/packages-pi-acp-r4.md` | robust | packages/pi-acp re-review r4 |

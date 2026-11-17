@@ -10,6 +10,7 @@ import {
 import { Markdown, type MarkdownTheme, Text } from "@earendil-works/pi-tui";
 import { loadPermissions } from "@hollowheap/core/config";
 import { displayPath } from "@hollowheap/core/format";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { checkPath } from "@hollowheap/core/policy";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
@@ -581,7 +582,10 @@ function textResult(
   content: { type: "text"; text: string }[];
   details: LangDetails;
 } {
-  return { content: [{ type: "text", text }], details };
+  return {
+    content: [{ type: "text", text: sanitizeTerminalText(text) }],
+    details,
+  };
 }
 
 function emptyResult(

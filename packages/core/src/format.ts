@@ -12,11 +12,12 @@ export function truncateText(text: string, label = "truncated"): string {
 }
 
 export function displayTarget(target: string): string {
-  if (target.length <= TARGET_LENGTH) return target;
+  const safe = sanitizeTerminalText(target);
+  if (safe.length <= TARGET_LENGTH) return safe;
   const headLength = Math.floor(TARGET_LENGTH / 2);
   const tailLength = TARGET_LENGTH - headLength;
-  const cut = target.length - headLength - tailLength;
-  return `${target.slice(0, headLength)}\n[… cut ${cut} characters]\n${target.slice(-tailLength)}`;
+  const cut = safe.length - headLength - tailLength;
+  return `${safe.slice(0, headLength)}\n[… cut ${cut} characters]\n${safe.slice(-tailLength)}`;
 }
 
 export function displayPath(base: string, absolute: string): string {

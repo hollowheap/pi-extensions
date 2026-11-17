@@ -5,6 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -79,7 +80,7 @@ function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
     if (message.role !== "assistant") continue;
     for (const block of message.content) {
       if (block.type !== "toolCall" || block.name !== "codemode") continue;
-      const value = block.arguments.code;
+      const value = block.arguments?.code;
       if (typeof value === "string") code = value;
     }
   }
@@ -276,7 +277,11 @@ export default function (pi: ExtensionAPI): void {
     if (!ctx.hasUI) return;
     const code = lastCodemodeCode ?? lastCodemodeFromSession(ctx);
     if (code !== undefined) {
-      await showCodeViewer(ctx, "Last codemode script", code);
+      await showCodeViewer(
+        ctx,
+        "Last codemode script",
+        sanitizeTerminalText(code),
+      );
       return;
     }
     if (lastToolCall !== undefined) {

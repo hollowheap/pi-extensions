@@ -10,6 +10,7 @@ import {
   getAgentDir,
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import {
   calculateDollarCost,
   formatDollarCost,
@@ -113,14 +114,14 @@ function renderView(ledger: MemoryLedger): string {
   if (ledger.reflections.length > 0) {
     lines.push("## Reflections", "");
     for (const reflection of ledger.reflections) {
-      lines.push(`- ${reflection.text}`);
+      lines.push(`- ${sanitizeTerminalText(reflection.text)}`);
     }
     lines.push("");
   }
   lines.push(`## Observations (${ledger.observations.length})`, "");
   for (const observation of ledger.observations) {
     lines.push(
-      `- \`${observation.id}\` (${observation.relevance}) ${observation.text}`,
+      `- \`${observation.id}\` (${observation.relevance}) ${sanitizeTerminalText(observation.text)}`,
     );
   }
   return lines.join("\n").trim();
@@ -504,7 +505,7 @@ export function createMemoryExtension(
               matches.push({
                 kind: "observation",
                 id: item.id,
-                text: item.text,
+                text: sanitizeTerminalText(item.text),
                 relevance: item.relevance,
                 createdAt: item.createdAt,
                 score: value,
@@ -517,7 +518,7 @@ export function createMemoryExtension(
               matches.push({
                 kind: "reflection",
                 id: item.id,
-                text: item.text,
+                text: sanitizeTerminalText(item.text),
                 relevance: 3,
                 createdAt: item.createdAt,
                 score: value,

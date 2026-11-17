@@ -777,7 +777,9 @@ export function createQuestionTool(pi?: ExtensionAPI) {
           sanitizeTerminalText(option),
         ),
         page: q.page,
-        condition: q.condition,
+        condition: q.condition
+          ? sanitizeTerminalText(q.condition)
+          : q.condition,
       }));
 
       alertQuestion();

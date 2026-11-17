@@ -154,9 +154,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         .map((tool) => tool.name);
 
     const captureBaseActiveTools = (piApi: ExtensionAPI = pi): void => {
-      if (baseActiveTools !== undefined) {
-        return;
-      }
       if (typeof piApi.getActiveTools === "function") {
         baseActiveTools = filterDirectTools(piApi, piApi.getActiveTools());
         return;

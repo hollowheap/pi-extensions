@@ -12,6 +12,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { checkPath } from "@hollowheap/core/policy";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, readPersistedCwd, setCwd } from "@hollowheap/core/state";
@@ -121,7 +122,9 @@ export default function (pi: ExtensionAPI) {
       if (raw === "") {
         setCwd(ctx.sessionManager, undefined, { persist: true });
         ctx.ui.setStatus("cwd", undefined);
-        ctx.ui.notify(`pi-tools: working directory ${ctx.cwd}`);
+        ctx.ui.notify(
+          `pi-tools: working directory ${sanitizeTerminalText(ctx.cwd)}`,
+        );
         return;
       }
       const abs = resolve(effectiveCwd(ctx.cwd, ctx.sessionManager), raw);
@@ -132,17 +135,26 @@ export default function (pi: ExtensionAPI) {
         isDir = false;
       }
       if (!isDir) {
-        ctx.ui.notify(`pi-tools: not a directory: ${raw}`, "error");
+        ctx.ui.notify(
+          `pi-tools: not a directory: ${sanitizeTerminalText(raw)}`,
+          "error",
+        );
         return;
       }
       const rel = relative(ctx.cwd, abs);
       if (!isWithinRoot(ctx.cwd, abs)) {
-        ctx.ui.notify(`pi-tools: outside project root: ${raw}`, "error");
+        ctx.ui.notify(
+          `pi-tools: outside project root: ${sanitizeTerminalText(raw)}`,
+          "error",
+        );
         return;
       }
       const rules = loadContextPermissions(ctx);
       if (checkPath(rules, abs, "read", ctx.cwd) === "deny") {
-        ctx.ui.notify(`pi-tools: directory denied by rules: ${raw}`, "error");
+        ctx.ui.notify(
+          `pi-tools: directory denied by rules: ${sanitizeTerminalText(raw)}`,
+          "error",
+        );
         return;
       }
       setCwd(ctx.sessionManager, abs, { persist: true });
@@ -152,7 +164,7 @@ export default function (pi: ExtensionAPI) {
         updatedAt: Date.now(),
       });
       ctx.ui.setStatus("cwd", rel === "" ? "." : rel.split(sep).join("/"));
-      ctx.ui.notify(`pi-tools: working directory ${abs}`);
+      ctx.ui.notify(`pi-tools: working directory ${sanitizeTerminalText(abs)}`);
     },
   });
 }

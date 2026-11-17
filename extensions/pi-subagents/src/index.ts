@@ -225,7 +225,8 @@ export function createSubagentsExtension(
         return;
       }
       const log = readSubagentLog(resolveAgentDir(), id);
-      const text = log.trim() === "" ? "(no output)" : log;
+      const text =
+        log.trim() === "" ? "(no output)" : sanitizeTerminalText(log);
       const name = sanitizeTerminalText(subagentDisplayName(state));
       const workspace = sanitizeTerminalText(state.workspace ?? state.agent);
       const { showMarkdownPager } = await import("@hollowheap/tui/pager");
@@ -251,12 +252,12 @@ export function createSubagentsExtension(
           items: all.map((state) => ({
             value: state.id,
             label: subagentDisplayName(state),
-            description: `${state.status} — @${state.agent}`,
+            description: `${state.status} — @${sanitizeTerminalText(state.agent)}`,
             preview: [
-              `${state.status} — @${state.agent}`,
-              `model: ${state.model ?? "default"}`,
-              `workspace: ${state.workspace ?? "unknown"}`,
-              `task: ${state.task}`,
+              `${state.status} — @${sanitizeTerminalText(state.agent)}`,
+              `model: ${sanitizeTerminalText(state.model ?? "default")}`,
+              `workspace: ${sanitizeTerminalText(state.workspace ?? "unknown")}`,
+              `task: ${sanitizeTerminalText(state.task)}`,
               `started: ${new Date(state.startedAt).toISOString()}`,
             ],
           })),
@@ -276,7 +277,7 @@ export function createSubagentsExtension(
           all
             .map(
               (state) =>
-                `${state.id} [${state.status}] @${state.agent}: ${state.task}`,
+                `${state.id} [${state.status}] @${sanitizeTerminalText(state.agent)}: ${sanitizeTerminalText(state.task)}`,
             )
             .join("\n"),
           "info",

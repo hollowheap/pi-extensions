@@ -2,6 +2,7 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { formatDollarCost, messageCost } from "@hollowheap/core/pricing";
 import {
   type CumulativeUsage,
@@ -101,7 +102,7 @@ export function formatUsageReport(
           ? `$${m.cost.toFixed(4)}`
           : `$${m.cost.toFixed(2)}`;
       lines.push(
-        `  ${m.model.slice(0, MODEL_NAME_WIDTH).padEnd(MODEL_NAME_WIDTH)} ${compactTokens(tokens).padStart(8)} ${share(tokens, usage.totalTokens).padStart(6)} ${usageBar(tokens, usage.totalTokens)} ${mCost.padStart(7)}`,
+        `  ${sanitizeTerminalText(m.model).slice(0, MODEL_NAME_WIDTH).padEnd(MODEL_NAME_WIDTH)} ${compactTokens(tokens).padStart(8)} ${share(tokens, usage.totalTokens).padStart(6)} ${usageBar(tokens, usage.totalTokens)} ${mCost.padStart(7)}`,
       );
     }
   }
@@ -114,19 +115,19 @@ export function formatUsageReport(
     for (const subagent of subagents) {
       if (!subagent.available) {
         lines.push(
-          `  @${subagent.id} (${subagent.agent}) [${subagent.status}]: usage unavailable`,
+          `  @${sanitizeTerminalText(subagent.id)} (${sanitizeTerminalText(subagent.agent)}) [${subagent.status}]: usage unavailable`,
         );
         continue;
       }
-      const label = `@${subagent.id} (${subagent.agent}) [${subagent.status}]`;
+      const label = `@${sanitizeTerminalText(subagent.id)} (${sanitizeTerminalText(subagent.agent)}) [${subagent.status}]`;
       const labelText =
         label.length > SUBAGENT_LABEL_WIDTH
           ? `${label.slice(0, SUBAGENT_LABEL_WIDTH - 1)}…`
           : label.padEnd(SUBAGENT_LABEL_WIDTH);
       const modelText =
-        subagent.model.length > SUBAGENT_MODEL_WIDTH
-          ? `${subagent.model.slice(0, SUBAGENT_MODEL_WIDTH - 1)}…`
-          : subagent.model.padEnd(SUBAGENT_MODEL_WIDTH);
+        sanitizeTerminalText(subagent.model).length > SUBAGENT_MODEL_WIDTH
+          ? `${sanitizeTerminalText(subagent.model).slice(0, SUBAGENT_MODEL_WIDTH - 1)}…`
+          : sanitizeTerminalText(subagent.model).padEnd(SUBAGENT_MODEL_WIDTH);
       lines.push(
         `  ${labelText} ${modelText} ${compactTokens(subagent.totalTokens).padStart(8)} ${usageBar(subagent.totalTokens, usage.totalTokens, SUBAGENT_BAR_WIDTH)} ${formatDollarCost(subagent.cost).padStart(7)}`,
       );

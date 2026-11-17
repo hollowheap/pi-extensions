@@ -173,6 +173,11 @@ export function discoverAgents(
     "user",
     diagnostics,
   )) {
+    if (agents.has(agent.name)) {
+      diagnostics.push(
+        `duplicate agent "${agent.name}": ${agent.filePath} shadowed`,
+      );
+    }
     agents.set(agent.name, agent);
   }
   if (options.trusted && projectAgentsDir !== undefined) {
@@ -181,6 +186,11 @@ export function discoverAgents(
       "project",
       diagnostics,
     )) {
+      if (agents.has(agent.name)) {
+        diagnostics.push(
+          `duplicate agent "${agent.name}": ${agent.filePath} shadows user agent`,
+        );
+      }
       agents.set(agent.name, agent);
     }
   }

@@ -4,6 +4,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import { Type } from "typebox";
@@ -384,7 +385,10 @@ export default function (pi: ExtensionAPI) {
         open,
         done,
         highPriority,
-        items: state.todos.slice(0, 10),
+        items: state.todos.slice(0, 10).map((todo) => ({
+          ...todo,
+          text: sanitizeTerminalText(todo.text),
+        })),
         updatedAt: Date.now(),
       });
     }

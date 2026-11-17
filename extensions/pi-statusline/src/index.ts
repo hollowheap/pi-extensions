@@ -5,6 +5,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { messageCost } from "@hollowheap/core/pricing";
 import { effectiveCwd } from "@hollowheap/core/state";
 import { alertAgentCompletion } from "./alerts.js";
@@ -367,8 +368,12 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.setHiddenThinkingLabel();
           if (ctx.hasUI) ctx.ui.notify("Thinking label: default", "info");
         } else {
-          ctx.ui.setHiddenThinkingLabel(label);
-          if (ctx.hasUI) ctx.ui.notify(`Thinking label: ${label}`, "info");
+          ctx.ui.setHiddenThinkingLabel(sanitizeTerminalText(label));
+          if (ctx.hasUI)
+            ctx.ui.notify(
+              `Thinking label: ${sanitizeTerminalText(label)}`,
+              "info",
+            );
         }
         return;
       }
@@ -414,7 +419,10 @@ export default function (pi: ExtensionAPI) {
           try {
             const result = await pi.exec(command, actionArgs);
             if (!ctx.hasUI) return;
-            const output = (result.stdout || result.stderr).trim();
+            const output = sanitizeTerminalText(
+              (result.stdout || result.stderr).trim(),
+              { allowSgr: true },
+            );
             if (output) {
               ctx.ui.notify(output, result.code === 0 ? "info" : "error");
             }
