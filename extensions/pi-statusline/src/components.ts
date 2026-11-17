@@ -162,14 +162,21 @@ const gitDiff: ComponentFn = (spec, ctx) => {
   return parts.join(" ");
 };
 
+const MODEL_PREFIXES_TO_OMIT: readonly string[] = ["claude-", "gemini-"];
+const MODEL_SUFFIXES_TO_OMIT: readonly RegExp[] = [/-\d{8}$/, /-preview$/i];
+
 export function shortenModel(modelId: string): string {
   if (!modelId) return "";
   const slash = modelId.lastIndexOf("/");
   let name = slash >= 0 ? modelId.slice(slash + 1) : modelId;
-  name = name.replace(/-\d{8}$/, "");
-  name = name.replace(/^claude-/i, "");
-  name = name.replace(/^gemini-/i, "");
-  name = name.replace(/-preview$/i, "");
+  for (const prefix of MODEL_PREFIXES_TO_OMIT) {
+    if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+      name = name.slice(prefix.length);
+    }
+  }
+  for (const suffix of MODEL_SUFFIXES_TO_OMIT) {
+    name = name.replace(suffix, "");
+  }
   return name.trim() || modelId;
 }
 
