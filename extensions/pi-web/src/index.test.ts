@@ -8,6 +8,7 @@ import {
   WEB_HISTORY_TYPE,
   createWebFetchTool,
   createWebSearchTool,
+  getWebSessionState,
   rememberWebLinks,
 } from "./tools.js";
 
@@ -51,6 +52,36 @@ function createMockPi() {
     handlers,
   };
 }
+
+describe("rememberWebLinks", () => {
+  afterEach(() => {
+    // Reset lastActiveWebState to avoid polluting other tests.
+    getWebSessionState({});
+  });
+  it("dedupes and caps at 20", () => {
+    const owner = {};
+    const links = Array.from({ length: 25 }, (_, i) => ({
+      url: `https://example.com/${i}`,
+    }));
+    rememberWebLinks(links, owner);
+    const state = getWebSessionState(owner);
+    expect(state.urls.length).toBe(20);
+    expect(new Set(state.urls).size).toBe(20);
+  });
+  it("filters non-http urls", () => {
+    const owner = {};
+    rememberWebLinks(
+      [
+        { url: "https://example.com/a" },
+        { url: "ftp://example.com/b" },
+        { url: "https://example.com/a" },
+      ],
+      owner,
+    );
+    const state = getWebSessionState(owner);
+    expect(state.urls).toEqual(["https://example.com/a"]);
+  });
+});
 
 describe("pi-web extension", () => {
   it("inserts a recent result link into the editor", async () => {
