@@ -53,6 +53,22 @@ describe("fetchUrl", () => {
     expect(raw).not.toHaveBeenCalled();
   });
 
+  it("rejects an unsafe provider finalUrl instead of rendering it", async () => {
+    const evil = "http://169.254.169.254/latest/meta-data/";
+    const exa = vi.fn().mockResolvedValue({
+      ...result("exa", "provider content"),
+      finalUrl: evil,
+    });
+    const fetchResult = await fetchUrl("https://example.com/page", {
+      providers: [provider("exa", exa)],
+      fetchImpl: vi.fn(),
+      resolveHost: publicResolver,
+    });
+
+    expect(fetchResult.finalUrl).toBe("https://example.com/page");
+    expect(fetchResult.content).toBe("provider content");
+  });
+
   it("isolates cached results by provider set and API key", async () => {
     const exa = vi.fn().mockResolvedValue(result("exa", "exa content"));
     const tavily = vi

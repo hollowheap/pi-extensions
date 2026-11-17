@@ -4,9 +4,10 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Rule } from "@hollowheap/core";
-import { describe, expect, it, vi } from "vitest";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LanguageToolsConfig, ServerConfig } from "./config.js";
-import type { LspClient } from "./lsp.js";
+import { type LspClient, disposeAllLspClients, getLspClient } from "./lsp.js";
 import { type LangToolDeps, createLangTool } from "./tool.js";
 
 function workspace(): string {
@@ -22,15 +23,19 @@ function file(dir: string, relative: string, text = "const x = 1;\n"): string {
 
 function context(
   dir: string,
-  options: { trusted?: boolean; rules?: Rule[] } = {},
+  options: { trusted?: boolean; rules?: Rule[]; owner?: object } = {},
 ): ExtensionContext {
   return {
     cwd: dir,
-    sessionManager: {},
+    sessionManager: options.owner ?? {},
     isProjectTrusted: () => options.trusted ?? true,
     ui: { notify: vi.fn() },
   } as unknown as ExtensionContext;
 }
+
+afterEach(async () => {
+  await disposeAllLspClients();
+});
 
 function server(overrides: Partial<ServerConfig> = {}): ServerConfig {
   return {
@@ -150,6 +155,8 @@ describe("lang definition and references", () => {
       args: [],
       root: dir,
       timeoutMs: 1_000,
+      language: "typescript",
+      owner: expect.any(Object),
     });
     expect(result.details).toMatchObject({
       action: "definition",
@@ -655,6 +662,96 @@ describe("lang validation and policy", () => {
       "pi-language-tools: bad server",
       "warning",
     );
+  });
+
+  it("bounds oversized hover, signature, and diagnostic fields", async () => {
+    const dir = workspace();
+    file(dir, "src/a.ts");
+    const huge = "X".repeat(5_000_000);
+    const client = fakeClient({
+      hover: vi.fn(async () => ({ contents: huge })),
+      signatureHelp: vi.fn(async () => ({
+        signatures: [{ label: huge, documentation: huge }],
+      })),
+      diagnostics: vi.fn(async () => [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 1 },
+          },
+          message: huge,
+        },
+      ]),
+    });
+    const { deps } = setup(client);
+    const tool = createLangTool(deps);
+    const ctx = context(dir);
+
+    for (const action of ["hover", "signature_help", "diagnostics"]) {
+      const result = await run(
+        tool,
+        { action, path: "src/a.ts", line: 1, column: 1 },
+        ctx,
+      );
+      expect(textOf(result).length).toBeLessThan(100_000);
+      expect(result.details).toMatchObject({ truncated: true });
+    }
+  });
+
+  it("publishes only the current session and root's servers", async () => {
+    const dir = workspace();
+    file(dir, "src/a.ts");
+    const owner = { id: "snapshot-owner" };
+    getLspClient({
+      name: "other-session",
+      command: "cmd-a",
+      args: [],
+      root: dir,
+      owner: {},
+    });
+    getLspClient({
+      name: "other-root",
+      command: "cmd-b",
+      args: [],
+      root: workspace(),
+      owner,
+    });
+    getLspClient({
+      name: "current",
+      command: "cmd-c",
+      args: [],
+      root: dir,
+      owner,
+      language: "typescript",
+    });
+    const { deps } = setup(fakeClient());
+    const tool = createLangTool(deps);
+
+    await run(
+      tool,
+      { action: "definition", path: "src/a.ts", line: 1, column: 1 },
+      context(dir, { owner }),
+    );
+
+    expect(getSessionSnapshot(owner).lsp?.servers).toEqual([
+      { name: "current", language: "typescript", status: "running" },
+    ]);
+  });
+
+  it("does not fabricate a running server when no client exists", async () => {
+    const dir = workspace();
+    file(dir, "src/a.ts");
+    const owner = { id: "empty-snapshot-owner" };
+    const { deps } = setup(fakeClient());
+    const tool = createLangTool(deps);
+
+    await run(
+      tool,
+      { action: "definition", path: "src/a.ts", line: 1, column: 1 },
+      context(dir, { owner }),
+    );
+
+    expect(getSessionSnapshot(owner).lsp?.servers).toEqual([]);
   });
 
   it("renders collapsed previews and expanded Markdown results", () => {

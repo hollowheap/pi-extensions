@@ -10,6 +10,8 @@ import {
   SEARCH_MAX_RESULTS,
   createWebFetchTool,
   createWebSearchTool,
+  getWebSessionState,
+  rememberWebLinks,
 } from "./tools.js";
 
 function textOf(result: { content: unknown }): string {
@@ -138,6 +140,49 @@ describe("web_search", () => {
       {} as never,
     );
     expect(textOf(failed)).toContain("provider down");
+  });
+
+  it("drops unsafe search URLs from results and history", async () => {
+    const search = vi.fn().mockResolvedValue([
+      {
+        title: "metadata",
+        url: "http://169.254.169.254/latest/meta-data/",
+        snippet: "",
+      },
+      { title: "loopback", url: "http://localhost/x", snippet: "" },
+      { title: "script", url: "javascript:alert(1)", snippet: "" },
+      { title: "safe", url: "https://safe.example/a", snippet: "ok" },
+    ]);
+    const tool = createWebSearchTool({ search });
+    const owner = { id: "search-safety" };
+    const result = await tool.execute(
+      "1",
+      { query: "q" },
+      undefined,
+      undefined,
+      { sessionManager: owner } as never,
+    );
+
+    expect(detailsOf(result).results).toEqual([
+      { title: "safe", url: "https://safe.example/a", snippet: "ok" },
+    ]);
+    expect(getWebSessionState(owner).urls).toEqual(["https://safe.example/a"]);
+    expect(textOf(result)).not.toContain("169.254.169.254");
+  });
+
+  it("rejects private and metadata URLs when remembering links", () => {
+    const owner = { id: "history-safety" };
+    rememberWebLinks(
+      [
+        { url: "http://169.254.169.254/latest/meta-data/" },
+        { url: "http://localhost/x" },
+        { url: "http://10.0.0.1/private" },
+        { url: "javascript:alert(1)" },
+        { url: "https://safe.example/a" },
+      ],
+      owner,
+    );
+    expect(getWebSessionState(owner).urls).toEqual(["https://safe.example/a"]);
   });
 
   it("does not cache repeated searches", async () => {

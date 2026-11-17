@@ -16,6 +16,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
 vi.mock("./lsp.js", () => ({
   disposeAllLspClients: disposeAll,
   getLspClient: vi.fn(),
+  registerLspExitHook: vi.fn(),
 }));
 
 import extension from "./index.js";
@@ -131,5 +132,16 @@ describe("pi-language-tools extension", () => {
     pi.handlers.session_shutdown({}, {});
     await new Promise((r) => setTimeout(r, 10));
     expect(disposeAll).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for the shutdown dispose to finish", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    setLspLoaded(true);
+
+    const result = pi.handlers.session_shutdown({}, {});
+    expect(result).toBeInstanceOf(Promise);
+    await result;
+    expect(disposeAll).toHaveBeenCalledTimes(1);
   });
 });

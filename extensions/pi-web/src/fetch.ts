@@ -15,6 +15,7 @@ import {
   MAX_REDIRECTS,
   assertSafeResolvedUrl,
   assertSafeUrl,
+  isSafeUrl,
 } from "./url.js";
 
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -344,7 +345,12 @@ export async function fetchUrl(
       if (signal.aborted) {
         throw new DOMException("fetch aborted", "AbortError");
       }
-      if (result.content.trim() !== "") return result;
+      if (result.content.trim() !== "") {
+        return {
+          ...result,
+          finalUrl: isSafeUrl(result.finalUrl) ? result.finalUrl : url,
+        };
+      }
     } catch (error) {
       if (signal.aborted) throw error;
     }

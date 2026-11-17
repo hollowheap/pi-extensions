@@ -7,20 +7,26 @@ export interface ExtractedPage {
   media: NormalizedMedia[];
 }
 
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  apos: "'",
+  gt: ">",
+  lt: "<",
+  nbsp: " ",
+  quot: '"',
+};
+
 export function decodeEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&#(x?[0-9a-f]+);/gi, (_, raw: string) => {
-      const code =
-        raw[0]?.toLowerCase() === "x"
-          ? Number.parseInt(raw.slice(1), 16)
-          : Number(raw);
+  return value.replace(
+    /&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/g,
+    (whole, entity: string) => {
+      if (entity[0] !== "#") {
+        return NAMED_ENTITIES[entity.toLowerCase()] ?? whole;
+      }
+      const hex = entity[1]?.toLowerCase() === "x";
+      const code = hex
+        ? Number.parseInt(entity.slice(2), 16)
+        : Number(entity.slice(1));
       if (
         !Number.isInteger(code) ||
         code < 0 ||
@@ -30,7 +36,8 @@ export function decodeEntities(value: string): string {
         return "\uFFFD";
       }
       return String.fromCodePoint(code);
-    });
+    },
+  );
 }
 
 export function stripTags(value: string): string {
@@ -193,17 +200,17 @@ export function htmlToMarkdown(html: string, base?: string): string {
   out = out.replace(
     /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi,
     (_, level, text) =>
-      `\n${"#".repeat(Number(level))} ${decodeEntities(stripTags(text)).trim()}\n\n`,
+      `\n${"#".repeat(Number(level))} ${stripTags(text).trim()}\n\n`,
   );
   out = out.replace(
     /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
-    (_, code) => `\n\`\`\`\n${decodeEntities(code).trim()}\n\`\`\`\n\n`,
+    (_, code) => `\n\`\`\`\n${String(code).trim()}\n\`\`\`\n\n`,
   );
   out = out.replace(
     /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi,
     (_, _raw, double, single, bare, text) => {
       const url = resolveUrl(double ?? single ?? bare ?? "", base);
-      const label = decodeEntities(stripTags(text)).trim() || url;
+      const label = stripTags(text).trim() || url;
       return url === "" ? label : `[${label}](${url})`;
     },
   );
@@ -211,9 +218,7 @@ export function htmlToMarkdown(html: string, base?: string): string {
     const src = attr(tag, "src");
     if (!src) return "";
     const url = resolveUrl(src, base);
-    return url === ""
-      ? ""
-      : `![${decodeEntities(attr(tag, "alt") ?? "")}](${url})`;
+    return url === "" ? "" : `![${attr(tag, "alt") ?? ""}](${url})`;
   });
   out = out
     .replace(/<br\s*\/?>/gi, "\n")

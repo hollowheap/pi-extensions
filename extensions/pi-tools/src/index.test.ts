@@ -229,6 +229,69 @@ describe("/cd command", () => {
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("cwd", undefined);
   });
 
+  it("tombstones a rejected persisted cwd so later restores stop re-reading it", () => {
+    const { dir, pi, ctx, branch } = setupCd();
+    branch.push({
+      type: "custom",
+      customType: CWD_ENTRY,
+      data: { cwd: join(dir, "secret"), updatedAt: Date.now() },
+    });
+
+    pi.handlers.session_start(
+      { type: "session_start", reason: "startup" } as never,
+      ctx as never,
+    );
+    expect(currentCwd(ctx)).toBeUndefined();
+    const cwdEntries = branch.filter((e) => e.customType === CWD_ENTRY);
+    expect(cwdEntries.at(-1)?.data).toEqual(
+      expect.objectContaining({ cwd: null }),
+    );
+
+    pi.handlers.session_start(
+      { type: "session_start", reason: "startup" } as never,
+      ctx as never,
+    );
+    expect(currentCwd(ctx)).toBeUndefined();
+    expect(
+      branch.filter((e) => e.customType === CWD_ENTRY).at(-1)?.data,
+    ).toEqual(expect.objectContaining({ cwd: null }));
+  });
+
+  it("offers no completions until a session context is available", () => {
+    const { commands } = setupCd();
+    expect(commands.cd.getArgumentCompletions?.("s")).toBeNull();
+  });
+
+  it("clears the completion context on session shutdown", () => {
+    const { pi, ctx, commands } = setupCd();
+    pi.handlers.session_start(
+      { type: "session_start", reason: "startup" } as never,
+      ctx as never,
+    );
+    expect(commands.cd.getArgumentCompletions?.("s")).not.toBeNull();
+
+    pi.handlers.session_shutdown({} as never, ctx as never);
+    expect(commands.cd.getArgumentCompletions?.("s")).toBeNull();
+  });
+
+  it("rejects a cwd denied for any file-tool tag, not just read", async () => {
+    const rules = JSON.stringify({
+      rules: [
+        "allow read *",
+        "allow edit *",
+        "deny search secret/*",
+        "deny search secret",
+      ],
+    });
+    const { ctx, cd } = setupCd(rules);
+    await cd("secret");
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("denied by rules"),
+      "error",
+    );
+    expect(currentCwd(ctx)).toBeUndefined();
+  });
+
   it("re-persists CWD_ENTRY on session_compact when effective cwd differs from project root", () => {
     const { pi, ctx, cd, branch } = setupCd();
     void cd("sub");

@@ -25,6 +25,7 @@ export interface LspClientOptions {
   root: string;
   timeoutMs?: number;
   language?: string;
+  owner?: object;
 }
 
 interface PendingRequest {
@@ -74,6 +75,7 @@ export class LspClient {
   readonly root: string;
   readonly timeoutMs: number;
   readonly language?: string;
+  readonly owner?: object;
 
   private child: ChildProcessWithoutNullStreams | undefined;
   private startPromise: Promise<void> | undefined;
@@ -101,6 +103,7 @@ export class LspClient {
     this.root = options.root;
     this.timeoutMs = resolveTimeout(options.timeoutMs);
     this.language = options.language;
+    this.owner = options.owner;
     this.onExit = onExit ?? (() => undefined);
   }
 
@@ -343,6 +346,13 @@ export class LspClient {
     } catch {
       // Ignore if child already exited.
     }
+  }
+
+  killOnExit(): void {
+    const child = this.child;
+    if (child === undefined) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    this.killChildGroup(child, "SIGKILL");
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -743,6 +753,12 @@ export class LspClient {
 }
 
 const POOL_KEY = Symbol.for("@hollowheap/pi-language-tools/servers");
+const OWNER_IDS_KEY = Symbol.for("@hollowheap/pi-language-tools/owner-ids");
+
+interface OwnerIds {
+  ids: WeakMap<object, string>;
+  next: number;
+}
 
 type ClientPool = Map<string, LspClient>;
 
@@ -755,8 +771,37 @@ function getPool(): ClientPool {
   return created;
 }
 
+function getOwnerIds(): OwnerIds {
+  const store = globalThis as unknown as Record<symbol, OwnerIds | undefined>;
+  const existing = store[OWNER_IDS_KEY];
+  if (existing !== undefined) return existing;
+  const created: OwnerIds = { ids: new WeakMap(), next: 0 };
+  store[OWNER_IDS_KEY] = created;
+  return created;
+}
+
+function ownerId(owner: object | undefined): string {
+  if (owner === undefined) return "";
+  const registry = getOwnerIds();
+  let id = registry.ids.get(owner);
+  if (id === undefined) {
+    id = `owner-${registry.next}`;
+    registry.next += 1;
+    registry.ids.set(owner, id);
+  }
+  return id;
+}
+
 function poolKey(options: LspClientOptions): string {
-  return `${options.command}\0${options.args.join("\0")}\0${options.root}`;
+  return [
+    ownerId(options.owner),
+    options.name,
+    options.command,
+    ...options.args,
+    options.root,
+    String(options.timeoutMs ?? ""),
+    options.language ?? "",
+  ].join("\0");
 }
 
 export function getLspClient(options: LspClientOptions): LspClient {
@@ -800,11 +845,13 @@ export interface LspStatusItem {
   status: string;
 }
 
-export function listLspStatus(): LspStatusItem[] {
+export function listLspStatus(owner?: object, root?: string): LspStatusItem[] {
   const pool = getPool();
   const list: LspStatusItem[] = [];
   for (const client of pool.values()) {
     if (client.disposed) continue;
+    if (owner !== undefined && client.owner !== owner) continue;
+    if (root !== undefined && client.root !== root) continue;
     list.push({
       name: client.name,
       ...(client.language ? { language: client.language } : {}),
@@ -812,4 +859,20 @@ export function listLspStatus(): LspStatusItem[] {
     });
   }
   return list;
+}
+
+export function killAllLspClients(): void {
+  for (const client of getPool().values()) {
+    client.killOnExit();
+  }
+}
+
+let exitHookRegistered = false;
+
+export function registerLspExitHook(): void {
+  if (exitHookRegistered) return;
+  exitHookRegistered = true;
+  process.once("exit", () => {
+    killAllLspClients();
+  });
 }

@@ -13,10 +13,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { checkPath } from "@hollowheap/core/policy";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, readPersistedCwd, setCwd } from "@hollowheap/core/state";
-import { loadContextPermissions } from "./permissions.js";
+import { isPathDenied } from "./permissions.js";
 
 function isWithinRoot(root: string, path: string): boolean {
   const rel = relative(resolve(root), resolve(path));
@@ -26,9 +25,9 @@ function isWithinRoot(root: string, path: string): boolean {
   );
 }
 
-function completeCd(prefix: string, ctx?: ExtensionContext) {
-  const root = ctx?.cwd ?? process.cwd();
-  const base = ctx ? effectiveCwd(ctx.cwd, ctx.sessionManager) : root;
+function completeCd(prefix: string, ctx: ExtensionContext) {
+  const root = ctx.cwd;
+  const base = effectiveCwd(ctx.cwd, ctx.sessionManager);
   const trimmed = prefix.trim();
   const dir =
     trimmed === "" || trimmed.endsWith("/") ? trimmed || "." : dirname(trimmed);
@@ -41,16 +40,11 @@ function completeCd(prefix: string, ctx?: ExtensionContext) {
   } catch {
     return null;
   }
-  const rules = ctx ? loadContextPermissions(ctx) : undefined;
   return entries
     .filter((entry) => entry.isDirectory() && entry.name.startsWith(start))
     .filter((entry) => {
-      if (rules === undefined) return true;
       const abs = join(absDir, entry.name);
-      return (
-        isWithinRoot(root, abs) &&
-        checkPath(rules, abs, "read", root) !== "deny"
-      );
+      return isWithinRoot(root, abs) && !isPathDenied(ctx, abs, root);
     })
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => {
@@ -74,8 +68,7 @@ export default function (pi: ExtensionAPI) {
         isDir = false;
       }
       const within = isWithinRoot(ctx.cwd, restored);
-      const rules = loadContextPermissions(ctx);
-      const denied = checkPath(rules, restored, "read", ctx.cwd) === "deny";
+      const denied = isPathDenied(ctx, restored, ctx.cwd);
       if (isDir && within && !denied) {
         setCwd(ctx.sessionManager, restored);
         updateSessionSnapshot(ctx.sessionManager, "cwd", {
@@ -88,7 +81,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
     }
-    setCwd(ctx.sessionManager, undefined);
+    setCwd(ctx.sessionManager, undefined, { persist: true });
     ctx.ui?.setStatus?.("cwd", undefined);
   };
 
@@ -97,6 +90,9 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("session_tree", (_event, ctx) => {
     restoreCwd(ctx);
+  });
+  pi.on("session_shutdown", () => {
+    completionCtx = undefined;
   });
   pi.on("session_compact", (_event, ctx) => {
     const currentCtx = ctx ?? completionCtx;
@@ -116,7 +112,7 @@ export default function (pi: ExtensionAPI) {
     description:
       "Change the working directory for file tools (stays inside the project root)",
     getArgumentCompletions: (prefix: string) =>
-      completeCd(prefix, completionCtx),
+      completionCtx === undefined ? null : completeCd(prefix, completionCtx),
     handler: async (args, ctx) => {
       const raw = args.trim();
       if (raw === "") {
@@ -149,8 +145,7 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      const rules = loadContextPermissions(ctx);
-      if (checkPath(rules, abs, "read", ctx.cwd) === "deny") {
+      if (isPathDenied(ctx, abs, ctx.cwd)) {
         ctx.ui.notify(
           `pi-tools: directory denied by rules: ${sanitizeTerminalText(raw)}`,
           "error",

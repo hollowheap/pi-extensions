@@ -7,6 +7,7 @@ import {
   type LspClientOptions,
   disposeAllLspClients,
   getLspClient,
+  killAllLspClients,
 } from "./lsp.js";
 
 const fixturePath = fileURLToPath(
@@ -433,6 +434,70 @@ describe("LSP client", () => {
       try {
         process.kill(bgPid, "SIGKILL");
       } catch {}
+    }
+  });
+
+  it("kills live pooled children synchronously at process exit", async () => {
+    const dir = root();
+    const pidFile = join(dir, "pid");
+    const script = `
+      const { writeFileSync } = require("node:fs");
+      writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+      process.stdin.on("data", (chunk) => {
+        const text = chunk.toString("utf8");
+        const m = /"id":(\\d+)/.exec(text);
+        if (m && text.includes('"initialize"')) {
+          const body = JSON.stringify({ jsonrpc: "2.0", id: Number(m[1]), result: { capabilities: {} } });
+          process.stdout.write("Content-Length: " + Buffer.byteLength(body) + "\\r\\n\\r\\n" + body);
+        }
+      });
+      setInterval(() => {}, 1000);
+    `;
+    const file = source(dir, "index.ts", "const x = 1;\n");
+    const client = getLspClient({
+      name: "exit-hook",
+      command: process.execPath,
+      args: ["-e", script],
+      root: dir,
+      timeoutMs: 500,
+    });
+    let pid: number | undefined;
+    try {
+      await expect(
+        client.definition(file, "typescript", { line: 0, character: 0 }),
+      ).rejects.toThrow(/timed out/);
+      for (let i = 0; i < 100; i += 1) {
+        try {
+          readFileSync(pidFile, "utf8");
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      pid = Number(readFileSync(pidFile, "utf8").trim());
+      expect(client.pid).toBe(pid);
+
+      killAllLspClients();
+
+      const isAlive = (value: number) => {
+        try {
+          process.kill(value, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      for (let i = 0; i < 50 && isAlive(pid); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(isAlive(pid)).toBe(false);
+    } finally {
+      await client.dispose();
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
     }
   });
 });

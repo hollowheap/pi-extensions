@@ -40,6 +40,7 @@ import type {
   ProviderId,
   SearchRequest,
 } from "./providers/types.js";
+import { isSafeUrl } from "./url.js";
 
 export const SEARCH_DEFAULT_RESULTS = 5;
 export const SEARCH_MAX_RESULTS = 10;
@@ -99,7 +100,7 @@ export function rememberWebLinks(
   const merged = [...links.map((link) => link.url), ...state.urls];
   state.urls = merged
     .filter((url) => {
-      if (!/^https?:\/\//i.test(url) || seen.has(url)) return false;
+      if (seen.has(url) || !isSafeUrl(url)) return false;
       seen.add(url);
       return true;
     })
@@ -444,7 +445,8 @@ export function createWebSearchTool(
           maxResults: limit,
           signal,
         });
-        const capped = results.slice(0, limit).map(normalizeSearch);
+        const safeResults = results.filter((item) => isSafeUrl(item.url));
+        const capped = safeResults.slice(0, limit).map(normalizeSearch);
         const owner = ctx?.sessionManager;
         rememberWebLinks(capped, owner);
         const state = getWebSessionState(owner);
@@ -468,14 +470,14 @@ export function createWebSearchTool(
         const text = formatSearchMarkdown(
           query,
           capped,
-          results.length > limit,
+          safeResults.length > limit,
         );
         return {
           content: [{ type: "text" as const, text }],
           details: {
             query,
             results: capped,
-            truncated: results.length > limit,
+            truncated: safeResults.length > limit,
           },
         };
       } catch (error) {

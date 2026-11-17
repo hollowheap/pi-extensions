@@ -14,6 +14,8 @@ describe("HTML extraction", () => {
     expect(decodeEntities("A &amp; B &#39;ok&#39;")).toBe("A & B 'ok'");
     expect(decodeEntities("&#128512; &#x1F600;")).toBe("😀 😀");
     expect(decodeEntities("&#xD800; &#x110000;")).toBe("\uFFFD \uFFFD");
+    expect(decodeEntities("&amp;lt;b&amp;gt;")).toBe("&lt;b&gt;");
+    expect(decodeEntities("&unknown; &amp;amp;")).toBe("&unknown; &amp;");
     expect(resolveUrl("/next", "https://example.com/docs/")).toBe(
       "https://example.com/next",
     );
@@ -51,6 +53,7 @@ describe("HTML extraction", () => {
     expect(markdown).toContain("![Pic](https://example.com/img.png)");
     expect(markdown).not.toContain("bad()");
     expect(htmlToMarkdown("Visible<script>bad()")).toBe("Visible");
+    expect(htmlToMarkdown("<p>&amp;lt;b&amp;gt;</p>")).toBe("&lt;b&gt;");
   });
 
   it("extracts unique links and media metadata", () => {

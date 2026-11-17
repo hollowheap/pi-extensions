@@ -47,9 +47,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_shutdown", () => {
-    void disposeIfLoaded();
-  });
+  pi.on("session_shutdown", () => disposeIfLoaded());
 
   pi.on("before_agent_start", (event, ctx) => {
     if (!ctx?.hasUI) return;

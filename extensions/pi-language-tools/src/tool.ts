@@ -27,6 +27,41 @@ import {
 import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
 
 const LSP_LOADED_KEY = Symbol.for("@hollowheap/pi-language-tools/lsp-loaded");
+const MAX_FIELD_CHARS = 4_000;
+const MAX_OUTPUT_CHARS = 20_000;
+const MAX_OUTPUT_BYTES = 64 * 1024;
+
+interface BoundedText {
+  text: string;
+  truncated: boolean;
+}
+
+function truncatedBytes(text: string, maxBytes: number): string {
+  const bytes = Buffer.from(text, "utf8");
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] ?? 0) >= 0x80 && (bytes[end] ?? 0) < 0xc0) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString("utf8");
+}
+
+function boundText(
+  text: string,
+  maxChars: number,
+  maxBytes: number,
+): BoundedText {
+  const charTruncated = text.length > maxChars;
+  const clipped = charTruncated ? text.slice(0, maxChars) : text;
+  const byteTruncated = Buffer.byteLength(clipped, "utf8") > maxBytes;
+  return {
+    text: byteTruncated ? truncatedBytes(clipped, maxBytes) : clipped,
+    truncated: charTruncated || byteTruncated,
+  };
+}
+
+function boundField(text: string): BoundedText {
+  return boundText(text, MAX_FIELD_CHARS, MAX_FIELD_CHARS * 4);
+}
 
 export function isLspLoaded(): boolean {
   return Boolean(
@@ -299,13 +334,14 @@ function formatSymbolNode(
   rules: readonly Rule[],
 ): string | undefined {
   const indent = "  ".repeat(depth);
+  const name = boundField(node.name).text;
   if (node.location !== undefined) {
     const path = pathForUri(node.location.uri);
     if (path === undefined || !pathAllowed(path, rules, root)) return undefined;
-    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(effective, path)}:${node.location.range.start.line + 1}`;
+    return `${indent}${name} (${kindName(node.kind)}) ${displayPath(effective, path)}:${node.location.range.start.line + 1}`;
   }
   if (node.range !== undefined) {
-    return `${indent}${node.name} (${kindName(node.kind)}) ${displayPath(effective, filePath)}:${node.range.start.line + 1}`;
+    return `${indent}${name} (${kindName(node.kind)}) ${displayPath(effective, filePath)}:${node.range.start.line + 1}`;
   }
   return undefined;
 }
@@ -376,35 +412,51 @@ function formatWorkspaceSymbols(
     }
     const line = (location.range?.start.line ?? 0) + 1;
     const column = (location.range?.start.character ?? 0) + 1;
-    const container =
+    const containerField =
       typeof entry.containerName === "string" && entry.containerName !== ""
-        ? ` [${entry.containerName}]`
-        : "";
+        ? boundField(entry.containerName)
+        : undefined;
+    if (containerField?.truncated) truncated = true;
+    const container =
+      containerField === undefined ? "" : ` [${containerField.text}]`;
     const kind = typeof entry.kind === "number" ? entry.kind : 0;
     lines.push(
-      `${displayPath(effective, path)}:${line}:${column} ${entry.name} (${kindName(kind)})${container}`,
+      `${displayPath(effective, path)}:${line}:${column} ${boundField(entry.name).text} (${kindName(kind)})${container}`,
     );
   }
   return { lines, truncated };
 }
 
-function formatHover(value: unknown): string {
-  if (typeof value !== "object" || value === null) return "No hover info.";
-  const hover = value as { contents?: unknown; range?: unknown };
-  if (typeof hover.contents === "string") return hover.contents;
-  if (Array.isArray(hover.contents)) {
-    const parts = hover.contents
-      .map((c) =>
-        typeof c === "string" ? c : ((c as { value?: string })?.value ?? ""),
-      )
-      .filter(Boolean);
-    return parts.join("\n") || "No hover info.";
+function formatHover(value: unknown): BoundedText {
+  const bounded = (text: string): BoundedText => boundField(text);
+  let text = "No hover info.";
+  let truncated = false;
+  if (typeof value === "object" && value !== null) {
+    const hover = value as { contents?: unknown };
+    if (typeof hover.contents === "string") {
+      const field = bounded(hover.contents);
+      text = field.text;
+      truncated = field.truncated;
+    } else if (Array.isArray(hover.contents)) {
+      const parts = hover.contents.map((c) => {
+        const raw =
+          typeof c === "string" ? c : ((c as { value?: string })?.value ?? "");
+        const field = bounded(raw);
+        truncated ||= field.truncated;
+        return field.text;
+      });
+      text = parts.filter(Boolean).join("\n") || "No hover info.";
+    } else if (typeof hover.contents === "object" && hover.contents !== null) {
+      const c = hover.contents as { value?: string };
+      if (typeof c.value === "string") {
+        const field = bounded(c.value);
+        text = field.text;
+        truncated = field.truncated;
+      }
+    }
   }
-  if (typeof hover.contents === "object" && hover.contents !== null) {
-    const c = hover.contents as { value?: string; kind?: string };
-    if (typeof c.value === "string") return c.value;
-  }
-  return "No hover info.";
+  const result = boundText(text, MAX_OUTPUT_CHARS, MAX_OUTPUT_BYTES);
+  return { text: result.text, truncated: truncated || result.truncated };
 }
 
 function documentationText(value: unknown): string | undefined {
@@ -413,15 +465,17 @@ function documentationText(value: unknown): string | undefined {
   return undefined;
 }
 
-function formatSignatureHelp(value: unknown): string {
-  if (!isRecord(value) || !Array.isArray(value.signatures)) {
-    return "No signature help.";
-  }
+function formatSignatureHelp(value: unknown): BoundedText {
+  const fallback: BoundedText = {
+    text: "No signature help.",
+    truncated: false,
+  };
+  if (!isRecord(value) || !Array.isArray(value.signatures)) return fallback;
   const signatures = value.signatures.filter(
     (signature): signature is Record<string, unknown> =>
       isRecord(signature) && typeof signature.label === "string",
   );
-  if (signatures.length === 0) return "No signature help.";
+  if (signatures.length === 0) return fallback;
 
   const activeIndex =
     typeof value.activeSignature === "number" &&
@@ -431,9 +485,15 @@ function formatSignatureHelp(value: unknown): string {
       ? value.activeSignature
       : 0;
   const signature = signatures[activeIndex];
-  if (signature === undefined) return "No signature help.";
+  if (signature === undefined) return fallback;
 
-  const lines = [signature.label];
+  let truncated = false;
+  const add = (text: string): string => {
+    const field = boundField(text);
+    truncated ||= field.truncated;
+    return field.text;
+  };
+  const lines = [add(signature.label as string)];
   const parameters = Array.isArray(signature.parameters)
     ? signature.parameters
     : [];
@@ -445,15 +505,20 @@ function formatSignatureHelp(value: unknown): string {
       ? parameters[value.activeParameter]
       : undefined;
   if (isRecord(activeParameter) && typeof activeParameter.label === "string") {
-    lines.push(`Parameter: ${activeParameter.label}`);
+    lines.push(`Parameter: ${add(activeParameter.label)}`);
   }
   const parameterDoc = isRecord(activeParameter)
     ? documentationText(activeParameter.documentation)
     : undefined;
-  if (parameterDoc !== undefined) lines.push(parameterDoc);
+  if (parameterDoc !== undefined) lines.push(add(parameterDoc));
   const signatureDoc = documentationText(signature.documentation);
-  if (signatureDoc !== undefined) lines.push(signatureDoc);
-  return lines.join("\n");
+  if (signatureDoc !== undefined) lines.push(add(signatureDoc));
+  const result = boundText(
+    lines.join("\n"),
+    MAX_OUTPUT_CHARS,
+    MAX_OUTPUT_BYTES,
+  );
+  return { text: result.text, truncated: truncated || result.truncated };
 }
 
 function formatHighlights(
@@ -509,10 +574,12 @@ function formatDiagnostics(
     if (!isRecord(entry)) continue;
     const range = rangeOf(entry.range);
     if (range === undefined) continue;
-    const message =
+    const message = boundField(
       typeof entry.message === "string" && entry.message.trim() !== ""
         ? entry.message
-        : "diagnostic";
+        : "diagnostic",
+    );
+    if (message.truncated) truncated = true;
     if (lines.length >= cap) {
       truncated = true;
       break;
@@ -526,7 +593,7 @@ function formatDiagnostics(
         ? ` ${entry.source}`
         : "";
     lines.push(
-      `${path}:${range.start.line + 1}:${range.start.character + 1} ${diagnosticSeverity(entry.severity)}${source}: ${message}${code}`,
+      `${path}:${range.start.line + 1}:${range.start.character + 1} ${diagnosticSeverity(entry.severity)}${source}: ${message.text}${code}`,
     );
   }
   return { lines, truncated };
@@ -582,9 +649,10 @@ function textResult(
   content: { type: "text"; text: string }[];
   details: LangDetails;
 } {
+  const bounded = boundText(text, MAX_OUTPUT_CHARS, MAX_OUTPUT_BYTES);
   return {
-    content: [{ type: "text", text: sanitizeTerminalText(text) }],
-    details,
+    content: [{ type: "text", text: sanitizeTerminalText(bounded.text) }],
+    details: { ...details, truncated: details.truncated || bounded.truncated },
   };
 }
 
@@ -615,7 +683,8 @@ const defaultDeps: LangToolDeps = {
   loadRules: defaultLoadRules,
   getClient: async (options) => {
     setLspLoaded(true);
-    const { getLspClient } = await import("./lsp.js");
+    const { getLspClient, registerLspExitHook } = await import("./lsp.js");
+    registerLspExitHook();
     return getLspClient(options);
   },
   getAgentDir,
@@ -623,28 +692,15 @@ const defaultDeps: LangToolDeps = {
 
 const lspRequestCounts = new WeakMap<object, number>();
 
-async function publishLspSnapshot(
-  ctx: ExtensionContext,
-  serverName: string,
-  languageId: string,
-): Promise<void> {
+async function publishLspSnapshot(ctx: ExtensionContext): Promise<void> {
   const owner = ctx.sessionManager;
   if (typeof owner !== "object" || owner === null) return;
   const requestCount = (lspRequestCounts.get(owner) ?? 0) + 1;
   lspRequestCounts.set(owner, requestCount);
   try {
     const { listLspStatus } = await import("./lsp.js");
-    const pooled = listLspStatus().map((item) =>
-      item.name === serverName && !item.language
-        ? { ...item, language: languageId }
-        : item,
-    );
-    const servers =
-      pooled.length > 0
-        ? pooled
-        : [{ name: serverName, language: languageId, status: "running" }];
     updateSessionSnapshot(owner, "lsp", {
-      servers,
+      servers: listLspStatus(owner, ctx.cwd),
       requestCount,
       updatedAt: Date.now(),
     });
@@ -806,78 +862,150 @@ async function executeLang(
       args: server.args,
       root: ctx.cwd,
       timeoutMs: server.timeoutMs,
+      language: languageId,
+      ...(typeof ctx.sessionManager === "object" && ctx.sessionManager !== null
+        ? { owner: ctx.sessionManager }
+        : {}),
     });
-    void publishLspSnapshot(ctx, server.name, languageId);
     const cap = clampMaxResults(params.max_results);
+    try {
+      if (action === "workspace_symbols") {
+        const raw = await client.workspaceSymbols(params.query ?? "");
+        const { lines, truncated } = formatWorkspaceSymbols(
+          raw,
+          effective,
+          ctx.cwd,
+          rules,
+          cap,
+        );
+        return formattedResult(
+          lines,
+          truncated,
+          "No workspace symbols found.",
+          pathDetails,
+        );
+      }
 
-    if (action === "workspace_symbols") {
-      const raw = await client.workspaceSymbols(params.query ?? "");
-      const { lines, truncated } = formatWorkspaceSymbols(
-        raw,
-        effective,
-        ctx.cwd,
-        rules,
-        cap,
-      );
-      return formattedResult(
-        lines,
-        truncated,
-        "No workspace symbols found.",
-        pathDetails,
-      );
-    }
+      if (action === "document_symbols") {
+        const raw = await client.documentSymbols(absolute, languageId);
+        const { lines, truncated } = formatDocumentSymbols(
+          raw,
+          absolute,
+          effective,
+          ctx.cwd,
+          rules,
+          cap,
+        );
+        return formattedResult(
+          lines,
+          truncated,
+          "No symbols found.",
+          pathDetails,
+        );
+      }
 
-    if (action === "document_symbols") {
-      const raw = await client.documentSymbols(absolute, languageId);
-      const { lines, truncated } = formatDocumentSymbols(
-        raw,
-        absolute,
-        effective,
-        ctx.cwd,
-        rules,
-        cap,
-      );
-      return formattedResult(
-        lines,
-        truncated,
-        "No symbols found.",
-        pathDetails,
-      );
-    }
+      if (action === "hover") {
+        const raw = await client.hover(
+          absolute,
+          languageId,
+          position as LspPosition,
+        );
+        const hover = formatHover(raw);
+        return textResult(hover.text, {
+          ...pathDetails,
+          count: 1,
+          truncated: hover.truncated,
+        });
+      }
 
-    if (action === "hover") {
-      const raw = await client.hover(
-        absolute,
-        languageId,
-        position as LspPosition,
-      );
-      const text = formatHover(raw);
-      return textResult(text, { ...pathDetails, count: 1, truncated: false });
-    }
+      if (action === "signature_help") {
+        const raw = await client.signatureHelp(
+          absolute,
+          languageId,
+          position as LspPosition,
+        );
+        const signature = formatSignatureHelp(raw);
+        return textResult(signature.text, {
+          ...pathDetails,
+          count: signature.text === "No signature help." ? 0 : 1,
+          truncated: signature.truncated,
+        });
+      }
 
-    if (action === "signature_help") {
-      const raw = await client.signatureHelp(
-        absolute,
-        languageId,
-        position as LspPosition,
-      );
-      const text = formatSignatureHelp(raw);
-      return textResult(text, {
-        ...pathDetails,
-        count: text === "No signature help." ? 0 : 1,
-        truncated: false,
-      });
-    }
+      if (action === "type_definition" || action === "implementation") {
+        const raw =
+          action === "type_definition"
+            ? await client.typeDefinition(
+                absolute,
+                languageId,
+                position as LspPosition,
+              )
+            : await client.implementation(
+                absolute,
+                languageId,
+                position as LspPosition,
+              );
+        const { lines, truncated } = formatLocations(
+          raw,
+          effective,
+          ctx.cwd,
+          rules,
+          cap,
+        );
+        return formattedResult(
+          lines,
+          truncated,
+          action === "type_definition"
+            ? "No type definitions found."
+            : "No implementations found.",
+          pathDetails,
+        );
+      }
 
-    if (action === "type_definition" || action === "implementation") {
+      if (action === "document_highlights") {
+        const raw = await client.documentHighlights(
+          absolute,
+          languageId,
+          position as LspPosition,
+        );
+        const { lines, truncated } = formatHighlights(
+          raw,
+          absolute,
+          effective,
+          cap,
+        );
+        return formattedResult(
+          lines,
+          truncated,
+          "No highlights found.",
+          pathDetails,
+        );
+      }
+
+      if (action === "diagnostics") {
+        const raw = await client.diagnostics(absolute, languageId);
+        const { lines, truncated } = formatDiagnostics(
+          raw,
+          absolute,
+          effective,
+          cap,
+        );
+        return formattedResult(
+          lines,
+          truncated,
+          "No diagnostics found.",
+          pathDetails,
+        );
+      }
+
       const raw =
-        action === "type_definition"
-          ? await client.typeDefinition(
+        action === "definition"
+          ? await client.definition(
               absolute,
               languageId,
               position as LspPosition,
             )
-          : await client.implementation(
+          : await client.references(
               absolute,
               languageId,
               position as LspPosition,
@@ -892,72 +1020,14 @@ async function executeLang(
       return formattedResult(
         lines,
         truncated,
-        action === "type_definition"
-          ? "No type definitions found."
-          : "No implementations found.",
+        action === "definition"
+          ? "No definitions found."
+          : "No references found.",
         pathDetails,
       );
+    } finally {
+      await publishLspSnapshot(ctx);
     }
-
-    if (action === "document_highlights") {
-      const raw = await client.documentHighlights(
-        absolute,
-        languageId,
-        position as LspPosition,
-      );
-      const { lines, truncated } = formatHighlights(
-        raw,
-        absolute,
-        effective,
-        cap,
-      );
-      return formattedResult(
-        lines,
-        truncated,
-        "No highlights found.",
-        pathDetails,
-      );
-    }
-
-    if (action === "diagnostics") {
-      const raw = await client.diagnostics(absolute, languageId);
-      const { lines, truncated } = formatDiagnostics(
-        raw,
-        absolute,
-        effective,
-        cap,
-      );
-      return formattedResult(
-        lines,
-        truncated,
-        "No diagnostics found.",
-        pathDetails,
-      );
-    }
-
-    const raw =
-      action === "definition"
-        ? await client.definition(absolute, languageId, position as LspPosition)
-        : await client.references(
-            absolute,
-            languageId,
-            position as LspPosition,
-          );
-    const { lines, truncated } = formatLocations(
-      raw,
-      effective,
-      ctx.cwd,
-      rules,
-      cap,
-    );
-    return formattedResult(
-      lines,
-      truncated,
-      action === "definition"
-        ? "No definitions found."
-        : "No references found.",
-      pathDetails,
-    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/\bENOENT\b/.test(message)) {

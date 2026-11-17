@@ -38,6 +38,36 @@ describe("searchKeyless", () => {
     expect(requested.searchParams.get("q")).toBe("docs");
   });
 
+  it("keeps each snippet with its own result when an earlier result has none", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          `<a class="result__a" href="https://a.test">A</a>
+           <a class="result__a" href="https://b.test">B</a>
+           <a class="result__snippet">Beta snippet</a>`,
+          { headers: { "content-type": "text/html" } },
+        ),
+    );
+    const results = await searchKeyless(
+      { query: "q", maxResults: 5 },
+      fetchImpl,
+    );
+    expect(results).toEqual([
+      {
+        title: "A",
+        url: "https://a.test/",
+        snippet: "",
+        provider: "duckduckgo",
+      },
+      {
+        title: "B",
+        url: "https://b.test/",
+        snippet: "Beta snippet",
+        provider: "duckduckgo",
+      },
+    ]);
+  });
+
   it("returns an empty list for empty HTML and reports HTTP failures", async () => {
     const empty = vi.fn(
       async () => new Response("<html></html>", { status: 200 }),
