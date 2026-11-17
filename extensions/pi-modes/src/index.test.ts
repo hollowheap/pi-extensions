@@ -227,6 +227,51 @@ describe("pi-modes extension", () => {
     );
   });
 
+  it("filters modes through the picker with pasted input", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    let component:
+      | {
+          render(width: number): string[];
+          handleInput(data: string): void;
+        }
+      | undefined;
+    const ctx = createContext({
+      custom: vi.fn(
+        (
+          factory: (
+            tui: unknown,
+            theme: unknown,
+            keybindings: unknown,
+            done: (value: string | undefined) => void,
+          ) => {
+            render(width: number): string[];
+            handleInput(data: string): void;
+          },
+        ) =>
+          new Promise<string | undefined>((resolve) => {
+            component = factory(
+              { requestRender: vi.fn() },
+              {
+                fg: (_token: string, text: string) => text,
+                bold: (text: string) => text,
+              },
+              {},
+              resolve,
+            );
+          }),
+      ),
+    });
+
+    const command = pi.command("mode").handler("", ctx);
+    await vi.waitFor(() => expect(component).toBeDefined());
+    component?.handleInput("\x1b[200~plan\x1b[201~");
+    expect(component?.render(60).join("\n")).toContain("Filter: plan");
+    component?.handleInput("\r");
+    await command;
+    expect(session(ctx.sessionManager).mode).toBe("plan");
+  });
+
   it("sanitizes control bytes in restore diagnostics and vetoes", () => {
     const pi = createMockPi();
     extension(pi as never);

@@ -90,6 +90,70 @@ describe("showFuzzyPicker", () => {
     await expect(result).resolves.toBeUndefined();
   });
 
+  it("appends a bracketed paste payload to the filter", async () => {
+    const env = pickerContext();
+    const result = showFuzzyPicker(env.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    const component = env.component();
+    component?.handleInput("\x1b[200~done\x1b[201~");
+
+    const rendered = component?.render(60).join("\n") ?? "";
+    expect(rendered).toContain("Filter: done");
+    expect(rendered).not.toContain("task-a");
+    component?.handleInput("\r");
+    await expect(result).resolves.toBe("task-b");
+  });
+
+  it("appends modifyOtherKeys printable input to the filter", async () => {
+    const env = pickerContext();
+    const result = showFuzzyPicker(env.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    const component = env.component();
+    for (const codepoint of [100, 111, 110, 101]) {
+      component?.handleInput(`\x1b[27;1;${codepoint}~`);
+    }
+
+    const rendered = component?.render(60).join("\n") ?? "";
+    expect(rendered).toContain("Filter: done");
+    expect(rendered).not.toContain("task-a");
+    component?.handleInput("\r");
+    await expect(result).resolves.toBe("task-b");
+  });
+
+  it("clears a non-empty filter on Escape before cancelling", async () => {
+    const env = pickerContext();
+    const result = showFuzzyPicker(env.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    const component = env.component();
+    for (const key of "done") component?.handleInput(key);
+    expect(component?.render(60).join("\n")).not.toContain("task-a");
+
+    const settled = vi.fn();
+    void result.then(settled);
+    component?.handleInput("\x1b");
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    const rendered = component?.render(60).join("\n") ?? "";
+    expect(rendered).toContain("Filter: (type to search)");
+    expect(rendered).toContain("task-a");
+
+    component?.handleInput("\r");
+    await expect(result).resolves.toBe("task-a");
+  });
+
   it("falls back outside the TUI", async () => {
     const result = await showFuzzyPicker(
       { mode: "rpc", hasUI: true, ui: {} } as never,
