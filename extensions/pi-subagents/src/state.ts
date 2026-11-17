@@ -27,6 +27,7 @@ export interface SubagentState extends ProcessState {
   session?: string;
   model?: string;
   workspace?: string;
+  isolated?: boolean;
   activeTool?: string;
   activeToolStartedAt?: number;
 }
@@ -89,6 +90,7 @@ function sanitize(state: SubagentState): ProcessState {
     ...(state.session !== undefined ? { session: state.session } : {}),
     ...(state.model !== undefined ? { model: state.model } : {}),
     ...(state.workspace !== undefined ? { workspace: state.workspace } : {}),
+    ...(state.isolated === true ? { isolated: true } : {}),
     ...(state.activeTool !== undefined ? { activeTool: state.activeTool } : {}),
     ...(state.activeToolStartedAt !== undefined
       ? { activeToolStartedAt: state.activeToolStartedAt }

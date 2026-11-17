@@ -139,7 +139,11 @@ function readState(data: unknown): TodoState | undefined {
 
 export function createTodoTool(
   getState: () => TodoState,
-  setState: (next: TodoState, ctx?: ExtensionContext) => void,
+  setState: (
+    next: TodoState,
+    ctx?: ExtensionContext,
+    changed?: boolean,
+  ) => void,
 ) {
   return defineTool({
     name: "todo",
@@ -217,7 +221,7 @@ export function createTodoTool(
           };
         }
         const result = applyTodoCommand(current, { type: "create", texts });
-        setState(result.state, ctx);
+        setState(result.state, ctx, result.changed);
         return {
           content: [
             {
@@ -243,7 +247,7 @@ export function createTodoTool(
           };
         }
         const result = applyTodoCommand(current, { type: "complete", ids });
-        setState(result.state, ctx);
+        setState(result.state, ctx, result.changed);
         return {
           content: [
             {
@@ -265,7 +269,7 @@ export function createTodoTool(
         const ids =
           params.ids ?? (params.id !== undefined ? [params.id] : undefined);
         const result = applyTodoCommand(current, { type: "delete", ids });
-        setState(result.state, ctx);
+        setState(result.state, ctx, result.changed);
         return {
           content: [
             {
@@ -294,15 +298,21 @@ export function createTodoTool(
           id: params.id,
           text: params.text,
         });
-        setState(result.state, ctx);
+        setState(result.state, ctx, result.changed);
         return {
           content: [
             {
               type: "text" as const,
-              text: formatTodoList(result.state.todos),
+              text: formatTodoConfirmation(
+                result.state.todos,
+                result.unknownIds,
+              ),
             },
           ],
-          details: { todos: result.state.todos },
+          details: {
+            todos: result.state.todos,
+            unknownIds: result.unknownIds,
+          },
         };
       }
 
@@ -323,15 +333,21 @@ export function createTodoTool(
           id: params.id,
           priority: params.priority,
         });
-        setState(result.state, ctx);
+        setState(result.state, ctx, result.changed);
         return {
           content: [
             {
               type: "text" as const,
-              text: formatTodoList(result.state.todos),
+              text: formatTodoConfirmation(
+                result.state.todos,
+                result.unknownIds,
+              ),
             },
           ],
-          details: { todos: result.state.todos },
+          details: {
+            todos: result.state.todos,
+            unknownIds: result.unknownIds,
+          },
         };
       }
 
@@ -428,8 +444,9 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(
     createTodoTool(
       () => state,
-      (next, context) => {
+      (next, context, changed = true) => {
         state = next;
+        if (!changed) return;
         pi.appendEntry(TODOS_TYPE, {
           todos: state.todos,
           nextId: state.nextId,
@@ -832,9 +849,9 @@ export default function (pi: ExtensionAPI) {
     event.systemPromptOptions.sections =
       event.systemPromptOptions.sections ?? {};
     event.systemPromptOptions.sections.todos_format =
-      "Todos are managed via tagged markdown blocks (not a direct tool): " +
-      "create with ```create_todos containing an ordered list; " +
-      "complete with ```complete_todos containing IDs. " +
+      "Todos are managed with the codemode-only `todo` tool (tools.todo). " +
+      "Actions: create, complete, delete, edit, priority, list. " +
+      "Call it as tools.todo({...}) inside a codemode script, never as a direct top-level tool. " +
       "State is branch-local. Use /todos to view progress.";
   });
 }

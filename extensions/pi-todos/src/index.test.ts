@@ -424,4 +424,105 @@ describe("pi-todos extension", () => {
     expect(snap?.done).toBe(1);
     expect(snap?.highPriority).toBe(0);
   });
+
+  it("guides the model to the codemode todo tool instead of tagged blocks", () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const event = {
+      systemPromptOptions: { sections: {} as Record<string, string> },
+    };
+
+    handlers.before_agent_start(event, context());
+
+    const section = event.systemPromptOptions.sections.todos_format;
+    expect(section).toContain("tools.todo");
+    expect(section).not.toContain("create_todos");
+    expect(section).not.toContain("complete_todos");
+  });
+
+  it("reports unknown IDs for edit and priority tool actions", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0][0];
+    const ctx = context();
+
+    await tool.execute(
+      "c1",
+      { action: "create", tasks: ["Task 1"] },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    const edited = await tool.execute(
+      "c2",
+      { action: "edit", id: 999, text: "x" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(firstText(edited)).toContain("Unknown IDs: 999");
+    expect(edited.details).toMatchObject({ unknownIds: [999] });
+
+    const prioritized = await tool.execute(
+      "c3",
+      { action: "priority", id: 999, priority: "high" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(firstText(prioritized)).toContain("Unknown IDs: 999");
+    expect(prioritized.details).toMatchObject({ unknownIds: [999] });
+  });
+
+  it("does not persist or publish no-op todo mutations", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0][0];
+    const ctx = context();
+
+    await tool.execute(
+      "c1",
+      { action: "complete", id: 999 },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.events.emit).not.toHaveBeenCalledWith(
+      "todos:state",
+      expect.anything(),
+    );
+
+    await tool.execute(
+      "c2",
+      { action: "create", text: "Open" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    pi.appendEntry.mockClear();
+    await tool.execute(
+      "c3",
+      { action: "delete", id: 999 },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await tool.execute(
+      "c4",
+      { action: "edit", id: 999, text: "x" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    await tool.execute(
+      "c5",
+      { action: "priority", id: 999, priority: "low" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
 });

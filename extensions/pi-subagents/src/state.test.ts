@@ -49,6 +49,26 @@ describe("SubagentStore", () => {
     clearSubagentWorkspace(root, "sub-1");
     expect(store.read("sub-1")?.workspace).toBeUndefined();
   });
+
+  it("preserves the isolated flag when clearing the workspace path", () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "sub-1",
+      status: "failed",
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+      startedAt: 1,
+      isolated: true,
+      workspace: "/repo/.pi-workspaces/sub-1",
+    });
+
+    clearSubagentWorkspace(root, "sub-1");
+    expect(store.read("sub-1")).toMatchObject({ isolated: true });
+    expect(store.read("sub-1")?.workspace).toBeUndefined();
+  });
   it("stores allowed state with restrictive permissions", () => {
     const root = agentDir();
     const store = new SubagentStore(root);

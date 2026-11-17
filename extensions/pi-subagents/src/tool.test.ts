@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -95,23 +98,25 @@ const ctx = {
   isProjectTrusted: () => true,
 };
 
+const baseConfig = {
+  maxConcurrent: 4,
+  maxDepth: 1,
+  defaultTimeoutMs: 30 * 60 * 1_000,
+  writeLockTimeoutMs: 30_000,
+  maxSessionAgents: 32,
+  maxSessionAgentBytes: 65_536,
+  harnesses: {},
+  path: "/tmp/subagents.json",
+  diagnostics: [],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.getAgentDir.mockReturnValue("/tmp/pi-subagents-tool");
   mocks.listSubagents.mockResolvedValue([]);
   mocks.readSubagentLog.mockReturnValue("");
   mocks.discoverAgents.mockReturnValue({ agents: [agent] });
-  mocks.loadSubagentsConfig.mockReturnValue({
-    maxConcurrent: 4,
-    maxDepth: 1,
-    defaultTimeoutMs: 30 * 60 * 1_000,
-    writeLockTimeoutMs: 30_000,
-    maxSessionAgents: 32,
-    maxSessionAgentBytes: 65_536,
-    harnesses: {},
-    path: "/tmp/subagents.json",
-    diagnostics: [],
-  });
+  mocks.loadSubagentsConfig.mockReturnValue({ ...baseConfig });
   mocks.startSubagent.mockResolvedValue(running);
   mocks.sendSubagent.mockResolvedValue(undefined);
   mocks.attachSubagent.mockResolvedValue(running);
@@ -1067,5 +1072,138 @@ describe("subagent tool", () => {
         startedAt: 1,
       }),
     );
+  });
+
+  it("uses defaultTimeoutMs for wait and lets an explicit timeout win", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      defaultTimeoutMs: 12_345,
+    });
+    const tool = createTool();
+    const exec = (params: Record<string, unknown>) =>
+      tool.execute("1", params, undefined, undefined, ctx as never);
+
+    await exec({ action: "wait", id: "sub-1" });
+    expect(mocks.waitSubagent).toHaveBeenCalledWith(
+      "/tmp/pi-subagents-tool",
+      "sub-1",
+      12_345,
+      undefined,
+    );
+
+    await exec({ action: "wait", id: "sub-1", timeoutMs: 2_000 });
+    expect(mocks.waitSubagent).toHaveBeenLastCalledWith(
+      "/tmp/pi-subagents-tool",
+      "sub-1",
+      2_000,
+      undefined,
+    );
+  });
+
+  it("treats defaultTimeoutMs 0 as an unbounded wait", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      defaultTimeoutMs: 0,
+    });
+    await createTool().execute(
+      "1",
+      { action: "wait", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(mocks.waitSubagent).toHaveBeenCalledWith(
+      "/tmp/pi-subagents-tool",
+      "sub-1",
+      Number.POSITIVE_INFINITY,
+      undefined,
+    );
+  });
+
+  it("does not count other projects toward maxConcurrent", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      maxConcurrent: 1,
+    });
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-other", project: "/elsewhere" },
+    ]);
+    const tool = createTool();
+
+    const started = await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(started)).not.toContain("maxConcurrent");
+    expect(mocks.startSubagent).toHaveBeenCalled();
+
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      status: "failed",
+    });
+    const resumed = await tool.execute(
+      "2",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(resumed)).not.toContain("maxConcurrent");
+    expect(mocks.startSubagent).toHaveBeenCalledTimes(2);
+
+    mocks.listSubagents.mockResolvedValue([running]);
+    const blocked = await tool.execute(
+      "3",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
+  });
+
+  it("keeps the isolated workspace when a failed child resumes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-subagents-isolated-"));
+    try {
+      const localCtx = { ...ctx, cwd: root };
+      await createTool().execute(
+        "1",
+        { action: "start", agent: "scout", task: "find", isolated: true },
+        undefined,
+        undefined,
+        localCtx as never,
+      );
+      const started = mocks.startSubagent.mock.calls[0]?.[0] as {
+        cwd: string;
+        workspace: string;
+        isolated?: boolean;
+      };
+      expect(started.cwd).toContain(".pi-workspaces");
+      expect(started.isolated).toBe(true);
+
+      mocks.attachSubagent.mockResolvedValue({
+        ...running,
+        status: "failed",
+        project: root,
+        isolated: true,
+        workspace: started.workspace,
+      });
+      await createTool().execute(
+        "2",
+        { action: "resume", id: "sub-1" },
+        undefined,
+        undefined,
+        localCtx as never,
+      );
+      const resumed = mocks.startSubagent.mock.calls[1]?.[0] as typeof started;
+      expect(resumed.cwd).toContain(".pi-workspaces");
+      expect(resumed.workspace).toContain(".pi-workspaces");
+      expect(resumed.isolated).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

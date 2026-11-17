@@ -51,6 +51,7 @@ User agents live in `<agentDir>/agents/*.md`. Project agents live in the nearest
 
 ```markdown
 ---
+
 name: scout
 description: Fast codebase recon
 tools: read, grep, find, ls
@@ -58,6 +59,7 @@ model: provider/model-id
 thinking: medium
 harness: claude
 ---
+
 You are a read-only scout. Return compressed findings.
 ```
 
@@ -109,24 +111,23 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 - Generic harnesses do not load the headless policy, the write lock, or the Pi session; resume re-runs the saved task without continuing Pi session context.
 - `message` steering is normalized to text for these harnesses.
 
-
 ## Tool
 
 `subagent` is a direct tool. One child per `start`; callers can start multiple children up to `maxConcurrent`.
 
-| Action | Input | Result |
-| --- | --- | --- |
-| `define` | `name`, `systemPrompt`; optional `description`, `tools`, `model`, `thinking`, `agentMode`, `effort`, `harness` | Stores a session-only agent definition; no file is written. |
-| `delete` | `name` | Removes a session-only definition; file agents cannot be deleted. |
-| `start` | `agent`, `task` | Starts a child and sends the task prompt. `agent` can name a file agent or a session definition. |
-| `list` | none | Summaries of persisted children. |
-| `status` | `id` | State plus bounded log output. |
-| `send` | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`) | Writes an RPC message to the live child. |
-| `wait` | `id`, optional `timeoutMs` | Waits for a terminal state without taking over the screen: the editor stays usable, so a steering message can be queued while the child runs. Aborting the turn stops waiting without cancelling the child. |
-| `cancel` | `id` | Aborts the child and waits briefly. |
-| `resume` | `id` | Restarts a failed child from its session, same id, next attempt. |
+| Action   | Input                                                                                                          | Result                                                                                                                                                                                                      |
+| -------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `define` | `name`, `systemPrompt`; optional `description`, `tools`, `model`, `thinking`, `agentMode`, `effort`, `harness` | Stores a session-only agent definition; no file is written.                                                                                                                                                 |
+| `delete` | `name`                                                                                                         | Removes a session-only definition; file agents cannot be deleted.                                                                                                                                           |
+| `start`  | `agent`, `task`                                                                                                | Starts a child and sends the task prompt. `agent` can name a file agent or a session definition.                                                                                                            |
+| `list`   | none                                                                                                           | Summaries of persisted children.                                                                                                                                                                            |
+| `status` | `id`                                                                                                           | State plus bounded log output.                                                                                                                                                                              |
+| `send`   | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`)                                              | Writes an RPC message to the live child.                                                                                                                                                                    |
+| `wait`   | `id`, optional `timeoutMs` (defaults to `defaultTimeoutMs`; `0` waits without a deadline)                      | Waits for a terminal state without taking over the screen: the editor stays usable, so a steering message can be queued while the child runs. Aborting the turn stops waiting without cancelling the child. |
+| `cancel` | `id`                                                                                                           | Aborts the child and waits briefly.                                                                                                                                                                         |
+| `resume` | `id`                                                                                                           | Restarts a failed child from its session, same id, next attempt.                                                                                                                                            |
 
-`start` and `resume` require a trusted project. Concurrent starts are bounded by `maxConcurrent`; recursive starts are bounded by `maxDepth`.
+`start` and `resume` require a trusted project. Concurrent starts in the current project are bounded by `maxConcurrent`; recursive starts are bounded by `maxDepth`.
 
 ## Commands
 
@@ -161,7 +162,7 @@ Lists and the picker label a child by agent, model, and task summary instead of 
 
 ## Recovery
 
-A child that exits non-zero, or whose runner dies, becomes `failed`. `resume` starts a new runner with the same logical id, preserves the saved harness, increments `attempt`, and sends the saved task again. Pi resumes its saved session; generic harnesses re-run the task without Pi session context. Resume is explicit; there is no auto-resume.
+A child that exits non-zero, or whose runner dies, becomes `failed`. `resume` starts a new runner with the same logical id, preserves the saved harness, increments `attempt`, and sends the saved task again. An isolated child is reallocated in the same `.pi-workspaces/<id>` directory. Pi resumes its saved session; generic harnesses re-run the task without Pi session context. Resume is explicit; there is no auto-resume.
 
 ## ACP
 

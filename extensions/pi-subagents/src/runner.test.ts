@@ -390,4 +390,28 @@ process.exit(res.status ?? 1);
       ).rejects.toThrow(/permission/i);
     }
   });
+
+  it("fails an orphaned live child whose runner died and socket is gone", async () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "orphan",
+      status: "running",
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now() - 10_000,
+      pid: process.pid,
+      runnerPid: 999_999_999,
+      socket: store.socketPath("orphan"),
+    });
+
+    const orphan = store.read("orphan");
+    if (orphan === undefined) throw new Error("missing orphan state");
+    const reconciled = await reconcileSubagent(root, orphan);
+    expect(reconciled.status).toBe("failed");
+    const waited = await waitSubagent(root, "orphan", 100);
+    expect(waited?.status).toBe("failed");
+  });
 });

@@ -306,6 +306,18 @@ function parseDefaultTimeoutMs(value: unknown, diagnostics: string[]): number {
   return DEFAULT_TIMEOUT_MS;
 }
 
+export function resolveSubagentWaitTimeoutMs(
+  config: Pick<SubagentsConfig, "defaultTimeoutMs">,
+  overrideMs?: number,
+): number {
+  if (overrideMs !== undefined) return overrideMs;
+  // `waitSubagent` treats an instruction to wait 0 ms as a single poll, so the
+  // documented "0 disables" value is represented as no deadline instead.
+  return config.defaultTimeoutMs === 0
+    ? Number.POSITIVE_INFINITY
+    : config.defaultTimeoutMs;
+}
+
 function parseWriteLockTimeoutMs(
   value: unknown,
   diagnostics: string[],

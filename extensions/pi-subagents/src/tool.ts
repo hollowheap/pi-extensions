@@ -21,6 +21,7 @@ import {
   type SubagentsConfig,
   loadSubagentsConfig,
   resolveSubagentSandboxOptions,
+  resolveSubagentWaitTimeoutMs,
 } from "./config.js";
 import type { SessionAgentDefinition } from "./definitions.js";
 import {
@@ -552,7 +553,8 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           }
           const running = (await listSubagents(agentDir)).filter(
             (state) =>
-              state.status === "running" || state.status === "starting",
+              isInProject(state, ctx.cwd) &&
+              (state.status === "running" || state.status === "starting"),
           ).length;
           if (running >= config.maxConcurrent) {
             return errorResult(`maxConcurrent ${config.maxConcurrent} reached`);
@@ -584,11 +586,6 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               ? { ...agent, model: resolvedModel }
               : agent;
           const id = generateSubagentId();
-          const workspace = await allocateSubagentWorkspace({
-            root: ctx.cwd,
-            id,
-            enabled: params.isolated === true,
-          });
           const sessionPath = join(
             agentDir,
             "subagents",
@@ -609,6 +606,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             config,
             effectiveAgent.name,
           );
+          const workspace = await allocateSubagentWorkspace({
+            root: ctx.cwd,
+            id,
+            enabled: params.isolated === true,
+          });
           let state: SubagentState;
           try {
             state = await startSubagent({
@@ -623,6 +625,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               args: spec.args,
               cwd: workspace.path,
               workspace: workspace.path,
+              isolated: workspace.isolated,
               harness: spec.harness,
               inputMode: spec.inputMode,
               ...(spec.initialInput !== undefined
@@ -701,7 +704,11 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           return textResult({ id, mode });
         }
         if (action === "wait") {
-          const timeoutMs = Math.min(params.timeoutMs ?? 30_000, 600_000);
+          const config = loadToolSubagentsConfig(agentDir, ctx);
+          const timeoutMs = resolveSubagentWaitTimeoutMs(
+            config,
+            params.timeoutMs,
+          );
           const current = await attachSubagent(agentDir, id);
           if (current === undefined || !isInProject(current, ctx.cwd)) {
             return errorResult(`unknown id: ${id}`);
@@ -760,7 +767,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             );
           }
           const running = (await listSubagents(agentDir)).filter(
-            (item) => item.status === "running" || item.status === "starting",
+            (item) =>
+              isInProject(item, ctx.cwd) &&
+              (item.status === "running" || item.status === "starting"),
           ).length;
           if (running >= config.maxConcurrent) {
             return errorResult(`maxConcurrent ${config.maxConcurrent} reached`);
@@ -816,40 +825,53 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               : effectiveAgent.mode === "plan"
                 ? "plan"
                 : "manual";
-          const resumed = await startSubagent({
-            agentDir,
+          const workspace = await allocateSubagentWorkspace({
+            root: ctx.cwd,
             id,
-            agent: effectiveAgent.name,
-            task: state.task,
-            depth: state.depth,
-            attempt: state.attempt + 1,
-            project: ctx.cwd,
-            ...(state.parentSession !== undefined
-              ? { parentSession: state.parentSession }
-              : {}),
-            command: spec.command,
-            args: spec.args,
-            cwd: ctx.cwd,
-            workspace: ctx.cwd,
-            harness: spec.harness,
-            inputMode: spec.inputMode,
-            ...(spec.initialInput !== undefined
-              ? { initialInput: spec.initialInput }
-              : {}),
-            env: {
-              ...(spec.env ?? {}),
-              PI_SUBAGENT_DEPTH: String(state.depth),
-              PI_SUBAGENT_ID: id,
-              PI_SUBAGENT_MODE: effectiveMode,
-            },
-            ...(effectiveAgent.model !== undefined
-              ? { model: effectiveAgent.model }
-              : {}),
-            ...(spec.harness === "pi" ? { sessionPath } : {}),
-            sandbox:
-              resolveSubagentSandboxOptions(config, effectiveAgent.name) ??
-              false,
+            enabled: state.isolated === true,
           });
+          let resumed: SubagentState;
+          try {
+            resumed = await startSubagent({
+              agentDir,
+              id,
+              agent: effectiveAgent.name,
+              task: state.task,
+              depth: state.depth,
+              attempt: state.attempt + 1,
+              project: ctx.cwd,
+              ...(state.parentSession !== undefined
+                ? { parentSession: state.parentSession }
+                : {}),
+              command: spec.command,
+              args: spec.args,
+              cwd: workspace.path,
+              workspace: workspace.path,
+              isolated: workspace.isolated,
+              harness: spec.harness,
+              inputMode: spec.inputMode,
+              ...(spec.initialInput !== undefined
+                ? { initialInput: spec.initialInput }
+                : {}),
+              env: {
+                ...(spec.env ?? {}),
+                PI_SUBAGENT_DEPTH: String(state.depth),
+                PI_SUBAGENT_ID: id,
+                PI_SUBAGENT_MODE: effectiveMode,
+              },
+              ...(effectiveAgent.model !== undefined
+                ? { model: effectiveAgent.model }
+                : {}),
+              ...(spec.harness === "pi" ? { sessionPath } : {}),
+              sandbox:
+                resolveSubagentSandboxOptions(config, effectiveAgent.name) ??
+                false,
+            });
+          } catch (error) {
+            await cleanupSubagentWorkspace(workspace).catch(() => {});
+            throw error;
+          }
+          subagentWorkspaceTracker.track(resumed.id, workspace);
           options.onSubagentsChange?.();
           if (spec.inputMode === "jsonl") {
             try {

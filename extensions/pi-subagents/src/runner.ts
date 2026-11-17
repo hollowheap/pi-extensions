@@ -41,6 +41,7 @@ export interface StartSubagentOptions {
   env?: NodeJS.ProcessEnv;
   model?: string;
   workspace?: string;
+  isolated?: boolean;
   sessionPath?: string;
   harness?: string;
   inputMode?: "jsonl" | "text";
@@ -124,6 +125,7 @@ export async function startSubagent(
     ...(options.workspace !== undefined
       ? { workspace: options.workspace }
       : {}),
+    ...(options.isolated === true ? { isolated: true } : {}),
     ...(options.sessionPath !== undefined
       ? { session: options.sessionPath }
       : {}),
@@ -355,7 +357,17 @@ export async function reconcileSubagent(
     !childAlive &&
     state.socket !== undefined &&
     !(await isSocketConnectable(state.socket));
-  if (!deadProcess && !missingProcess && !deadSocket) return state;
+  // The runner owns terminal-state writes, so a dead one cannot report its child's exit.
+  const orphanedRunner =
+    !withinStartupGrace &&
+    childAlive &&
+    state.runnerPid !== undefined &&
+    !runnerAlive &&
+    state.socket !== undefined &&
+    !(await isSocketConnectable(state.socket));
+  if (!deadProcess && !missingProcess && !deadSocket && !orphanedRunner) {
+    return state;
+  }
   const store = new SubagentStore(agentDir);
   return (
     store.updateIf(
