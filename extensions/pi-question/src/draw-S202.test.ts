@@ -33,7 +33,7 @@ function createFlow(questions: Array<{ prompt: string; mode: "free" }>) {
     sessionManager: {},
     ui: { select: vi.fn(), input: vi.fn(), custom },
   };
-  const pending = askQuestions(questions, ctx as never);
+  const pending = askQuestions(questions as never, ctx as never);
   return { pending, components, custom };
 }
 

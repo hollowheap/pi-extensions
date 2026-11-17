@@ -11,9 +11,9 @@ describe("S219 unified collapse and verbosity", () => {
   });
 
   it("has a separate tool verbosity setting defaulting to medium", () => {
-    expect((DEFAULT_TUI_CONFIG as Record<string, unknown>).toolVerbosity).toBe(
-      "medium",
-    );
+    expect(
+      (DEFAULT_TUI_CONFIG as unknown as Record<string, unknown>).toolVerbosity,
+    ).toBe("medium");
   });
 
   it("retires the host ctrl+shift+o tool toggle shortcut", () => {

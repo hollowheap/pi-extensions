@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import extension, { ANSWERS_TYPE, createQuestionTool } from "./index.js";
+import { ANSWERS_TYPE, createQuestionTool } from "./index.js";
 
 vi.mock("./alerts.js", () => ({ alertQuestion: vi.fn() }));
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {

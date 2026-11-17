@@ -3,11 +3,7 @@ import { buildAlertPayload } from "./alerts.js";
 
 describe("S158 alert payload privacy", () => {
   it("builds a payload containing only event, id, and status identifiers", () => {
-    const payload = buildAlertPayload("completion", "task-1", "completed", {
-      prompt: "secret prompt",
-      task: "secret task",
-      toolOutput: "secret output",
-    } as never);
+    const payload = buildAlertPayload("completion", "task-1", "completed");
 
     expect(payload).toEqual({
       event: "completion",

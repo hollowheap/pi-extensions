@@ -36,7 +36,8 @@ function createMockPi() {
       },
     ),
     emit: vi.fn((event: string, ...args: unknown[]) => {
-      for (const handler of handlers.get(event) ?? []) handler(...args);
+      for (const handler of handlers.get(event) ?? [])
+        (handler as (...values: unknown[]) => unknown)(...args);
     }),
     registerCommand: vi.fn(
       (
@@ -62,7 +63,10 @@ function createMockPi() {
     getSessionName: vi.fn(() => "session-1"),
     setLabel: vi.fn(),
     events: { emit: vi.fn(), on: vi.fn() },
-    getCommand: (name: string) => commands.get(name) as never,
+    getCommand: (name: string) =>
+      commands.get(name) as {
+        handler: (arg: string, ctx: unknown) => Promise<void>;
+      },
   };
 }
 

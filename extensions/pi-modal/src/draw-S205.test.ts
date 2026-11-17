@@ -62,12 +62,13 @@ describe("S205 extension-contributed TUI settings", () => {
       },
     ];
 
-    const pending = showTuiSettings(
-      env.ctx as never,
-      dir,
-      undefined,
-      contributions,
-    );
+    const show = showTuiSettings as unknown as (
+      ctx: unknown,
+      agentDir: string,
+      onChange: unknown,
+      contributed: unknown,
+    ) => Promise<void>;
+    const pending = show(env.ctx, dir, undefined, contributions);
     await vi.waitFor(() => expect(env.component()).toBeDefined());
 
     try {

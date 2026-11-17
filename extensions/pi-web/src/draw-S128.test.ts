@@ -27,7 +27,10 @@ describe("S128 caching and content negotiation", () => {
     ).toBe("cached body");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-    const jsonFetch = vi.fn(async () => response("{}", "application/json"));
+    const jsonFetch = vi.fn(
+      async (_url: unknown, _init: { headers: Record<string, string> }) =>
+        response("{}", "application/json"),
+    );
     await rawFetch("https://example.com/s128-accept", {
       fetchImpl: jsonFetch as never,
       acceptType: "json",

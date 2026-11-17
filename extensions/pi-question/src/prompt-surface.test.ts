@@ -7,10 +7,12 @@ function ctx() {
     hasUI: true,
     sessionManager: { getBranch: vi.fn(() => []) },
     ui: {
-      custom: vi.fn().mockImplementation((_factory: unknown, opts: unknown) => {
-        // capture whether a hideEditor / stash hook was requested
-        return Promise.resolve(undefined);
-      }),
+      custom: vi
+        .fn()
+        .mockImplementation((_factory: unknown, _opts: unknown) => {
+          // capture whether a hideEditor / stash hook was requested
+          return Promise.resolve(undefined);
+        }),
       select: vi.fn().mockResolvedValue(undefined),
       input: vi.fn().mockResolvedValue(undefined),
       notify: vi.fn(),

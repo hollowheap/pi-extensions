@@ -7,8 +7,8 @@ import {
   isProcessAlive,
   readLog,
   spawnDetachedProcess,
-  terminateProcessGroups,
 } from "./process.js";
+import * as processModule from "./process.js";
 
 const dirs: string[] = [];
 
@@ -36,6 +36,15 @@ async function readChildPid(logPath: string): Promise<number> {
 
 describe("S198 descendant group teardown primitive", () => {
   it("tears down the shim group and the inner command group in one path", async () => {
+    const rawTerminateProcessGroups = (
+      processModule as unknown as Record<string, unknown>
+    ).terminateProcessGroups;
+    expect(rawTerminateProcessGroups).toBeTypeOf("function");
+    const terminateProcessGroups = rawTerminateProcessGroups as (
+      groups: Array<{ pid: number; startTime?: number }>,
+      opts: { graceMs: number },
+    ) => Promise<boolean>;
+
     const dir = makeDir();
     const shimLog = join(dir, "shim.log");
     const innerLog = join(dir, "inner.log");

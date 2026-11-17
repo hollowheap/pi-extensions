@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDashboard } from "./index.js";
 
-function dashboard(run: (...args: never[]) => Promise<string>, notify: () => void) {
+function dashboard(
+  run: (
+    command: string,
+    args: string[],
+    signal: AbortSignal | undefined,
+  ) => Promise<string>,
+  notify: () => void,
+) {
   return createDashboard(
     {
       width: 80,

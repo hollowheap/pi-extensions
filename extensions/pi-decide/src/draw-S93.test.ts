@@ -13,7 +13,7 @@ describe("S93 classifier payload construction", () => {
         },
       },
     };
-    const classify = vi.fn(async () => ({
+    const classify = vi.fn(async (_model: unknown, _input: unknown) => ({
       api: "classifier",
       provider: "prov",
       model: "m",

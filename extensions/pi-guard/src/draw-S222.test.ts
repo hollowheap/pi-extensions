@@ -28,7 +28,7 @@ afterEach(() => {
 
 function guardToolCall() {
   const pi = {
-    on: vi.fn(() => () => {}),
+    on: vi.fn((_event: string, _handler: unknown) => () => {}),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
@@ -36,7 +36,7 @@ function guardToolCall() {
   };
   extension(pi as never);
   const call = pi.on.mock.calls.find(([event]) => event === "tool_call");
-  return call?.[1] as (
+  return call?.[1] as unknown as (
     event: unknown,
     ctx: unknown,
   ) => Promise<{ block?: boolean; reason?: string } | undefined>;

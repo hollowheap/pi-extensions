@@ -1,10 +1,29 @@
-import { resolveAgentName } from "@hollowheap/core/agents";
-import { createDirtyFlusher } from "@hollowheap/core/state";
+import * as agentsModule from "@hollowheap/core/agents";
+import * as stateModule from "@hollowheap/core/state";
 import { describe, expect, it, vi } from "vitest";
+
+interface Agent {
+  name: string;
+  description: string;
+}
+
+interface DirtyFlusher {
+  flush(write: () => void): void;
+  markDirty(): void;
+}
 
 describe("S201 shared primitives in owning packages", () => {
   it("resolves an agent name in the core frontmatter module", () => {
-    const agents = [
+    const rawResolveAgentName = (
+      agentsModule as unknown as Record<string, unknown>
+    ).resolveAgentName;
+    expect(rawResolveAgentName).toBeTypeOf("function");
+    const resolveAgentName = rawResolveAgentName as (
+      name: string,
+      agents: Agent[],
+    ) => Agent | undefined;
+
+    const agents: Agent[] = [
       { name: "Scout", description: "Fast recon" },
       { name: "writer", description: "Drafts" },
     ];
@@ -16,6 +35,12 @@ describe("S201 shared primitives in owning packages", () => {
   });
 
   it("provides a reusable dirty-state flush helper in core", () => {
+    const rawCreateDirtyFlusher = (
+      stateModule as unknown as Record<string, unknown>
+    ).createDirtyFlusher;
+    expect(rawCreateDirtyFlusher).toBeTypeOf("function");
+    const createDirtyFlusher = rawCreateDirtyFlusher as () => DirtyFlusher;
+
     const flusher = createDirtyFlusher();
     const write = vi.fn();
 
