@@ -13,6 +13,7 @@ import {
   type HookPayload,
   type SessionHookPayload,
   evaluateCondition,
+  interpretPreHook,
   matchesTool,
   runPostHook,
   runPreHook,
@@ -119,6 +120,72 @@ describe("evaluateCondition", () => {
         payload(),
       ),
     ).toThrow();
+  });
+});
+
+describe("interpretPreHook", () => {
+  it("blocks on exit code 2 with stderr reason", () => {
+    expect(
+      interpretPreHook({ code: 2, stdout: "", stderr: "  denied  " }),
+    ).toEqual({ block: true, reason: "denied" });
+  });
+  it("blocks on exit code 2 with fallback reason", () => {
+    expect(interpretPreHook({ code: 2, stdout: "", stderr: "" })).toEqual({
+      block: true,
+      reason: "blocked by hook",
+    });
+  });
+  it("blocks on non-zero exit with stderr", () => {
+    expect(interpretPreHook({ code: 1, stdout: "", stderr: "boom" })).toEqual({
+      block: true,
+      reason: "boom",
+    });
+  });
+  it("blocks on non-zero exit with fallback", () => {
+    expect(interpretPreHook({ code: 3, stdout: "", stderr: "" })).toEqual({
+      block: true,
+      reason: "hook failed with exit code 3",
+    });
+  });
+  it("passes on empty stdout", () => {
+    expect(interpretPreHook({ code: 0, stdout: "  ", stderr: "" })).toEqual({
+      block: false,
+    });
+  });
+  it("passes on allow decision", () => {
+    expect(
+      interpretPreHook({
+        code: 0,
+        stdout: JSON.stringify({ decision: "allow" }),
+        stderr: "",
+      }),
+    ).toEqual({ block: false });
+  });
+  it("blocks on block decision", () => {
+    expect(
+      interpretPreHook({
+        code: 0,
+        stdout: JSON.stringify({ decision: "block", reason: "nope" }),
+        stderr: "",
+      }),
+    ).toEqual({ block: true, reason: "nope" });
+  });
+  it("blocks on unknown decision", () => {
+    expect(
+      interpretPreHook({
+        code: 0,
+        stdout: JSON.stringify({ decision: "maybe" }),
+        stderr: "",
+      }),
+    ).toEqual({ block: true, reason: "hook returned an unknown decision" });
+  });
+  it("blocks on invalid JSON", () => {
+    expect(
+      interpretPreHook({ code: 0, stdout: "not json", stderr: "" }),
+    ).toEqual({
+      block: true,
+      reason: "hook printed output that is not a decision",
+    });
   });
 });
 
