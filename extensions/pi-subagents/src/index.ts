@@ -329,7 +329,15 @@ export function createSubagentsExtension(
             .map((action) => ({ value: action, label: action }));
         }
         const first = (parts[0] ?? "").toLowerCase();
-        if (first === "settings" || first === "config" || parts.length > 2) {
+        // Allow id completion for steer while the id is still being typed,
+        // even when a trailing space has started the free-text message part.
+        if (first === "settings" || first === "config") {
+          return null;
+        }
+        if (parts.length > 2 && first !== "steer") {
+          return null;
+        }
+        if (parts.length > 3) {
           return null;
         }
         const query = (parts[1] ?? "").toLowerCase();
