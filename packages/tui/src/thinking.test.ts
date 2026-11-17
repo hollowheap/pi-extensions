@@ -3,9 +3,10 @@ import {
   stripTerminalSequences,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   SHIMMER_BASE_INTERVAL_MS,
+  createThinkingShimmerAnimator,
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
   shimmerSpeed,
@@ -61,6 +62,33 @@ describe("thinking display helpers", () => {
     expect(shimmerSpeed(0)).toBe(1);
     expect(shimmerSpeed(120)).toBe(3);
     expect(shimmerSpeed(10_000)).toBe(6);
+  });
+
+  it("animator advances frames and drives redraws until disposed", () => {
+    vi.useFakeTimers();
+    try {
+      const requestRender = vi.fn();
+      const animator = createThinkingShimmerAnimator(
+        { requestRender },
+        { intervalMs: SHIMMER_BASE_INTERVAL_MS },
+      );
+      const line = "Thinking: checking layout";
+      const first = animator.frame(line, theme, true);
+      expect(animator.step).toBe(0);
+      expect(requestRender).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(SHIMMER_BASE_INTERVAL_MS);
+      expect(animator.step).toBe(1);
+      expect(requestRender).toHaveBeenCalledTimes(1);
+      expect(animator.frame(line, theme, true)).not.toBe(first);
+
+      animator.dispose();
+      vi.advanceTimersByTime(SHIMMER_BASE_INTERVAL_MS * 5);
+      expect(animator.step).toBe(1);
+      expect(requestRender).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("strips inline markdown for one-line labels and shimmer spans", () => {

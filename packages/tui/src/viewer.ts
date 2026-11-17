@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   matchesKey,
   truncateToWidth,
@@ -24,16 +24,24 @@ export async function showCodeViewer(
 
   await ctx.ui.custom<void>(
     (tui, theme, _keybindings, done) => {
+      const getTheme = (): Theme =>
+        (ctx.ui as { theme?: Theme } | undefined)?.theme ?? theme;
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        done();
+      };
       const border = (value: string) =>
-        getActiveTuiConfig().colored ? theme.fg("border", value) : value;
+        getActiveTuiConfig().colored ? getTheme().fg("border", value) : value;
       const titlePaint = (value: string) => {
-        const bolded = theme.bold(value);
+        const bolded = getTheme().bold(value);
         return getActiveTuiConfig().colored
-          ? theme.fg("accent", bolded)
+          ? getTheme().fg("accent", bolded)
           : bolded;
       };
       const dimPaint = (value: string) =>
-        getActiveTuiConfig().colored ? theme.fg("dim", value) : value;
+        getActiveTuiConfig().colored ? getTheme().fg("dim", value) : value;
 
       const viewportHeight = (): number =>
         Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 2);
@@ -57,7 +65,7 @@ export async function showCodeViewer(
             const top = paintSurfaceLine(
               truncateToWidth(titlePaint(title), safeWidth, ""),
               safeWidth,
-              theme,
+              getTheme(),
               overlaySurface,
               colored,
             );
@@ -65,20 +73,26 @@ export async function showCodeViewer(
               paintSurfaceLine(
                 truncateToWidth(line, safeWidth, ""),
                 safeWidth,
-                theme,
+                getTheme(),
                 overlaySurface,
                 colored,
               ),
             );
             while (content.length < height) {
               content.push(
-                paintSurfaceLine("", safeWidth, theme, overlaySurface, colored),
+                paintSurfaceLine(
+                  "",
+                  safeWidth,
+                  getTheme(),
+                  overlaySurface,
+                  colored,
+                ),
               );
             }
             const bottom = paintSurfaceLine(
               truncateToWidth(dimPaint(hint.trim()), safeWidth, ""),
               safeWidth,
-              theme,
+              getTheme(),
               overlaySurface,
               colored,
             );
@@ -124,7 +138,13 @@ export async function showCodeViewer(
             return rows;
           }
           return rows.map((row) =>
-            paintSurfaceLine(row, safeWidth, theme, overlaySurface, colored),
+            paintSurfaceLine(
+              row,
+              safeWidth,
+              getTheme(),
+              overlaySurface,
+              colored,
+            ),
           );
         },
         handleInput(data: string): void {
@@ -133,7 +153,7 @@ export async function showCodeViewer(
             matchesKey(data, "enter") ||
             data === "q"
           ) {
-            done();
+            finish();
             return;
           }
           if (matchesKey(data, "up") || data === "k") {
@@ -153,7 +173,12 @@ export async function showCodeViewer(
           }
           tui.requestRender();
         },
-        invalidate(): void {},
+        invalidate(): void {
+          tui.requestRender();
+        },
+        dispose(): void {
+          finish();
+        },
       };
     },
     {

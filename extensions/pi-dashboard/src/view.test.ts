@@ -94,6 +94,33 @@ describe("showDashboardOverlay", () => {
     await expect(pending).resolves.toEqual({ type: "settings" });
   });
 
+  it("honors initialScope and maxItems from options", async () => {
+    const h = overlayHarness();
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession(`s${i}`, `task ${i + 1}`),
+    );
+    const pending = showDashboardOverlay(h.ctx as never, {
+      initialSessions: sessions,
+      initialScope: "all",
+      maxItems: 3,
+      loadSessions: async () => sessions,
+      getStateInput: () => ({ cwd: "/repo" }),
+      snapshotOwner: {},
+    });
+    await vi.waitFor(() => expect(h.component()).toBeDefined());
+
+    const rendered = h.component()?.render(90).join("\n") ?? "";
+    expect(rendered).toContain("Scope: all workspaces");
+    expect(rendered).toContain("1-3 resume");
+    expect(rendered).not.toContain("task 4");
+
+    h.component()?.handleInput("3");
+    await expect(pending).resolves.toEqual({
+      type: "resume",
+      session: sessions[2],
+    });
+  });
+
   it("returns quick action command on shortcut key", async () => {
     const h = overlayHarness();
     const pending = showDashboardOverlay(h.ctx as never, {

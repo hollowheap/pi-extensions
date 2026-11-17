@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { showMarkdownPager } from "./pager.js";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "./state.js";
+
+afterEach(() => {
+  resetActiveTuiConfig();
+});
 
 const theme = {
   fg: (_token: string, text: string) => text,
@@ -97,6 +103,125 @@ describe("showMarkdownPager", () => {
       plainText: "output",
     });
     expect(notify).toHaveBeenCalledWith("output", "info");
+  });
+
+  it("rebuilds the Markdown style on config change and invalidate", async () => {
+    const coloredTheme = {
+      ...theme,
+      fg: (token: string, text: string) =>
+        `\x1b[${token === "accent" ? 36 : 34}m${text}\x1b[39m`,
+    };
+    const requestRender = vi.fn();
+    let component:
+      | {
+          render(width: number): string[];
+          invalidate(): void;
+          dispose(): void;
+        }
+      | undefined;
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => {
+              render(width: number): string[];
+              invalidate(): void;
+              dispose(): void;
+            },
+          ) => {
+            component = factory(
+              { terminal: { rows: 12 }, requestRender },
+              coloredTheme,
+              {},
+              vi.fn(),
+            );
+            return Promise.resolve();
+          },
+        ),
+      },
+    };
+
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, colored: true });
+    await showMarkdownPager(ctx as never, {
+      title: "Report",
+      markdown: "# Heading\n\nText with `code`",
+    });
+    if (!component) throw new Error("pager component was not captured");
+
+    const colored = component.render(60).join("\n");
+    expect(colored).toContain("\x1b[36mHeading");
+
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, colored: false });
+    expect(requestRender).toHaveBeenCalled();
+    expect(component.render(60).join("\n")).not.toContain("\x1b[36mHeading");
+
+    requestRender.mockClear();
+    component.invalidate();
+    expect(requestRender).toHaveBeenCalledTimes(1);
+    component.dispose();
+  });
+
+  it("re-reads the live theme when invalidated", async () => {
+    let live = {
+      ...theme,
+      fg: (_token: string, text: string) => `\x1b[31m${text}\x1b[39m`,
+    };
+    let component:
+      | { render(width: number): string[]; invalidate(): void; dispose(): void }
+      | undefined;
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        get theme() {
+          return live;
+        },
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => {
+              render(width: number): string[];
+              invalidate(): void;
+              dispose(): void;
+            },
+          ) => {
+            component = factory(
+              { terminal: { rows: 12 }, requestRender: vi.fn() },
+              theme,
+              {},
+              vi.fn(),
+            );
+            return Promise.resolve();
+          },
+        ),
+      },
+    };
+
+    await showMarkdownPager(ctx as never, {
+      title: "Report",
+      markdown: "# Heading",
+    });
+    if (!component) throw new Error("pager component was not captured");
+    expect(component.render(60).join("\n")).toContain("\x1b[31mHeading");
+
+    live = {
+      ...theme,
+      fg: (_token: string, text: string) => `\x1b[32m${text}\x1b[39m`,
+    };
+    component.invalidate();
+    expect(component.render(60).join("\n")).toContain("\x1b[32mHeading");
+    component.dispose();
   });
 
   it("resolves and releases the prompt lock when disposed without calling done", async () => {

@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "./frame.js";
-import { getActiveTuiConfig } from "./state.js";
+import { getActiveTuiConfig, subscribeActiveTuiConfig } from "./state.js";
 
 export interface FuzzyPickerItem extends SelectItem {
   preview?: string[];
@@ -55,14 +55,18 @@ export async function showFuzzyPicker(
   return withPromptLock(() =>
     ctx.ui.custom<string | undefined>(
       (tui, theme, _keybindings, done) => {
+        const getTheme = (): Theme =>
+          (ctx.ui as { theme?: Theme } | undefined)?.theme ?? theme;
         let query = "";
         let settled = false;
         let selected: FuzzyPickerItem | undefined;
         let list: SelectList;
+        let unsubscribe = (): void => {};
 
         const finish = (value: string | undefined): void => {
           if (settled) return;
           settled = true;
+          unsubscribe();
           done(value);
         };
 
@@ -77,7 +81,7 @@ export async function showFuzzyPicker(
           list = new SelectList(
             filtered,
             Math.max(3, Math.min(filtered.length, 8)),
-            selectTheme(theme, getActiveTuiConfig().colored),
+            selectTheme(getTheme(), getActiveTuiConfig().colored),
           );
           list.onSelectionChange = (item) => {
             selected = item as FuzzyPickerItem;
@@ -90,7 +94,7 @@ export async function showFuzzyPicker(
         };
 
         const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-          getActiveTuiConfig().colored ? theme.fg(token, text) : text;
+          getActiveTuiConfig().colored ? getTheme().fg(token, text) : text;
 
         const preview = (): string[] => {
           if (!selected) {
@@ -98,7 +102,9 @@ export async function showFuzzyPicker(
           }
           if (selected.preview && selected.preview.length > 0) {
             return selected.preview.map((line, index) =>
-              index === 0 ? fg("accent", theme.bold(line)) : fg("muted", line),
+              index === 0
+                ? fg("accent", getTheme().bold(line))
+                : fg("muted", line),
             );
           }
           return selected.description
@@ -106,6 +112,12 @@ export async function showFuzzyPicker(
             : [];
         };
 
+        const refreshStyles = (): void => {
+          if (settled) return;
+          rebuild();
+          tui.requestRender();
+        };
+        unsubscribe = subscribeActiveTuiConfig(refreshStyles);
         rebuild();
         return {
           render(width: number): string[] {
@@ -121,10 +133,10 @@ export async function showFuzzyPicker(
               "",
               fg("dim", "↑↓ move  Enter select  Esc cancel  type to filter"),
             ];
-            return roundedFrame(lines, width, theme, options.title);
+            return roundedFrame(lines, width, getTheme(), options.title);
           },
           invalidate(): void {
-            list.invalidate();
+            refreshStyles();
           },
           handleInput(data: string): void {
             if (matchesKey(data, Key.backspace)) {

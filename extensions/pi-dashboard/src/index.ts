@@ -434,7 +434,6 @@ export default function (pi: ExtensionAPI) {
       loadSessions: (scope, maxItems) => loadForCtx(ctx, scope, maxItems),
     });
     active = controller;
-    void controller.refresh();
     ctx.ui.setHeader((tui, theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
@@ -477,10 +476,22 @@ export default function (pi: ExtensionAPI) {
   };
 
   const openOverlay = async (ctx: ExtensionCommandContext) => {
-    const initialSessions = await loadForCtx(ctx, "cwd", 8);
+    const config = currentConfig ?? loadConfig(getAgentDir()).config;
+    const sessionsConfig = config.sections.find(
+      (section) => section.type === "sessions",
+    );
+    const scope =
+      sessionsConfig?.type === "sessions" ? sessionsConfig.scope : "cwd";
+    const maxItems =
+      sessionsConfig?.type === "sessions"
+        ? Math.max(1, Math.min(20, sessionsConfig.maxItems))
+        : 8;
+    const initialSessions = await loadForCtx(ctx, scope, maxItems);
     const result = await showDashboardOverlay(ctx, {
       initialSessions,
-      loadSessions: (scope) => loadForCtx(ctx, scope, 8),
+      initialScope: scope,
+      maxItems,
+      loadSessions: (nextScope) => loadForCtx(ctx, nextScope, maxItems),
       getStateInput: () => makeStateInput(ctx),
       snapshotOwner: ctx.sessionManager,
     });

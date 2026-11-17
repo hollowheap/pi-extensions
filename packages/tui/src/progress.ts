@@ -11,7 +11,7 @@ import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import { roundedFrame } from "./frame.js";
 import { createWorkingIndicator } from "./spinner.js";
-import { getActiveTuiConfig } from "./state.js";
+import { getActiveTuiConfig, subscribeActiveTuiConfig } from "./state.js";
 
 export type CancellableProgressResult<T> =
   | { status: "completed"; value: T }
@@ -25,25 +25,32 @@ export interface CancellableProgressOptions {
 
 function progressComponent(
   tui: ConstructorParameters<typeof CancellableLoader>[0],
-  theme: Theme,
+  getTheme: () => Theme,
   message: string,
   onAbort: () => void,
   options?: CancellableProgressOptions,
 ) {
-  const active = getActiveTuiConfig();
-  const indicator =
-    options?.indicator ??
-    createWorkingIndicator(active.loadingIndicator, theme, active.colored);
+  const buildIndicator = (): LoaderIndicatorOptions | undefined => {
+    const active = getActiveTuiConfig();
+    return (
+      options?.indicator ??
+      createWorkingIndicator(
+        active.loadingIndicator,
+        getTheme(),
+        active.colored,
+      )
+    );
+  };
   const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-    active.colored ? theme.fg(token, text) : text;
+    getActiveTuiConfig().colored ? getTheme().fg(token, text) : text;
   const loader = new CancellableLoader(
     tui,
     (text) => fg("accent", text),
     (text) => fg("muted", text),
     message,
-    indicator,
+    buildIndicator(),
   );
-  const hint = new Text(fg("dim", "Esc to cancel"), 1, 0);
+  let hint = new Text(fg("dim", "Esc to cancel"), 1, 0);
   loader.onAbort = onAbort;
   return {
     loader,
@@ -56,7 +63,7 @@ function progressComponent(
       return roundedFrame(
         [...loader.render(innerWidth), ...hint.render(innerWidth)],
         width,
-        theme,
+        getTheme(),
         undefined,
         { borderStyle, overlaySurface },
       );
@@ -69,6 +76,8 @@ function progressComponent(
       loader.handleInput(data);
     },
     invalidate(): void {
+      loader.setIndicator(buildIndicator());
+      hint = new Text(fg("dim", "Esc to cancel"), 1, 0);
       loader.invalidate();
     },
     dispose(): void {
@@ -102,9 +111,12 @@ export async function withCancellableProgress<T>(
       (tui, theme, _keybindings, done) => {
         const controller = new AbortController();
         let settled = false;
+        const getTheme = (): Theme =>
+          (ctx.ui as { theme?: Theme } | undefined)?.theme ?? theme;
         const state: {
           component?: ReturnType<typeof progressComponent>;
         } = {};
+        let unsubscribe = (): void => {};
 
         const cleanup = (): void => {
           parentSignal?.removeEventListener("abort", onParentAbort);
@@ -114,6 +126,7 @@ export async function withCancellableProgress<T>(
           settled = true;
           state.component?.loader.stop();
           cleanup();
+          unsubscribe();
           done(result);
         };
         const cancel = (): void => {
@@ -121,9 +134,15 @@ export async function withCancellableProgress<T>(
           finish({ status: "cancelled" });
         };
         const onParentAbort = (): void => cancel();
+        const refreshStyles = (): void => {
+          if (settled) return;
+          state.component?.invalidate();
+          tui.requestRender();
+        };
+        unsubscribe = subscribeActiveTuiConfig(refreshStyles);
         state.component = progressComponent(
           tui,
-          theme,
+          getTheme,
           message,
           cancel,
           options,
@@ -148,10 +167,11 @@ export async function withCancellableProgress<T>(
         return {
           render: (width: number) => state.component?.render(width) ?? [],
           handleInput: (data: string) => state.component?.handleInput(data),
-          invalidate: () => state.component?.invalidate(),
+          invalidate: () => refreshStyles(),
           dispose: () => {
             if (!settled) cancel();
             cleanup();
+            unsubscribe();
             state.component?.dispose();
           },
         };

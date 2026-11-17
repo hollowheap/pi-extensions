@@ -55,6 +55,63 @@ describe("showCodeViewer", () => {
     }
   });
 
+  it("guards close, resolves on dispose, and repaints on invalidate", async () => {
+    type FactoryFn = (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: () => void,
+    ) => {
+      handleInput(data: string): void;
+      invalidate(): void;
+      dispose(): void;
+    };
+    let factory: FactoryFn | undefined;
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        custom: vi.fn((value: FactoryFn) => {
+          factory = value;
+          return Promise.resolve();
+        }),
+      },
+    } as unknown as ExtensionContext;
+
+    await showCodeViewer(ctx, "Script", "const x = 1;");
+    if (!factory) throw new Error("viewer factory was not captured");
+
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bold: (value: string) => value,
+    };
+    const requestRender = vi.fn();
+    const done = vi.fn();
+    const component = factory(
+      { terminal: { rows: 12 }, requestRender },
+      theme,
+      {},
+      done,
+    );
+
+    component.invalidate();
+    expect(requestRender).toHaveBeenCalled();
+    component.handleInput("\x1b");
+    component.handleInput("\r");
+    expect(done).toHaveBeenCalledTimes(1);
+
+    const done2 = vi.fn();
+    const other = factory(
+      { terminal: { rows: 12 }, requestRender: vi.fn() },
+      theme,
+      {},
+      done2,
+    );
+    other.dispose();
+    other.dispose();
+    expect(done2).toHaveBeenCalledTimes(1);
+  });
+
   it("respects active borderStyle, none border, and overlaySurface", async () => {
     type FactoryFn = (
       tui: unknown,

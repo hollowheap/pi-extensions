@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { showFuzzyPicker } from "./picker.js";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "./state.js";
+
+afterEach(() => {
+  resetActiveTuiConfig();
+});
 
 const theme = {
   fg: (_token: string, text: string) => text,
@@ -7,6 +13,7 @@ const theme = {
 };
 
 function pickerContext() {
+  const requestRender = vi.fn();
   let component:
     | {
         render(width: number): string[];
@@ -30,12 +37,12 @@ function pickerContext() {
           },
         ) =>
           new Promise<string | undefined>((resolve) => {
-            component = factory({ requestRender: vi.fn() }, theme, {}, resolve);
+            component = factory({ requestRender }, theme, {}, resolve);
           }),
       ),
     },
   };
-  return { ctx, component: () => component };
+  return { ctx, component: () => component, requestRender };
 }
 
 const items = [
@@ -89,6 +96,25 @@ describe("showFuzzyPicker", () => {
       { title: "Select a task", items },
     );
     expect(result).toBeUndefined();
+  });
+
+  it("rebuilds the select theme on config change and invalidate", async () => {
+    const env = pickerContext();
+    const result = showFuzzyPicker(env.ctx as never, {
+      title: "Select a task",
+      items,
+    });
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, colored: false });
+    expect(env.requestRender).toHaveBeenCalled();
+
+    env.requestRender.mockClear();
+    (env.component() as unknown as { invalidate(): void }).invalidate();
+    expect(env.requestRender).toHaveBeenCalled();
+
+    env.component()?.handleInput("\x1b");
+    await expect(result).resolves.toBeUndefined();
   });
 
   it("resolves undefined and releases the prompt lock when disposed without calling done", async () => {

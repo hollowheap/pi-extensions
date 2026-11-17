@@ -131,3 +131,50 @@ export function renderThinkingShimmerFrame(
   }
   return `${out}${RESET_FG}`;
 }
+
+/** Minimal redraw surface the shimmer animator needs from a TUI host. */
+export interface ThinkingShimmerRedrawTarget {
+  requestRender?: (force?: boolean) => void;
+}
+
+export interface ThinkingShimmerAnimator {
+  readonly step: number;
+  frame(text: string, theme?: unknown, colored?: boolean): string;
+  dispose(): void;
+}
+
+/**
+ * Own shimmer step advancement and redraw scheduling while streaming. The
+ * host may not repaint message text on its own cadence, so the animator drives
+ * repaints itself instead of relying on incidental re-renders.
+ */
+export function createThinkingShimmerAnimator(
+  target: ThinkingShimmerRedrawTarget | undefined,
+  options?: { intervalMs?: number },
+): ThinkingShimmerAnimator {
+  const intervalMs = Math.max(
+    1,
+    options?.intervalMs ?? SHIMMER_BASE_INTERVAL_MS,
+  );
+  let step = 0;
+  let disposed = false;
+  const timer = setInterval(() => {
+    if (disposed) return;
+    step += 1;
+    target?.requestRender?.();
+  }, intervalMs);
+  timer.unref?.();
+  return {
+    get step() {
+      return step;
+    },
+    frame(text, theme, colored = true) {
+      return renderThinkingShimmerFrame(text, step, theme, colored);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      clearInterval(timer);
+    },
+  };
+}

@@ -32,7 +32,6 @@ export interface DashboardActionItem {
 }
 
 export const DEFAULT_DASHBOARD_ACTIONS: readonly DashboardActionItem[] = [
-  { key: "d", label: "Dashboard", command: "/dashboard" },
   { key: "t", label: "Todos", command: "/todos" },
   { key: "a", label: "Agent", command: "/agent" },
   { key: "u", label: "Usage", command: "/usage" },

@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { roundedFrame } from "./frame.js";
-import { getActiveTuiConfig } from "./state.js";
+import { getActiveTuiConfig, subscribeActiveTuiConfig } from "./state.js";
 
 export interface MarkdownPagerOptions {
   title: string;
@@ -51,12 +51,14 @@ export async function showMarkdownPager(
     await withPromptLock(() =>
       ctx.ui.custom<void>(
         (tui, theme, _keybindings, done) => {
-          const colored = getActiveTuiConfig().colored;
-          const markdown = new Markdown(
+          const liveTheme = (): Theme =>
+            (ctx.ui as { theme?: Theme } | undefined)?.theme ?? theme;
+          let activeTheme = liveTheme();
+          let markdown = new Markdown(
             options.markdown,
             0,
             0,
-            pagerMarkdownTheme(theme, colored),
+            pagerMarkdownTheme(activeTheme, getActiveTuiConfig().colored),
           );
           let offset = 0;
           let width = 80;
@@ -64,9 +66,26 @@ export async function showMarkdownPager(
           let content: string[] = [];
           let settled = false;
 
+          const rebuildStyles = (): void => {
+            activeTheme = liveTheme();
+            markdown = new Markdown(
+              options.markdown,
+              0,
+              0,
+              pagerMarkdownTheme(activeTheme, getActiveTuiConfig().colored),
+            );
+            cachedWidth = -1;
+          };
+          const unsubscribe = subscribeActiveTuiConfig(() => {
+            if (settled) return;
+            rebuildStyles();
+            tui.requestRender();
+          });
+
           const finish = (): void => {
             if (settled) return;
             settled = true;
+            unsubscribe();
             done();
           };
 
@@ -108,7 +127,7 @@ export async function showMarkdownPager(
               const first = lines.length === 0 ? 0 : offset + 1;
               const last = Math.min(lines.length, offset + size);
               const coloredFooter = getActiveTuiConfig().colored
-                ? theme.fg(
+                ? activeTheme.fg(
                     "muted",
                     `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
                   )
@@ -117,12 +136,13 @@ export async function showMarkdownPager(
               return roundedFrame(
                 [...visible, footer],
                 renderWidth,
-                theme,
+                activeTheme,
                 options.title,
               );
             },
             invalidate(): void {
-              cachedWidth = -1;
+              rebuildStyles();
+              tui.requestRender();
             },
             handleInput(data: string): void {
               if (

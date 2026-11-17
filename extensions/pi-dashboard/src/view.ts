@@ -25,6 +25,7 @@ export interface DashboardOverlayOptions {
   loadSessions: (scope: "cwd" | "all") => Promise<DashboardSessionItem[]>;
   initialSessions?: DashboardSessionItem[];
   initialScope?: "cwd" | "all";
+  maxItems?: number;
   getStateInput: () => Omit<StateRenderInput, "snapshot">;
   snapshotOwner: unknown;
 }
@@ -39,6 +40,8 @@ export async function showDashboardOverlay(
 
   return await ctx.ui.custom<DashboardViewResult>(
     (tui, theme: Theme, _keybindings, done) => {
+      const maxItems = Math.max(1, Math.min(20, options.maxItems ?? 8));
+      const maxKey = Math.min(maxItems, 9);
       let scope: "cwd" | "all" = options.initialScope ?? "cwd";
       let sessions: DashboardSessionItem[] = options.initialSessions ?? [];
       let selectedIndex = 0;
@@ -109,7 +112,7 @@ export async function showDashboardOverlay(
           } else {
             lines.push(
               ...renderSessionsSection(sessions, theme, innerWidth, {
-                maxItems: 8,
+                maxItems,
                 selectedIndex,
                 showHint: true,
               }),
@@ -134,7 +137,7 @@ export async function showDashboardOverlay(
           lines.push(
             theme.fg(
               "dim",
-              "Enter/1-8 resume · Tab scope · r refresh · s settings · q/Esc close",
+              `Enter/1-${maxKey} resume · Tab scope · r refresh · s settings · q/Esc close`,
             ),
           );
 
@@ -186,7 +189,7 @@ export async function showDashboardOverlay(
             finish({ type: "settings" });
             return;
           }
-          if (data >= "1" && data <= "8") {
+          if (data >= "1" && data <= String(maxKey)) {
             const idx = Number(data) - 1;
             const picked = sessions[idx];
             if (picked) finish({ type: "resume", session: picked });

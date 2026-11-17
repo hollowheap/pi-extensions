@@ -21,6 +21,7 @@ export async function showThemePicker(
   const themes = ctx.ui.getAllThemes();
   if (themes.length === 0) return undefined;
   const current = ctx.ui.theme;
+  const currentName = current.name;
   return ctx.ui.custom<string | undefined>(
     (_tui, theme, _keybindings, done) => {
       let selected = current.name;
@@ -39,7 +40,8 @@ export async function showThemePicker(
       if (currentIndex >= 0) list.setSelectedIndex(currentIndex);
       list.onSelect = (item) => done(item.value);
       list.onCancel = () => {
-        ctx.ui.setTheme(current);
+        if (currentName !== undefined) ctx.ui.setTheme(currentName);
+        else ctx.ui.setTheme(current);
         done(undefined);
       };
       list.onSelectionChange = (item) => {

@@ -15,10 +15,12 @@ import {
 } from "@hollowheap/tui/state";
 import {
   SHIMMER_BASE_INTERVAL_MS,
+  createThinkingShimmerAnimator,
   formatOneLineThinkingText,
   renderThinkingShimmerFrame,
   stripMarkdownInline,
 } from "@hollowheap/tui/thinking";
+import type { ThinkingShimmerAnimator } from "@hollowheap/tui/thinking";
 import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
@@ -125,6 +127,7 @@ export default function (pi: ExtensionAPI): void {
         requestRender?: (force?: boolean) => void;
       }
     | undefined;
+  let shimmerAnimator: ThinkingShimmerAnimator | undefined;
 
   const applyWorkingIndicator = (ctx: ExtensionContext | undefined): void => {
     if (!ctx?.hasUI || typeof ctx.ui?.setWorkingIndicator !== "function") {
@@ -197,13 +200,24 @@ export default function (pi: ExtensionAPI): void {
         prefix: THINKING_PREFIXES[cfg.verbPack],
       });
       if (context.isStreaming && cfg.thinkingAnimate && cfg.colored) {
+        const stripped = stripMarkdownInline(line);
+        if (typeof activeTui?.requestRender === "function") {
+          shimmerAnimator ??= createThinkingShimmerAnimator({
+            requestRender: (force) => activeTui?.requestRender?.(force),
+          });
+          return shimmerAnimator.frame(stripped, activeCtx?.ui?.theme, true);
+        }
+        shimmerAnimator?.dispose();
+        shimmerAnimator = undefined;
         return renderThinkingShimmerFrame(
-          stripMarkdownInline(line),
+          stripped,
           Math.floor(Date.now() / SHIMMER_BASE_INTERVAL_MS),
           activeCtx?.ui?.theme,
           true,
         );
       }
+      shimmerAnimator?.dispose();
+      shimmerAnimator = undefined;
       return line;
     }
     return cfg.markdownRender ? normalizeAgentMarkdown(markdown) : markdown;
@@ -362,6 +376,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_tree", (_event, ctx) => {
     syncFromBranch(ctx);
+    if (ctx.hasUI) applyWorkingIndicator(ctx);
     // Reinstall the modal editor after branch navigation; the host may have
     // disposed the previous editor component when the session was replaced.
     if (ctx.hasUI && typeof ctx.ui.setEditorComponent === "function") {
@@ -374,7 +389,6 @@ export default function (pi: ExtensionAPI): void {
           config.borderStyleExplicit && !hasTuiConfigFile
             ? config
             : { ...config, borderStyle: undefined };
-        applyWorkingIndicator(ctx);
         ctx.ui.setEditorComponent((tui, theme, kb) => {
           activeTui = tui as unknown as typeof activeTui;
           activeEditor = new ModalEditor(
@@ -400,10 +414,13 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     activeCtx = ctx;
+    shimmerAnimator?.dispose();
+    shimmerAnimator = undefined;
     syncFromBranch(ctx);
     loadAndActivateTuiConfig(getAgentDir(), (msg) =>
       ctx.ui?.notify?.(`pi-modal: ${msg}`, "warning"),
     );
+    if (ctx.hasUI) applyWorkingIndicator(ctx);
     if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === "function") {
       registerSkillAutocomplete(pi, ctx);
     }
@@ -417,7 +434,6 @@ export default function (pi: ExtensionAPI): void {
       config.borderStyleExplicit && !hasTuiConfigFile
         ? config
         : { ...config, borderStyle: undefined };
-    applyWorkingIndicator(ctx);
     ctx.ui.setEditorComponent((tui, theme, kb) => {
       activeTui = tui as unknown as typeof activeTui;
       activeEditor = new ModalEditor(

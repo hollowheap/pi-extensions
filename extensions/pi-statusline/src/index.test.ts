@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setCwd } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BUILTINS } from "./components.js";
 import extension from "./index.js";
 
 const state = vi.hoisted(() => ({
@@ -182,6 +183,34 @@ describe("pi-statusline extension", () => {
     publish(pi, "mode-guard", "OLD");
     const { component } = installFooter(pi, createMockCtx());
     expect(component.render(80)[0]).not.toContain("OLD");
+  });
+
+  it("reports component render diagnostics from the production footer", () => {
+    (BUILTINS as Record<string, unknown>).throwing_render = () => {
+      throw new Error("boom in render");
+    };
+    const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+    writeFileSync(
+      join(dir, "statusline.json"),
+      JSON.stringify({ sections: { a: [{ type: "throwing_render" }] } }),
+    );
+    state.agentDir = dir;
+    try {
+      const pi = createMockPi();
+      extension(pi as never);
+      const ctx = createMockCtx();
+      const { component } = installFooter(pi, ctx);
+      component.render(80);
+      component.render(80);
+      expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        expect.stringContaining("throwing_render"),
+        "warning",
+      );
+    } finally {
+      Reflect.deleteProperty(BUILTINS, "throwing_render");
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("runs configured click actions", async () => {

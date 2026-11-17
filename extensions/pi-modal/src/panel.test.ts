@@ -250,6 +250,96 @@ describe("wrapToolRenderer", () => {
     }
   });
 
+  it("redraws through the tool context without an editor target and clears the timer on dispose", () => {
+    vi.useFakeTimers();
+    try {
+      const cfg = makeConfig({ reuseSpinner: true });
+      const contextInvalidate = vi.fn();
+      const renderer = wrapToolRenderer("bash", undefined, () => cfg);
+      const context = {
+        args: {},
+        toolCallId: "t-context-redraw",
+        invalidate: contextInvalidate,
+        lastComponent: undefined,
+        state: {},
+        cwd: "/tmp",
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: true,
+        expanded: false,
+        showImages: false,
+        isError: false,
+        durationMs: undefined,
+        outputPad: 1,
+      };
+      const comp = renderer.renderCall?.({}, workingTheme, context as never);
+      if (!comp) throw new Error("expected component");
+      comp.render(40);
+      expect(contextInvalidate).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(500);
+      expect(contextInvalidate).toHaveBeenCalled();
+
+      (comp as { dispose?: () => void }).dispose?.();
+      contextInvalidate.mockClear();
+      vi.advanceTimersByTime(500);
+      expect(contextInvalidate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delegates to the base renderer when panel.enabled is false at render time", () => {
+    let enabled = true;
+    const baseCall = vi.fn(() => ({
+      render: () => ["BASE CALL"],
+      invalidate: vi.fn(),
+    }));
+    const baseResult = vi.fn(() => ({
+      render: () => ["BASE RESULT"],
+      invalidate: vi.fn(),
+    }));
+    const renderer = wrapToolRenderer(
+      "bash",
+      { renderCall: baseCall, renderResult: baseResult } as never,
+      () => makeConfig({ enabled }),
+    );
+    const context = {
+      args: {},
+      toolCallId: "t-disabled",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state: {},
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: false,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs: 10,
+      outputPad: 1,
+    };
+
+    const on = renderer.renderCall?.({}, mockTheme, context as never);
+    expect(on?.render(40).join("\n")).not.toBe("BASE CALL");
+    const callsWhenEnabled = baseCall.mock.calls.length;
+
+    enabled = false;
+    const off = renderer.renderCall?.({}, mockTheme, context as never);
+    expect(off?.render(40).join("\n")).toBe("BASE CALL");
+    expect(baseCall).toHaveBeenCalledTimes(callsWhenEnabled + 1);
+
+    const offResult = renderer.renderResult?.(
+      { content: [] } as never,
+      { expanded: false, isPartial: false } as never,
+      mockTheme,
+      context as never,
+    );
+    expect(offResult?.render(40).join("\n")).toBe("BASE RESULT");
+    expect(baseResult).toHaveBeenCalledTimes(1);
+  });
+
   it("renders settled outcome badges and unified call + result box", () => {
     const cfg = makeConfig({
       borderStyle: "rounded",

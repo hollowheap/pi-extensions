@@ -7,8 +7,11 @@ import {
 
 const STATE_KEY = Symbol.for("@hollowheap/tui/state");
 
+type TuiConfigListener = (config: TuiConfig) => void;
+
 interface TuiStateStore {
   config: TuiConfig;
+  listeners: Set<TuiConfigListener>;
 }
 
 function cloneConfig(config: TuiConfig): TuiConfig {
@@ -30,9 +33,17 @@ function getStore(): TuiStateStore {
   if (existing !== undefined) return existing;
   const created: TuiStateStore = {
     config: cloneConfig(DEFAULT_TUI_CONFIG),
+    listeners: new Set(),
   };
   globalStore[STATE_KEY] = created;
   return created;
+}
+
+function notifyListeners(store: TuiStateStore): void {
+  const snapshot = [...store.listeners];
+  for (const listener of snapshot) {
+    listener(store.config);
+  }
 }
 
 /** Return a copy of the currently active in-memory TUI configuration. */
@@ -42,12 +53,27 @@ export function getActiveTuiConfig(): TuiConfig {
 
 /** Replace the active in-memory TUI configuration. */
 export function setActiveTuiConfig(config: TuiConfig): void {
-  getStore().config = normalizeTuiConfig(config);
+  const store = getStore();
+  store.config = normalizeTuiConfig(config);
+  notifyListeners(store);
 }
 
 /** Reset the active in-memory TUI configuration back to defaults. */
 export function resetActiveTuiConfig(): void {
-  getStore().config = cloneConfig(DEFAULT_TUI_CONFIG);
+  const store = getStore();
+  store.config = cloneConfig(DEFAULT_TUI_CONFIG);
+  notifyListeners(store);
+}
+
+/** Subscribe to active config changes. Returns an unsubscribe function. */
+export function subscribeActiveTuiConfig(
+  listener: TuiConfigListener,
+): () => void {
+  const store = getStore();
+  store.listeners.add(listener);
+  return () => {
+    store.listeners.delete(listener);
+  };
 }
 
 /** Load `tui.json` from `agentDir`, activate it in memory, and return it. */

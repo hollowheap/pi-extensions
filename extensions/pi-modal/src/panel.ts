@@ -45,6 +45,7 @@ const FALLBACK_SPINNER_FRAMES = [
 ] as const;
 const FALLBACK_SPINNER_INTERVAL_MS = 80;
 const FALLBACK_RESULT_PREVIEW_LINES = 10;
+const MAX_SPINNER_TIMER_MS = 10 * 60_000;
 
 const VERB_PACKS: Readonly<
   Record<ToolVerbPack, Readonly<Record<string, CustomToolVerb>>>
@@ -608,9 +609,12 @@ export function wrapToolRenderer(
 
   return {
     renderShell: "self",
-    renderCall(args, theme, context): Component {
+    renderCall(args, theme, context): Component & { dispose?: () => void } {
       const effectiveContext =
         toolName === "codemode" ? { ...context, expanded: true } : context;
+      if (!getConfig().enabled && base?.renderCall) {
+        return base.renderCall(args, theme, effectiveContext);
+      }
       const panelState = getPanelState(context);
       panelState.hasCall = true;
       panelState.resultCalled = false;
@@ -640,7 +644,7 @@ export function wrapToolRenderer(
         panelState.innerCallComponent = undefined;
       }
 
-      const component: Component = {
+      const component: Component & { dispose?: () => void } = {
         invalidate(): void {
           panelState.cachedResult = undefined;
           panelState.cachedCallRender = undefined;
@@ -667,11 +671,15 @@ export function wrapToolRenderer(
           panelState.settled = settled;
           if (!settled && cfg.reuseSpinner && spinner.intervalMs > 0) {
             startSpinnerTimer(panelState, spinner.intervalMs, () => {
-              if (panelState.settled) {
+              if (
+                panelState.settled ||
+                now() - (panelState.startedAt ?? 0) > MAX_SPINNER_TIMER_MS
+              ) {
                 stopSpinnerTimer(panelState);
                 return;
               }
               component.invalidate();
+              context.invalidate?.();
               requestRender?.();
             });
           } else {
@@ -773,13 +781,24 @@ export function wrapToolRenderer(
           panelState.cachedCallRender = { key: cacheKey, lines: framed };
           return framed;
         },
+        dispose(): void {
+          stopSpinnerTimer(panelState);
+        },
       };
       return component;
     },
 
-    renderResult(result, options, theme, context): Component {
+    renderResult(
+      result,
+      options,
+      theme,
+      context,
+    ): Component & { dispose?: () => void } {
       const effectiveContext =
         toolName === "codemode" ? { ...context, expanded: true } : context;
+      if (!getConfig().enabled && base?.renderResult) {
+        return base.renderResult(result, options, theme, effectiveContext);
+      }
       const panelState = getPanelState(context);
       panelState.resultCalled = true;
       panelState.resultIsError = Boolean(result.isError);
@@ -883,6 +902,9 @@ export function wrapToolRenderer(
           });
           panelState.cachedResultRender = { key: cacheKey, lines: framed };
           return framed;
+        },
+        dispose(): void {
+          stopSpinnerTimer(panelState);
         },
       };
     },

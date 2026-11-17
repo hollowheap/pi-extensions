@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand } from "./exec.js";
 import extension, { createDashboard } from "./index.js";
 import { splitOutput } from "./render.js";
+import { loadRecentSessions } from "./sessions.js";
 
 const state = vi.hoisted(() => ({
   agentDir: "/nonexistent-pi-agent-dir-for-tests",
@@ -20,6 +21,11 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
 vi.mock("./exec.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./exec.js")>();
   return { ...actual, runCommand: vi.fn(actual.runCommand) };
+});
+
+vi.mock("./sessions.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./sessions.js")>();
+  return { ...actual, loadRecentSessions: vi.fn(actual.loadRecentSessions) };
 });
 
 afterEach(() => {
@@ -177,6 +183,72 @@ describe("pi-dashboard extension", () => {
     expect(pi.sendUserMessage).toHaveBeenCalledWith("/todos", {
       expandPromptTemplates: true,
     });
+  });
+
+  it("passes configured sessions scope and maxItems into the overlay", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dash-scope-"));
+    writeFileSync(
+      join(dir, "dashboard.json"),
+      JSON.stringify({
+        sections: [{ type: "sessions", scope: "all", maxItems: 12, gap: 1 }],
+      }),
+    );
+    state.agentDir = dir;
+    vi.mocked(loadRecentSessions).mockClear();
+    const pi = createMockPi();
+    extension(pi as never);
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    handlers.session_start(undefined as never, createMockCtx() as never);
+
+    const registered = pi.registerCommand.mock.calls[0]?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const commandCtx = createMockCtx({
+      ui: {
+        setHeader: vi.fn(),
+        notify: vi.fn(),
+        custom: vi.fn(async () => ({ type: "close" })),
+      },
+    });
+    await registered.handler("", commandCtx);
+
+    expect(loadRecentSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "all", limit: 12 }),
+    );
+  });
+
+  it("starts the header with a single terminal refresh", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-dash-refresh-"));
+    writeFileSync(
+      join(dir, "dashboard.json"),
+      JSON.stringify({
+        width: 60,
+        sections: [
+          {
+            type: "terminal",
+            command: "echo hi",
+            args: [],
+            intervalMs: 60000,
+            gap: 0,
+          },
+        ],
+      }),
+    );
+    state.agentDir = dir;
+    vi.mocked(runCommand).mockClear();
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createMockCtx();
+    installHeader(pi, ctx);
+    await vi.waitFor(() =>
+      expect(vi.mocked(runCommand).mock.calls.length).toBeGreaterThan(0),
+    );
+    await Promise.resolve();
+    expect(
+      vi.mocked(runCommand).mock.calls.filter((call) => call[0] === "echo hi"),
+    ).toHaveLength(1);
   });
 
   it("supports /dashboard settings and config alias with argument completions", async () => {

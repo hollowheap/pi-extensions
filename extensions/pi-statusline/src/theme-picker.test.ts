@@ -15,7 +15,7 @@ function pickerContext() {
         handleInput(data: string): void;
       }
     | undefined;
-  const setTheme = vi.fn(() => ({ success: true }));
+  const setTheme = vi.fn((_theme: string) => ({ success: true }));
   const ctx = {
     mode: "tui",
     hasUI: true,
@@ -69,6 +69,7 @@ describe("showThemePicker", () => {
     env.component()?.handleInput("\x1b[B");
     env.component()?.handleInput("\x1b");
     await expect(result).resolves.toBeUndefined();
-    expect(env.setTheme).toHaveBeenLastCalledWith(currentTheme);
+    expect(env.setTheme).toHaveBeenLastCalledWith(currentTheme.name);
+    expect(typeof env.setTheme.mock.calls.at(-1)?.[0]).toBe("string");
   });
 });

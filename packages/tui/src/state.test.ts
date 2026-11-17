@@ -11,6 +11,7 @@ import {
   loadAndActivateTuiConfig,
   resetActiveTuiConfig,
   setActiveTuiConfig,
+  subscribeActiveTuiConfig,
 } from "./state.js";
 
 const createdDirs: string[] = [];
@@ -63,6 +64,36 @@ describe("tui state", () => {
 
     resetActiveTuiConfig();
     expect(getActiveTuiConfig()).toEqual(DEFAULT_TUI_CONFIG);
+  });
+
+  it("notifies subscribers on config changes and stops after unsubscribe", () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribeActiveTuiConfig((config) => {
+      seen.push(config.borderStyle);
+    });
+    try {
+      setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, borderStyle: "double" });
+      expect(seen).toEqual(["double"]);
+
+      resetActiveTuiConfig();
+      expect(seen.at(-1)).toBe(DEFAULT_TUI_CONFIG.borderStyle);
+
+      const dir = makeTempDir();
+      writeFileSync(
+        getTuiConfigPath(dir),
+        JSON.stringify({ borderStyle: "square" }),
+        "utf8",
+      );
+      loadAndActivateTuiConfig(dir);
+      expect(seen.at(-1)).toBe("square");
+
+      const count = seen.length;
+      unsubscribe();
+      setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, borderStyle: "rounded" });
+      expect(seen).toHaveLength(count);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("loads and activates tui.json from agentDir", () => {

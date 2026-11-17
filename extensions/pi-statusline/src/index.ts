@@ -85,6 +85,7 @@ export default function (pi: ExtensionAPI) {
   let cleanupFooter: (() => void) | undefined;
   let owner: ExtensionContext["sessionManager"] | undefined;
   const values = new Map<string, string>();
+  const reportedDiagnosticTypes = new Set<string>();
   pi.events.on("statusline:values", (data) => {
     if (!isRecord(data)) return;
     const { name, text } = data;
@@ -187,6 +188,12 @@ export default function (pi: ExtensionAPI) {
             },
             theme,
             values,
+            (message) => {
+              const type = /component "([^"]+)"/.exec(message)?.[1] ?? message;
+              if (reportedDiagnosticTypes.has(type)) return;
+              reportedDiagnosticTypes.add(type);
+              ctx.ui.notify(`pi-statusline: ${message}`, "warning");
+            },
           );
           return line === "" ? [] : [line];
         },

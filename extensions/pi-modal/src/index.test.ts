@@ -748,6 +748,163 @@ describe("extension registration", () => {
     );
   });
 
+  it("installs the working indicator when the modal editor is disabled", () => {
+    const dir = createTempDir();
+    process.env.PI_CODING_AGENT_DIR = dir;
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({ enabled: false }),
+      "utf8",
+    );
+    writeFileSync(
+      getTuiConfigPath(dir),
+      JSON.stringify({ loadingIndicator: "crush", colored: true }),
+      "utf8",
+    );
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+    };
+    extension(pi as never);
+
+    const setEditorComponent = vi.fn();
+    const setWorkingIndicator = vi.fn();
+    const ctx = {
+      hasUI: true,
+      ui: {
+        setEditorComponent,
+        setWorkingIndicator,
+        theme: {
+          colors: {
+            accent: rgbColor(80, 120, 255),
+            borderAccent: rgbColor(80, 220, 255),
+            success: rgbColor(80, 220, 120),
+            warning: rgbColor(255, 200, 80),
+            error: rgbColor(255, 80, 80),
+            thinkingText: rgbColor(200, 120, 255),
+            text: rgbColor(230, 230, 230),
+            muted: rgbColor(120, 120, 120),
+          },
+          getColorMode: () => "truecolor",
+        },
+      },
+    };
+
+    handlers.session_start?.({}, ctx);
+    expect(setEditorComponent).not.toHaveBeenCalled();
+    expect(setWorkingIndicator).toHaveBeenCalledTimes(1);
+    const indicator = setWorkingIndicator.mock.calls[0]?.[0] as {
+      frames?: string[];
+    };
+    expect(indicator.frames?.[0]).toContain("\x1b[");
+  });
+
+  it("drives streaming shimmer redraws through the animator when the editor is installed", () => {
+    const dir = createTempDir();
+    process.env.PI_CODING_AGENT_DIR = dir;
+    writeFileSync(
+      getTuiConfigPath(dir),
+      JSON.stringify({
+        thinkingVerbosity: "minimal",
+        thinkingAnimate: true,
+        colored: true,
+      }),
+      "utf8",
+    );
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    let markdownTransformer:
+      | ((
+          md: string,
+          ctx: {
+            messageType: string;
+            isStreaming: boolean;
+            availableWidth: number;
+          },
+        ) => string)
+      | undefined;
+    const pi = {
+      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
+        handlers[event] = fn;
+      }),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      registerMarkdownTransformer: vi.fn(
+        (fn: NonNullable<typeof markdownTransformer>) => {
+          markdownTransformer = fn;
+        },
+      ),
+      events: { emit: vi.fn() },
+    };
+    extension(pi as never);
+
+    const requestRender = vi.fn();
+    const tui = {
+      requestRender,
+      terminal: { rows: 24, columns: 80, write: vi.fn() },
+    };
+    const setEditorComponent = vi.fn(
+      (factory: (...args: unknown[]) => unknown) => {
+        try {
+          factory(tui, {}, {});
+        } catch {
+          // ModalEditor construction may need host-only theme methods.
+        }
+      },
+    );
+    const ctx = {
+      hasUI: true,
+      ui: {
+        setEditorComponent,
+        setWorkingIndicator: vi.fn(),
+        theme: {
+          colors: {
+            accent: rgbColor(80, 120, 255),
+            borderAccent: rgbColor(80, 220, 255),
+            success: rgbColor(80, 220, 120),
+            warning: rgbColor(255, 200, 80),
+            error: rgbColor(255, 80, 80),
+            thinkingText: rgbColor(200, 120, 255),
+            text: rgbColor(230, 230, 230),
+            muted: rgbColor(120, 120, 120),
+          },
+          getColorMode: () => "truecolor",
+        },
+      },
+    };
+    handlers.session_start?.({}, ctx);
+    if (!markdownTransformer) throw new Error("no markdown transformer");
+
+    vi.useFakeTimers();
+    try {
+      const out = markdownTransformer("Thinking now", {
+        messageType: "assistant-thinking",
+        isStreaming: true,
+        availableWidth: 40,
+      });
+      expect(out).toContain("\x1b[38;");
+      expect(requestRender).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(45);
+      expect(requestRender).toHaveBeenCalled();
+
+      markdownTransformer("Thinking now", {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 40,
+      });
+      requestRender.mockClear();
+      vi.advanceTimersByTime(200);
+      expect(requestRender).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("applies the configured loading indicator to host loaders", () => {
     const pi = {
       on: vi.fn(),

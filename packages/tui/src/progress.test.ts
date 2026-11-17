@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { CancellableLoader } from "@earendil-works/pi-tui";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { withCancellableProgress } from "./progress.js";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "./state.js";
+
+afterEach(() => {
+  resetActiveTuiConfig();
+  vi.restoreAllMocks();
+});
 
 const theme = {
   fg: (_token: string, text: string) => text,
@@ -107,6 +115,38 @@ describe("withCancellableProgress", () => {
 
     expect(result).toEqual({ status: "completed", value: "done" });
     expect(operationSignal).toBe(controller.signal);
+  });
+
+  it("rebuilds the indicator on config change and invalidate", async () => {
+    const setIndicator = vi.spyOn(CancellableLoader.prototype, "setIndicator");
+    const env = progressContext();
+    const result = withCancellableProgress(
+      env.ctx as never,
+      "Working",
+      () => new Promise<number>(() => {}),
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component() as unknown as { invalidate(): void };
+    setIndicator.mockClear();
+    env.requestRender.mockClear();
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      loadingIndicator: "crush",
+      colored: true,
+    });
+    expect(setIndicator).toHaveBeenCalled();
+    expect(env.requestRender).toHaveBeenCalled();
+
+    setIndicator.mockClear();
+    env.requestRender.mockClear();
+    component.invalidate();
+    expect(setIndicator).toHaveBeenCalled();
+    expect(env.requestRender).toHaveBeenCalled();
+
+    (env.component() as unknown as { dispose?: () => void }).dispose?.();
+    await expect(result).resolves.toEqual({ status: "cancelled" });
   });
 
   it("resolves cancelled and releases the prompt lock when disposed without calling done", async () => {

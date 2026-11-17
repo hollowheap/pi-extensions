@@ -137,6 +137,12 @@ describe("renderSessionsSection", () => {
 });
 
 describe("renderActionsSection", () => {
+  it("does not advertise an inert dashboard shortcut", () => {
+    expect(DEFAULT_DASHBOARD_ACTIONS.map((item) => item.key)).not.toContain(
+      "d",
+    );
+  });
+
   it("wraps quick action commands cleanly inside width", () => {
     const lines = renderActionsSection(DEFAULT_DASHBOARD_ACTIONS, theme, 50);
     expect(lines.length).toBeGreaterThan(2);
