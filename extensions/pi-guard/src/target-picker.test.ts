@@ -1,3 +1,4 @@
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { describe, expect, it, vi } from "vitest";
 import { showTargetPicker } from "./target-picker.js";
 
@@ -11,6 +12,7 @@ function pickerContext() {
     | {
         render(width: number): string[];
         handleInput(data: string): void;
+        dispose?(): void;
       }
     | undefined;
   const ctx = {
@@ -63,5 +65,16 @@ describe("showTargetPicker", () => {
 
     env.component()?.handleInput("\x1b");
     await expect(result).resolves.toBeUndefined();
+  });
+
+  it("settles and releases the prompt lock when disposed without input", async () => {
+    const env = pickerContext();
+    const result = showTargetPicker(env.ctx as never, ["src/a.ts"]);
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    expect(env.component()?.dispose).toBeTypeOf("function");
+    env.component()?.dispose?.();
+    await expect(result).resolves.toBeUndefined();
+    await expect(withPromptLock(async () => "next")).resolves.toBe("next");
   });
 });

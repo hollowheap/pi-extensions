@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import { Type } from "typebox";
@@ -24,6 +25,14 @@ const TODOS_TYPE = "hollowheap.todos";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// The lock has no exported state accessor; the process-global is the only signal that another prompt owns input.
+function isPromptLockHeld(): boolean {
+  const lock = (
+    globalThis as Record<symbol, { state?: { locked?: boolean } } | undefined>
+  )[Symbol.for("@hollowheap/core/prompt-lock")];
+  return lock?.state?.locked === true;
 }
 
 function readSubagentItems(value: unknown): SubagentStateItem[] | undefined {
@@ -513,6 +522,10 @@ export default function (pi: ExtensionAPI) {
     resetChord();
     if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
     disposeTerminalInput = ctx.ui.onTerminalInput((data: string) => {
+      if (isPromptLockHeld()) {
+        resetChord();
+        return { consume: false };
+      }
       if (chordPending) {
         resetChord();
         if (data === "p" || data === "P") {
@@ -583,33 +596,45 @@ export default function (pi: ExtensionAPI) {
       const text = formatTodoList(displayTodos);
 
       if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
-        await ctx.ui.custom<void>(
-          (_tui, theme, _keybindings, done) => ({
-            render: (width) => {
-              const innerWidth = Math.max(1, width - 4);
-              const lines = new Text(
-                [text, "", "Esc, Enter, q, or Ctrl+C to close"].join("\n"),
-                0,
-                0,
-              ).render(innerWidth);
-              return roundedFrame(lines, width, theme, "Todos");
-            },
-            invalidate: () => {},
-            handleInput: (data) => {
-              if (
-                matchesKey(data, Key.escape) ||
-                matchesKey(data, Key.enter) ||
-                matchesKey(data, Key.ctrl("c")) ||
-                data === "q"
-              ) {
+        resetChord();
+        await withPromptLock(() =>
+          ctx.ui.custom<void>(
+            (_tui, theme, _keybindings, done) => {
+              let closed = false;
+              const close = (): void => {
+                if (closed) return;
+                closed = true;
                 done(undefined);
-              }
+              };
+              return {
+                render: (width) => {
+                  const innerWidth = Math.max(1, width - 4);
+                  const lines = new Text(
+                    [text, "", "Esc, Enter, q, or Ctrl+C to close"].join("\n"),
+                    0,
+                    0,
+                  ).render(innerWidth);
+                  return roundedFrame(lines, width, theme, "Todos");
+                },
+                invalidate: () => {},
+                handleInput: (data) => {
+                  if (
+                    matchesKey(data, Key.escape) ||
+                    matchesKey(data, Key.enter) ||
+                    matchesKey(data, Key.ctrl("c")) ||
+                    data === "q"
+                  ) {
+                    close();
+                  }
+                },
+                dispose: close,
+              };
             },
-          }),
-          {
-            overlay: true,
-            overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
-          },
+            {
+              overlay: true,
+              overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
+            },
+          ),
         );
         return;
       }
@@ -829,6 +854,21 @@ export default function (pi: ExtensionAPI) {
       if (parts[0] !== "toggle") {
         if (ctx.hasUI) {
           ctx.ui.notify("Usage: /panel toggle [todos|dashboard|all]", "info");
+        }
+        return;
+      }
+      const target = parts[1];
+      if (
+        target !== undefined &&
+        target !== "todos" &&
+        target !== "dashboard" &&
+        target !== "all"
+      ) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Unsupported panel target: ${sanitizeTerminalText(target)}. Use todos, dashboard, or all.`,
+            "error",
+          );
         }
         return;
       }

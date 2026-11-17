@@ -135,6 +135,61 @@ const EXAMPLE_RULES = JSON.stringify({
 });
 
 describe("pi-guard extension", () => {
+  it("forwards the context abort signal to host confirm and select dialogs", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const controller = new AbortController();
+    (ctx as Record<string, unknown>).signal = controller.signal;
+
+    await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi", {
+      signal: controller.signal,
+    });
+
+    const durationSelect = vi.fn(async () => "5m");
+    (ctx.ui as Record<string, unknown>).select = durationSelect;
+    await commandHandler(pi, "grant")("foo", ctx);
+    expect(durationSelect).toHaveBeenCalledWith(
+      "Grant duration",
+      ["5m", "15m", "1h"],
+      { signal: controller.signal },
+    );
+
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-signal-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "x");
+    const targetSelect = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = targetSelect;
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(targetSelect).toHaveBeenCalledWith(
+      expect.stringContaining("out-of-workspace"),
+      expect.any(Array),
+      { signal: controller.signal },
+    );
+  });
+
+  it("denies custom tools tagged write after an out-of-workspace allow in plan mode", async () => {
+    const { mode, hook, ctx } = setupMode(
+      JSON.stringify({
+        tools: { custom_writer: "write" },
+        rules: ["allow write *"],
+      }),
+    );
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-plan-write-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "x");
+    (ctx.ui as Record<string, unknown>).select = vi.fn(
+      async () => "Allow (this session)",
+    );
+
+    await mode("plan");
+    await expect(
+      hook("custom_writer", { path: externalFile }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
   it("registers lifecycle hooks and the mode command", () => {
     const pi = createMockPi();
     extension(pi as never);
@@ -356,20 +411,31 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith(
       "Allow web_fetch?",
       "https://example.com/x",
+      { signal: undefined },
     );
 
     await expect(
       call("web_search", { query: "lil bro" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow web_search?", "lil bro");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow web_search?",
+      "lil bro",
+      {
+        signal: undefined,
+      },
+    );
 
     await expect(
       call("lang", { action: "definition", path: "src/x.ts" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow lang?", "src/x.ts");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow lang?", "src/x.ts", {
+      signal: undefined,
+    });
 
     await expect(call("decide", { input: "x" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow decide?", "decide");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow decide?", "decide", {
+      signal: undefined,
+    });
   });
 
   it("allows search without matching rules", async () => {
@@ -383,7 +449,13 @@ describe("pi-guard extension", () => {
     await expect(
       call("mcp__docs", { path: "src/x.ts" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow mcp__docs?", "src/x.ts");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow mcp__docs?",
+      "src/x.ts",
+      {
+        signal: undefined,
+      },
+    );
   });
 
   it("uses configured tags for unknown tools", async () => {
@@ -469,7 +541,9 @@ describe("pi-guard extension", () => {
   it("asks for bash without allow rules", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi", {
+      signal: undefined,
+    });
     expect(withPromptLock).toHaveBeenCalled();
   });
 
@@ -479,7 +553,9 @@ describe("pi-guard extension", () => {
     await expect(
       call("bash", { command: longCommand }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", longCommand);
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", longCommand, {
+      signal: undefined,
+    });
   });
 
   it("runs allowlisted bash without asking", async () => {
@@ -504,6 +580,7 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith(
       "Allow powershell?",
       "Remove-Item ./x",
+      { signal: undefined },
     );
   });
 
@@ -538,7 +615,9 @@ describe("pi-guard extension", () => {
     await expect(
       call("task", { action: "start", command: "cargo build" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build", {
+      signal: undefined,
+    });
   });
 
   it("treats subagent definition and inspection actions as passthrough and gates start by mode", async () => {
@@ -572,6 +651,7 @@ describe("pi-guard extension", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith(
       "Allow subagent?",
       "subagent scout",
+      { signal: undefined },
     );
   });
 
@@ -690,7 +770,9 @@ describe("pi-guard extension", () => {
   it("asks when a write omits the path", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(call("write", {})).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", ".");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", ".", {
+      signal: undefined,
+    });
   });
 
   it("asks when the rules file is missing", async () => {
@@ -709,7 +791,9 @@ describe("pi-guard extension", () => {
       ctx as never,
     );
     expect(result).toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
   });
 
   it("warns and asks when the rules file is invalid JSON", async () => {
@@ -734,7 +818,9 @@ describe("pi-guard extension", () => {
       expect.stringContaining("not valid JSON"),
       "warning",
     );
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
   });
 
   it("prompts again for edit or write when out-of-workspace read was approved", async () => {
@@ -952,6 +1038,7 @@ describe("approval modes", () => {
     expect(ctx.ui.confirm).toHaveBeenCalledWith(
       "Allow write?",
       "artifacts/plan.md",
+      { signal: undefined },
     );
     await expect(hook("write", { path: "src/x.ts" })).resolves.toEqual({
       block: true,
@@ -982,7 +1069,9 @@ describe("approval modes", () => {
   it("waits for approval before writes in ask", async () => {
     const { ctx, hook } = setupMode('{"rules":[]}');
     await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts");
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
   });
 
   it("runs writes and allowlisted bash silently in edit", async () => {

@@ -1,6 +1,14 @@
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
+
+function isPromptLockHeld(): boolean {
+  const lock = (
+    globalThis as Record<symbol, { state?: { locked?: boolean } } | undefined>
+  )[Symbol.for("@hollowheap/core/prompt-lock")];
+  return lock?.state?.locked === true;
+}
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -52,7 +60,10 @@ function context(overrides: Record<string, unknown> = {}) {
       setStatus: vi.fn(),
       setWidget: vi.fn(),
       custom: vi.fn(),
-      onTerminalInput: vi.fn(() => vi.fn()),
+      onTerminalInput: vi.fn(
+        (_handler: (data: string) => { consume?: boolean } | undefined) =>
+          vi.fn(),
+      ),
     },
     sessionManager,
     ...overrides,
@@ -524,5 +535,92 @@ describe("pi-todos extension", () => {
       ctx,
     );
     expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("ignores the panel chord while a prompt owns input and resets it on dialog open", async () => {
+    const { pi, handlers } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    handlers.session_start({}, ctx);
+    const onInput = ctx.ui.onTerminalInput.mock.calls[0][0];
+
+    await withPromptLock(async () => {
+      expect(onInput("\x18")).not.toMatchObject({ consume: true });
+      expect(onInput("p")).not.toMatchObject({ consume: true });
+    });
+
+    expect(onInput("\x18")).toMatchObject({ consume: true });
+    const todosCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "todos",
+    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+    await todosCmd.handler("", ctx);
+    expect(onInput("p")).not.toMatchObject({ consume: true });
+  });
+
+  it("opens the /todos overlay under the prompt lock", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    let lockHeldDuringCustom: boolean | undefined;
+    ctx.ui.custom = vi.fn(async () => {
+      lockHeldDuringCustom = isPromptLockHeld();
+    });
+    const todosCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "todos",
+    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+
+    await todosCmd.handler("", ctx);
+    expect(ctx.ui.custom).toHaveBeenCalledTimes(1);
+    expect(lockHeldDuringCustom).toBe(true);
+  });
+
+  it("settles and releases the prompt lock when the /todos overlay is disposed", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    let component: { dispose?(): void } | undefined;
+    ctx.ui.custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: () => void,
+        ) => { dispose?(): void },
+      ) =>
+        new Promise<void>((resolve) => {
+          component = factory({ requestRender: vi.fn() }, {}, {}, resolve);
+        }),
+    );
+    const todosCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "todos",
+    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+
+    const pending = todosCmd.handler("", ctx);
+    await vi.waitFor(() => expect(component).toBeDefined());
+    expect(component?.dispose).toBeTypeOf("function");
+    component?.dispose?.();
+    await expect(pending).resolves.toBeUndefined();
+    await expect(withPromptLock(async () => "next")).resolves.toBe("next");
+  });
+
+  it("validates the /panel toggle target", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    const panelCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "panel",
+    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+
+    await panelCmd.handler("toggle bogus", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("bogus"),
+      "error",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith("Panel collapsed", "info");
+
+    ctx.ui.notify.mockClear();
+    await panelCmd.handler("toggle todos", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Panel collapsed", "info");
   });
 });

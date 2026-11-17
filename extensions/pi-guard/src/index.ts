@@ -289,7 +289,9 @@ async function requestApproval(
   }
   const sanitizedTarget = sanitizeTerminalText(target);
   const approved = await withPromptLock(() =>
-    ctx.ui.confirm(`Allow ${toolName}?`, sanitizedTarget),
+    ctx.ui.confirm(`Allow ${toolName}?`, sanitizedTarget, {
+      signal: (ctx as { signal?: AbortSignal }).signal,
+    }),
   );
   audit.decisionCount++;
   if (!approved) {
@@ -340,7 +342,9 @@ async function pickGrantDuration(
 ): Promise<string | undefined> {
   if (!ctx.hasUI || typeof ctx.ui.select !== "function") return undefined;
   return withPromptLock(() =>
-    ctx.ui.select("Grant duration", ["5m", "15m", "1h"]),
+    ctx.ui.select("Grant duration", ["5m", "15m", "1h"], {
+      signal: (ctx as { signal?: AbortSignal }).signal,
+    }),
   );
 }
 
@@ -484,7 +488,10 @@ export default function (pi: ExtensionAPI) {
           return undefined;
         }
         if (trust.isTrusted) {
-          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+          if (
+            session(ctx.sessionManager).mode === "plan" &&
+            (tag === "edit" || tag === "write")
+          ) {
             const audit = getAudit(runtime, ctx.sessionManager);
             audit.deniedCount++;
             persistGuardAudit(pi, ctx.sessionManager, audit);
@@ -549,6 +556,7 @@ export default function (pi: ExtensionAPI) {
               "Deny (this session)",
               "Deny indefinitely",
             ],
+            { signal: (ctx as { signal?: AbortSignal }).signal },
           ),
         );
 
@@ -609,7 +617,10 @@ export default function (pi: ExtensionAPI) {
           );
           persistGuardAudit(pi, ctx.sessionManager, audit);
           publishGuardSnapshot(runtime, ctx.sessionManager);
-          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+          if (
+            session(ctx.sessionManager).mode === "plan" &&
+            (tag === "edit" || tag === "write")
+          ) {
             return {
               block: true,
               reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,
@@ -628,7 +639,10 @@ export default function (pi: ExtensionAPI) {
           );
           persistGuardAudit(pi, ctx.sessionManager, audit);
           publishGuardSnapshot(runtime, ctx.sessionManager);
-          if (session(ctx.sessionManager).mode === "plan" && tag === "edit") {
+          if (
+            session(ctx.sessionManager).mode === "plan" &&
+            (tag === "edit" || tag === "write")
+          ) {
             return {
               block: true,
               reason: `pi-guard: ${tag} access to ${displayTarget(target)} is denied`,

@@ -75,6 +75,13 @@ export async function showGuardSettings(
   await withPromptLock(() =>
     ctx.ui.custom<void>(
       (tui, theme, _keybindings, done) => {
+        let settled = false;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          done();
+        };
+
         const trustValue = (cfg: GuardConfig): string =>
           isWorkspaceTrusted(cfg) ? "trusted" : "prompt";
 
@@ -188,7 +195,7 @@ export async function showGuardSettings(
               }
             }
           },
-          () => done(),
+          finish,
         );
 
         return {
@@ -211,6 +218,9 @@ export async function showGuardSettings(
           handleInput(data: string) {
             list.handleInput(data);
             tui.requestRender();
+          },
+          dispose(): void {
+            finish();
           },
         };
       },

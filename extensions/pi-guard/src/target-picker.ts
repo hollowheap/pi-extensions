@@ -120,6 +120,9 @@ export async function showTargetPicker(
             }
             list.handleInput(data);
           },
+          dispose(): void {
+            finish(undefined);
+          },
         };
       },
       {
