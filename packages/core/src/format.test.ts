@@ -30,6 +30,10 @@ describe("displayTarget", () => {
     );
     expect(displayTarget("x".repeat(500))).toBe("x".repeat(500));
   });
+
+  it("sanitizes control bytes", () => {
+    expect(displayTarget("evil\x1b]0;pwned\x07target")).toBe("eviltarget");
+  });
 });
 
 describe("displayPath", () => {

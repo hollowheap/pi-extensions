@@ -10,6 +10,7 @@ import {
   formatCount,
   parseGitPorcelain,
   shortenPath,
+  shortenModel,
 } from "./components.js";
 
 function ctx(overrides: Partial<ComponentContext> = {}): ComponentContext {
@@ -150,6 +151,23 @@ describe("model", () => {
     expect(BUILTINS.model({ type: "model" }, ctx({ modelId: undefined }))).toBe(
       "",
     );
+  });
+});
+
+describe("shortenModel", () => {
+  it("strips provider prefix and configured prefixes/suffixes", () => {
+    expect(shortenModel("anthropic/claude-opus-4-6")).toBe("opus-4-6");
+    expect(shortenModel("openai/gpt-4o")).toBe("gpt-4o");
+    expect(shortenModel("")).toBe("");
+  });
+  it("strips date suffix", () => {
+    expect(shortenModel("anthropic/claude-opus-4-6-20250101")).toBe("opus-4-6");
+  });
+  it("strips preview suffix", () => {
+    expect(shortenModel("google/gemini-2.5-pro-preview")).toBe("2.5-pro");
+  });
+  it("falls back to original when empty", () => {
+    expect(shortenModel("x/")).toBe("x/");
   });
 });
 

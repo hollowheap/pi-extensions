@@ -57,6 +57,34 @@ describe("memoryFromEntries", () => {
     expect([...ledger.consumedIds]).toEqual(["m1", "m2", "m3", "m4"]);
   });
 
+  it("parses coversUpToId watermark on observations", () => {
+    const ledger = memoryFromEntries([
+      custom(MEMORY_OBSERVATION_TYPE, {
+        id: "obs1",
+        text: "Prefer small commits",
+        relevance: 4,
+        createdAt: 10,
+        sourceEntryIds: ["m1", "m2"],
+        coversUpToId: "m2",
+      }),
+    ]);
+    expect(ledger.observations[0]?.coversUpToId).toBe("m2");
+  });
+
+  it("ignores invalid coversUpToId", () => {
+    const ledger = memoryFromEntries([
+      custom(MEMORY_OBSERVATION_TYPE, {
+        id: "obs1",
+        text: "Prefer small commits",
+        relevance: 4,
+        createdAt: 10,
+        sourceEntryIds: ["m1"],
+        coversUpToId: 42,
+      }),
+    ]);
+    expect(ledger.observations[0]?.coversUpToId).toBeUndefined();
+  });
+
   it("ignores malformed and duplicate entries", () => {
     const ledger = memoryFromEntries([
       null,

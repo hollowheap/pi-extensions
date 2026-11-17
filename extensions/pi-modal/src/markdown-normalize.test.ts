@@ -46,6 +46,16 @@ describe("normalizeAgentMarkdown", () => {
     expect(rendered).not.toContain("====");
   });
 
+  it("returns input unchanged when no dividers present", () => {
+    const input = "Hello world\nNo dividers here";
+    expect(normalizeAgentMarkdown(input)).toBe(input);
+  });
+
+  it("handles unclosed fence without crashing", () => {
+    const input = "```\n---\n===\n";
+    expect(() => normalizeAgentMarkdown(input)).not.toThrow();
+  });
+
   it("preserves --- and === inside fenced code blocks and GFM tables", () => {
     const input = [
       "```markdown",
