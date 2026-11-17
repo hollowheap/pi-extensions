@@ -247,7 +247,35 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         }
       }
 
-      if (agent.model && typeof ctx.modelRegistry?.getAll === "function") {
+      const hasModelOverride = (): boolean => {
+        if (options.persist) return false;
+        const entries =
+          (typeof ctx.sessionManager?.getBranch === "function"
+            ? ctx.sessionManager.getBranch()
+            : []) ?? [];
+        let lastAgentIndex = -1;
+        let lastModelChangeIndex = -1;
+        entries.forEach((entry, index) => {
+          const raw = entry as { type?: string; customType?: string };
+          if (
+            (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
+            raw.type === ACTIVE_AGENT_TYPE
+          ) {
+            lastAgentIndex = index;
+          }
+          if (raw.type === "model_change") {
+            lastModelChangeIndex = index;
+          }
+        });
+        return lastModelChangeIndex > lastAgentIndex && lastAgentIndex >= 0;
+      };
+      const skipModel = hasModelOverride();
+
+      if (
+        agent.model &&
+        !skipModel &&
+        typeof ctx.modelRegistry?.getAll === "function"
+      ) {
         const matched = ctx.modelRegistry.getAll().find((model) => {
           if (formatModelId(model) === agent.model) return true;
           return (
@@ -282,7 +310,9 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       const thinking = agent.thinking ?? agent.effort;
-      if (preservedThinking !== undefined) {
+      if (skipModel) {
+        // Respect session model/thinking override; do not clobber.
+      } else if (preservedThinking !== undefined) {
         // setModel resets thinking to the model/global default, so reapply
         // the level restored from the session transcript.
         if (
