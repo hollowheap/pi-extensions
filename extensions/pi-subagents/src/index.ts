@@ -214,10 +214,78 @@ export function createSubagentsExtension(
       }
     };
 
+    const formatSubagentLog = (log: string, raw: boolean): string => {
+      if (raw) return log.trim() === "" ? "(no output)" : log;
+      const lines = log.split(/\n/);
+      const out: string[] = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === "") continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          out.push(trimmed);
+          continue;
+        }
+        if (typeof parsed !== "object" || parsed === null) continue;
+        const record = parsed as Record<string, unknown>;
+        const type = record.type;
+        if (type === "message_end" || type === "message") {
+          const message = record.message as
+            | { role?: unknown; content?: unknown }
+            | undefined;
+          if (message?.role !== "assistant") continue;
+          const content = message.content;
+          const text =
+            typeof content === "string"
+              ? content
+              : Array.isArray(content)
+                ? content
+                    .filter(
+                      (part): part is { type: "text"; text: string } =>
+                        typeof part === "object" &&
+                        part !== null &&
+                        (part as { type?: unknown }).type === "text" &&
+                        typeof (part as { text?: unknown }).text === "string",
+                    )
+                    .map((part) => part.text)
+                    .join("\n")
+                : "";
+          const cleaned = text.trim();
+          if (cleaned !== "") out.push(cleaned);
+          continue;
+        }
+        if (type === "tool_call" || type === "tool_execution_start") {
+          const toolName =
+            typeof record.toolName === "string"
+              ? record.toolName
+              : typeof record.name === "string"
+                ? record.name
+                : "tool";
+          const args = record.args ?? record.arguments ?? record.input;
+          const summary =
+            typeof args === "object" && args !== null
+              ? Object.entries(args as Record<string, unknown>)
+                  .slice(0, 3)
+                  .map(([k, v]) => `${k}=${String(v).slice(0, 40)}`)
+                  .join(", ")
+              : String(args ?? "").slice(0, 80);
+          out.push(`> ${toolName}${summary ? ` (${summary})` : ""}`);
+          continue;
+        }
+      }
+      if (out.length === 0) {
+        return log.trim() === "" ? "(no output)" : log;
+      }
+      return out.join("\n\n");
+    };
+
     const openSubagentLog = async (
       ctx: ExtensionContext,
       id: string,
       known?: SubagentState,
+      raw = false,
     ): Promise<void> => {
       const state = known ?? (await attachSubagent(resolveAgentDir(), id));
       if (state === undefined || !isInProject(state, ctx.cwd)) {
@@ -225,14 +293,13 @@ export function createSubagentsExtension(
         return;
       }
       const log = readSubagentLog(resolveAgentDir(), id);
-      const text =
-        log.trim() === "" ? "(no output)" : sanitizeTerminalText(log);
+      const text = sanitizeTerminalText(formatSubagentLog(log, raw));
       const name = sanitizeTerminalText(subagentDisplayName(state));
       const workspace = sanitizeTerminalText(state.workspace ?? state.agent);
       const { showMarkdownPager } = await import("@hollowheap/tui/pager");
       await showMarkdownPager(ctx, {
         title: `Subagent ${name}`,
-        markdown: `**${escapeMarkdownInline(name)}**\n\n${escapeMarkdownInline(workspace)}\n\n~~~~text\n${text}\n~~~~`,
+        markdown: `**${escapeMarkdownInline(name)}**\n\n${escapeMarkdownInline(workspace)}\n\n${text}`,
         plainText: text,
       });
     };
@@ -413,7 +480,8 @@ export function createSubagentsExtension(
           return;
         }
         if (action === "logs") {
-          await openSubagentLog(ctx, id);
+          const raw = parts.includes("raw");
+          await openSubagentLog(ctx, id, undefined, raw);
           return;
         }
         if (action === "pause") {
