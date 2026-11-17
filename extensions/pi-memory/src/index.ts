@@ -352,6 +352,7 @@ export function createMemoryExtension(
               relevance: observation.relevance,
               createdAt,
               sourceEntryIds: entryIds,
+              coversUpToId: entryIds[entryIds.length - 1],
             }),
           );
           for (const observation of observations) {
@@ -628,7 +629,7 @@ export function createMemoryExtension(
         "Observational memory: /memory status, /memory view, /memory clear",
       getArgumentCompletions: (prefix: string) => {
         const value = prefix.trimStart().toLowerCase();
-        return ["status", "view", "clear"]
+        return ["status", "view", "clear", "handoff"]
           .filter((action) => action.startsWith(value))
           .map((action) => ({ value: action, label: action }));
       },
@@ -644,6 +645,10 @@ export function createMemoryExtension(
         }
         if (action === "clear") {
           await clearMemory(ctx);
+          return;
+        }
+        if (action === "handoff") {
+          await handoffMemory(ctx);
           return;
         }
         if (ctx.hasUI) {
@@ -665,6 +670,7 @@ export function createMemoryExtension(
         `pi-memory: ${isMemoryActive(config) ? "enabled" : "disabled"}`,
         config.model === "" ? "model: none" : `model: ${config.model}`,
         `observations: ${ledger.observations.length}/${config.maxObservations}`,
+        `coverage: ${ledger.observations.filter((o) => o.coversUpToId).length}/${ledger.observations.length} watermarked`,
         `reflections: ${ledger.reflections.length}`,
         `pending: ${pending.length} messages, ~${estimateTokens(pendingText)} tokens`,
         `observe after: ${config.observeAfterTokens} tokens`,
@@ -691,6 +697,52 @@ export function createMemoryExtension(
         title: "Memory",
         markdown,
         plainText: markdown,
+      });
+    };
+
+    const handoffMemory = async (
+      ctx: ExtensionCommandContext,
+    ): Promise<void> => {
+      const config = loadConfig();
+      const rendered = renderMemory(ledger, {
+        maxTokens: config.injectionTokens,
+      });
+      if (rendered === "") {
+        if (ctx.hasUI)
+          ctx.ui.notify("pi-memory: no memory to hand off", "info");
+        return;
+      }
+      const memory = config.redactSecrets ? redactSecrets(rendered) : rendered;
+      const { showMarkdownPager } = await import("@hollowheap/tui/pager");
+      await showMarkdownPager(ctx, {
+        title: "Memory handoff",
+        markdown: memory,
+        plainText: memory,
+      });
+      if (!ctx.hasUI) return;
+      const confirmed = await ctx.ui.confirm(
+        "Create handoff branch?",
+        "Fork a new session seeded with this memory block?",
+      );
+      if (!confirmed) {
+        ctx.ui.notify("pi-memory: handoff cancelled", "info");
+        return;
+      }
+      const branch = ctx.sessionManager.getBranch();
+      const lastEntry = branch[branch.length - 1];
+      if (lastEntry === undefined || typeof lastEntry.id !== "string") {
+        ctx.ui.notify("pi-memory: cannot fork (no session entry)", "error");
+        return;
+      }
+      if (typeof ctx.fork !== "function") {
+        ctx.ui.notify("pi-memory: fork not available", "error");
+        return;
+      }
+      await ctx.fork(lastEntry.id, {
+        position: "at",
+        withSession: async (replacedCtx) => {
+          replacedCtx.ui?.notify?.("pi-memory: handoff branch created", "info");
+        },
       });
     };
 

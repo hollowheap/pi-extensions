@@ -11,6 +11,7 @@ export interface MemoryObservation {
   relevance: number;
   createdAt: number;
   sourceEntryIds: string[];
+  coversUpToId?: string;
 }
 
 export interface MemoryReflection {
@@ -74,6 +75,7 @@ function parseObservation(data: unknown): MemoryObservation | undefined {
     relevance: readRelevance(data.relevance),
     createdAt: readTimestamp(data.createdAt),
     sourceEntryIds: readStringArray(data.sourceEntryIds),
+    coversUpToId: readString(data.coversUpToId),
   };
 }
 
