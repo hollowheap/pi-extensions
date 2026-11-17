@@ -70,6 +70,7 @@ export interface PanelConfig {
   outcomeBadges: boolean;
   reuseSpinner: boolean;
   customVerbs: Record<string, CustomToolVerb>;
+  surface?: OverlaySurfaceMode;
 }
 
 export interface TuiConfig {
@@ -94,7 +95,7 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   thinkingAnimate: true,
   verbPack: "standard",
   panel: {
-    enabled: false,
+    enabled: true,
     borderStyle: "rounded",
     accentStripe: true,
     outcomeBadges: true,

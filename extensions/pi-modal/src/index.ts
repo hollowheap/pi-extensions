@@ -7,7 +7,10 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import { getTuiConfigPath } from "@hollowheap/core/tui-config";
+import {
+  getTuiConfigPath,
+  type OverlaySurfaceMode,
+} from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import {
   getActiveTuiConfig,
@@ -114,6 +117,13 @@ function readPersistedExpanded(ctx: ExtensionContext): boolean | undefined {
 export default function (pi: ExtensionAPI): void {
   installLoaderIndicatorPatch();
   let lastCodemodeCode: string | undefined;
+  const PANEL_SURFACES: OverlaySurfaceMode[] = [
+    "transparent",
+    "surface",
+    "card",
+    "contrast",
+  ];
+  let panelSurfaceIndex = 0;
   let lastToolCall:
     | { name: string; input: Record<string, unknown> }
     | undefined;
@@ -160,9 +170,15 @@ export default function (pi: ExtensionAPI): void {
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
     if (getActiveTuiConfig().panel.enabled) {
+      const surface =
+        PANEL_SURFACES[panelSurfaceIndex++ % PANEL_SURFACES.length];
       return wrapToolRenderer(toolName, base, () => {
         const active = getActiveTuiConfig();
-        return { ...active.panel, verbPack: active.verbPack };
+        return {
+          ...active.panel,
+          verbPack: active.verbPack,
+          surface,
+        };
       });
     }
     const renderCall = base?.renderCall;

@@ -18,6 +18,8 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
+import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
+import { paintSurfaceLine } from "@hollowheap/tui/surface";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import type {
   CustomToolVerb,
@@ -91,6 +93,7 @@ function formatUnknownToolName(toolName: string): string {
 
 export type PanelRenderConfig = PanelConfig & {
   verbPack: ToolVerbPack;
+  surface?: OverlaySurfaceMode;
 };
 
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
@@ -373,6 +376,7 @@ function frameBoxLines(
     includeTop: boolean;
     includeBottom: boolean;
     colored?: boolean;
+    surface?: OverlaySurfaceMode;
   },
 ): string[] {
   const safeWidth = Math.max(4, width);
@@ -420,6 +424,7 @@ function frameBoxLines(
     borderPaint(chars.vertical) + (options.accentStripe ? `${stripe} ` : " ");
   const rightEdge = ` ${borderPaint(chars.vertical)}`;
 
+  const surface = options.surface ?? "transparent";
   for (const line of content) {
     const fitted =
       visibleWidth(line) > innerWidth
@@ -428,7 +433,20 @@ function frameBoxLines(
     const pad = Math.max(0, innerWidth - visibleWidth(fitted));
     const resetTail =
       fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m") ? "\x1b[0m" : "";
-    out.push(`${leftEdge}${fitted}${resetTail}${" ".repeat(pad)}${rightEdge}`);
+    if (surface !== "transparent") {
+      const inner = paintSurfaceLine(
+        fitted,
+        innerWidth,
+        theme,
+        surface,
+        colored,
+      );
+      out.push(`${leftEdge}${inner}${resetTail}${rightEdge}`);
+    } else {
+      out.push(
+        `${leftEdge}${fitted}${resetTail}${" ".repeat(pad)}${rightEdge}`,
+      );
+    }
   }
 
   if (options.includeBottom) {
@@ -660,7 +678,7 @@ export function wrapToolRenderer(
             }
           }
 
-          const headerLine = headerParts.join(" ");
+          const headerLine = `${headerParts.join(" ")} ${fg(theme, "muted", "(ctrl+o to expand/collapse)")}`;
 
           let hasResultLines = false;
           if (boxState.resultCalled && boxState.renderResultLines) {

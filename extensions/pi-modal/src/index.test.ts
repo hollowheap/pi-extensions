@@ -1045,7 +1045,7 @@ describe("extension registration", () => {
     );
 
     const other = resolver("bash", () => ({ renderCall }));
-    expect(other.renderCall).toBe(renderCall);
+    expect(typeof other.renderCall).toBe("function");
   });
 
   it("bypasses registration when UI is missing", () => {
