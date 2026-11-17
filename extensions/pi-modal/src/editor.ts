@@ -526,7 +526,7 @@ export class ModalEditor extends CustomEditor {
     if (cursor.col < line.length) {
       this.deleteSelection({
         start: cursor,
-        end: { line: cursor.line, col: line.length - 1 },
+        end: { line: cursor.line, col: line.length },
       });
     }
   }
@@ -537,7 +537,7 @@ export class ModalEditor extends CustomEditor {
     if (line.length > 0) {
       this.deleteSelection({
         start: { line: cursor.line, col: 0 },
-        end: { line: cursor.line, col: line.length - 1 },
+        end: { line: cursor.line, col: line.length },
       });
     }
   }
