@@ -101,6 +101,18 @@ describe("loadDecideConfig", () => {
     expect(diagnostics).toHaveLength(4);
   });
 
+  it("defaults a fractional timeout under one millisecond instead of truncating to zero", () => {
+    const dir = agentDir();
+    const diagnostics: string[] = [];
+    write(dir, JSON.stringify({ timeoutMs: 0.5 }));
+    const config = loadDecideConfig(dir, (message) =>
+      diagnostics.push(message),
+    );
+
+    expect(config.timeoutMs).toBe(5000);
+    expect(diagnostics[0]).toContain('"timeoutMs"');
+  });
+
   it("reports invalid JSON and non-object roots", () => {
     const json = agentDir();
     write(json, "{");

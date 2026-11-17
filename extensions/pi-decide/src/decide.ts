@@ -360,6 +360,9 @@ export function createDecideTool(pi?: ExtensionAPI) {
     if (params.input.trim() === "") {
       return errorResult("input is required");
     }
+    if (params.question.trim() === "") {
+      return errorResult("question is required");
+    }
 
     const question = buildQuestion(params);
     if (typeof question === "string") {
@@ -447,7 +450,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       if (result.stopReason !== "stop") {
         return errorResult(result.errorMessage ?? "decide failed");
       }
-      const answer = result.answers.answer;
+      const answer = result.answers?.answer;
       if (answer === undefined) {
         return errorResult("decide returned no answer");
       }
@@ -500,7 +503,8 @@ export function createDecideTool(pi?: ExtensionAPI) {
       ) {
         return "choice requires 2-10 labels";
       }
-      const criteria: Record<string, string> = {};
+      const criteria: Record<string, string> = Object.create(null);
+      const seen = new Set<string>();
       for (const label of params.labels) {
         if (
           typeof label.label !== "string" ||
@@ -510,9 +514,10 @@ export function createDecideTool(pi?: ExtensionAPI) {
         ) {
           return "choice labels and descriptions must be non-empty";
         }
-        if (Object.hasOwn(criteria, label.label)) {
+        if (seen.has(label.label)) {
           return "choice labels must be unique";
         }
+        seen.add(label.label);
         criteria[label.label] = label.description;
       }
       return {
@@ -530,6 +535,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
         return "score requires 2-10 scale levels";
       }
       const criteria: string[] = [];
+      const seen = new Set<string>();
       for (const label of params.labels) {
         if (
           typeof label.label !== "string" ||
@@ -539,6 +545,10 @@ export function createDecideTool(pi?: ExtensionAPI) {
         ) {
           return "score labels and descriptions must be non-empty";
         }
+        if (seen.has(label.label)) {
+          return "score labels must be unique";
+        }
+        seen.add(label.label);
         criteria.push(`${label.label}: ${label.description}`);
       }
       return {

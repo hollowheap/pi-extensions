@@ -234,6 +234,32 @@ describe("decide", () => {
     expect(textOf(missingBool)).toContain("true and false descriptions");
   });
 
+  it("rejects a blank question", async () => {
+    agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "bool", probability: 0.5 }),
+    );
+    const tool = createDecideTool();
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "   ",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(textOf(result)).toContain("question is required");
+    expect(detailsOf(result).error).toBe("question is required");
+    expect(classify).not.toHaveBeenCalled();
+  });
+
   it("rejects answers outside the caller contract", async () => {
     agentDir();
     const choiceClassify = vi.fn(async () =>
@@ -329,6 +355,35 @@ describe("decide", () => {
 
     expect(textOf(result)).toContain("model unavailable");
     expect(detailsOf(result).error).toContain("model unavailable");
+  });
+
+  it("returns a text error when the classifier stops without answers", async () => {
+    agentDir();
+    const classify = vi.fn(async () => ({
+      api: "classifier",
+      provider: "typesafe",
+      model: "jev-latest",
+      stopReason: "stop",
+      timestamp: 1_000,
+    }));
+    const tool = createDecideTool();
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "bool",
+        input: "x",
+        question: "q",
+        trueDescription: "yes",
+        falseDescription: "no",
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(textOf(result)).toContain("decide returned no answer");
+    expect(detailsOf(result).error).toBe("decide returned no answer");
   });
 
   it("returns a text error when classify rejects", async () => {
@@ -529,6 +584,76 @@ describe("decide", () => {
 
     expect(detailsOf(result).error).toMatch(/unique/i);
     expect(classify).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate score labels before calling the classifier", async () => {
+    agentDir();
+    const classify = vi.fn(async () =>
+      classifierResult({ type: "score", score: 0, confidence: 0.5 }),
+    );
+    const tool = createDecideTool();
+
+    const result = await tool.execute(
+      "1",
+      {
+        kind: "score",
+        input: "x",
+        question: "q",
+        labels: [
+          { label: "same", description: "first description" },
+          { label: "same", description: "second description" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(detailsOf(result).error).toMatch(/unique/i);
+    expect(classify).not.toHaveBeenCalled();
+  });
+
+  it("keeps a __proto__ choice label in the classifier criteria", async () => {
+    agentDir();
+    let criteria: Record<string, string> | undefined;
+    const classify = vi.fn(
+      async (
+        _model: unknown,
+        request: {
+          questions: { answer: { criteria: Record<string, string> } };
+        },
+        _options: unknown,
+      ) => {
+        criteria = request.questions.answer.criteria;
+        return classifierResult({
+          type: "choice",
+          choice: "a",
+          probabilities: { a: 1 },
+          confidence: 1,
+        });
+      },
+    );
+    const tool = createDecideTool();
+
+    await tool.execute(
+      "1",
+      {
+        kind: "choice",
+        input: "x",
+        question: "q",
+        labels: [
+          { label: "__proto__", description: "proto description" },
+          { label: "a", description: "a description" },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx(classify) as never,
+    );
+
+    expect(criteria).toBeDefined();
+    expect(Object.keys(criteria ?? {})).toEqual(["__proto__", "a"]);
+    expect(Object.hasOwn(criteria ?? {}, "__proto__")).toBe(true);
   });
 
   it("does not let a new call join an inflight entry whose last waiter aborted", async () => {

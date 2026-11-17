@@ -39,7 +39,7 @@ function parseTimeout(value: unknown, diagnostics: string[]): number {
   if (
     typeof value === "number" &&
     Number.isFinite(value) &&
-    value > 0 &&
+    value >= 1 &&
     value <= MAX_TIMEOUT_MS
   ) {
     return Math.trunc(value);

@@ -423,6 +423,23 @@ describe("web_fetch", () => {
     );
     expect(textOf(failed)).toContain("fetch failed");
   });
+
+  it("sanitizes terminal control sequences in provider error messages", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new Error("raw fetch failed: 503 \x1b[2Jevil"));
+    const tool = createWebFetchTool({ fetch });
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+
+    expect(textOf(result)).not.toContain("\x1b[2J");
+    expect(textOf(result)).toContain("raw fetch failed: 503 evil");
+  });
 });
 
 describe("tool exposure", () => {
@@ -694,5 +711,67 @@ describe("tool renderers", () => {
     expect(expanded).toContain("Fetched");
     expect(expanded).toContain("hello world");
     expect(expanded).toContain("line two");
+  });
+
+  it("renders fetched content containing 'unavailable:' as a normal result", async () => {
+    const tool = createWebFetchTool({
+      fetch: vi.fn().mockResolvedValue({
+        url: "https://example.com",
+        finalUrl: "https://example.com",
+        contentType: "text/plain",
+        content: "service unavailable: try again later",
+        links: [],
+        media: [],
+        truncated: false,
+      }),
+    });
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(detailsOf(result).error).toBeUndefined();
+
+    const resComp = tool.renderResult?.(
+      result as never,
+      { expanded: true, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const rendered = resComp?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Fetched");
+    expect(rendered).toContain("unavailable: try again later");
+  });
+
+  it("renders search results containing 'unavailable:' as a normal result", async () => {
+    const tool = createWebSearchTool({
+      search: vi.fn().mockResolvedValue([
+        {
+          title: "Doc",
+          url: "https://doc.com",
+          snippet: "service unavailable: upstream note",
+        },
+      ]),
+    });
+    const result = await tool.execute(
+      "1",
+      { query: "q" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(detailsOf(result).error).toBeUndefined();
+
+    const resComp = tool.renderResult?.(
+      result as never,
+      { expanded: false, isPartial: false },
+      mockTheme,
+      {} as never,
+    );
+    const rendered = resComp?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("Found");
+    expect(rendered).toContain("doc.com");
   });
 });

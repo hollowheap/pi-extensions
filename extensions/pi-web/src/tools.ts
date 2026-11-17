@@ -314,7 +314,10 @@ function firstText(result: { content?: readonly unknown[] }): string {
 function errorResult(tool: string, message: string) {
   return {
     content: [
-      { type: "text" as const, text: `${tool} unavailable: ${message}` },
+      {
+        type: "text" as const,
+        text: `${tool} unavailable: ${sanitizeTerminalText(message)}`,
+      },
     ],
     details: { error: message },
   };
@@ -376,7 +379,7 @@ export function createWebSearchTool(
         | undefined;
 
       const textOutput = firstText(result);
-      if (details?.error || textOutput.includes("unavailable:")) {
+      if (details?.error) {
         text.setText(
           theme.fg("error", textOutput !== "" ? textOutput : "Search failed"),
         );
@@ -538,7 +541,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
         | undefined;
 
       const textOutput = firstText(result);
-      if (details?.error || textOutput.includes("unavailable:")) {
+      if (details?.error) {
         text.setText(
           theme.fg("error", textOutput !== "" ? textOutput : "Fetch failed"),
         );
