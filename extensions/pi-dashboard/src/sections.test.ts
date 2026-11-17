@@ -117,7 +117,12 @@ describe("renderSessionsSection", () => {
           modified: new Date(now - 3_600_000),
           messageCount: 12,
           firstMessage: "refactor statusline",
-          summary: { agent: "scout", todosOpen: 3, totalCost: 0.15 },
+          summary: {
+            agent: "scout",
+            todosOpen: 3,
+            totalCost: 0.15,
+            decideCalls: 2,
+          },
         },
       ],
       theme,
@@ -133,6 +138,7 @@ describe("renderSessionsSection", () => {
     expect(lines[1]).toContain("1h");
     expect(lines[1]).toContain("12m");
     expect(lines[1]).toContain("3 todo");
+    expect(lines[1]).toContain("2 decide");
   });
 });
 

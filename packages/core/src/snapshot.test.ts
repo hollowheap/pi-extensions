@@ -180,4 +180,21 @@ describe("session snapshot", () => {
       subagentRuns: 1,
     });
   });
+
+  it("extracts the latest decide call count from cumulative decide entries", () => {
+    const summary = extractSessionSummaryFromEntries([
+      {
+        type: "custom",
+        customType: "hollowheap.decide",
+        data: { totalCount: 1, cacheHits: 0, updatedAt: 1 },
+      },
+      {
+        type: "custom",
+        customType: "hollowheap.decide",
+        data: { totalCount: 4, cacheHits: 2, lastKind: "choice", updatedAt: 2 },
+      },
+    ]);
+
+    expect(summary.decideCalls).toBe(4);
+  });
 });

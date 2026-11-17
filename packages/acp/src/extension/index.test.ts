@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { type Socket, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerMode } from "@hollowheap/core";
+import { registerMode, session } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RequestTracker,
@@ -229,6 +229,59 @@ describe("bundled extension", () => {
     )) as { notices: string[]; modes: { name: string }[] };
     expect(reply.notices).toEqual(["notice-mode on"]);
     expect(reply.modes.map((mode) => mode.name)).toContain("notice-mode");
+  });
+
+  it("registers auto and accepts set-mode auto", async () => {
+    const { handlers } = setupExtension();
+    const { ctx } = project(JSON.stringify({ rules: [] }));
+    const { path, accepted } = await serve(() => ({ decision: "allow_once" }));
+    process.env.HOLLOWHEAP_ACP_SOCKET = path;
+    startSession(handlers, ctx);
+    await waitFor(() => accepted() !== undefined, "connect");
+    const serverTracker = new RequestTracker();
+    const serverSock = accepted();
+    if (serverSock === undefined) throw new Error("no socket");
+    attachWireHandler(serverSock, serverTracker, () => {});
+    const listed = (await sendWireRequest(
+      serverSock,
+      serverTracker,
+      "get-modes",
+      {},
+    )) as { modes: { name: string }[] };
+    expect(listed.modes.map((mode) => mode.name)).toContain("auto");
+    const reply = (await sendWireRequest(
+      serverSock,
+      serverTracker,
+      "set-mode",
+      {
+        mode: "auto",
+      },
+    )) as { error?: string; notices: string[] };
+    expect(reply.error).toBeUndefined();
+    expect(reply.notices).toContain(
+      "auto on: writes and non-destructive bash run without asking",
+    );
+  });
+
+  it("restores the persisted mode on session_tree", () => {
+    const { handlers } = setupExtension();
+    const ctx = {
+      cwd: "/repo",
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "custom",
+            customType: "hollowheap.core.mode",
+            data: { mode: "plan" },
+          },
+        ],
+      },
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(), setStatus: vi.fn() },
+    };
+    handlers.session_tree(undefined as never, ctx as never);
+    expect(session(ctx.sessionManager).mode).toBe("plan");
   });
 
   it("switches mode over set-mode and enforces plan limits", async () => {

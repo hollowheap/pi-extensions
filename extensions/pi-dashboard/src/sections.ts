@@ -195,6 +195,9 @@ function formatSessionBadges(session: DashboardSessionItem): string[] {
   if (summary.observations !== undefined && summary.observations > 0) {
     badges.push(`${summary.observations} obs`);
   }
+  if (summary.decideCalls !== undefined && summary.decideCalls > 0) {
+    badges.push(`${summary.decideCalls} decide`);
+  }
   return badges;
 }
 

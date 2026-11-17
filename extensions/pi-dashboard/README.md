@@ -8,7 +8,7 @@ Default sections render in `72` columns (customizable in `<agentDir>/dashboard.j
 
 - `header`: centered ASCII art (`DEFAULT_ART` when `ascii` is omitted).
 - `state`: live session snapshot (project, mode, agent, guard trust, model, token/cost/budget, todos, tasks, subagents, memory, LSP, web, hooks, questions, decide).
-- `sessions`: recent resumable sessions for the active project (`scope`: `"cwd"` or `"all"`, `maxItems`: `1..20`) with age, message count, agent, open todos, cost, and observations.
+- `sessions`: recent resumable sessions for the active project (`scope`: `"cwd"` or `"all"`, `maxItems`: `1..20`) with age, message count, agent, open todos, cost, observations, and decide calls.
 - `actions`: quick slash-command and shortcut bar.
 - `terminal`: runs `command` with `args` every `intervalMs` ms without a shell. Left-aligned by default (`align: "center"` centers output).
 

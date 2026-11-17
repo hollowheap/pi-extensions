@@ -293,6 +293,7 @@ export interface PersistedSessionSummary {
   taskRuns?: number;
   subagentRuns?: number;
   webLinks?: number;
+  decideCalls?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -385,6 +386,11 @@ export function extractSessionSummaryFromEntries(
       typeof data.id === "string"
     ) {
       subagentIds.add(data.id);
+    } else if (
+      customType === "hollowheap.decide" &&
+      typeof data.totalCount === "number"
+    ) {
+      summary.decideCalls = data.totalCount;
     }
   }
 

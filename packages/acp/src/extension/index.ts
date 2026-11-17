@@ -12,9 +12,10 @@ import {
   modeLayers,
   registerMode,
   replaceConfigModes,
+  resetSession,
 } from "@hollowheap/core/modes";
 import type { Tag } from "@hollowheap/core/types";
-import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { AUTO_MODE, BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import {
   TOOL_TAGS,
   readCommandArg,
@@ -162,13 +163,21 @@ function connectAdapter(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
   for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+  registerMode(AUTO_MODE);
   for (const tool of createAcpTools(toolDeps)) pi.registerTool(tool);
-  pi.on("session_start", (_event, ctx) => {
-    connectAdapter(ctx);
+  const restore = (ctx: ExtensionContext): void => {
     const notify = (message: string) =>
       ctx.ui.notify(`pi-acp: ${message}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
+    const restored = resetSession(ctx.sessionManager);
+    if (restored.diagnostic !== undefined) notify(restored.diagnostic);
+    if (restored.veto !== undefined) notify(restored.veto);
+  };
+  pi.on("session_start", (_event, ctx) => {
+    connectAdapter(ctx);
+    restore(ctx);
   });
+  pi.on("session_tree", (_event, ctx) => restore(ctx));
   pi.on("session_shutdown", (_event, ctx) => {
     clearSessionDecisions(ctx?.sessionManager ?? sessionOwner);
     if (sock !== undefined) {

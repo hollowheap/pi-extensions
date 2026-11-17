@@ -48,6 +48,24 @@ export const PLAN_MODE: ModeLayer = Object.freeze({
   ]),
 });
 
+export const AUTO_MODE: ModeLayer = Object.freeze({
+  name: "auto",
+  description: "Writes and non-destructive bash run without asking",
+  defaults: Object.freeze({
+    read: "allow" as const,
+    search: "allow" as const,
+    edit: "allow" as const,
+    shell: "allow" as const,
+    external: "allow" as const,
+  }),
+  onEnter: () => ({
+    notice: {
+      text: "auto on: writes and non-destructive bash run without asking",
+      level: "warning" as const,
+    },
+  }),
+});
+
 export const BUILTIN_MODE_LAYERS: readonly ModeLayer[] = Object.freeze([
   MANUAL_MODE,
   EDIT_MODE,
