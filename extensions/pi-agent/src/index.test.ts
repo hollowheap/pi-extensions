@@ -568,6 +568,35 @@ describe("pi-agent extension", () => {
     );
   });
 
+  it("respects a session model override over the agent's loaded model on restore", async () => {
+    const pi = createMockPi();
+    const ext = createAgentExtension();
+    ext(pi as never);
+
+    const ctx = createMockContext({
+      model: { provider: "opencode-go", id: "deepseek-v4.1-flash" },
+    });
+    ctx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "model-override",
+        type: "model_change",
+        provider: "opencode-go",
+        modelId: "deepseek-v4.1-flash",
+      } as never,
+    );
+
+    pi.setModel.mockResolvedValue(true);
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(pi.setModel).not.toHaveBeenCalled();
+  });
+
   it("keeps persisted session mode when restoring an active agent", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();
