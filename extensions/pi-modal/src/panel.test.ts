@@ -551,6 +551,24 @@ describe("wrapToolRenderer", () => {
     expect(stripTerminalSequences(joined)).toContain("dark");
   });
 
+  it("renders with surface background without crashing", () => {
+    const base = { renderCall: vi.fn(() => ["line 1"]) };
+    const cfg = {
+      enabled: true,
+      borderStyle: "rounded",
+      accentStripe: true,
+      outcomeBadges: true,
+      reuseSpinner: true,
+      customVerbs: {},
+      verbPack: "standard",
+      surface: "surface",
+    } as never;
+    const wrapped = wrapToolRenderer("bash", base, () => cfg);
+    const comp = wrapped.renderCall?.({}, {}, {});
+    const lines = comp?.render(50) ?? [];
+    expect(lines.length).toBeGreaterThan(0);
+  });
+
   it("strips only background SGR parameters and keeps foreground styling", () => {
     expect(stripBackgroundSgr("\x1b[32mok\x1b[39m")).toBe("\x1b[32mok\x1b[39m");
     expect(stripBackgroundSgr("\x1b[1;42mbold\x1b[0m")).toBe(
