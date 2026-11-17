@@ -947,6 +947,7 @@ ACP tasks A1-A14 were renumbered to T71-T84; they are older than T01-T20, so the
 ## Backlog
 
 - Custom TS statusline component loading. Contract still needs an explicit `components: Record<string, ComponentFn>` export shape and a jiti-based loader; `customComponentsPath` was removed from the live config until then.
+- [R89] Configurable `pi-subagents` harness selection (`acp` or `headless`) per task: allow `subagent` `start` to choose or override a harness configured in `subagents.json`, supporting both headless subprocess transports and ACP client communication, persisted across `send`/`resume` and covered by process-group cancellation. Deferred for later design and implementation.
 
 ### Imported subagent runs
 

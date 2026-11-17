@@ -88,7 +88,7 @@ describe("showTuiSettings", () => {
     expect(status).toContain("markdownRender=true");
     expect(status).toContain("thinkingVerbosity=verbose");
     expect(status).toContain("thinkingAnimate=true");
-    expect(status).toContain("toolBox.enabled=false");
+    expect(status).toContain("panel.enabled=false");
   });
 
   it("cycles settings live, triggers full repaint, updates active state, and persists tui.json", async () => {

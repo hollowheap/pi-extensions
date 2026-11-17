@@ -1673,7 +1673,7 @@ Perform operation two.`,
   });
 });
 
-describe("TUI config, /tui command, and tool-box integration", () => {
+describe("TUI config, /tui command, and panel integration", () => {
   it("renders full mode badges and inherits borderStyle from active TUI config", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
@@ -1845,7 +1845,7 @@ describe("TUI config, /tui command, and tool-box integration", () => {
     await pending;
   });
 
-  it("wraps tools with tool-box when toolBox.enabled is true", () => {
+  it("wraps tools with panel when panel.enabled is true", () => {
     const pi = {
       on: vi.fn(),
       registerCommand: vi.fn(),
@@ -1856,8 +1856,8 @@ describe("TUI config, /tui command, and tool-box integration", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       verbPack: "terse",
-      toolBox: {
-        ...DEFAULT_TUI_CONFIG.toolBox,
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
         enabled: true,
       },
     });

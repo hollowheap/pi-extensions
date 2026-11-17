@@ -42,9 +42,9 @@ function applyTuiSetting(
 ): TuiConfig {
   const next: TuiConfig = {
     ...current,
-    toolBox: {
-      ...current.toolBox,
-      customVerbs: { ...current.toolBox.customVerbs },
+    panel: {
+      ...current.panel,
+      customVerbs: { ...current.panel.customVerbs },
     },
   };
   switch (id) {
@@ -69,23 +69,23 @@ function applyTuiSetting(
     case "thinkingAnimate":
       next.thinkingAnimate = value === "true";
       break;
-    case "toolBox.enabled":
-      next.toolBox.enabled = value === "true";
+    case "panel.enabled":
+      next.panel.enabled = value === "true";
       break;
-    case "toolBox.borderStyle":
-      next.toolBox.borderStyle = value as BorderStyle;
+    case "panel.borderStyle":
+      next.panel.borderStyle = value as BorderStyle;
       break;
-    case "toolBox.accentStripe":
-      next.toolBox.accentStripe = value === "true";
+    case "panel.accentStripe":
+      next.panel.accentStripe = value === "true";
       break;
     case "verbPack":
       next.verbPack = value as ToolVerbPack;
       break;
-    case "toolBox.outcomeBadges":
-      next.toolBox.outcomeBadges = value === "true";
+    case "panel.outcomeBadges":
+      next.panel.outcomeBadges = value === "true";
       break;
-    case "toolBox.reuseSpinner":
-      next.toolBox.reuseSpinner = value === "true";
+    case "panel.reuseSpinner":
+      next.panel.reuseSpinner = value === "true";
       break;
   }
   return next;
@@ -143,24 +143,24 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: ["true", "false"],
     },
     {
-      id: "toolBox.enabled",
+      id: "panel.enabled",
       label: "Tool box renderer",
       description: "Wrap tool calls in a configurable self-rendered box",
-      currentValue: String(config.toolBox.enabled),
+      currentValue: String(config.panel.enabled),
       values: ["false", "true"],
     },
     {
-      id: "toolBox.borderStyle",
+      id: "panel.borderStyle",
       label: "Tool box border",
       description: "Border style used by the tool box renderer",
-      currentValue: config.toolBox.borderStyle,
+      currentValue: config.panel.borderStyle,
       values: [...BORDER_STYLES],
     },
     {
-      id: "toolBox.accentStripe",
+      id: "panel.accentStripe",
       label: "Tool box accent stripe",
       description: "Show left state stripe on tool boxes",
-      currentValue: String(config.toolBox.accentStripe),
+      currentValue: String(config.panel.accentStripe),
       values: ["true", "false"],
     },
     {
@@ -171,17 +171,17 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
       values: [...TOOL_VERB_PACKS],
     },
     {
-      id: "toolBox.outcomeBadges",
+      id: "panel.outcomeBadges",
       label: "Tool box outcome badges",
       description: "Show ✓/✗ and execution duration badges when settled",
-      currentValue: String(config.toolBox.outcomeBadges),
+      currentValue: String(config.panel.outcomeBadges),
       values: ["true", "false"],
     },
     {
-      id: "toolBox.reuseSpinner",
+      id: "panel.reuseSpinner",
       label: "Tool box spinner",
       description: "Reuse gradient spinner animation while tools run",
-      currentValue: String(config.toolBox.reuseSpinner),
+      currentValue: String(config.panel.reuseSpinner),
       values: ["true", "false"],
     },
   ];
@@ -197,11 +197,11 @@ export function formatTuiStatus(config: TuiConfig): string {
     `thinkingVerbosity=${config.thinkingVerbosity}`,
     `thinkingAnimate=${config.thinkingAnimate}`,
     `verbPack=${config.verbPack}`,
-    `toolBox.enabled=${config.toolBox.enabled}`,
-    `toolBox.borderStyle=${config.toolBox.borderStyle}`,
-    `toolBox.accentStripe=${config.toolBox.accentStripe}`,
-    `toolBox.outcomeBadges=${config.toolBox.outcomeBadges}`,
-    `toolBox.reuseSpinner=${config.toolBox.reuseSpinner}`,
+    `panel.enabled=${config.panel.enabled}`,
+    `panel.borderStyle=${config.panel.borderStyle}`,
+    `panel.accentStripe=${config.panel.accentStripe}`,
+    `panel.outcomeBadges=${config.panel.outcomeBadges}`,
+    `panel.reuseSpinner=${config.panel.reuseSpinner}`,
   ].join(" · ");
 }
 

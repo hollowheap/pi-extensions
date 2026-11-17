@@ -39,13 +39,13 @@ describe("tui-config", () => {
     expect(diagnostics).toEqual([]);
   });
 
-  it("normalizes partial configs and inherits borderStyle into toolBox when omitted", () => {
+  it("normalizes partial configs and inherits borderStyle into panel when omitted", () => {
     const diagnostics: string[] = [];
     const cfg = normalizeTuiConfig(
       {
         borderStyle: "square",
         overlaySurface: "card",
-        toolBox: {
+        panel: {
           enabled: true,
           verbPack: "playful",
           customVerbs: {
@@ -66,7 +66,7 @@ describe("tui-config", () => {
       thinkingVerbosity: "verbose",
       thinkingAnimate: true,
       verbPack: "playful",
-      toolBox: {
+      panel: {
         enabled: true,
         borderStyle: "square",
         accentStripe: true,
@@ -88,7 +88,7 @@ describe("tui-config", () => {
         loadingIndicator: "sparkles",
         thinkingVerbosity: "loud",
         colored: "yes",
-        toolBox: { verbPack: "chaotic" },
+        panel: { verbPack: "chaotic" },
       },
       diagnostics,
     );
@@ -126,7 +126,7 @@ describe("tui-config", () => {
       current.markdownRender = false;
       current.thinkingVerbosity = "minimal";
       current.thinkingAnimate = false;
-      current.toolBox.enabled = true;
+      current.panel.enabled = true;
       current.verbPack = "terse";
     });
 
@@ -141,7 +141,7 @@ describe("tui-config", () => {
     expect(reloaded.markdownRender).toBe(false);
     expect(reloaded.thinkingVerbosity).toBe("minimal");
     expect(reloaded.thinkingAnimate).toBe(false);
-    expect(reloaded.toolBox.enabled).toBe(true);
+    expect(reloaded.panel.enabled).toBe(true);
     expect(reloaded.verbPack).toBe("terse");
   });
 

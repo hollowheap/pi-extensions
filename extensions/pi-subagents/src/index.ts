@@ -272,7 +272,6 @@ export function createSubagentsExtension(
                   .join(", ")
               : String(args ?? "").slice(0, 80);
           out.push(`> ${toolName}${summary ? ` (${summary})` : ""}`);
-          continue;
         }
       }
       if (out.length === 0) {

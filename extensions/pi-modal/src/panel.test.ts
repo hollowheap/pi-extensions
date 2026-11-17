@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-tui";
 import {
   DEFAULT_TUI_CONFIG,
-  type ToolBoxConfig,
+  type PanelConfig,
   type ToolVerbPack,
 } from "@hollowheap/core/tui-config";
 import { describe, expect, it, vi } from "vitest";
@@ -19,13 +19,13 @@ import {
   resolveToolVerb,
   stripBackgroundSgr,
   wrapToolRenderer,
-} from "./tool-box.js";
+} from "./panel.js";
 
 function makeConfig(
-  overrides: Partial<ToolBoxConfig & { verbPack: ToolVerbPack }> = {},
-): ToolBoxConfig & { verbPack: ToolVerbPack } {
+  overrides: Partial<PanelConfig & { verbPack: ToolVerbPack }> = {},
+): PanelConfig & { verbPack: ToolVerbPack } {
   return {
-    ...DEFAULT_TUI_CONFIG.toolBox,
+    ...DEFAULT_TUI_CONFIG.panel,
     verbPack: DEFAULT_TUI_CONFIG.verbPack,
     enabled: true,
     ...overrides,
@@ -101,7 +101,7 @@ function renderCallBox(
   return comp?.render(50) ?? [];
 }
 
-describe("tool-box verbs and helpers", () => {
+describe("panel verbs and helpers", () => {
   it("resolves standard, terse, and playful verb packs plus unknown $ fallback and custom overrides", () => {
     expect(
       resolveToolVerb("edit", makeConfig({ verbPack: "standard" })),
@@ -296,7 +296,7 @@ describe("wrapToolRenderer", () => {
     expect(lines[0]).not.toContain("▎");
   });
 
-  it("preserves codemode expanded: true when wrapped in tool-box", () => {
+  it("preserves codemode expanded: true when wrapped in panel", () => {
     const baseRenderCall = vi.fn(() => ({
       render: () => ["const x = 1;"],
       invalidate: vi.fn(),

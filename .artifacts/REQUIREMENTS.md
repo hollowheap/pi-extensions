@@ -451,6 +451,21 @@
 ### Observational memory
 
 - [x] R81: An opt-in observer distills durable memory into session entries and carries it through compaction without hiding model spend.
+- [ ] R90: Observations track a `coversUpToId` watermark so coverage of source entries is known.
+  - Verify: `npx vitest run extensions/pi-memory/src`
+  - Acceptance: each observation records the last source entry id it covers; `/memory status` reports coverage (covered/total pending); deterministic compaction is allowed only when coverage is complete before the cutoff.
+  - Constraints: watermark is branch-local and survives tree navigation; partial coverage blocks deterministic mode.
+  - Non-goals: deterministic compaction itself (R91).
+- [ ] R91: An explicit `/memory handoff` command renders a bounded memory block and creates a branch only on user confirmation.
+  - Verify: `npx vitest run extensions/pi-memory/src`
+  - Acceptance: command shows memory block, asks once, creates branch only on confirm; never auto-forks; no branch on cancel.
+  - Constraints: no automatic fork; uses existing memory block rendering.
+  - Non-goals: automatic handoff or compaction seed.
+- [ ] R92: Observer and compaction spend is measured and surfaced in `/memory status` and the usage ledger.
+  - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
+  - Acceptance: observer cost appears in `/memory status` (already partial); compaction cost counted; totals agree with usage ledger.
+  - Constraints: pricing stays per message model (R39).
+  - Non-goals: reconciling with provider invoices.
   - Verify: `npx vitest run extensions/pi-memory/src extensions/pi-usage/src`
   - Acceptance: disabled by default; requires an explicit provider/model; observes only unconsumed messages after the token threshold; stores branch-local observations and consumed markers; restores on session start and tree navigation; injects active memory into `session_before_compact`; supports `/memory status`, `/memory view`, and `/memory clear`; redacts common credentials by default; records observer usage in the shared ledger; ACP registers nothing.
   - Constraints: No dependency on `pi-observational-memory` and no separate memory file. Redaction is best-effort.
@@ -506,3 +521,12 @@
   - Constraints: Pricing stays per message model (R39).
   - Non-goals: Reconciling with provider invoices.
   - Rationale: V33-F1/F3 and V35-F1/F3 show inconsistent and double-counted costs.
+
+### Subagent harnesses (recorded backlog)
+
+- [ ] R89: `pi-subagents` tasks can select a configured harness communicating over ACP or headless mode.
+  - Verify: `npx vitest run extensions/pi-subagents/src`
+  - Acceptance: `subagent` `start` accepts an optional `harness` override alongside agent defaults; `subagents.json` distinguishes configurable `headless` (subprocess CLI / Pi RPC) and `acp` client harness transports; chosen harness metadata persists in subagent run state so `send`, `status`, and `resume` stay consistent and process-group teardown (R86) holds.
+  - Constraints: Recorded only (`2026-11-16`) per user direction; preserve existing `pi` RPC and headless `command`/`args`/`input` harness configs and trust/sandbox boundaries.
+  - Non-goals: Implementing ACP client transport in `pi-subagents` right now.
+  - Rationale: `extensions/pi-subagents/src/tool.ts` only reads `harness` from `define`/agent config (`tool.ts:101-130, 257-259`), and `extensions/pi-subagents/src/config.ts` only configures headless subprocess `harnesses` (`stdin`/`arg`).

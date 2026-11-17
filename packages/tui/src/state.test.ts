@@ -45,8 +45,8 @@ describe("tui state", () => {
       borderStyle: "double",
       overlaySurface: "card",
       verbPack: "playful",
-      toolBox: {
-        ...DEFAULT_TUI_CONFIG.toolBox,
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
         enabled: true,
       },
     });
@@ -54,7 +54,7 @@ describe("tui state", () => {
     const active = getActiveTuiConfig();
     expect(active.borderStyle).toBe("double");
     expect(active.overlaySurface).toBe("card");
-    expect(active.toolBox.enabled).toBe(true);
+    expect(active.panel.enabled).toBe(true);
     expect(active.verbPack).toBe("playful");
 
     // Mutating returned object does not mutate store state.

@@ -63,7 +63,7 @@ export interface CustomToolVerb {
   settled: string;
 }
 
-export interface ToolBoxConfig {
+export interface PanelConfig {
   enabled: boolean;
   borderStyle: BorderStyle;
   accentStripe: boolean;
@@ -81,7 +81,7 @@ export interface TuiConfig {
   thinkingVerbosity: ThinkingVerbosityMode;
   thinkingAnimate: boolean;
   verbPack: ToolVerbPack;
-  toolBox: ToolBoxConfig;
+  panel: PanelConfig;
 }
 
 export const DEFAULT_TUI_CONFIG: TuiConfig = {
@@ -93,7 +93,7 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   thinkingVerbosity: "verbose",
   thinkingAnimate: true,
   verbPack: "standard",
-  toolBox: {
+  panel: {
     enabled: false,
     borderStyle: "rounded",
     accentStripe: true,
@@ -106,8 +106,8 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
 function cloneDefaults(): TuiConfig {
   return {
     ...DEFAULT_TUI_CONFIG,
-    toolBox: {
-      ...DEFAULT_TUI_CONFIG.toolBox,
+    panel: {
+      ...DEFAULT_TUI_CONFIG.panel,
       customVerbs: {},
     },
   };
@@ -143,14 +143,14 @@ function parseCustomVerbs(
 ): Record<string, CustomToolVerb> {
   if (raw === undefined) return {};
   if (!isPlainObject(raw)) {
-    diagnostics?.push("tui.json: toolBox.customVerbs must be an object");
+    diagnostics?.push("tui.json: panel.customVerbs must be an object");
     return {};
   }
   const result: Record<string, CustomToolVerb> = {};
   for (const [toolName, entry] of Object.entries(raw)) {
     if (!isPlainObject(entry)) {
       diagnostics?.push(
-        `tui.json: toolBox.customVerbs.${toolName} must be an object`,
+        `tui.json: panel.customVerbs.${toolName} must be an object`,
       );
       continue;
     }
@@ -159,7 +159,7 @@ function parseCustomVerbs(
       typeof entry.settled === "string" ? entry.settled.trim() : "";
     if (!active || !settled) {
       diagnostics?.push(
-        `tui.json: toolBox.customVerbs.${toolName} requires non-empty 'active' and 'settled' strings`,
+        `tui.json: panel.customVerbs.${toolName} requires non-empty 'active' and 'settled' strings`,
       );
       continue;
     }
@@ -245,9 +245,9 @@ export function normalizeTuiConfig(
     diagnostics,
   );
 
-  const rawToolBox = raw.toolBox;
-  const legacyVerbPack = isPlainObject(rawToolBox)
-    ? rawToolBox.verbPack
+  const rawPanel = raw.panel;
+  const legacyVerbPack = isPlainObject(rawPanel)
+    ? rawPanel.verbPack
     : undefined;
   const verbPack = parseEnum(
     raw.verbPack ?? legacyVerbPack,
@@ -256,58 +256,55 @@ export function normalizeTuiConfig(
     "verbPack",
     diagnostics,
   );
-  const toolBox: ToolBoxConfig = {
-    ...defaults.toolBox,
+  const panel: PanelConfig = {
+    ...defaults.panel,
     borderStyle,
     customVerbs: {},
   };
-  if (rawToolBox !== undefined) {
-    if (!isPlainObject(rawToolBox)) {
-      diagnostics?.push("tui.json: toolBox must be an object");
+  if (rawPanel !== undefined) {
+    if (!isPlainObject(rawPanel)) {
+      diagnostics?.push("tui.json: panel must be an object");
     } else {
-      toolBox.enabled = parseBoolean(
-        rawToolBox.enabled,
-        defaults.toolBox.enabled,
-        "toolBox.enabled",
+      panel.enabled = parseBoolean(
+        rawPanel.enabled,
+        defaults.panel.enabled,
+        "panel.enabled",
         diagnostics,
       );
 
-      toolBox.borderStyle = parseEnum(
-        rawToolBox.borderStyle,
+      panel.borderStyle = parseEnum(
+        rawPanel.borderStyle,
         BORDER_STYLES,
         borderStyle,
-        "toolBox.borderStyle",
+        "panel.borderStyle",
         diagnostics,
       );
 
-      toolBox.accentStripe = parseBoolean(
-        rawToolBox.accentStripe,
-        defaults.toolBox.accentStripe,
-        "toolBox.accentStripe",
+      panel.accentStripe = parseBoolean(
+        rawPanel.accentStripe,
+        defaults.panel.accentStripe,
+        "panel.accentStripe",
         diagnostics,
       );
 
-      toolBox.outcomeBadges = parseBoolean(
-        rawToolBox.outcomeBadges,
-        defaults.toolBox.outcomeBadges,
-        "toolBox.outcomeBadges",
+      panel.outcomeBadges = parseBoolean(
+        rawPanel.outcomeBadges,
+        defaults.panel.outcomeBadges,
+        "panel.outcomeBadges",
         diagnostics,
       );
 
-      toolBox.reuseSpinner = parseBoolean(
-        rawToolBox.reuseSpinner,
-        defaults.toolBox.reuseSpinner,
-        "toolBox.reuseSpinner",
+      panel.reuseSpinner = parseBoolean(
+        rawPanel.reuseSpinner,
+        defaults.panel.reuseSpinner,
+        "panel.reuseSpinner",
         diagnostics,
       );
 
-      toolBox.customVerbs = parseCustomVerbs(
-        rawToolBox.customVerbs,
-        diagnostics,
-      );
+      panel.customVerbs = parseCustomVerbs(rawPanel.customVerbs, diagnostics);
     }
   } else {
-    toolBox.borderStyle = borderStyle;
+    panel.borderStyle = borderStyle;
   }
 
   return {
@@ -319,7 +316,7 @@ export function normalizeTuiConfig(
     thinkingVerbosity,
     thinkingAnimate,
     verbPack,
-    toolBox,
+    panel,
   };
 }
 
@@ -384,13 +381,13 @@ export function updateTuiConfig(
       thinkingVerbosity: updated.thinkingVerbosity,
       thinkingAnimate: updated.thinkingAnimate,
       verbPack: updated.verbPack,
-      toolBox: {
-        enabled: updated.toolBox.enabled,
-        borderStyle: updated.toolBox.borderStyle,
-        accentStripe: updated.toolBox.accentStripe,
-        outcomeBadges: updated.toolBox.outcomeBadges,
-        reuseSpinner: updated.toolBox.reuseSpinner,
-        customVerbs: { ...updated.toolBox.customVerbs },
+      panel: {
+        enabled: updated.panel.enabled,
+        borderStyle: updated.panel.borderStyle,
+        accentStripe: updated.panel.accentStripe,
+        outcomeBadges: updated.panel.outcomeBadges,
+        reuseSpinner: updated.panel.reuseSpinner,
+        customVerbs: { ...updated.panel.customVerbs },
       },
     };
   });

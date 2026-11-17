@@ -14,9 +14,9 @@ interface TuiStateStore {
 function cloneConfig(config: TuiConfig): TuiConfig {
   return {
     ...config,
-    toolBox: {
-      ...config.toolBox,
-      customVerbs: { ...config.toolBox.customVerbs },
+    panel: {
+      ...config.panel,
+      customVerbs: { ...config.panel.customVerbs },
     },
   };
 }

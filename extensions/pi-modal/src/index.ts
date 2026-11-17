@@ -23,8 +23,8 @@ import { showCodeViewer } from "@hollowheap/tui/viewer";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
 import { normalizeAgentMarkdown } from "./markdown-normalize.js";
+import { wrapToolRenderer } from "./panel.js";
 import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
-import { wrapToolRenderer } from "./tool-box.js";
 import { formatTuiStatus, showTuiSettings } from "./tui-settings.js";
 import { formatVimKeys } from "./vimkeys.js";
 
@@ -32,7 +32,7 @@ export { ModalEditor } from "./editor.js";
 export * from "./keymap.js";
 export * from "./markdown-normalize.js";
 export * from "./skills.js";
-export * from "./tool-box.js";
+export * from "./panel.js";
 export * from "./tui-settings.js";
 
 const THINKING_PREFIXES = {
@@ -159,10 +159,10 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
-    if (getActiveTuiConfig().toolBox.enabled) {
+    if (getActiveTuiConfig().panel.enabled) {
       return wrapToolRenderer(toolName, base, () => {
         const active = getActiveTuiConfig();
-        return { ...active.toolBox, verbPack: active.verbPack };
+        return { ...active.panel, verbPack: active.verbPack };
       });
     }
     const renderCall = base?.renderCall;
@@ -350,6 +350,33 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_tree", (_event, ctx) => {
     syncFromBranch(ctx);
+    // Reinstall the modal editor after branch navigation; the host may have
+    // disposed the previous editor component when the session was replaced.
+    if (ctx.hasUI && typeof ctx.ui.setEditorComponent === "function") {
+      const config = loadModalConfig(getAgentDir(), (message) =>
+        ctx.ui.notify(`pi-modal: ${message}`, "warning"),
+      );
+      if (config.enabled !== false) {
+        const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
+        const editorConfig =
+          config.borderStyleExplicit && !hasTuiConfigFile
+            ? config
+            : { ...config, borderStyle: undefined };
+        applyWorkingIndicator(ctx);
+        ctx.ui.setEditorComponent((tui, theme, kb) => {
+          activeTui = tui as unknown as typeof activeTui;
+          activeEditor = new ModalEditor(
+            tui,
+            theme,
+            kb,
+            editorConfig,
+            undefined,
+            ctx.ui.theme,
+          );
+          return activeEditor;
+        });
+      }
+    }
   });
 
   pi.on("session_compact", (_event, ctx) => {

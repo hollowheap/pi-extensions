@@ -22,7 +22,7 @@ import { sanitizeTerminalText } from "@hollowheap/core/format";
 import type {
   CustomToolVerb,
   LoadingIndicatorStyle,
-  ToolBoxConfig,
+  PanelConfig,
   ToolVerbPack,
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -89,14 +89,14 @@ function formatUnknownToolName(toolName: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-export type ToolBoxRenderConfig = ToolBoxConfig & {
+export type PanelRenderConfig = PanelConfig & {
   verbPack: ToolVerbPack;
 };
 
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
 export function resolveToolVerb(
   toolName: string,
-  config: Pick<ToolBoxRenderConfig, "verbPack" | "customVerbs">,
+  config: Pick<PanelRenderConfig, "verbPack" | "customVerbs">,
 ): CustomToolVerb {
   const custom = config.customVerbs?.[toolName];
   if (custom) return custom;
@@ -170,7 +170,7 @@ export function formatToolCallSummary(
   return path ?? pattern ?? pick("command") ?? pick("query") ?? pick("url");
 }
 
-interface ToolBoxState {
+interface PanelState {
   hasCall?: boolean;
   hasCallLines?: boolean;
   resultCalled?: boolean;
@@ -190,15 +190,15 @@ interface ToolBoxState {
 }
 
 function getConfigCacheKey(
-  cfg: ToolBoxConfig,
+  cfg: PanelConfig,
   ui: { colored: boolean; loadingIndicator: LoadingIndicatorStyle },
 ): string {
   return `${JSON.stringify(cfg)}:${ui.colored}:${ui.loadingIndicator}`;
 }
 
-const BOX_STATES = new WeakMap<object, ToolBoxState>();
+const BOX_STATES = new WeakMap<object, PanelState>();
 
-function getBoxState(context: ToolRenderContext | undefined): ToolBoxState {
+function getBoxState(context: ToolRenderContext | undefined): PanelState {
   if (context && typeof context.state === "object" && context.state !== null) {
     let existing = BOX_STATES.get(context.state);
     if (!existing) {
@@ -273,10 +273,10 @@ function bold(theme: Theme | undefined, value: string): string {
   return typeof theme?.bold === "function" ? theme.bold(value) : value;
 }
 
-type ToolBoxStateToken = "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
+type PanelStateToken = "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 
 const STATE_FALLBACK_TOKEN: Readonly<
-  Record<ToolBoxStateToken, "accent" | "success" | "error">
+  Record<PanelStateToken, "accent" | "success" | "error">
 > = {
   toolPendingBg: "accent",
   toolSuccessBg: "success",
@@ -297,7 +297,7 @@ function brightenBaseAnsi(color: Color): Color {
 
 function stateAnsi(
   theme: Theme | undefined,
-  token: ToolBoxStateToken,
+  token: PanelStateToken,
   colored: boolean,
 ): string | undefined {
   if (!colored || theme === undefined) return undefined;
@@ -311,7 +311,7 @@ function stateAnsi(
 
 function paintState(
   theme: Theme | undefined,
-  token: ToolBoxStateToken,
+  token: PanelStateToken,
   colored: boolean,
   value: string,
 ): string {
@@ -369,7 +369,7 @@ function frameBoxLines(
   options: {
     borderStyle: BorderStyle;
     accentStripe: boolean;
-    stateToken: ToolBoxStateToken;
+    stateToken: PanelStateToken;
     includeTop: boolean;
     includeBottom: boolean;
     colored?: boolean;
@@ -479,7 +479,7 @@ function renderFallbackResultLines(
 }
 
 function getSpinnerFrame(
-  boxState: ToolBoxState,
+  boxState: PanelState,
   theme: Theme | undefined,
   nowMs: number,
   style: LoadingIndicatorStyle,
@@ -518,11 +518,11 @@ export interface WrapToolRendererOptions {
   };
 }
 
-/** Wrap a tool's renderers with configurable tool-box framing, verbs, spinner, and badges. */
+/** Wrap a tool's renderers with configurable panel framing, verbs, spinner, and badges. */
 export function wrapToolRenderer(
   toolName: string,
   base: ToolRenderers | undefined,
-  getConfig: () => ToolBoxRenderConfig,
+  getConfig: () => PanelRenderConfig,
   wrapOptions?: WrapToolRendererOptions,
 ): ToolRenderers {
   const now = wrapOptions?.now ?? Date.now;
@@ -587,7 +587,7 @@ export function wrapToolRenderer(
 
           const settled = !context.isPartial;
           const isError = Boolean(context.isError || boxState.resultIsError);
-          const stateToken: ToolBoxStateToken = !settled
+          const stateToken: PanelStateToken = !settled
             ? "toolPendingBg"
             : isError
               ? "toolErrorBg"
@@ -769,7 +769,7 @@ export function wrapToolRenderer(
           }
 
           const settled = !options.isPartial && !context.isPartial;
-          const stateToken: ToolBoxStateToken = !settled
+          const stateToken: PanelStateToken = !settled
             ? "toolPendingBg"
             : context.isError || result.isError
               ? "toolErrorBg"
