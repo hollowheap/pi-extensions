@@ -24,6 +24,7 @@ import type {
   CustomToolVerb,
   LoadingIndicatorStyle,
   PanelConfig,
+  PanelRenderMode,
   ToolVerbPack,
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -182,6 +183,9 @@ interface PanelState {
   spinnerTheme?: unknown;
   spinnerKey?: string;
   spinner?: { frames: string[]; intervalMs: number };
+  spinnerTimer?: ReturnType<typeof setInterval>;
+  spinnerTimerInterval?: number;
+  settled?: boolean;
   lockedSpinnerFrame?: string;
   innerCallComponent?: Component;
   innerResultComponent?: Component;
@@ -199,14 +203,14 @@ function getConfigCacheKey(
   return `${JSON.stringify(cfg)}:${ui.colored}:${ui.loadingIndicator}`;
 }
 
-const BOX_STATES = new WeakMap<object, PanelState>();
+const PANEL_STATES = new WeakMap<object, PanelState>();
 
-function getBoxState(context: ToolRenderContext | undefined): PanelState {
+function getPanelState(context: ToolRenderContext | undefined): PanelState {
   if (context && typeof context.state === "object" && context.state !== null) {
-    let existing = BOX_STATES.get(context.state);
+    let existing = PANEL_STATES.get(context.state);
     if (!existing) {
       existing = {};
-      BOX_STATES.set(context.state, existing);
+      PANEL_STATES.set(context.state, existing);
     }
     return existing;
   }
@@ -326,7 +330,7 @@ function paintState(
 const ESC = String.fromCharCode(27);
 const SGR_PATTERN = new RegExp(`${ESC}\\[([0-9;]*)m`, "g");
 
-/** Drop inherited background colors so only the tool box state color remains. */
+/** Drop inherited background colors so only the panel state color remains. */
 export function stripBackgroundSgr(text: string): string {
   return text.replace(SGR_PATTERN, (match, params: string) => {
     if (params === "") return match;
@@ -365,11 +369,12 @@ function getInnerWidth(
   return Math.max(1, safeWidth - (accentStripe ? 2 : 0));
 }
 
-function frameBoxLines(
+function framePanelLines(
   lines: readonly string[],
   width: number,
   theme: Theme | undefined,
   options: {
+    mode?: PanelRenderMode;
     borderStyle: BorderStyle;
     accentStripe: boolean;
     stateToken: PanelStateToken;
@@ -381,18 +386,27 @@ function frameBoxLines(
 ): string[] {
   const safeWidth = Math.max(4, width);
   const colored = options.colored ?? true;
-  const bordered = options.borderStyle !== "none" && safeWidth >= 6;
+  const bordered =
+    options.mode !== "background" &&
+    options.borderStyle !== "none" &&
+    safeWidth >= 6;
   const paint = (value: string) =>
     paintState(theme, options.stateToken, colored, value);
   const stripe = options.accentStripe ? paint("▎") : "";
   const content = lines.map(stripBackgroundSgr);
   const innerWidth = getInnerWidth(
     safeWidth,
-    options.borderStyle,
+    options.mode === "background" ? "none" : options.borderStyle,
     options.accentStripe,
   );
 
   if (!bordered) {
+    const surface =
+      options.mode === "background"
+        ? options.surface && options.surface !== "transparent"
+          ? options.surface
+          : "surface"
+        : options.surface;
     return content.map((line) => {
       const fitted =
         visibleWidth(line) > innerWidth
@@ -402,9 +416,11 @@ function frameBoxLines(
         fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m")
           ? "\x1b[0m"
           : "";
-      return options.accentStripe
-        ? `${stripe} ${fitted}${resetTail}`
-        : `${fitted}${resetTail}`;
+      const body =
+        surface !== undefined && surface !== "transparent"
+          ? paintSurfaceLine(fitted, innerWidth, theme, surface, colored)
+          : fitted;
+      return `${stripe}${stripe.length > 0 ? " " : ""}${body}${resetTail}`;
     });
   }
 
@@ -496,40 +512,75 @@ function renderFallbackResultLines(
   return lines;
 }
 
+interface SpinnerFrame {
+  frame: string;
+  tick: number;
+  intervalMs: number;
+}
+
 function getSpinnerFrame(
-  boxState: PanelState,
+  panelState: PanelState,
   theme: Theme | undefined,
   nowMs: number,
   style: LoadingIndicatorStyle,
   colored: boolean,
-): string {
-  if (boxState.startedAt === undefined) {
-    boxState.startedAt = nowMs;
+): SpinnerFrame {
+  if (panelState.startedAt === undefined) {
+    panelState.startedAt = nowMs;
   }
-  const startedAt = boxState.startedAt;
+  const startedAt = panelState.startedAt;
   const elapsed = Math.max(0, nowMs - startedAt);
   const key = `${style}:${colored}`;
   if (
-    boxState.spinnerTheme !== theme ||
-    boxState.spinnerKey !== key ||
-    boxState.spinner === undefined
+    panelState.spinnerTheme !== theme ||
+    panelState.spinnerKey !== key ||
+    panelState.spinner === undefined
   ) {
-    boxState.spinnerTheme = theme;
-    boxState.spinnerKey = key;
-    boxState.spinner = createWorkingIndicator(style, theme, colored) ?? {
+    panelState.spinnerTheme = theme;
+    panelState.spinnerKey = key;
+    panelState.spinner = createWorkingIndicator(style, theme, colored) ?? {
       frames: [...FALLBACK_SPINNER_FRAMES],
       intervalMs: FALLBACK_SPINNER_INTERVAL_MS,
     };
   }
-  const { frames, intervalMs } = boxState.spinner;
-  if (frames.length === 0) return "";
-  const idx = Math.floor(elapsed / intervalMs) % frames.length;
-  const frame = frames[idx] ?? frames[0] ?? "";
-  return style === "host" ? fg(theme, "accent", frame, colored) : frame;
+  const { frames, intervalMs } = panelState.spinner;
+  if (frames.length === 0) return { frame: "", tick: 0, intervalMs };
+  const tick = Math.floor(elapsed / intervalMs);
+  const idx = tick % frames.length;
+  const rawFrame = frames[idx] ?? frames[0] ?? "";
+  const frame =
+    style === "host" ? fg(theme, "accent", rawFrame, colored) : rawFrame;
+  return { frame, tick, intervalMs };
+}
+
+function startSpinnerTimer(
+  panelState: PanelState,
+  intervalMs: number,
+  onTick: () => void,
+): void {
+  if (
+    panelState.spinnerTimer !== undefined &&
+    panelState.spinnerTimerInterval === intervalMs
+  ) {
+    return;
+  }
+  stopSpinnerTimer(panelState);
+  panelState.spinnerTimerInterval = intervalMs;
+  panelState.spinnerTimer = setInterval(onTick, intervalMs);
+  panelState.spinnerTimer.unref?.();
+}
+
+function stopSpinnerTimer(panelState: PanelState): void {
+  if (panelState.spinnerTimer !== undefined) {
+    clearInterval(panelState.spinnerTimer);
+    panelState.spinnerTimer = undefined;
+    panelState.spinnerTimerInterval = undefined;
+  }
 }
 
 export interface WrapToolRendererOptions {
   now?: () => number;
+  requestRender?: () => void;
   getUiOptions?: () => {
     colored: boolean;
     loadingIndicator: LoadingIndicatorStyle;
@@ -544,6 +595,7 @@ export function wrapToolRenderer(
   wrapOptions?: WrapToolRendererOptions,
 ): ToolRenderers {
   const now = wrapOptions?.now ?? Date.now;
+  const requestRender = wrapOptions?.requestRender;
   const getUi =
     wrapOptions?.getUiOptions ??
     (() => {
@@ -559,52 +611,74 @@ export function wrapToolRenderer(
     renderCall(args, theme, context): Component {
       const effectiveContext =
         toolName === "codemode" ? { ...context, expanded: true } : context;
-      const boxState = getBoxState(context);
-      boxState.hasCall = true;
-      boxState.resultCalled = false;
-      boxState.renderResultLines = undefined;
-      boxState.resultInvalidate = undefined;
-      boxState.cachedResult = undefined;
-      boxState.cachedCallRender = undefined;
-      boxState.cachedResultRender = undefined;
-      boxState.startedAt ??= now();
+      const panelState = getPanelState(context);
+      panelState.hasCall = true;
+      panelState.resultCalled = false;
+      panelState.renderResultLines = undefined;
+      panelState.resultInvalidate = undefined;
+      panelState.cachedResult = undefined;
+      panelState.cachedCallRender = undefined;
+      panelState.cachedResultRender = undefined;
+      panelState.startedAt ??= now();
 
       const innerCallContext: ToolRenderContext = {
         ...effectiveContext,
         lastComponent: context.lastComponent
-          ? boxState.innerCallComponent
+          ? panelState.innerCallComponent
           : undefined,
       };
       let innerCall: Component | undefined;
       if (base?.renderCall) {
         try {
           innerCall = base.renderCall(args, theme, innerCallContext);
-          boxState.innerCallComponent = innerCall;
+          panelState.innerCallComponent = innerCall;
         } catch {
-          boxState.innerCallComponent = undefined;
+          panelState.innerCallComponent = undefined;
           innerCall = undefined;
         }
       } else {
-        boxState.innerCallComponent = undefined;
+        panelState.innerCallComponent = undefined;
       }
 
-      return {
+      const component: Component = {
         invalidate(): void {
-          boxState.cachedResult = undefined;
-          boxState.cachedCallRender = undefined;
-          boxState.cachedResultRender = undefined;
+          panelState.cachedResult = undefined;
+          panelState.cachedCallRender = undefined;
+          panelState.cachedResultRender = undefined;
           innerCall?.invalidate?.();
         },
         render(width: number): string[] {
           const cfg = getConfig();
           const ui = getUi();
-          const cacheKey = `${width}:${getConfigCacheKey(cfg, ui)}`;
-          if (boxState.cachedCallRender?.key === cacheKey) {
-            return boxState.cachedCallRender.lines;
+          const settled = !context.isPartial;
+          const spinner = getSpinnerFrame(
+            panelState,
+            theme,
+            now(),
+            ui.loadingIndicator,
+            ui.colored,
+          );
+          const frameTick = !settled && cfg.reuseSpinner ? spinner.tick : -1;
+          const cacheKey = `${width}:${getConfigCacheKey(cfg, ui)}:${frameTick}`;
+          if (panelState.cachedCallRender?.key === cacheKey) {
+            return panelState.cachedCallRender.lines;
           }
 
-          const settled = !context.isPartial;
-          const isError = Boolean(context.isError || boxState.resultIsError);
+          panelState.settled = settled;
+          if (!settled && cfg.reuseSpinner && spinner.intervalMs > 0) {
+            startSpinnerTimer(panelState, spinner.intervalMs, () => {
+              if (panelState.settled) {
+                stopSpinnerTimer(panelState);
+                return;
+              }
+              component.invalidate();
+              requestRender?.();
+            });
+          } else {
+            stopSpinnerTimer(panelState);
+          }
+
+          const isError = Boolean(context.isError || panelState.resultIsError);
           const stateToken: PanelStateToken = !settled
             ? "toolPendingBg"
             : isError
@@ -628,7 +702,7 @@ export function wrapToolRenderer(
             }
           }
 
-          boxState.hasCallLines = callLines.length > 0;
+          panelState.hasCallLines = callLines.length > 0;
 
           const verb = resolveToolVerb(toolName, cfg);
           const verbLabel = settled ? verb.settled : verb.active;
@@ -640,18 +714,12 @@ export function wrapToolRenderer(
             const freezeSpinner =
               Boolean(context.executionStarted) &&
               callLines.length > 8 &&
-              boxState.lockedSpinnerFrame !== undefined;
+              panelState.lockedSpinnerFrame !== undefined;
             const spinnerFrame = freezeSpinner
-              ? (boxState.lockedSpinnerFrame as string)
-              : getSpinnerFrame(
-                  boxState,
-                  theme,
-                  now(),
-                  ui.loadingIndicator,
-                  ui.colored,
-                );
+              ? (panelState.lockedSpinnerFrame as string)
+              : spinner.frame;
             if (!freezeSpinner) {
-              boxState.lockedSpinnerFrame = spinnerFrame;
+              panelState.lockedSpinnerFrame = spinnerFrame;
             }
             if (spinnerFrame !== "") {
               headerParts.push(spinnerFrame);
@@ -681,45 +749,50 @@ export function wrapToolRenderer(
           const headerLine = `${headerParts.join(" ")} ${fg(theme, "muted", "(ctrl+o to expand/collapse)")}`;
 
           let hasResultLines = false;
-          if (boxState.resultCalled && boxState.renderResultLines) {
-            const computed = boxState.renderResultLines(innerWidth);
-            boxState.cachedResult = { width, lines: computed };
+          if (panelState.resultCalled && panelState.renderResultLines) {
+            const computed = panelState.renderResultLines(innerWidth);
+            panelState.cachedResult = { width, lines: computed };
             hasResultLines = computed.length > 0;
           }
 
-          const framed = frameBoxLines(
+          const framed = framePanelLines(
             [headerLine, ...callLines],
             width,
             theme,
             {
+              mode: cfg.mode,
               borderStyle: cfg.borderStyle,
               accentStripe: cfg.accentStripe,
               stateToken,
               includeTop: true,
               includeBottom: !hasResultLines,
               colored: ui.colored,
+              surface: cfg.surface,
             },
           );
-          boxState.cachedCallRender = { key: cacheKey, lines: framed };
+          panelState.cachedCallRender = { key: cacheKey, lines: framed };
           return framed;
         },
       };
+      return component;
     },
 
     renderResult(result, options, theme, context): Component {
       const effectiveContext =
         toolName === "codemode" ? { ...context, expanded: true } : context;
-      const boxState = getBoxState(context);
-      boxState.resultCalled = true;
-      boxState.resultIsError = Boolean(result.isError);
-      boxState.cachedResult = undefined;
-      boxState.cachedResultRender = undefined;
-      boxState.cachedCallRender = undefined;
+      const panelState = getPanelState(context);
+      panelState.resultCalled = true;
+      panelState.resultIsError = Boolean(result.isError);
+      panelState.settled = true;
+      stopSpinnerTimer(panelState);
+      panelState.cachedResult = undefined;
+      panelState.cachedResultRender = undefined;
+      panelState.cachedCallRender = undefined;
 
       const innerResultContext: ToolRenderContext = {
         ...effectiveContext,
         lastComponent: context.lastComponent
-          ? boxState.innerResultComponent
+          ? panelState.innerResultComponent
           : undefined,
       };
       let innerResult: Component | undefined;
@@ -731,13 +804,13 @@ export function wrapToolRenderer(
             theme,
             innerResultContext,
           );
-          boxState.innerResultComponent = innerResult;
+          panelState.innerResultComponent = innerResult;
         } catch {
-          boxState.innerResultComponent = undefined;
+          panelState.innerResultComponent = undefined;
           innerResult = undefined;
         }
       } else {
-        boxState.innerResultComponent = undefined;
+        panelState.innerResultComponent = undefined;
       }
 
       const computeLines = (innerWidth: number): string[] => {
@@ -753,22 +826,22 @@ export function wrapToolRenderer(
         );
       };
 
-      boxState.renderResultLines = computeLines;
-      boxState.resultInvalidate = () => innerResult?.invalidate?.();
+      panelState.renderResultLines = computeLines;
+      panelState.resultInvalidate = () => innerResult?.invalidate?.();
 
       return {
         invalidate(): void {
-          boxState.cachedResult = undefined;
-          boxState.cachedResultRender = undefined;
-          boxState.cachedCallRender = undefined;
+          panelState.cachedResult = undefined;
+          panelState.cachedResultRender = undefined;
+          panelState.cachedCallRender = undefined;
           innerResult?.invalidate?.();
         },
         render(width: number): string[] {
           const cfg = getConfig();
           const ui = getUi();
           const cacheKey = `${width}:${getConfigCacheKey(cfg, ui)}`;
-          if (boxState.cachedResultRender?.key === cacheKey) {
-            return boxState.cachedResultRender.lines;
+          if (panelState.cachedResultRender?.key === cacheKey) {
+            return panelState.cachedResultRender.lines;
           }
 
           const innerWidth = getInnerWidth(
@@ -777,12 +850,12 @@ export function wrapToolRenderer(
             cfg.accentStripe,
           );
           const lines =
-            boxState.cachedResult?.width === width
-              ? boxState.cachedResult.lines
+            panelState.cachedResult?.width === width
+              ? panelState.cachedResult.lines
               : computeLines(innerWidth);
 
           if (lines.length === 0) {
-            boxState.cachedResultRender = { key: cacheKey, lines: [] };
+            panelState.cachedResultRender = { key: cacheKey, lines: [] };
             return [];
           }
 
@@ -794,17 +867,21 @@ export function wrapToolRenderer(
               : "toolSuccessBg";
 
           const displayLines =
-            boxState.hasCall && boxState.hasCallLines ? ["", ...lines] : lines;
+            panelState.hasCall && panelState.hasCallLines
+              ? ["", ...lines]
+              : lines;
 
-          const framed = frameBoxLines(displayLines, width, theme, {
+          const framed = framePanelLines(displayLines, width, theme, {
+            mode: cfg.mode,
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
             stateToken,
-            includeTop: !boxState.hasCall,
+            includeTop: !panelState.hasCall,
             includeBottom: true,
             colored: ui.colored,
+            surface: cfg.surface,
           });
-          boxState.cachedResultRender = { key: cacheKey, lines: framed };
+          panelState.cachedResultRender = { key: cacheKey, lines: framed };
           return framed;
         },
       };

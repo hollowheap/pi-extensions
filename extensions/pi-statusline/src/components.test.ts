@@ -9,8 +9,8 @@ import {
   formatClock,
   formatCount,
   parseGitPorcelain,
-  shortenPath,
   shortenModel,
+  shortenPath,
 } from "./components.js";
 
 function ctx(overrides: Partial<ComponentContext> = {}): ComponentContext {

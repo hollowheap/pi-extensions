@@ -54,21 +54,6 @@ export function collapseWhitespace(text: string): string {
     .trim();
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function stripSkillTokens(text: string, skillNames: string[]): string {
-  if (skillNames.length === 0) return collapseWhitespace(text);
-  const sorted = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
-  const escaped = sorted.map(escapeRegExp).join("|");
-  // Strip only leading command-style `$skill` prefixes so inline `$skill`
-  // references in the prompt body stay visible in the transcript and intact for the model.
-  const regex = new RegExp(`^(?:\\s*\\$(?:${escaped}))+(?=\\s|$)`, "g");
-  const stripped = text.replace(regex, "");
-  return collapseWhitespace(stripped);
-}
-
 export function resolveSkillCommand(
   commands: SkillCommandLike[],
   skillName: string,
@@ -251,7 +236,6 @@ export function handleSkillInput(
     baseDir: string;
     body: string;
   }> = [];
-  const matchedTokens: string[] = [];
   const seenSkillNames = new Set<string>();
 
   for (const token of tokens) {
@@ -265,21 +249,20 @@ export function handleSkillInput(
       : cmd.name;
     if (!seenSkillNames.has(actualName.toLowerCase())) {
       seenSkillNames.add(actualName.toLowerCase());
+      let loaded: (typeof resolvedSkills)[number] | undefined;
       try {
         const raw = readFileSync(filePath, "utf-8");
-        const body = stripFrontmatter(raw);
-        const baseDir = cmd.sourceInfo?.baseDir ?? dirname(filePath);
-        resolvedSkills.push({
+        loaded = {
           name: actualName,
           filePath,
-          baseDir,
-          body,
-        });
+          baseDir: cmd.sourceInfo?.baseDir ?? dirname(filePath),
+          body: stripFrontmatter(raw),
+        };
       } catch {
-        continue;
+        loaded = undefined;
       }
+      if (loaded !== undefined) resolvedSkills.push(loaded);
     }
-    matchedTokens.push(token);
   }
 
   if (resolvedSkills.length === 0) {
@@ -290,11 +273,7 @@ export function handleSkillInput(
     formatSkillBlock(s.name, s.filePath, s.baseDir, s.body),
   );
 
-  const remainingText = stripSkillTokens(event.text, matchedTokens);
-  const expandedText =
-    remainingText.length > 0
-      ? `${expandedBlocks.join("\n\n")}\n\n${remainingText}`
-      : expandedBlocks.join("\n\n");
+  const expandedText = `${expandedBlocks.join("\n\n")}\n\n${collapseWhitespace(event.text)}`;
 
   return {
     action: "transform",

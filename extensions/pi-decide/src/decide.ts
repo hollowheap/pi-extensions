@@ -12,6 +12,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { stringifyToolJson } from "@hollowheap/core/format";
 import { messageCost } from "@hollowheap/core/pricing";
 import { getSessionCache } from "@hollowheap/core/session-cache";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
@@ -386,7 +387,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       }
       const details = { ...cached.details, usage: ZERO_USAGE };
       return {
-        content: [{ type: "text", text: JSON.stringify(details) }],
+        content: [{ type: "text", text: stringifyToolJson(details) }],
         details,
         usage: ZERO_USAGE,
       };
@@ -405,7 +406,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       }
       const details = { ...result.details, usage: ZERO_USAGE };
       return {
-        content: [{ type: "text", text: JSON.stringify(details) }],
+        content: [{ type: "text", text: stringifyToolJson(details) }],
         details,
         usage: ZERO_USAGE,
       };
@@ -462,7 +463,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
         return errorResult(output);
       }
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(output) }],
+        content: [{ type: "text" as const, text: stringifyToolJson(output) }],
         details: output,
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       };

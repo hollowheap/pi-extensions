@@ -10,7 +10,10 @@ import {
   getAgentDir,
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import {
+  sanitizeTerminalText,
+  stringifyToolJson,
+} from "@hollowheap/core/format";
 import {
   calculateDollarCost,
   formatDollarCost,
@@ -540,7 +543,7 @@ export function createMemoryExtension(
             content: [
               {
                 type: "text",
-                text: JSON.stringify({
+                text: stringifyToolJson({
                   total: matches.length,
                   results,
                 }),
@@ -589,7 +592,7 @@ export function createMemoryExtension(
               content: [
                 {
                   type: "text",
-                  text: JSON.stringify({
+                  text: stringifyToolJson({
                     id: existing.id,
                     duplicate: true,
                   }),
@@ -612,7 +615,7 @@ export function createMemoryExtension(
             content: [
               {
                 type: "text",
-                text: JSON.stringify({
+                text: stringifyToolJson({
                   id: observation.id,
                   duplicate: false,
                 }),

@@ -4,7 +4,11 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { isPermissionError, loadPermissions } from "@hollowheap/core/config";
-import { displayTarget, truncateText } from "@hollowheap/core/format";
+import {
+  displayTarget,
+  sanitizeTerminalText,
+  truncateText,
+} from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
 import { effectiveCwd } from "@hollowheap/core/state";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";

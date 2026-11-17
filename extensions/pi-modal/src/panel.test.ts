@@ -199,14 +199,55 @@ describe("wrapToolRenderer", () => {
     }
 
     clock = 150;
-    const cachedFrame = comp.render(50);
-    expect(cachedFrame).toEqual(frame0);
-
-    comp.invalidate?.();
     const frame1 = comp.render(50);
     expect(stripTerminalSequences(frame1[1] ?? "")).not.toBe(
       stripTerminalSequences(frame0[1] ?? ""),
     );
+
+    comp.invalidate?.();
+    clock = 300;
+    const frame2 = comp.render(50);
+    expect(stripTerminalSequences(frame2[1] ?? "")).not.toBe(
+      stripTerminalSequences(frame1[1] ?? ""),
+    );
+  });
+
+  it("advances the pending spinner on its own timer", () => {
+    vi.useFakeTimers();
+    try {
+      const cfg = makeConfig({ reuseSpinner: true, accentStripe: false });
+      const requestRender = vi.fn();
+      const renderer = wrapToolRenderer("bash", undefined, () => cfg, {
+        requestRender,
+      });
+      const context = {
+        args: {},
+        toolCallId: "t-timer",
+        invalidate: vi.fn(),
+        lastComponent: undefined,
+        state: {},
+        cwd: "/tmp",
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: true,
+        expanded: false,
+        showImages: false,
+        isError: false,
+        durationMs: undefined,
+        outputPad: 1,
+      };
+      const comp = renderer.renderCall?.({}, workingTheme, context as never);
+      if (!comp) throw new Error("expected component");
+      const first = comp.render(40);
+      vi.advanceTimersByTime(100);
+      expect(requestRender).toHaveBeenCalled();
+      const second = comp.render(40);
+      expect(stripTerminalSequences(second.join("\n"))).not.toBe(
+        stripTerminalSequences(first.join("\n")),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders settled outcome badges and unified call + result box", () => {
@@ -552,7 +593,12 @@ describe("wrapToolRenderer", () => {
   });
 
   it("renders with surface background without crashing", () => {
-    const base = { renderCall: vi.fn(() => ["line 1"]) };
+    const base = {
+      renderCall: vi.fn(() => ({
+        render: () => ["line 1"],
+        invalidate: () => undefined,
+      })),
+    };
     const cfg = {
       enabled: true,
       borderStyle: "rounded",
@@ -564,9 +610,34 @@ describe("wrapToolRenderer", () => {
       surface: "surface",
     } as never;
     const wrapped = wrapToolRenderer("bash", base, () => cfg);
-    const comp = wrapped.renderCall?.({}, {}, {});
+    const comp = wrapped.renderCall?.({} as never, {} as never, {} as never);
     const lines = comp?.render(50) ?? [];
     expect(lines.length).toBeGreaterThan(0);
+  });
+
+  it("fills tool calls with a background and no border in background mode", () => {
+    const base = {
+      renderCall: vi.fn(() => ({
+        render: () => ["line 1"],
+        invalidate: () => undefined,
+      })),
+    };
+    const cfg = makeConfig({ mode: "background", accentStripe: false });
+    const wrapped = wrapToolRenderer("bash", base, () => ({
+      ...cfg,
+      surface: "surface",
+    }));
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bold: (value: string) => value,
+      bg: (_token: string, value: string) => `\x1b[44m${value}\x1b[49m`,
+    } as never;
+    const comp = wrapped.renderCall?.({} as never, theme, {} as never);
+    const joined = (comp?.render(50) ?? []).join("\n");
+    expect(joined).toContain("\x1b[44m");
+    expect(joined).not.toContain("╭");
+    expect(joined).not.toContain("╰");
+    expect(stripTerminalSequences(joined)).toContain("line 1");
   });
 
   it("strips only background SGR parameters and keeps foreground styling", () => {

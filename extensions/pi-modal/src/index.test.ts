@@ -1560,7 +1560,7 @@ Perform operation two.`,
     );
     expect(res1).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n$skill-one`,
     });
 
     // 2. Single skill with prompt text
@@ -1570,7 +1570,7 @@ Perform operation two.`,
     );
     expect(res2).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease review this`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n$skill-one please review this`,
     });
 
     // 3. Multiple skills without prompt text
@@ -1580,7 +1580,7 @@ Perform operation two.`,
     );
     expect(res3).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\n$skill-one $skill-two`,
     });
 
     // 4. Multiple skills with prompt text
@@ -1594,7 +1594,7 @@ Perform operation two.`,
     );
     expect(res4).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\nplease review this`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n<skill name="skill-two" location="${skillTwoPath}">\nReferences are relative to ${tempDir}.\n\n# Skill Two\nPerform operation two.\n</skill>\n\n$skill-one $skill-two please review this`,
     });
 
     // 5. Skills inline inside prompt text
@@ -1622,7 +1622,7 @@ Perform operation two.`,
     );
     expect(res6).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\nplease test with $skill-one`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n$skill-one please test with $skill-one`,
     });
 
     // 7. Ignoring unknown variables like $HOME
@@ -1636,7 +1636,7 @@ Perform operation two.`,
     );
     expect(res7).toEqual({
       action: "transform",
-      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\necho $HOME`,
+      text: `<skill name="skill-one" location="${skillOnePath}">\nReferences are relative to ${tempDir}.\n\n# Skill One\nPerform operation one.\n</skill>\n\n$skill-one echo $HOME`,
     });
 
     // 8. No known skills -> returns undefined

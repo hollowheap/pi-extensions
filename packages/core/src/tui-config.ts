@@ -21,6 +21,13 @@ export const OVERLAY_SURFACE_MODES: readonly OverlaySurfaceMode[] = [
   "contrast",
 ];
 
+export type PanelRenderMode = "box" | "background";
+
+export const PANEL_RENDER_MODES: readonly PanelRenderMode[] = [
+  "box",
+  "background",
+];
+
 export type ToolVerbPack = "standard" | "terse" | "playful";
 
 export const TOOL_VERB_PACKS: readonly ToolVerbPack[] = [
@@ -65,6 +72,7 @@ export interface CustomToolVerb {
 
 export interface PanelConfig {
   enabled: boolean;
+  mode: PanelRenderMode;
   borderStyle: BorderStyle;
   accentStripe: boolean;
   outcomeBadges: boolean;
@@ -96,7 +104,9 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   verbPack: "standard",
   panel: {
     enabled: true,
+    mode: "box",
     borderStyle: "rounded",
+    surface: "transparent",
     accentStripe: true,
     outcomeBadges: true,
     reuseSpinner: true,
@@ -273,11 +283,27 @@ export function normalizeTuiConfig(
         diagnostics,
       );
 
+      panel.mode = parseEnum(
+        rawPanel.mode,
+        PANEL_RENDER_MODES,
+        DEFAULT_TUI_CONFIG.panel.mode,
+        "panel.mode",
+        diagnostics,
+      );
+
       panel.borderStyle = parseEnum(
         rawPanel.borderStyle,
         BORDER_STYLES,
         borderStyle,
         "panel.borderStyle",
+        diagnostics,
+      );
+
+      panel.surface = parseEnum(
+        rawPanel.surface,
+        OVERLAY_SURFACE_MODES,
+        DEFAULT_TUI_CONFIG.overlaySurface,
+        "panel.surface",
         diagnostics,
       );
 
@@ -384,8 +410,10 @@ export function updateTuiConfig(
       verbPack: updated.verbPack,
       panel: {
         enabled: updated.panel?.enabled ?? DEFAULT_TUI_CONFIG.panel.enabled,
+        mode: updated.panel?.mode ?? DEFAULT_TUI_CONFIG.panel.mode,
         borderStyle:
           updated.panel?.borderStyle ?? DEFAULT_TUI_CONFIG.panel.borderStyle,
+        surface: updated.panel?.surface ?? DEFAULT_TUI_CONFIG.overlaySurface,
         accentStripe:
           updated.panel?.accentStripe ?? DEFAULT_TUI_CONFIG.panel.accentStripe,
         outcomeBadges:

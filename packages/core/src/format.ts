@@ -70,6 +70,29 @@ function skipControlString(text: string, start: number): number {
   return index;
 }
 
+/**
+ * JSON for tool results. `JSON.stringify` already escapes quotes and control
+ * bytes; also escape HTML-significant and line-separator characters so the
+ * printed text cannot be reinterpreted as markup or split across lines.
+ */
+export function stringifyToolJson(value: unknown): string {
+  const json = JSON.stringify(value) ?? "null";
+  return json.replace(/[<>&\u2028\u2029]/g, (char) => {
+    switch (char) {
+      case "<":
+        return "\\u003c";
+      case ">":
+        return "\\u003e";
+      case "&":
+        return "\\u0026";
+      case "\u2028":
+        return "\\u2028";
+      default:
+        return "\\u2029";
+    }
+  });
+}
+
 export interface SanitizeTerminalOptions {
   allowSgr?: boolean;
 }

@@ -68,7 +68,9 @@ describe("tui-config", () => {
       verbPack: "playful",
       panel: {
         enabled: true,
+        mode: "box",
         borderStyle: "square",
+        surface: "transparent",
         accentStripe: true,
         outcomeBadges: true,
         reuseSpinner: true,

@@ -1,7 +1,7 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { getFrameInnerWidth, roundedFrame } from "@hollowheap/tui/frame";
 import {
   type GuardConfig,

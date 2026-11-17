@@ -92,6 +92,6 @@ describe("handleSkillInput", () => {
     if (standalone?.action !== "transform") {
       throw new Error("expected transform result");
     }
-    expect(standalone.text.endsWith("</skill>")).toBe(true);
+    expect(standalone.text.endsWith("\n\n$alpha")).toBe(true);
   });
 });

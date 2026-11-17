@@ -7,10 +7,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import {
-  type OverlaySurfaceMode,
-  getTuiConfigPath,
-} from "@hollowheap/core/tui-config";
+import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import {
   getActiveTuiConfig,
@@ -117,13 +114,6 @@ function readPersistedExpanded(ctx: ExtensionContext): boolean | undefined {
 export default function (pi: ExtensionAPI): void {
   installLoaderIndicatorPatch();
   let lastCodemodeCode: string | undefined;
-  const PANEL_SURFACES: OverlaySurfaceMode[] = [
-    "transparent",
-    "surface",
-    "card",
-    "contrast",
-  ];
-  let panelSurfaceIndex = 0;
   let lastToolCall:
     | { name: string; input: Record<string, unknown> }
     | undefined;
@@ -170,16 +160,22 @@ export default function (pi: ExtensionAPI): void {
   pi.registerToolRenderer?.((toolName, next) => {
     const base = next();
     if (getActiveTuiConfig().panel.enabled) {
-      const surface =
-        PANEL_SURFACES[panelSurfaceIndex++ % PANEL_SURFACES.length];
-      return wrapToolRenderer(toolName, base, () => {
-        const active = getActiveTuiConfig();
-        return {
-          ...active.panel,
-          verbPack: active.verbPack,
-          surface,
-        };
-      });
+      return wrapToolRenderer(
+        toolName,
+        base,
+        () => {
+          const active = getActiveTuiConfig();
+          return {
+            ...active.panel,
+            verbPack: active.verbPack,
+            surface:
+              active.panel.surface && active.panel.surface !== "transparent"
+                ? active.panel.surface
+                : active.overlaySurface,
+          };
+        },
+        { requestRender: () => activeTui?.requestRender?.() },
+      );
     }
     const renderCall = base?.renderCall;
     if (toolName !== "codemode" || renderCall === undefined) return base;
@@ -216,7 +212,7 @@ export default function (pi: ExtensionAPI): void {
   const TUI_SUBCOMMANDS = ["settings", "config", "status"] as const;
   const createTuiCommand = () => ({
     description:
-      "Inspect or configure TUI border, colors, spinner, markdown, thinking, and tool box settings",
+      "Inspect or configure TUI border, colors, spinner, markdown, thinking, and panel settings",
     getArgumentCompletions: (prefix: string) => {
       const lower = prefix.trim().toLowerCase();
       return TUI_SUBCOMMANDS.filter((sub) => sub.startsWith(lower)).map(

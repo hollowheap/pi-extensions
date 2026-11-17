@@ -11,6 +11,7 @@ import {
   type LoadingIndicatorStyle,
   OVERLAY_SURFACE_MODES,
   type OverlaySurfaceMode,
+  PANEL_RENDER_MODES,
   THINKING_VERBOSITY_MODES,
   TOOL_VERB_PACKS,
   type ThinkingVerbosityMode,
@@ -72,6 +73,9 @@ function applyTuiSetting(
     case "panel.enabled":
       next.panel.enabled = value === "true";
       break;
+    case "panel.mode":
+      next.panel.mode = value as TuiConfig["panel"]["mode"];
+      break;
     case "panel.borderStyle":
       next.panel.borderStyle = value as BorderStyle;
       break;
@@ -117,14 +121,15 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
     {
       id: "loadingIndicator",
       label: "Loading indicator",
-      description: "Working spinner preset for status and tool boxes",
+      description: "Working spinner preset for status and panels",
       currentValue: config.loadingIndicator,
       values: [...LOADING_INDICATOR_STYLES],
     },
     {
       id: "markdownRender",
-      label: "Markdown dividers",
-      description: "Normalize --- and === into rendered Markdown rules",
+      label: "Whole markdown",
+      description:
+        "Render full Markdown, including normalized horizontal rules",
       currentValue: String(config.markdownRender),
       values: ["true", "false"],
     },
@@ -144,22 +149,30 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
     },
     {
       id: "panel.enabled",
-      label: "Tool box renderer",
-      description: "Wrap tool calls in a configurable self-rendered box",
+      label: "Panel renderer",
+      description: "Wrap tool calls in a configurable self-rendered panel",
       currentValue: String(config.panel.enabled),
       values: ["false", "true"],
     },
     {
+      id: "panel.mode",
+      label: "Panel style",
+      description:
+        "Draw a framed box or fill tool calls with a background color",
+      currentValue: config.panel.mode,
+      values: [...PANEL_RENDER_MODES],
+    },
+    {
       id: "panel.borderStyle",
-      label: "Tool box border",
-      description: "Border style used by the tool box renderer",
+      label: "Panel border",
+      description: "Border style used by the panel renderer",
       currentValue: config.panel.borderStyle,
       values: [...BORDER_STYLES],
     },
     {
       id: "panel.accentStripe",
-      label: "Tool box accent stripe",
-      description: "Show left state stripe on tool boxes",
+      label: "Panel accent stripe",
+      description: "Show left state stripe on panels",
       currentValue: String(config.panel.accentStripe),
       values: ["true", "false"],
     },
@@ -172,14 +185,14 @@ function buildSettingItems(config: TuiConfig): SettingItem[] {
     },
     {
       id: "panel.outcomeBadges",
-      label: "Tool box outcome badges",
+      label: "Panel outcome badges",
       description: "Show ✓/✗ and execution duration badges when settled",
       currentValue: String(config.panel.outcomeBadges),
       values: ["true", "false"],
     },
     {
       id: "panel.reuseSpinner",
-      label: "Tool box spinner",
+      label: "Panel spinner",
       description: "Reuse gradient spinner animation while tools run",
       currentValue: String(config.panel.reuseSpinner),
       values: ["true", "false"],
@@ -198,6 +211,7 @@ export function formatTuiStatus(config: TuiConfig): string {
     `thinkingAnimate=${config.thinkingAnimate}`,
     `verbPack=${config.verbPack}`,
     `panel.enabled=${config.panel.enabled}`,
+    `panel.mode=${config.panel.mode}`,
     `panel.borderStyle=${config.panel.borderStyle}`,
     `panel.accentStripe=${config.panel.accentStripe}`,
     `panel.outcomeBadges=${config.panel.outcomeBadges}`,

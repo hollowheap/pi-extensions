@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { displayPath, displayTarget, truncateText } from "./format.js";
+import {
+  displayPath,
+  displayTarget,
+  stringifyToolJson,
+  truncateText,
+} from "./format.js";
 
 describe("truncateText", () => {
   it("leaves short text unchanged", () => {
@@ -18,6 +23,22 @@ describe("truncateText", () => {
   it("accepts a caller label", () => {
     expect(truncateText("x".repeat(5000), "acp")).toContain(
       "[acp: cut 1000 characters]",
+    );
+  });
+});
+
+describe("stringifyToolJson", () => {
+  it("escapes characters that markup or terminal renderers reinterpret", () => {
+    const printed = stringifyToolJson({
+      text: '<b>&\u2028\u2029\x1b[31mred\x1b[0m "quoted"',
+    });
+    expect(printed).toContain("\\u003cb\\u003e");
+    expect(printed).toContain("\\u0026");
+    expect(printed).toContain("\\u2028\\u2029");
+    expect(printed).toContain("\\u001b[31m");
+    expect(printed).toContain('\\"quoted\\"');
+    expect(JSON.parse(printed).text).toBe(
+      '<b>&\u2028\u2029\x1b[31mred\x1b[0m "quoted"',
     );
   });
 });
