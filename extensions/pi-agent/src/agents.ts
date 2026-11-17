@@ -103,6 +103,20 @@ function loadDirectory(
         diagnostics.push(`${filePath}: "model" must be a string`);
         continue;
       }
+      if (
+        frontmatter.thinking !== undefined &&
+        typeof frontmatter.thinking !== "string"
+      ) {
+        diagnostics.push(`${filePath}: "thinking" must be a string`);
+        continue;
+      }
+      if (
+        frontmatter.effort !== undefined &&
+        typeof frontmatter.effort !== "string"
+      ) {
+        diagnostics.push(`${filePath}: "effort" must be a string`);
+        continue;
+      }
       const tools = parseList(frontmatter.tools);
       const skills = parseList(frontmatter.skills);
       const cleanModel =

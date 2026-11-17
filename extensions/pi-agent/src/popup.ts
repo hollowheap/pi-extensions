@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { session } from "@hollowheap/core/state";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import type { AgentConfig } from "./agents.js";
 
@@ -12,6 +13,7 @@ export async function showAgentSwitchPopup(
   ctx: ExtensionContext,
   forkInfo?: ForkInfo,
 ): Promise<void> {
+  const effectiveMode = agent.mode ?? session(ctx.sessionManager).mode;
   if (ctx.mode === "tui" && typeof ctx.ui?.custom === "function") {
     await ctx.ui.custom<void>(
       (_tui, theme, _keybindings, done) => {
@@ -24,7 +26,7 @@ export async function showAgentSwitchPopup(
 
         const label = (value: string) => theme.fg("muted", value);
         const contentLines = [
-          `${label("  Mode:     ")}${agent.mode ?? "manual"}`,
+          `${label("  Mode:     ")}${effectiveMode}`,
           `${label("  Model:    ")}${agent.model ?? "default"}`,
           `${label("  Effort:   ")}${agent.thinking ?? agent.effort ?? "default"}`,
           `${label("  Tools:    ")}${agent.tools ? agent.tools.join(", ") : "all"}`,
@@ -66,7 +68,7 @@ export async function showAgentSwitchPopup(
       : "";
     await ctx.ui.confirm(
       `Agent: ${agent.name}`,
-      `Mode: ${agent.mode ?? "manual"} | Model: ${agent.model ?? "default"} | Tools: ${agent.tools ? agent.tools.join(", ") : "all"}${forkMsg}`,
+      `Mode: ${effectiveMode} | Model: ${agent.model ?? "default"} | Tools: ${agent.tools ? agent.tools.join(", ") : "all"}${forkMsg}`,
     );
   } else {
     ctx.ui?.notify?.(

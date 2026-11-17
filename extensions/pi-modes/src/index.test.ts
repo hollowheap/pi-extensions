@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -224,6 +224,89 @@ describe("pi-modes extension", () => {
     await pi.command("mode").handler("", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("mode manual (manual, edit, plan, auto)"),
+    );
+  });
+
+  it("sanitizes control bytes in restore diagnostics and vetoes", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext(
+      {},
+      {
+        getEntries: () => [
+          {
+            customType: "hollowheap.core.mode",
+            data: { mode: "turbo\u001b[2Jevil" },
+          },
+        ],
+      },
+    );
+
+    pi.handler("session_start")({}, ctx);
+
+    for (const call of (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(String(call[0])).not.toContain("\u001b");
+    }
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("no longer exists"),
+      "warning",
+    );
+  });
+
+  it("sanitizes control bytes in a restored mode veto", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const stop = registerModeGate(() => ({ veto: "blocked\u001b[2Jnow" }));
+    const ctx = createContext(
+      {},
+      {
+        getEntries: () => [
+          { customType: "hollowheap.core.mode", data: { mode: "plan" } },
+        ],
+      },
+    );
+
+    try {
+      pi.handler("session_tree")({}, ctx);
+      for (const call of (ctx.ui.notify as ReturnType<typeof vi.fn>).mock
+        .calls) {
+        expect(String(call[0])).not.toContain("\u001b");
+      }
+    } finally {
+      stop();
+    }
+  });
+
+  it("switches to an exactly-cased config mode name and completes it", async () => {
+    writeFileSync(
+      join(process.env.PI_CODING_AGENT_DIR ?? "", "modes.json"),
+      JSON.stringify({
+        modes: {
+          Review2: {
+            defaults: {
+              read: "allow",
+              search: "allow",
+              edit: "deny",
+              shell: "ask",
+              external: "allow",
+            },
+          },
+        },
+      }),
+    );
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext({}, { getEntries: () => [] });
+    pi.handler("session_start")({}, ctx);
+
+    const complete = pi.command("mode").getArgumentCompletions;
+    expect(complete?.("r").map((item) => item.value)).toContain("Review2");
+
+    await pi.command("mode").handler("Review2", ctx);
+    expect(session(ctx.sessionManager).mode).toBe("Review2");
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("unknown mode"),
+      "error",
     );
   });
 });

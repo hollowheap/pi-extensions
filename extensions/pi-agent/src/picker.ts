@@ -9,6 +9,7 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { session } from "@hollowheap/core/state";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import type { AgentConfig } from "./agents.js";
 
@@ -107,7 +108,7 @@ export async function showAgentPicker(
             theme.fg("accent", theme.bold(agent.description)),
             theme.fg(
               "muted",
-              `model: ${agent.model ?? "default"}  mode: ${agent.mode ?? "manual"}  thinking: ${agent.thinking ?? agent.effort ?? "default"}`,
+              `model: ${agent.model ?? "default"}  mode: ${agent.mode ?? session(ctx.sessionManager).mode}  thinking: ${agent.thinking ?? agent.effort ?? "default"}`,
             ),
             theme.fg("muted", `tools: ${agent.tools?.join(", ") ?? "all"}`),
             theme.fg(

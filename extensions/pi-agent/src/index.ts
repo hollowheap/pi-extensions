@@ -112,6 +112,36 @@ function formatModelId(model: unknown): string {
   return "";
 }
 
+interface OverrideState {
+  lastAgentIndex: number;
+  lastModelChangeIndex: number;
+  lastAgentOverride: boolean;
+}
+
+function findOverrideState(entries: readonly unknown[]): OverrideState {
+  let lastAgentIndex = -1;
+  let lastModelChangeIndex = -1;
+  let lastAgentOverride = false;
+  entries.forEach((entry, index) => {
+    const raw = entry as {
+      type?: string;
+      customType?: string;
+      data?: { modelOverride?: unknown };
+    };
+    if (
+      (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
+      raw.type === ACTIVE_AGENT_TYPE
+    ) {
+      lastAgentIndex = index;
+      lastAgentOverride = raw.data?.modelOverride === true;
+    }
+    if (raw.type === "model_change") {
+      lastModelChangeIndex = index;
+    }
+  });
+  return { lastAgentIndex, lastModelChangeIndex, lastAgentOverride };
+}
+
 export function createAgentExtension(): (pi: ExtensionAPI) => void {
   return (pi: ExtensionAPI): void => {
     for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
@@ -253,21 +283,9 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           (typeof ctx.sessionManager?.getBranch === "function"
             ? ctx.sessionManager.getBranch()
             : []) ?? [];
-        let lastAgentIndex = -1;
-        let lastModelChangeIndex = -1;
-        entries.forEach((entry, index) => {
-          const raw = entry as { type?: string; customType?: string };
-          if (
-            (raw.type === "custom" && raw.customType === ACTIVE_AGENT_TYPE) ||
-            raw.type === ACTIVE_AGENT_TYPE
-          ) {
-            lastAgentIndex = index;
-          }
-          if (raw.type === "model_change") {
-            lastModelChangeIndex = index;
-          }
-        });
-        return lastModelChangeIndex > lastAgentIndex && lastAgentIndex >= 0;
+        const { lastAgentIndex, lastModelChangeIndex, lastAgentOverride } =
+          findOverrideState(entries);
+        return lastAgentOverride || lastModelChangeIndex > lastAgentIndex;
       };
       const skipModel = hasModelOverride();
 
@@ -294,14 +312,14 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             currentModelId !== "" && currentModelId === targetModelId;
           if (!alreadyActive) {
             const ok = await piApi.setModel(matched);
-            if (!ok && options.notify) {
+            if (!ok) {
               ctx.ui?.notify?.(
                 `Failed to set model to "${agent.model}" (authentication unconfigured)`,
                 "warning",
               );
             }
           }
-        } else if (options.notify) {
+        } else {
           ctx.ui?.notify?.(
             `Agent model "${agent.model}" not found in model registry`,
             "warning",
@@ -310,6 +328,16 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       const thinking = agent.thinking ?? agent.effort;
+      const thinkingLevel = thinking?.toLowerCase();
+      if (
+        thinking !== undefined &&
+        !VALID_THINKING_LEVELS.has(thinkingLevel ?? "")
+      ) {
+        ctx.ui?.notify?.(
+          `Agent thinking level "${sanitizeTerminalText(thinking)}" is invalid`,
+          "warning",
+        );
+      }
       if (skipModel) {
         // Respect session model/thinking override; do not clobber.
       } else if (preservedThinking !== undefined) {
@@ -321,19 +349,27 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         ) {
           piApi.setThinkingLevel(preservedThinking);
         }
-      } else if (thinking) {
-        const level = thinking.toLowerCase();
-        if (
-          VALID_THINKING_LEVELS.has(level) &&
-          typeof piApi.setThinkingLevel === "function"
-        ) {
-          piApi.setThinkingLevel(level as ThinkingLevel);
-        }
+      } else if (
+        thinkingLevel !== undefined &&
+        VALID_THINKING_LEVELS.has(thinkingLevel) &&
+        typeof piApi.setThinkingLevel === "function"
+      ) {
+        piApi.setThinkingLevel(thinkingLevel as ThinkingLevel);
       }
 
       if (agent.tools?.length) {
         if (typeof piApi.setActiveTools === "function") {
-          piApi.setActiveTools(agent.tools);
+          const allowedTools = filterDirectTools(piApi, agent.tools);
+          const dropped = agent.tools.filter(
+            (name) => !allowedTools.includes(name),
+          );
+          piApi.setActiveTools(allowedTools);
+          if (dropped.length > 0) {
+            ctx.ui?.notify?.(
+              `pi-agent: skipped tools not available to the model: ${dropped.map((name) => sanitizeTerminalText(name)).join(", ")}`,
+              "warning",
+            );
+          }
         }
       } else {
         restoreBaseActiveTools(piApi);
@@ -509,6 +545,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           });
           return;
         }
+        ctx.ui?.notify?.(
+          `pi-agent: persisted agent "${persistedName}" not found`,
+          "warning",
+        );
       }
 
       if (!hasAgentEntry) {
@@ -580,9 +620,24 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
     });
     pi.on("session_tree", (_event, ctx) => restore(ctx));
 
-    pi.on("session_compact", () => {
+    pi.on("session_compact", (_event, ctx) => {
+      const entries =
+        (typeof ctx?.sessionManager?.getBranch === "function"
+          ? ctx.sessionManager.getBranch()
+          : []) ?? [];
+      const { lastAgentIndex, lastModelChangeIndex, lastAgentOverride } =
+        findOverrideState(entries);
+      // Compaction re-appends the agent entry behind existing model changes,
+      // which hides a live override from the next restore's ordering check.
+      const overrideMarker =
+        lastAgentOverride || lastModelChangeIndex > lastAgentIndex
+          ? { modelOverride: true as const }
+          : {};
       if (activeAgent) {
-        pi.appendEntry(ACTIVE_AGENT_TYPE, toAgentEntryData(activeAgent));
+        pi.appendEntry(ACTIVE_AGENT_TYPE, {
+          ...toAgentEntryData(activeAgent),
+          ...overrideMarker,
+        });
       } else {
         pi.appendEntry(ACTIVE_AGENT_TYPE, { name: null });
       }

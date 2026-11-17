@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { setMode } from "@hollowheap/core/state";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import { showAgentSwitchPopup } from "./popup.js";
@@ -124,5 +125,49 @@ describe("showAgentSwitchPopup", () => {
       'Switched to agent "scout" (forked session)',
       "info",
     );
+  });
+
+  it("shows the inherited mode for an agent without a declared mode", async () => {
+    type FactoryFn = (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: () => void,
+    ) => {
+      render: (width: number) => string[];
+      handleInput: (data: string) => void;
+    };
+    let capturedFactory: FactoryFn | undefined;
+    const custom = vi.fn((factory: FactoryFn) => {
+      capturedFactory = factory;
+      return Promise.resolve();
+    });
+    const sessionManager = {};
+    setMode(sessionManager, "plan", { persist: false });
+    const ctx = {
+      mode: "tui",
+      sessionManager,
+      ui: { custom },
+    } as unknown as ExtensionContext;
+    const modeLessAgent: AgentConfig = {
+      name: "engineer",
+      description: "Software engineer",
+      source: "user",
+      filePath: "/path/engineer.md",
+    };
+
+    await showAgentSwitchPopup(modeLessAgent, ctx);
+
+    if (!capturedFactory) throw new Error("capturedFactory is undefined");
+    const component = capturedFactory(
+      { requestRender: vi.fn() },
+      {
+        fg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+      },
+      {},
+      vi.fn(),
+    );
+    expect(component.render(80).join("\n")).toContain("Mode:     plan");
   });
 });

@@ -105,8 +105,14 @@ async function pickMode(
     if (picked !== undefined) await switchMode(pi, ctx, picked);
     return;
   }
-  const current = session(ctx.sessionManager).mode;
-  ctx.ui?.notify?.(`pi-modes: mode ${current} (${names.join(", ")})`);
+  const current = sanitizeTerminalText(session(ctx.sessionManager).mode);
+  ctx.ui?.notify?.(
+    `pi-modes: mode ${current} (${sanitizeTerminalText(names.join(", "))})`,
+  );
+}
+
+function resolveInput(name: string): string {
+  return getModeLayer(name) === undefined ? name.toLowerCase() : name;
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -115,14 +121,20 @@ export default function (pi: ExtensionAPI): void {
 
   const restore = (ctx: ExtensionContext): void => {
     const notify = (message: string) =>
-      ctx.ui.notify(`pi-modes: ${message}`, "warning");
+      ctx.ui.notify(`pi-modes: ${sanitizeTerminalText(message)}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
     const restored = resetSession(ctx.sessionManager);
     if (restored.diagnostic !== undefined) {
-      ctx.ui.notify(`pi-modes: ${restored.diagnostic}`, "warning");
+      ctx.ui.notify(
+        `pi-modes: ${sanitizeTerminalText(restored.diagnostic)}`,
+        "warning",
+      );
     }
     if (restored.veto !== undefined) {
-      ctx.ui.notify(`pi-modes: ${restored.veto}`, "error");
+      ctx.ui.notify(
+        `pi-modes: ${sanitizeTerminalText(restored.veto)}`,
+        "error",
+      );
     }
     publishMode(pi, ctx.sessionManager);
   };
@@ -135,16 +147,16 @@ export default function (pi: ExtensionAPI): void {
     getArgumentCompletions: (prefix: string) => {
       const lower = prefix.trim().toLowerCase();
       return modeNames()
-        .filter((mode) => mode.startsWith(lower))
+        .filter((mode) => mode.toLowerCase().startsWith(lower))
         .map((mode) => ({ value: mode, label: mode }));
     },
     handler: async (args, ctx) => {
-      const raw = args.trim().toLowerCase();
+      const raw = args.trim();
       if (raw === "") {
         await pickMode(pi, ctx);
         return;
       }
-      await switchMode(pi, ctx, raw);
+      await switchMode(pi, ctx, resolveInput(raw));
     },
   });
 

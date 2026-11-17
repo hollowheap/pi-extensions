@@ -574,7 +574,7 @@ describe("pi-agent extension", () => {
     ext(pi as never);
 
     const ctx = createMockContext({
-      model: { provider: "opencode-go", id: "deepseek-v4.1-flash" },
+      model: { provider: "opencode-go", id: "beam-free" },
     });
     ctx.branch.push(
       {
@@ -587,14 +587,172 @@ describe("pi-agent extension", () => {
         id: "model-override",
         type: "model_change",
         provider: "opencode-go",
-        modelId: "deepseek-v4.1-flash",
+        modelId: "beam-free",
       } as never,
     );
 
     pi.setModel.mockResolvedValue(true);
     await Promise.all(pi.emit("session_start", {}, ctx));
 
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
     expect(pi.setModel).not.toHaveBeenCalled();
+  });
+
+  it("respects a session model override when the configured default agent has no entry", async () => {
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "engineer" }),
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext({
+      model: { provider: "opencode-go", id: "beam-free" },
+    });
+    ctx.branch.push({
+      id: "model-override",
+      type: "model_change",
+      provider: "opencode-go",
+      modelId: "beam-free",
+    } as never);
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
+    expect(pi.setModel).not.toHaveBeenCalled();
+  });
+
+  it("keeps a session model override across compaction", async () => {
+    const compactPi = createMockPi();
+    createAgentExtension()(compactPi as never);
+    const compactCtx = createMockContext({
+      model: { provider: "opencode-go", id: "beam-free" },
+    });
+    compactCtx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "model-override",
+        type: "model_change",
+        provider: "opencode-go",
+        modelId: "beam-free",
+      } as never,
+    );
+
+    await Promise.all(compactPi.emit("session_start", {}, compactCtx));
+    compactPi.appendEntry.mockClear();
+    compactPi.emit("session_compact", {}, compactCtx);
+    const markerData = compactPi.appendEntry.mock.calls.find(
+      ([type]) => type === ACTIVE_AGENT_TYPE,
+    )?.[1];
+    expect(markerData).toEqual(
+      expect.objectContaining({ name: "engineer", modelOverride: true }),
+    );
+
+    const restorePi = createMockPi();
+    createAgentExtension()(restorePi as never);
+    const restoreCtx = createMockContext({
+      model: { provider: "opencode-go", id: "beam-free" },
+    });
+    restoreCtx.branch.push(
+      {
+        id: "custom-1",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "engineer" },
+      },
+      {
+        id: "model-override",
+        type: "model_change",
+        provider: "opencode-go",
+        modelId: "beam-free",
+      } as never,
+      { id: "compact-1", type: "compaction" } as never,
+      {
+        id: "custom-2",
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: markerData,
+      },
+    );
+
+    await Promise.all(restorePi.emit("session_start", {}, restoreCtx));
+
+    expect(restoreCtx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
+    expect(restorePi.setModel).not.toHaveBeenCalled();
+  });
+
+  it("warns when the persisted agent can no longer be found", async () => {
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "custom-1",
+      type: "custom",
+      customType: ACTIVE_AGENT_TYPE,
+      data: { name: "deleted-agent" },
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('persisted agent "deleted-agent" not found'),
+      "warning",
+    );
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
+  });
+
+  it("filters codemode-only tools out of agent-declared tools on switch", async () => {
+    writeAgent(
+      agentsDir,
+      "codemod",
+      "name: codemod\ndescription: Uses a codemode tool\nmodel: opencode-go/beam-free\ntools: read, web_search, codemode",
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    await pi.getCommand("agent").handler("codemod", ctx);
+
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("web_search"),
+      "warning",
+    );
+  });
+
+  it("warns on restore when an agent names an unknown model or invalid thinking", async () => {
+    writeAgent(
+      agentsDir,
+      "broken",
+      "name: broken\ndescription: Broken config\nmodel: no/such/model\nthinking: ultra",
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "custom-1",
+      type: "custom",
+      customType: ACTIVE_AGENT_TYPE,
+      data: { name: "broken" },
+    });
+
+    await Promise.all(pi.emit("session_start", {}, ctx));
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('Agent model "no/such/model" not found'),
+      "warning",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('thinking level "ultra" is invalid'),
+      "warning",
+    );
   });
 
   it("keeps persisted session mode when restoring an active agent", async () => {

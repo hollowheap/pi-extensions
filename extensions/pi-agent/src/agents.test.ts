@@ -147,4 +147,31 @@ describe("discoverAgents in pi-agent", () => {
       effort: "low",
     });
   });
+
+  it("rejects non-string thinking and effort fields with diagnostics", () => {
+    writeAgent(
+      join(agentDir, "agents"),
+      "bad-thinking.md",
+      "name: bad-thinking\ndescription: Bad\nthinking:\n  - high",
+    );
+    writeAgent(
+      join(agentDir, "agents"),
+      "bad-effort.md",
+      "name: bad-effort\ndescription: Bad\neffort:\n  level: high",
+    );
+
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+
+    expect(result.agents).toHaveLength(0);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('"thinking" must be a string'),
+        expect.stringContaining('"effort" must be a string'),
+      ]),
+    );
+  });
 });

@@ -1,3 +1,4 @@
+import { setMode } from "@hollowheap/core/state";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import { showAgentPicker } from "./picker.js";
@@ -79,6 +80,28 @@ describe("showAgentPicker", () => {
     const env = pickerContext();
     const result = showAgentPicker(env.ctx as never, agents);
     await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    env.component()?.handleInput("\x1b");
+    await expect(result).resolves.toBeUndefined();
+  });
+
+  it("previews the inherited mode for a mode-less agent", async () => {
+    const env = pickerContext();
+    const sessionManager = {};
+    setMode(sessionManager, "plan", { persist: false });
+    const ctx = { ...env.ctx, sessionManager };
+    const result = showAgentPicker(ctx as never, [
+      {
+        name: "engineer",
+        description: "Software engineer",
+        source: "user",
+        filePath: "/tmp/engineer.md",
+      },
+    ]);
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    for (const key of "eng") env.component()?.handleInput(key);
+    expect(env.component()?.render(60).join("\n")).toContain("mode: plan");
 
     env.component()?.handleInput("\x1b");
     await expect(result).resolves.toBeUndefined();
