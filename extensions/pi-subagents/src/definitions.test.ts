@@ -43,6 +43,23 @@ describe("definitionsFromEntries", () => {
     });
   });
 
+  it("splits a provider/id:<thinking> model into model and thinking", () => {
+    const agents = definitionsFromEntries([
+      entry({
+        name: "deep",
+        description: "D",
+        systemPrompt: "P",
+        model: "p/m:max",
+        thinking: "low",
+      }),
+    ]);
+
+    expect(agents.get("deep")).toMatchObject({
+      model: "p/m",
+      thinking: "max",
+    });
+  });
+
   it("ignores malformed entries and unrelated custom entries", () => {
     const agents = definitionsFromEntries([
       null,

@@ -62,6 +62,26 @@ describe("discoverAgents in pi-agent", () => {
     });
   });
 
+  it("splits a provider/id:<thinking> model into model and thinking", () => {
+    writeAgent(
+      join(agentDir, "agents"),
+      "deep.md",
+      "name: deep\ndescription: Deep\nmodel: opencode-go/deepseek-v4.1-flash:high\neffort: low",
+    );
+
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+
+    expect(result.agents[0]).toMatchObject({
+      model: "opencode-go/deepseek-v4.1-flash",
+      thinking: "high",
+      effort: "low",
+    });
+  });
+
   it("reports unreadable agent files instead of silently skipping them", () => {
     const dir = join(agentDir, "agents");
     mkdirSync(dir, { recursive: true });

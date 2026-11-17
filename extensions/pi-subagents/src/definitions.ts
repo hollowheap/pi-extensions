@@ -1,3 +1,4 @@
+import { splitModelThinking } from "@hollowheap/core/model-ref";
 import type { AgentConfig } from "./agents.js";
 
 export const SUBAGENT_DEFINITION_TYPE = "hollowheap.subagent.definition";
@@ -19,8 +20,16 @@ export interface SessionAgentDefinition {
 export function definitionToAgent(
   definition: SessionAgentDefinition,
 ): AgentConfig {
+  const modelRef =
+    definition.model !== undefined
+      ? splitModelThinking(definition.model)
+      : undefined;
   return {
     ...definition,
+    ...(modelRef ? { model: modelRef.model } : {}),
+    ...(modelRef?.thinking !== undefined
+      ? { thinking: modelRef.thinking }
+      : {}),
     source: "session",
   };
 }

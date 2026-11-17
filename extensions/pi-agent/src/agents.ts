@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { splitModelThinking } from "@hollowheap/core/model-ref";
 
 export interface AgentConfig {
   name: string;
@@ -108,10 +109,12 @@ function loadDirectory(
         typeof frontmatter.model === "string"
           ? sanitizeTerminalText(frontmatter.model).trim()
           : "";
+      const modelRef = splitModelThinking(cleanModel);
       const cleanThinking =
-        typeof frontmatter.thinking === "string"
+        modelRef.thinking ??
+        (typeof frontmatter.thinking === "string"
           ? sanitizeTerminalText(frontmatter.thinking).trim()
-          : "";
+          : "");
       const cleanMode =
         typeof frontmatter.mode === "string"
           ? sanitizeTerminalText(frontmatter.mode).trim()
@@ -125,7 +128,7 @@ function loadDirectory(
         description: cleanDescription,
         ...(tools ? { tools } : {}),
         ...(skills ? { skills } : {}),
-        ...(cleanModel !== "" ? { model: cleanModel } : {}),
+        ...(modelRef.model !== "" ? { model: modelRef.model } : {}),
         ...(cleanThinking !== "" ? { thinking: cleanThinking } : {}),
         ...(cleanMode !== "" ? { mode: cleanMode } : {}),
         ...(cleanEffort !== "" ? { effort: cleanEffort } : {}),

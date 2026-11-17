@@ -50,6 +50,25 @@ describe("discoverAgents", () => {
     expect(result.projectAgentsDir).toBeUndefined();
   });
 
+  it("splits a provider/id:<thinking> model and lets the suffix win", () => {
+    const base = root();
+    const agentDir = join(base, "agent");
+    writeAgent(
+      join(agentDir, "agents"),
+      "deep.md",
+      "name: deep\ndescription: Deep\nmodel: p/m:xhigh\nthinking: low",
+    );
+
+    const result = discoverAgents({
+      cwd: join(base, "project"),
+      agentDir,
+      trusted: false,
+    });
+    expect(result.agents).toEqual([
+      expect.objectContaining({ model: "p/m", thinking: "xhigh" }),
+    ]);
+  });
+
   it("ignores project agents in untrusted projects", () => {
     const base = root();
     const agentDir = join(base, "agent");

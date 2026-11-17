@@ -5,6 +5,7 @@ export * from "./border.js";
 export * from "./config.js";
 export * from "./format.js";
 export * from "./modes.js";
+export * from "./model-ref.js";
 export * from "./mtime-cache.js";
 export * from "./policy.js";
 export * from "./shell.js";

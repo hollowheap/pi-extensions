@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { splitModelThinking } from "@hollowheap/core/model-ref";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -79,18 +80,22 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
         continue;
       }
       const tools = parseTools(frontmatter.tools);
+      const modelRef =
+        typeof frontmatter.model === "string" && frontmatter.model.trim() !== ""
+          ? splitModelThinking(frontmatter.model)
+          : undefined;
+      const thinking =
+        modelRef?.thinking ??
+        (typeof frontmatter.thinking === "string" &&
+        frontmatter.thinking.trim() !== ""
+          ? frontmatter.thinking.trim()
+          : undefined);
       agents.push({
         name: frontmatter.name.trim(),
         description: frontmatter.description.trim(),
         ...(tools ? { tools } : {}),
-        ...(typeof frontmatter.model === "string" &&
-        frontmatter.model.trim() !== ""
-          ? { model: frontmatter.model.trim() }
-          : {}),
-        ...(typeof frontmatter.thinking === "string" &&
-        frontmatter.thinking.trim() !== ""
-          ? { thinking: frontmatter.thinking.trim() }
-          : {}),
+        ...(modelRef ? { model: modelRef.model } : {}),
+        ...(thinking !== undefined ? { thinking } : {}),
         ...(typeof frontmatter.mode === "string" &&
         frontmatter.mode.trim() !== ""
           ? { mode: frontmatter.mode.trim() }
