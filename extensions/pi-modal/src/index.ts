@@ -8,8 +8,8 @@ import { Loader } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import {
-  getTuiConfigPath,
   type OverlaySurfaceMode,
+  getTuiConfigPath,
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import {

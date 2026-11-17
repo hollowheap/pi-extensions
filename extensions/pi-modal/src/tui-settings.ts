@@ -43,8 +43,8 @@ function applyTuiSetting(
   const next: TuiConfig = {
     ...current,
     panel: {
-      ...current.panel,
-      customVerbs: { ...current.panel.customVerbs },
+      ...(current.panel ?? {}),
+      customVerbs: { ...(current.panel?.customVerbs ?? {}) },
     },
   };
   switch (id) {

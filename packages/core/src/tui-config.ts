@@ -268,7 +268,7 @@ export function normalizeTuiConfig(
     } else {
       panel.enabled = parseBoolean(
         rawPanel.enabled,
-        defaults.panel.enabled,
+        DEFAULT_TUI_CONFIG.panel.enabled,
         "panel.enabled",
         diagnostics,
       );
@@ -283,21 +283,21 @@ export function normalizeTuiConfig(
 
       panel.accentStripe = parseBoolean(
         rawPanel.accentStripe,
-        defaults.panel.accentStripe,
+        DEFAULT_TUI_CONFIG.panel.accentStripe,
         "panel.accentStripe",
         diagnostics,
       );
 
       panel.outcomeBadges = parseBoolean(
         rawPanel.outcomeBadges,
-        defaults.panel.outcomeBadges,
+        DEFAULT_TUI_CONFIG.panel.outcomeBadges,
         "panel.outcomeBadges",
         diagnostics,
       );
 
       panel.reuseSpinner = parseBoolean(
         rawPanel.reuseSpinner,
-        defaults.panel.reuseSpinner,
+        DEFAULT_TUI_CONFIG.panel.reuseSpinner,
         "panel.reuseSpinner",
         diagnostics,
       );
@@ -383,12 +383,17 @@ export function updateTuiConfig(
       thinkingAnimate: updated.thinkingAnimate,
       verbPack: updated.verbPack,
       panel: {
-        enabled: updated.panel.enabled,
-        borderStyle: updated.panel.borderStyle,
-        accentStripe: updated.panel.accentStripe,
-        outcomeBadges: updated.panel.outcomeBadges,
-        reuseSpinner: updated.panel.reuseSpinner,
-        customVerbs: { ...updated.panel.customVerbs },
+        enabled: updated.panel?.enabled ?? DEFAULT_TUI_CONFIG.panel.enabled,
+        borderStyle:
+          updated.panel?.borderStyle ?? DEFAULT_TUI_CONFIG.panel.borderStyle,
+        accentStripe:
+          updated.panel?.accentStripe ?? DEFAULT_TUI_CONFIG.panel.accentStripe,
+        outcomeBadges:
+          updated.panel?.outcomeBadges ??
+          DEFAULT_TUI_CONFIG.panel.outcomeBadges,
+        reuseSpinner:
+          updated.panel?.reuseSpinner ?? DEFAULT_TUI_CONFIG.panel.reuseSpinner,
+        customVerbs: { ...(updated.panel?.customVerbs ?? {}) },
       },
     };
   });

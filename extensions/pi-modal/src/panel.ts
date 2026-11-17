@@ -18,9 +18,8 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
-import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
-import { paintSurfaceLine } from "@hollowheap/tui/surface";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import type {
   CustomToolVerb,
   LoadingIndicatorStyle,
@@ -29,6 +28,7 @@ import type {
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import { paintSurfaceLine } from "@hollowheap/tui/surface";
 
 const FALLBACK_SPINNER_FRAMES = [
   "⠋",

@@ -15,8 +15,8 @@ function cloneConfig(config: TuiConfig): TuiConfig {
   return {
     ...config,
     panel: {
-      ...config.panel,
-      customVerbs: { ...config.panel.customVerbs },
+      ...(config.panel ?? {}),
+      customVerbs: { ...(config.panel?.customVerbs ?? {}) },
     },
   };
 }
