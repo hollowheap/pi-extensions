@@ -17,7 +17,11 @@ import {
 } from "./task-tool.js";
 import { taskWorkspaceTracker } from "./workspace.js";
 
-function createCtx(opts: { cwd: string; trusted?: boolean }) {
+function createCtx(opts: {
+  cwd: string;
+  trusted?: boolean;
+  confirm?: (question: string, target: string) => Promise<boolean>;
+}) {
   return {
     cwd: opts.cwd,
     sessionManager: {},
@@ -26,6 +30,7 @@ function createCtx(opts: { cwd: string; trusted?: boolean }) {
     ui: {
       notify: vi.fn(),
       setStatus: vi.fn(),
+      confirm: opts.confirm ?? vi.fn(async () => true),
     },
   };
 }
@@ -98,6 +103,41 @@ describe("pi-tasks task-tool", () => {
     );
 
     expect(getText(res as never)).toContain("denied");
+  });
+
+  it("prompts on an ask verdict and refuses when the prompt is declined", async () => {
+    const confirm = vi.fn(async () => false);
+    const tool = createTool();
+    const ctx = createCtx({ cwd: workspaceDir, trusted: true, confirm });
+
+    const res = await tool.execute(
+      "1",
+      { action: "start", command: "echo hello" } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(confirm).toHaveBeenCalledWith("Allow task?", "echo hello");
+    expect(getText(res as never)).toContain("not approved");
+  });
+
+  it("denies an ask verdict when no UI is available", async () => {
+    const tool = createTool();
+    const ctx = {
+      ...createCtx({ cwd: workspaceDir, trusted: true }),
+      hasUI: false,
+    };
+
+    const res = await tool.execute(
+      "1",
+      { action: "start", command: "echo hello" } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(getText(res as never)).toContain("needs approval (no UI)");
   });
 
   it("starts a background task, lists it, waits for completion, and reads truncated status output", async () => {

@@ -40,6 +40,9 @@ export function reconcileTask(
     const withinStartupGrace =
       meta.pid === undefined && Date.now() - meta.startedAt < STARTUP_GRACE_MS;
     if (!withinStartupGrace && !isProcessAlive(meta.pid, meta.startTime)) {
+      if (meta.innerPid !== undefined) {
+        void cancelProcessGroup(meta.innerPid, meta.innerStartTime, 100);
+      }
       const updated = store.updateIf(
         id,
         (current) => current.status === "running",
@@ -185,11 +188,21 @@ export async function cancelTask(
     return toTaskRecord(agentDir, meta);
   }
 
+  const kills: Array<Promise<boolean>> = [];
   if (meta.pid !== undefined) {
-    await cancelProcessGroup(meta.pid, meta.startTime, graceMs);
-    if (isProcessAlive(meta.pid, meta.startTime)) {
-      return toTaskRecord(agentDir, meta);
-    }
+    kills.push(cancelProcessGroup(meta.pid, meta.startTime, graceMs));
+  }
+  if (meta.innerPid !== undefined) {
+    kills.push(cancelProcessGroup(meta.innerPid, meta.innerStartTime, graceMs));
+  }
+  await Promise.all(kills);
+
+  const stillAlive =
+    (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) ||
+    (meta.innerPid !== undefined &&
+      isProcessAlive(meta.innerPid, meta.innerStartTime));
+  if (stillAlive) {
+    return toTaskRecord(agentDir, readTaskMetadata(agentDir, id) ?? meta);
   }
 
   const store = new LockedProcessStore<TaskMetadata>(agentDir);

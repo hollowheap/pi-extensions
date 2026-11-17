@@ -182,7 +182,7 @@ function isProcessGroupAlive(pid: number): boolean {
   }
 }
 
-function signalProcessGroup(
+export function signalProcessGroup(
   pid: number,
   signal: NodeJS.Signals,
   leaderAlive = true,
@@ -206,28 +206,48 @@ function signalProcessGroup(
   }
 }
 
+export interface TerminateGroupOptions {
+  startTime?: number;
+  graceMs?: number;
+  killWaitMs?: number;
+}
+
+/**
+ * Terminates a detached process group with SIGTERM then SIGKILL, and reports
+ * whether the leader and group are actually gone. Shared by every cancel path
+ * so escalation cannot drift between them.
+ */
+export async function terminateProcessGroup(
+  pid: number,
+  options: TerminateGroupOptions = {},
+): Promise<boolean> {
+  const { startTime, graceMs = 250, killWaitMs = 1_000 } = options;
+  const alive = () =>
+    isProcessAlive(pid, startTime) || isProcessGroupAlive(pid);
+  if (!alive()) return false;
+  signalProcessGroup(pid, "SIGTERM", isProcessAlive(pid, startTime));
+  const graceDeadline = Date.now() + Math.max(0, graceMs);
+  while (alive()) {
+    if (Date.now() >= graceDeadline) break;
+    await sleep(Math.min(50, Math.max(1, graceDeadline - Date.now())));
+  }
+  if (!alive()) return true;
+  signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime));
+  const killDeadline = Date.now() + Math.max(0, killWaitMs);
+  while (alive()) {
+    if (Date.now() >= killDeadline) break;
+    await sleep(Math.min(50, Math.max(1, killDeadline - Date.now())));
+  }
+  return !alive();
+}
+
 export async function cancelProcessGroup(
   pid: number,
   startTime?: number,
   graceMs = 250,
+  killWaitMs = 1_000,
 ): Promise<boolean> {
-  const leaderAlive = isProcessAlive(pid, startTime);
-  if (!signalProcessGroup(pid, "SIGTERM", leaderAlive)) return false;
-  const deadline = Date.now() + Math.max(0, graceMs);
-  while (isProcessAlive(pid, startTime) || isProcessGroupAlive(pid)) {
-    if (Date.now() >= deadline) break;
-    await sleep(Math.min(50, Math.max(1, deadline - Date.now())));
-  }
-  if (!isProcessAlive(pid, startTime) && !isProcessGroupAlive(pid)) {
-    return true;
-  }
-  signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime));
-  const killDeadline = Date.now() + 1_000;
-  while (isProcessAlive(pid, startTime) || isProcessGroupAlive(pid)) {
-    if (Date.now() >= killDeadline) break;
-    await sleep(Math.min(50, Math.max(1, killDeadline - Date.now())));
-  }
-  return true;
+  return terminateProcessGroup(pid, { startTime, graceMs, killWaitMs });
 }
 
 export async function isSocketConnectable(

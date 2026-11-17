@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProcessState } from "@hollowheap/runtime";
@@ -41,5 +41,21 @@ describe("LockedProcessStore", () => {
     expect(existsSync(`${store.statePath("a")}.lock`)).toBe(false);
     store.update("a", { status: "failed", exitCode: 1 });
     expect(store.read("a")).toMatchObject({ status: "failed", exitCode: 1 });
+  });
+
+  it("serializes writes through the state lock", () => {
+    const dir = root();
+    const store = new LockedProcessStore<ProcessState>(dir);
+    store.write({ id: "a", status: "running", startedAt: 1 });
+    const lockPath = `${store.statePath("a")}.lock`;
+    writeFileSync(lockPath, "", { mode: 0o600 });
+    try {
+      expect(() =>
+        store.write({ id: "a", status: "completed", startedAt: 2 }),
+      ).toThrow(/timed out acquiring task state lock/);
+      expect(store.read("a")?.status).toBe("running");
+    } finally {
+      rmSync(lockPath, { force: true });
+    }
   });
 });

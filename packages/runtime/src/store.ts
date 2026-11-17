@@ -78,8 +78,17 @@ export class LockedProcessStore<T extends ProcessState = ProcessState> {
     return this.store.ensureLog(id);
   }
 
-  write(state: T): void {
+  private writeUnlocked(state: T): void {
     this.store.write(this.sanitize ? this.sanitize(state) : state);
+  }
+
+  write(state: T): void {
+    const release = acquireStateLock(`${this.statePath(state.id)}.lock`);
+    try {
+      this.writeUnlocked(state);
+    } finally {
+      release();
+    }
   }
 
   update(id: string, patch: Partial<Omit<T, "id">>): T | undefined {
@@ -98,7 +107,7 @@ export class LockedProcessStore<T extends ProcessState = ProcessState> {
       if (current === undefined) return undefined;
       if (!predicate(current)) return current;
       const next = { ...current, ...patch, id: current.id } as T;
-      this.write(next);
+      this.writeUnlocked(next);
       return next;
     } finally {
       release();

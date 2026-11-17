@@ -68,6 +68,11 @@ const child = spawn(spawnBin, childArgs, {
   detached: true,
   stdio: ["ignore", logFd, logFd],
 });
+const childStart = readStartTime(child.pid);
+updateMeta({
+  innerPid: child.pid,
+  ...(childStart !== undefined ? { innerStartTime: childStart } : {}),
+});
 
 let cancelled = false;
 

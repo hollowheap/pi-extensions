@@ -1,4 +1,8 @@
-import { type DetachedProcess, spawnDetachedProcess } from "./process.js";
+import {
+  type DetachedProcess,
+  signalProcessGroup,
+  spawnDetachedProcess,
+} from "./process.js";
 import type { SandboxOptions } from "./sandbox.js";
 import type { ProcessState } from "./state.js";
 import type { LockedProcessStore } from "./store.js";
@@ -38,8 +42,18 @@ export function spawnDetachedTask<T extends ProcessState>(
     } as unknown as Partial<Omit<T, "id">>);
   try {
     options.store.update(options.state.id, patch);
-  } catch {
-    // The shim still owns the process; callers can reconcile from state.
+  } catch (error) {
+    signalProcessGroup(spawned.pid, "SIGKILL");
+    try {
+      options.store.update(options.state.id, {
+        status: "failed",
+        exitCode: null,
+        finishedAt: Date.now(),
+      } as unknown as Partial<Omit<T, "id">>);
+    } catch {
+      // The original update failure is the actionable one.
+    }
+    throw error;
   }
   return spawned;
 }

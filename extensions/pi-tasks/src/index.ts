@@ -15,7 +15,7 @@ import {
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
 import { createTaskTool } from "./task-tool.js";
-import { taskWorkspaceTracker } from "./workspace.js";
+import { rehydrateTaskWorkspaces, taskWorkspaceTracker } from "./workspace.js";
 
 export * from "@hollowheap/runtime/lifecycle";
 export * from "./config.js";
@@ -311,6 +311,7 @@ export default function (pi: ExtensionAPI) {
     lastContext = ctx;
     try {
       const all = emitTasksState(getAgentDir());
+      rehydrateTaskWorkspaces(taskWorkspaceTracker, all);
       for (const t of all) taskAlertTracker.seed(t);
       let runningCount = 0;
       for (const t of all) {

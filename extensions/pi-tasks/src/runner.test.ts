@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -18,6 +19,19 @@ import {
   spawnShellTask,
   waitForTask,
 } from "./runner.js";
+
+function isRunningPid(pid: number): boolean {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const state = stat
+      .slice(stat.lastIndexOf(")") + 2)
+      .trim()
+      .split(/\s+/)[0];
+    return state !== undefined && state !== "Z" && state !== "X";
+  } catch {
+    return false;
+  }
+}
 
 describe("pi-tasks runner", () => {
   let agentDir: string;
@@ -176,6 +190,68 @@ describe("pi-tasks runner", () => {
 
     const persisted = readTaskMetadata(agentDir, task.id);
     expect(persisted?.status).toBe("cancelled");
+  });
+
+  it("kills the inner detached group when cancelling a TERM-resistant task", async () => {
+    const pidFile = join(agentDir, "child.pid");
+    const task = await spawnShellTask({
+      agentDir,
+      command: `trap '' TERM INT; echo $$ > "${pidFile}"; while :; do sleep 0.2; done`,
+      cwd: process.cwd(),
+    });
+
+    let innerPid = 0;
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        if (existsSync(pidFile)) {
+          const parsed = Number.parseInt(
+            readFileSync(pidFile, "utf8").trim(),
+            10,
+          );
+          const meta = readTaskMetadata(agentDir, task.id);
+          if (
+            Number.isInteger(parsed) &&
+            parsed > 0 &&
+            meta?.innerPid === parsed
+          ) {
+            innerPid = parsed;
+            break;
+          }
+        }
+      } catch {
+        // Not published yet.
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(innerPid).toBeGreaterThan(0);
+    expect(isRunningPid(innerPid)).toBe(true);
+
+    try {
+      const cancelled = await cancelTask(agentDir, task.id, 100);
+      expect(cancelled?.status).toBe("cancelled");
+      expect(readTaskMetadata(agentDir, task.id)?.status).toBe("cancelled");
+      expect(isRunningPid(innerPid)).toBe(false);
+    } finally {
+      try {
+        process.kill(innerPid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+  });
+
+  it("reports cancel as cancelled rather than a stale running state", async () => {
+    const task = await spawnShellTask({
+      agentDir,
+      command: "sleep 30",
+      cwd: process.cwd(),
+    });
+    await new Promise((r) => setTimeout(r, 200));
+
+    const cancelled = await cancelTask(agentDir, task.id, 50);
+    expect(cancelled?.status).toBe("cancelled");
+    expect(readTaskMetadata(agentDir, task.id)?.status).toBe("cancelled");
   });
 
   it("reaps background children in the task process group when the shell exits", async () => {

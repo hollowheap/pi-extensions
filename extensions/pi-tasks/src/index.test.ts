@@ -1,5 +1,7 @@
 import {
   chmodSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -12,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 import { cancelTask, readProcStartTime, spawnShellTask } from "./runner.js";
+import { taskWorkspaceTracker } from "./workspace.js";
 
 let mockAgentDir = "/tmp/pi-tasks-index-test";
 
@@ -50,6 +53,7 @@ function createCtx(cwd: string, hasUI = true) {
     ui: {
       notify: vi.fn(),
       setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
     },
   };
 }
@@ -338,6 +342,43 @@ describe("pi-tasks extension", () => {
       name: "tasks",
       text: "1 running",
     });
+  });
+
+  it("rehydrates isolated workspace tracking on session_start for terminal tasks", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+
+    const taskId = "task-restore-ws";
+    const wsPath = join(workspaceDir, ".pi-workspaces", taskId);
+    mkdirSync(wsPath, { recursive: true });
+    createTaskRecord(mockAgentDir, {
+      id: taskId,
+      kind: "shell",
+      status: "completed",
+      command: "pwd",
+      cwd: wsPath,
+      startedAt: Date.now(),
+      finishedAt: Date.now(),
+      exitCode: 0,
+      pid: 999_999_999,
+    });
+    expect(existsSync(wsPath)).toBe(true);
+
+    const onSessionStart = pi.on.mock.calls.find(
+      ([ev]) => ev === "session_start",
+    )?.[1] as (ev: unknown, ctx: unknown) => void;
+    const onShutdown = pi.on.mock.calls.find(
+      ([ev]) => ev === "session_shutdown",
+    )?.[1] as (ev: unknown, ctx: unknown) => void;
+    try {
+      onSessionStart({}, createCtx(workspaceDir));
+      await taskWorkspaceTracker.cleanupTerminal([
+        { id: taskId, status: "completed" },
+      ]);
+      expect(existsSync(wsPath)).toBe(false);
+    } finally {
+      onShutdown?.({}, createCtx(workspaceDir));
+    }
   });
 
   it("warns instead of throwing when task storage cannot be read", () => {

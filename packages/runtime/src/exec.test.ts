@@ -1,4 +1,10 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -69,6 +75,52 @@ describe("runCapture", () => {
       undefined,
     );
     expect(check.stdout.trim()).toBe("");
+  });
+
+  it("escalates to SIGKILL and releases a child that ignores SIGTERM", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-exec-term-ignore-"));
+    const marker = join(dir, "child.pid");
+    try {
+      const script = `process.on("SIGTERM",()=>{});require("node:fs").writeFileSync(${JSON.stringify(marker)},String(process.pid));setInterval(()=>{},1000);`;
+      await expect(
+        runCapture(node, ["-e", script], tmpdir(), undefined, {
+          timeoutMs: 400,
+        }),
+      ).rejects.toThrow(/failed/i);
+
+      let childPid = 0;
+      const deadline = Date.now() + 3_000;
+      while (Date.now() < deadline) {
+        try {
+          const parsed = Number.parseInt(readFileSync(marker, "utf8"), 10);
+          if (Number.isInteger(parsed) && parsed > 0) {
+            childPid = parsed;
+            break;
+          }
+        } catch {
+          // Not written yet.
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(childPid).toBeGreaterThan(0);
+
+      await new Promise((r) => setTimeout(r, 300));
+      let alive = false;
+      try {
+        process.kill(childPid, 0);
+        alive = true;
+      } catch {
+        // Dead.
+      }
+      try {
+        if (alive) process.kill(childPid, "SIGKILL");
+      } catch {
+        // Already dead.
+      }
+      expect(alive).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("kills child process group on abort so background sleep does not survive", async () => {

@@ -1,4 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { type Socket, createConnection, createServer } from "node:net";
 import { dirname } from "node:path";
 
@@ -153,19 +159,45 @@ export async function startJsonlServer(
     server.once("listening", onListening);
     server.listen(path);
   });
-  chmodSync(path, 0o600);
+
+  let identity: { dev: number; ino: number } | undefined;
+  try {
+    const stat = statSync(path);
+    identity = { dev: stat.dev, ino: stat.ino };
+    chmodSync(path, 0o600);
+  } catch (error) {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    try {
+      unlinkSync(path);
+    } catch {
+      // Already removed by a concurrent owner.
+    }
+    throw error;
+  }
   server.on("error", () => {});
+
+  const unlinkIfOwned = (): void => {
+    try {
+      const stat = statSync(path);
+      if (
+        identity &&
+        (stat.dev !== identity.dev || stat.ino !== identity.ino)
+      ) {
+        return;
+      }
+      unlinkSync(path);
+    } catch {
+      // Already removed.
+    }
+  };
 
   return {
     path,
     close: async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      try {
-        unlinkSync(path);
-      } catch {
-        // Already removed.
-      }
+      unlinkIfOwned();
     },
   };
 }

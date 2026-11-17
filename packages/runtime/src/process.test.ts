@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelProcessGroup,
   isProcessAlive,
@@ -29,6 +29,23 @@ describe("cancelProcessGroup", () => {
     await expect(cancelProcessGroup(999_999_999, undefined, 50)).resolves.toBe(
       false,
     );
+  });
+
+  it("reports failure when the group is still alive after SIGKILL", async () => {
+    const realKill = process.kill.bind(process);
+    const killSpy = vi
+      .spyOn(process, "kill")
+      .mockImplementation((pid: number, signal?: string | number) => {
+        if (pid < 0) return true;
+        return realKill(pid, signal as NodeJS.Signals);
+      });
+    try {
+      await expect(
+        cancelProcessGroup(123_456, undefined, 10, 10),
+      ).resolves.toBe(false);
+    } finally {
+      killSpy.mockRestore();
+    }
   });
 
   it("signals remaining group members after the leader has exited", async () => {

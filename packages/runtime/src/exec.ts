@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
+import { terminateProcessGroup } from "./process.js";
 import {
   type SandboxOptions,
   isOsPermissionError,
@@ -84,22 +85,6 @@ export function runCapture(
     let stdoutBytes = 0;
     let stderrBytes = 0;
 
-    const killChildGroup = (sig: NodeJS.Signals = "SIGTERM") => {
-      const pid = child.pid;
-      if (pid === undefined) return;
-      try {
-        process.kill(-pid, sig);
-        return;
-      } catch {
-        // Fall back to the leader if the process group is gone.
-      }
-      try {
-        process.kill(pid, sig);
-      } catch {
-        // Already dead.
-      }
-    };
-
     const cleanup = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
@@ -109,16 +94,24 @@ export function runCapture(
       if (settled) return;
       settled = true;
       cleanup();
+      if (child.pid !== undefined) {
+        void terminateProcessGroup(child.pid, {
+          graceMs: 100,
+          killWaitMs: 0,
+        });
+      }
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.stdin?.destroy();
+      child.unref();
       reject(err);
     };
 
     const onAbort = () => {
-      killChildGroup("SIGTERM");
       fail(new Error(`${command} failed: The operation was aborted`));
     };
 
     const timer = setTimeout(() => {
-      killChildGroup("SIGTERM");
       fail(
         new Error(
           `${command} failed: ${String(stderr || `timed out after ${timeoutMs}ms`).trim()}`,
@@ -131,7 +124,6 @@ export function runCapture(
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutBytes += chunk.byteLength;
       if (stdoutBytes > maxBuffer) {
-        killChildGroup("SIGTERM");
         fail(new Error(`${command} failed: stdout maxBuffer length exceeded`));
         return;
       }
@@ -141,7 +133,6 @@ export function runCapture(
     child.stderr?.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.byteLength;
       if (stderrBytes > maxBuffer) {
-        killChildGroup("SIGTERM");
         fail(new Error(`${command} failed: stderr maxBuffer length exceeded`));
         return;
       }

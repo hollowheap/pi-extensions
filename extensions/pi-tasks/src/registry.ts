@@ -14,6 +14,8 @@ export interface TaskMetadata extends ProcessState {
   cwd: string;
   pid?: number;
   startTime?: number;
+  innerPid?: number;
+  innerStartTime?: number;
   startedAt: number;
   finishedAt?: number;
   exitCode?: number | null;

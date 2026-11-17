@@ -267,6 +267,26 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
             { action, runningCount },
           );
         }
+        if (verdict === "ask") {
+          if (!ctx.hasUI || typeof ctx.ui.confirm !== "function") {
+            const runningCount = refreshRunningCount();
+            return textResult(
+              `pi-tasks: shell access to ${displayTarget(command)} needs approval (no UI)`,
+              { action, runningCount },
+            );
+          }
+          const approved = await ctx.ui.confirm(
+            "Allow task?",
+            sanitizeTerminalText(command),
+          );
+          if (!approved) {
+            const runningCount = refreshRunningCount();
+            return textResult(
+              `pi-tasks: shell access to ${displayTarget(command)} was not approved`,
+              { action, runningCount },
+            );
+          }
+        }
 
         // Check dependencies
         const deps = Array.isArray(params.dependsOn) ? params.dependsOn : [];

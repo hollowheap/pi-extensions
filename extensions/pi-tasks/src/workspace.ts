@@ -1,3 +1,4 @@
+import { basename, dirname } from "node:path";
 import {
   type Workspace,
   type WorkspaceOperations,
@@ -41,9 +42,18 @@ export function integrateTaskWorkspace(
 export interface TaskWorkspaceState {
   id: string;
   status: string;
+  cwd?: string;
 }
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+
+export function isTaskWorkspacePath(
+  path: string | undefined,
+  id: string,
+): boolean {
+  if (typeof path !== "string" || path === "") return false;
+  return basename(path) === id && basename(dirname(path)) === ".pi-workspaces";
+}
 
 export class TaskWorkspaceTracker {
   private readonly workspaces = new Map<string, Workspace>();
@@ -70,6 +80,16 @@ export class TaskWorkspaceTracker {
         // A failed cleanup must not affect task state.
       }
     }
+  }
+}
+
+export function rehydrateTaskWorkspaces(
+  tracker: TaskWorkspaceTracker,
+  tasks: readonly TaskWorkspaceState[],
+): void {
+  for (const task of tasks) {
+    if (!isTaskWorkspacePath(task.cwd, task.id)) continue;
+    tracker.track(task.id, { path: task.cwd as string, isolated: true });
   }
 }
 
