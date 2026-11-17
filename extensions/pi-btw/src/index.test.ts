@@ -123,6 +123,30 @@ describe("pi-btw", () => {
     );
   });
 
+  it("returns silently on aborted stopReason", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    ctx.modelRegistry.complete.mockResolvedValue({
+      role: "assistant",
+      content: [{ type: "text", text: "ignored" }],
+      stopReason: "aborted",
+    });
+    await pi.getCommand()?.handler("why?", ctx as never);
+    expect(showMarkdownPager).not.toHaveBeenCalled();
+  });
+
+  it("reports oversized question", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    await pi.getCommand()?.handler("x".repeat(5000), ctx as never);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("exceeds"),
+      "warning",
+    );
+  });
+
   it("builds context messages and extracts text", () => {
     expect(
       buildBtwMessages(
