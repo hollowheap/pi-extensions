@@ -15,7 +15,11 @@ import {
   setSessionBudgetCap,
   setSessionUsage,
 } from "@hollowheap/core/usage";
-import { combineUsage, scanSubagentUsage } from "./subagents.js";
+import {
+  combineUsage,
+  mergeSubagentUsage,
+  scanSubagentUsage,
+} from "./subagents.js";
 
 export {
   type CumulativeUsage,
@@ -153,6 +157,7 @@ export default function (pi: ExtensionAPI) {
   let statusOwner: unknown;
   let subagentRows: SubagentUsage[] = [];
   let warningNotified = false;
+  const persistedSubagentSignatures = new WeakMap<object, string>();
   const activeSubagents = new Set<string>();
   const sessionIdOf = (owner: unknown): string | undefined => {
     if (typeof owner !== "object" || owner === null) return undefined;
@@ -166,9 +171,16 @@ export default function (pi: ExtensionAPI) {
     if (parentSession === undefined) return subagentRows;
     const current = getSessionUsage(owner);
     const scanned = scanSubagentUsage(getAgentDir(), parentSession);
-    subagentRows = scanned.length > 0 ? scanned : (current.subagents ?? []);
-    if (subagentRows.length > 0) {
-      setSessionUsage(owner, { ...current, subagents: subagentRows });
+    subagentRows = mergeSubagentUsage(scanned, current.subagents ?? []);
+    if (subagentRows.length === 0) return subagentRows;
+    const next = { ...current, subagents: subagentRows };
+    setSessionUsage(owner, next);
+    if (typeof owner === "object" && owner !== null) {
+      const signature = JSON.stringify(subagentRows);
+      if (persistedSubagentSignatures.get(owner) !== signature) {
+        persistedSubagentSignatures.set(owner, signature);
+        persistUsage(owner as never, next);
+      }
     }
     return subagentRows;
   };
@@ -229,6 +241,16 @@ export default function (pi: ExtensionAPI) {
     activeSubagents.clear();
     const restored = restoreSessionUsage(ctx.sessionManager);
     subagentRows = restored.subagents ?? [];
+    if (
+      subagentRows.length > 0 &&
+      typeof ctx.sessionManager === "object" &&
+      ctx.sessionManager !== null
+    ) {
+      persistedSubagentSignatures.set(
+        ctx.sessionManager,
+        JSON.stringify(subagentRows),
+      );
+    }
     warningNotified = false;
     refreshSubagents(ctx.sessionManager);
     publishStatus(combined(ctx.sessionManager));
@@ -239,6 +261,16 @@ export default function (pi: ExtensionAPI) {
     activeSubagents.clear();
     const restored = restoreSessionUsage(ctx.sessionManager);
     subagentRows = restored.subagents ?? [];
+    if (
+      subagentRows.length > 0 &&
+      typeof ctx.sessionManager === "object" &&
+      ctx.sessionManager !== null
+    ) {
+      persistedSubagentSignatures.set(
+        ctx.sessionManager,
+        JSON.stringify(subagentRows),
+      );
+    }
     warningNotified = false;
     refreshSubagents(ctx.sessionManager);
     publishStatus(combined(ctx.sessionManager));
@@ -306,7 +338,7 @@ export default function (pi: ExtensionAPI) {
     const after = combined(ctx.sessionManager);
     if (
       after.budgetWarning === true &&
-      current.budgetWarning !== true &&
+      !warningNotified &&
       after.budgetCap !== undefined
     ) {
       ctx.ui.notify(

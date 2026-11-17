@@ -455,6 +455,103 @@ describe("subagent usage", () => {
     );
   });
 
+  it("persists scanned subagent attribution so it survives restore", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-persist-"));
+    tempDirs.push(dir);
+    mockState.agentDir = dir;
+    const fixture = createSubagentState(dir, "sub-persist", "session-1");
+    writeFileSync(
+      fixture.sessionPath,
+      `${JSON.stringify({
+        type: "usage",
+        model: "claude-3-5-sonnet",
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cost: { total: 0.25 },
+        },
+      })}\n`,
+    );
+
+    const first = setupUsageExtension();
+    first.sessionStart();
+    await first.runUsage();
+    const persisted = first.customEntries.filter(
+      (entry) => entry.customType === USAGE_ENTRY_TYPE,
+    );
+    expect(persisted).toHaveLength(1);
+    expect(
+      (persisted[0]?.data as { subagents?: Array<{ id: string }> })?.subagents,
+    ).toEqual([expect.objectContaining({ id: "sub-persist" })]);
+
+    rmSync(join(dir, "subagents"), { recursive: true, force: true });
+    const second = setupUsageExtension();
+    second.customEntries.push(...persisted);
+    second.sessionStart();
+    await second.runUsage();
+    expect(second.ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("@sub-persist (scout)"),
+    );
+  });
+
+  it("keeps persisted subagent rows that a partial scan does not cover", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-usage-partial-"));
+    tempDirs.push(dir);
+    mockState.agentDir = dir;
+    const fixture = createSubagentState(dir, "scanned-sub", "session-1");
+    writeFileSync(
+      fixture.sessionPath,
+      `${JSON.stringify({
+        type: "usage",
+        model: "claude-3-5-sonnet",
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cost: { total: 0.01 },
+        },
+      })}\n`,
+    );
+    const env = setupUsageExtension();
+    env.customEntries.push({
+      customType: USAGE_ENTRY_TYPE,
+      data: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        byModel: {},
+        subagents: [
+          {
+            id: "persisted-sub",
+            agent: "scout",
+            model: "claude-3-5-sonnet",
+            status: "completed",
+            available: true,
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 150,
+            cost: 0.01,
+            byModel: {},
+          },
+        ],
+      },
+    });
+
+    env.sessionStart();
+    await env.runUsage();
+    const report = env.ctx.ui.notify.mock.calls.at(-1)?.[0] as string;
+    expect(report).toContain("@scanned-sub (scout)");
+    expect(report).toContain("@persisted-sub (scout)");
+  });
+
   it("subagent turns with cost.total === 0 use price table and positive provider cost is kept", () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-usage-sub-"));
     tempDirs.push(dir);
@@ -714,6 +811,49 @@ describe("pi-usage extension lifecycle", () => {
       expect.stringContaining("budget cap reached"),
       "error",
     );
+  });
+
+  it("notifies a subagent-driven budget warning only once across turns", async () => {
+    const env = setupUsageExtension();
+    env.customEntries.push({
+      customType: USAGE_ENTRY_TYPE,
+      data: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        byModel: {},
+        subagents: [
+          {
+            id: "sub-warn",
+            agent: "scout",
+            model: "claude-3-5-sonnet",
+            status: "completed",
+            available: true,
+            inputTokens: 100,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 100,
+            cost: 0.9,
+            byModel: {},
+          },
+        ],
+      },
+    });
+    env.sessionStart();
+    await env.runUsage("cap $1");
+
+    env.messageEnd({ input: 10, output: 0 });
+    env.messageEnd({ input: 10, output: 0 });
+
+    const warnings = env.ctx.ui.notify.mock.calls.filter(
+      ([message, level]) =>
+        level === "warning" && String(message).includes("budget warning"),
+    );
+    expect(warnings).toHaveLength(1);
   });
 
   it("publishes the cap to the statusline provider", async () => {

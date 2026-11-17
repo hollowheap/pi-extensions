@@ -384,6 +384,7 @@ export function createMemoryExtension(
           ctx.ui.notify(`pi-memory: ${message}`, "warning");
         }
         if (consecutiveFailures >= 2) {
+          pi.appendEntry(MEMORY_CONSUMED_TYPE, { sourceEntryIds: entryIds });
           for (const id of entryIds) ledger.consumedIds.add(id);
           consecutiveFailures = 0;
           publishMemory(ctx);

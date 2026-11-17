@@ -510,6 +510,61 @@ describe("pi-hooks extension", () => {
     );
   });
 
+  it("flushes passing hook stats on agent_end", async () => {
+    writeHooks({ preTool: [{ command: "true" }] });
+    const { handlers, ctx, pi } = setup();
+
+    await handlers.tool_call(toolCall("bash"), ctx);
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+
+    await handlers.agent_end({}, ctx);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      HOOK_STATS_TYPE,
+      expect.objectContaining({ runs: 1, blocks: 0, errors: 0 }),
+    );
+  });
+
+  it("surfaces a project sandbox override in status and settings", async () => {
+    const { clearHooksCache } = await import("./config.js");
+    clearHooksCache();
+    writeFileSync(
+      join(agentDir, ".pi", "hooks.json"),
+      JSON.stringify({ sandbox: { enabled: true }, hooks: {} }),
+    );
+    const { pi } = setup();
+    const command = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "hooks",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    const baseCtx = {
+      cwd: agentDir,
+      sessionManager: {},
+      hasUI: true,
+      mode: "tui",
+      isProjectTrusted: () => true,
+    };
+    const statusNotify = vi.fn();
+    await command.handler("status", {
+      ...baseCtx,
+      ui: { notify: statusNotify },
+    });
+    expect(statusNotify).toHaveBeenCalledWith(
+      expect.stringContaining("project overlay"),
+      "info",
+    );
+
+    const notify = vi.fn();
+    await command.handler("settings", {
+      ...baseCtx,
+      ui: { notify, custom: vi.fn().mockResolvedValue(undefined) },
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining(".pi/hooks.json"),
+      "warning",
+    );
+  });
+
   it("restores hook stats on session_start and session_tree", async () => {
     writeHooks({
       sessionStart: [{ command: "true" }],

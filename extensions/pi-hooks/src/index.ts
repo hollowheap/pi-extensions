@@ -21,6 +21,7 @@ import {
   isHookSandboxOffline,
   loadAgentHooksConfig,
   loadHooks,
+  loadProjectHooksConfig,
   saveHooksSettings,
 } from "./config.js";
 import {
@@ -62,6 +63,17 @@ function loadContextHooks(ctx: ExtensionContext): HookConfig {
     trusted: ctx.isProjectTrusted(),
     onDiagnostic,
   });
+}
+
+function projectSandboxOverrides(ctx: ExtensionContext): boolean {
+  const owner: object = ctx.sessionManager ?? ctx;
+  return (
+    loadProjectHooksConfig(
+      ctx.cwd,
+      ctx.isProjectTrusted(),
+      diagnosticCallbacks.get(owner),
+    ).sandbox !== undefined
+  );
 }
 
 function inputRecord(value: unknown): Record<string, unknown> {
@@ -113,6 +125,7 @@ interface HooksSessionState {
   blocks: number;
   errors: number;
   updatedAt: number;
+  persistedCount: number;
 }
 
 const hooksStates = new WeakMap<object, HooksSessionState>();
@@ -121,18 +134,47 @@ const fallbackHooksState: HooksSessionState = {
   blocks: 0,
   errors: 0,
   updatedAt: 0,
+  persistedCount: 0,
 };
 
 function getHooksSessionState(owner?: unknown): HooksSessionState {
   if (typeof owner === "object" && owner !== null) {
     let state = hooksStates.get(owner);
     if (state === undefined) {
-      state = { runs: 0, blocks: 0, errors: 0, updatedAt: 0 };
+      state = {
+        runs: 0,
+        blocks: 0,
+        errors: 0,
+        updatedAt: 0,
+        persistedCount: 0,
+      };
       hooksStates.set(owner, state);
     }
     return state;
   }
   return fallbackHooksState;
+}
+
+function persistHooksStats(
+  pi: ExtensionAPI,
+  owner?: unknown,
+  force = false,
+): void {
+  const state = getHooksSessionState(owner);
+  const count = state.runs + state.blocks + state.errors;
+  if (count <= 0) return;
+  if (!force && state.persistedCount >= count) return;
+  try {
+    pi?.appendEntry?.(HOOK_STATS_TYPE, {
+      runs: state.runs,
+      blocks: state.blocks,
+      errors: state.errors,
+      updatedAt: force ? Date.now() : state.updatedAt,
+    });
+    state.persistedCount = count;
+  } catch {
+    // A failed append must not break hook execution.
+  }
 }
 
 function publishHooksSnapshot(
@@ -187,14 +229,7 @@ function recordHookEvent(
     shouldPersist = true;
   }
   state.updatedAt = Date.now();
-  if (shouldPersist) {
-    pi?.appendEntry?.(HOOK_STATS_TYPE, {
-      runs: state.runs,
-      blocks: state.blocks,
-      errors: state.errors,
-      updatedAt: state.updatedAt,
-    });
-  }
+  if (shouldPersist) persistHooksStats(pi, ctx.sessionManager);
   publishHooksSnapshot(ctx, config);
 }
 
@@ -241,6 +276,7 @@ export default function (pi: ExtensionAPI) {
         typeof lastData.updatedAt === "number"
           ? lastData.updatedAt
           : Date.now();
+      state.persistedCount = state.runs + state.blocks + state.errors;
     }
     publishHooksSnapshot(ctx);
   };
@@ -288,15 +324,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_compact", (_event, ctx) => {
     const owner = ctx?.sessionManager ?? lastCtx?.sessionManager;
-    const state = getHooksSessionState(owner);
-    if (state.runs > 0) {
-      pi?.appendEntry?.(HOOK_STATS_TYPE, {
-        runs: state.runs,
-        blocks: state.blocks,
-        errors: state.errors,
-        updatedAt: Date.now(),
-      });
-    }
+    persistHooksStats(pi, owner, true);
+  });
+
+  pi.on("agent_end", (_event, ctx) => {
+    persistHooksStats(pi, ctx?.sessionManager);
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -420,7 +452,7 @@ export default function (pi: ExtensionAPI) {
           : "disabled";
         const summary = [
           `Hooks: ${loaded.sessionStart.length} sessionStart, ${loaded.preTool.length} preTool, ${loaded.postTool.length} postTool`,
-          `Sandbox: ${sandboxState}`,
+          `Sandbox: ${sandboxState}${projectSandboxOverrides(ctx) ? " (project overlay overrides agent settings)" : ""}`,
           `Bubblewrap (bwrap): ${formatBwrapProbeStatus(probe)}`,
         ].join("\n");
         if (ctx.hasUI) ctx.ui.notify(summary, "info");
@@ -462,20 +494,31 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
+      if (projectSandboxOverrides(ctx)) {
+        ctx.ui.notify(
+          "pi-hooks: .pi/hooks.json defines sandbox; changes here only update the agent file and will not affect the effective sandbox",
+          "warning",
+        );
+      }
+
       let saved = false;
       const { showHooksSettings } = await import("./settings.js");
-      await showHooksSettings(ctx, loaded.config, (settings: HooksSettings) => {
-        try {
-          saveHooksSettings(agentDir, settings);
-          saved = true;
-          publishHooksSnapshot(ctx);
-        } catch (error) {
-          ctx.ui.notify(
-            `pi-hooks: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
-            "error",
-          );
-        }
-      });
+      await showHooksSettings(
+        ctx,
+        loadContextHooks(ctx),
+        (settings: HooksSettings) => {
+          try {
+            saveHooksSettings(agentDir, settings);
+            saved = true;
+            publishHooksSnapshot(ctx);
+          } catch (error) {
+            ctx.ui.notify(
+              `pi-hooks: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+          }
+        },
+      );
       if (saved) ctx.ui.notify("Hooks settings saved", "info");
     },
   });

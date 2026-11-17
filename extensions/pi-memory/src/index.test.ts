@@ -302,6 +302,37 @@ describe("pi-memory extension", () => {
     });
   });
 
+  it("persists the consumed watermark after repeated failures so restore skips the chunk", async () => {
+    const pi = createMockPi();
+    const dir = configDir();
+    const observe = vi.fn().mockRejectedValue(new Error("down"));
+    createMemoryExtension({
+      getAgentDir: () => dir,
+      observe: observe as never,
+    })(pi as never);
+
+    const branch: unknown[] = [messageEntry("m1", "x".repeat(5_000))];
+    const ctx = createCtx(branch);
+
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => expect(observe).toHaveBeenCalledTimes(1));
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    await vi.waitFor(() => expect(observe).toHaveBeenCalledTimes(2));
+
+    expect(pi.appendEntry).toHaveBeenCalledWith(MEMORY_CONSUMED_TYPE, {
+      sourceEntryIds: ["m1"],
+    });
+
+    branch.push({
+      type: "custom",
+      customType: MEMORY_CONSUMED_TYPE,
+      data: { sourceEntryIds: ["m1"] },
+    });
+    handler(pi, "session_start")?.({}, ctx);
+    await handler(pi, "agent_settled")?.({ aborted: false }, ctx);
+    expect(observe).toHaveBeenCalledTimes(2);
+  });
+
   it("marks messages consumed when the observer returns no observations", async () => {
     const pi = createMockPi();
     const observe = vi.fn().mockResolvedValue({ observations: [] });

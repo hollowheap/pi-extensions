@@ -418,14 +418,26 @@ export function saveHooksSettings(
   return res.path;
 }
 
+export function loadProjectHooksConfig(
+  workspaceRoot: string,
+  trusted: boolean,
+  onDiagnostic?: (message: string) => void,
+): HookConfig {
+  return readHooksFile(
+    join(workspaceRoot, ".pi", "hooks.json"),
+    trusted,
+    onDiagnostic,
+  );
+}
+
 export function loadHooks(options: LoadHooksOptions): HookConfig {
   const agent = readHooksFile(
     join(options.agentDir, "hooks.json"),
     true,
     options.onDiagnostic,
   );
-  const overlay = readHooksFile(
-    join(options.workspaceRoot, ".pi", "hooks.json"),
+  const overlay = loadProjectHooksConfig(
+    options.workspaceRoot,
     options.trusted,
     options.onDiagnostic,
   );

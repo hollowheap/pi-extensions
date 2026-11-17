@@ -358,6 +358,18 @@ export function scanSubagentUsage(
   return rows;
 }
 
+export function mergeSubagentUsage(
+  scanned: readonly SubagentUsage[],
+  persisted: readonly SubagentUsage[],
+): SubagentUsage[] {
+  const byId = new Map<string, SubagentUsage>();
+  for (const row of persisted) byId.set(row.id, row);
+  for (const row of scanned) byId.set(row.id, row);
+  return [...byId.values()].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+}
+
 export function combineUsage(
   parent: CumulativeUsage,
   subagents: readonly SubagentUsage[],
