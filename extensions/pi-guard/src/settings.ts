@@ -1,6 +1,7 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { getFrameInnerWidth, roundedFrame } from "@hollowheap/tui/frame";
 import {
   type GuardConfig,
@@ -123,7 +124,10 @@ export async function showGuardSettings(
               if (!res.ok) {
                 list.updateValue("trust-cwd", prevTrust);
                 if (ctx.hasUI) {
-                  ctx.ui.notify(`pi-guard: ${res.error}`, "error");
+                  ctx.ui.notify(
+                    `pi-guard: ${sanitizeTerminalText(res.error)}`,
+                    "error",
+                  );
                 }
               } else {
                 guardConfig = nextConfig;
@@ -164,7 +168,10 @@ export async function showGuardSettings(
                 const res = saveGuardConfig(agentDir, nextConfig);
                 if (!res.ok) {
                   if (ctx.hasUI) {
-                    ctx.ui.notify(`pi-guard: ${res.error}`, "error");
+                    ctx.ui.notify(
+                      `pi-guard: ${sanitizeTerminalText(res.error)}`,
+                      "error",
+                    );
                   }
                 } else {
                   guardConfig = nextConfig;

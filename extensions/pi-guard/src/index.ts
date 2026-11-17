@@ -231,7 +231,8 @@ function loadContextPermissions(ctx: ExtensionContext) {
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
-    onDiagnostic: (message) => ctx.ui.notify(`pi-guard: ${message}`, "warning"),
+    onDiagnostic: (message) =>
+      ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(message)}`, "warning"),
   });
 }
 
@@ -240,7 +241,8 @@ function loadContextToolTags(ctx: ExtensionContext) {
     agentDir: getAgentDir(),
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
-    onDiagnostic: (message) => ctx.ui.notify(`pi-guard: ${message}`, "warning"),
+    onDiagnostic: (message) =>
+      ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(message)}`, "warning"),
   });
 }
 
@@ -402,7 +404,8 @@ export default function (pi: ExtensionAPI) {
     if (tag !== "shell") {
       const agentDir = getAgentDir();
       const guardConfig = loadGuardConfig(agentDir, (msg) => {
-        if (ctx.hasUI) ctx.ui.notify(`pi-guard: ${msg}`, "warning");
+        if (ctx.hasUI)
+          ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(msg)}`, "warning");
       });
       const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
       const trust = checkPathTrust(
@@ -870,7 +873,7 @@ export default function (pi: ExtensionAPI) {
       const agentDir = getAgentDir();
       const warn = (msg: string) => {
         if (ctx.hasUI) {
-          ctx.ui.notify(`pi-guard: ${msg}`, "warning");
+          ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(msg)}`, "warning");
         }
       };
 

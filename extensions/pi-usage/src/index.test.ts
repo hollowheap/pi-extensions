@@ -521,6 +521,29 @@ describe("formatUsageReport", () => {
     expect(text).toMatch(/out\s+[█░]{16}\s+40\.0%/);
   });
 
+  it("sanitizes control bytes in model ids", () => {
+    const text = formatUsageReport({
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 15,
+      totalCost: 0.01,
+      byModel: {
+        evil: {
+          model: "evil\x1b]0;pwned\x07model",
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cost: 0.01,
+        },
+      },
+    });
+    expect(text).not.toContain("\x1b]0;");
+    expect(text).toContain("evilmodel");
+  });
+
   it("draws model, subagent, and budget bars", () => {
     const text = formatUsageReport(
       {

@@ -244,7 +244,10 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           workspaceRoot: ctx.cwd,
           trusted: ctx.isProjectTrusted(),
           onDiagnostic: (message) =>
-            ctx.ui.notify(`pi-tasks: ${message}`, "warning"),
+            ctx.ui.notify(
+              `pi-tasks: ${sanitizeTerminalText(message)}`,
+              "warning",
+            ),
         });
         const verdict = evaluate({
           owner: ctx.sessionManager,

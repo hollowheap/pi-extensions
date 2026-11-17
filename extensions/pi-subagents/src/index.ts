@@ -47,6 +47,72 @@ export interface SubagentStateEventItem {
   activeToolStartedAt?: number;
 }
 
+export function formatSubagentLog(log: string, raw: boolean): string {
+  if (raw) return log.trim() === "" ? "(no output)" : log;
+  const lines = log.split(/\n/);
+  const out: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      out.push(trimmed);
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const record = parsed as Record<string, unknown>;
+    const type = record.type;
+    if (type === "message_end" || type === "message") {
+      const message = record.message as
+        | { role?: unknown; content?: unknown }
+        | undefined;
+      if (message?.role !== "assistant") continue;
+      const content = message.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter(
+                  (part): part is { type: "text"; text: string } =>
+                    typeof part === "object" &&
+                    part !== null &&
+                    (part as { type?: unknown }).type === "text" &&
+                    typeof (part as { text?: unknown }).text === "string",
+                )
+                .map((part) => part.text)
+                .join("\n")
+            : "";
+      const cleaned = text.trim();
+      if (cleaned !== "") out.push(cleaned);
+      continue;
+    }
+    if (type === "tool_call" || type === "tool_execution_start") {
+      const toolName =
+        typeof record.toolName === "string"
+          ? record.toolName
+          : typeof record.name === "string"
+            ? record.name
+            : "tool";
+      const args = record.args ?? record.arguments ?? record.input;
+      const summary =
+        typeof args === "object" && args !== null
+          ? Object.entries(args as Record<string, unknown>)
+              .slice(0, 3)
+              .map(([k, v]) => `${k}=${String(v).slice(0, 40)}`)
+              .join(", ")
+          : String(args ?? "").slice(0, 80);
+      out.push(`> ${toolName}${summary ? ` (${summary})` : ""}`);
+    }
+  }
+  if (out.length === 0) {
+    return log.trim() === "" ? "(no output)" : log;
+  }
+  return out.join("\n\n");
+}
+
 export function createSubagentsExtension(
   deps: {
     getAgentDir?: () => string;
@@ -212,72 +278,6 @@ export function createSubagentsExtension(
       } finally {
         emitting = false;
       }
-    };
-
-    const formatSubagentLog = (log: string, raw: boolean): string => {
-      if (raw) return log.trim() === "" ? "(no output)" : log;
-      const lines = log.split(/\n/);
-      const out: string[] = [];
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed === "") continue;
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          out.push(trimmed);
-          continue;
-        }
-        if (typeof parsed !== "object" || parsed === null) continue;
-        const record = parsed as Record<string, unknown>;
-        const type = record.type;
-        if (type === "message_end" || type === "message") {
-          const message = record.message as
-            | { role?: unknown; content?: unknown }
-            | undefined;
-          if (message?.role !== "assistant") continue;
-          const content = message.content;
-          const text =
-            typeof content === "string"
-              ? content
-              : Array.isArray(content)
-                ? content
-                    .filter(
-                      (part): part is { type: "text"; text: string } =>
-                        typeof part === "object" &&
-                        part !== null &&
-                        (part as { type?: unknown }).type === "text" &&
-                        typeof (part as { text?: unknown }).text === "string",
-                    )
-                    .map((part) => part.text)
-                    .join("\n")
-                : "";
-          const cleaned = text.trim();
-          if (cleaned !== "") out.push(cleaned);
-          continue;
-        }
-        if (type === "tool_call" || type === "tool_execution_start") {
-          const toolName =
-            typeof record.toolName === "string"
-              ? record.toolName
-              : typeof record.name === "string"
-                ? record.name
-                : "tool";
-          const args = record.args ?? record.arguments ?? record.input;
-          const summary =
-            typeof args === "object" && args !== null
-              ? Object.entries(args as Record<string, unknown>)
-                  .slice(0, 3)
-                  .map(([k, v]) => `${k}=${String(v).slice(0, 40)}`)
-                  .join(", ")
-              : String(args ?? "").slice(0, 80);
-          out.push(`> ${toolName}${summary ? ` (${summary})` : ""}`);
-        }
-      }
-      if (out.length === 0) {
-        return log.trim() === "" ? "(no output)" : log;
-      }
-      return out.join("\n\n");
     };
 
     const openSubagentLog = async (
