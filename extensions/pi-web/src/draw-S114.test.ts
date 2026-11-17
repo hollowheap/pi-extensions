@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
 import {
   calculateDollarCost,
   resolveModelPricing,
 } from "@hollowheap/core/pricing";
+import { describe, expect, it } from "vitest";
 import { createWebFetchTool, createWebSearchTool } from "./tools.js";
 
 describe("S114 codemode web tools and free pricing", () => {
@@ -13,7 +13,10 @@ describe("S114 codemode web tools and free pricing", () => {
     const rates = resolveModelPricing("provider/foo:free");
     expect(rates).toMatchObject({ input: 0, output: 0 });
     expect(
-      calculateDollarCost({ input: 1_000_000, output: 1_000_000 }, rates!),
+      calculateDollarCost(
+        { input: 1_000_000, output: 1_000_000 },
+        rates as NonNullable<typeof rates>,
+      ),
     ).toBe(0);
   });
 });

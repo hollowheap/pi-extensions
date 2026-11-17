@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { registerMode } from "@hollowheap/core/modes";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
@@ -10,7 +10,9 @@ vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
 });
 
-const state = vi.hoisted(() => ({ agentDir: "/nonexistent-pi-agent-dir-for-tests" }));
+const state = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
+}));
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAgentDir: () => state.agentDir,
@@ -24,16 +26,18 @@ function setup(rules: string) {
   mkdirSync(join(dir, ".pi"), { recursive: true });
   writeFileSync(join(dir, ".pi", "permissions.json"), rules);
   const pi = {
-    on: vi.fn((_event: string, _fn: (...args: unknown[]) => unknown) => () => {}),
+    on: vi.fn(
+      (_event: string, _fn: (...args: unknown[]) => unknown) => () => {},
+    ),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
     events: { on: vi.fn(() => () => {}), emit: vi.fn() },
   };
   extension(pi as never);
-  const handler = pi.on.mock.calls.find(([event]) => event === "tool_call")?.[1] as
-    | ((event: unknown, ctx: unknown) => Promise<unknown>)
-    | undefined;
+  const handler = pi.on.mock.calls.find(
+    ([event]) => event === "tool_call",
+  )?.[1] as ((event: unknown, ctx: unknown) => Promise<unknown>) | undefined;
   if (!handler) throw new Error("missing tool_call handler");
   const ctx = {
     cwd: dir,
@@ -53,10 +57,12 @@ function setup(rules: string) {
 
 describe("S83: web tool tags are built-in and authoritative", () => {
   it("ignores user-configured tag overrides for web_search and web_fetch", async () => {
-    const { call } = setup(JSON.stringify({
-      tools: { web_search: "read", web_fetch: "search" },
-      rules: ["deny external *"],
-    }));
+    const { call } = setup(
+      JSON.stringify({
+        tools: { web_search: "read", web_fetch: "search" },
+        rules: ["deny external *"],
+      }),
+    );
 
     await expect(call("web_search", { query: "x" })).resolves.toEqual({
       block: true,

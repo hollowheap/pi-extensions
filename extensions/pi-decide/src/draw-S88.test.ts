@@ -14,12 +14,15 @@ import { createDecideTool } from "./decide.js";
 describe("S88: decide accepts one question and returns a structured result", () => {
   it("maps a choice answer to a label, confidence, and model", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
-    writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify({
-      model: "typesafe/jev-latest",
-      timeoutMs: 5000,
-      maxInputChars: 20000,
-      cacheTtlMs: 0,
-    }));
+    writeFileSync(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({
+        model: "typesafe/jev-latest",
+        timeoutMs: 5000,
+        maxInputChars: 20000,
+        cacheTtlMs: 0,
+      }),
+    );
     state.agentDir = dir;
     const classify = vi.fn(async () => ({
       api: "classifier",

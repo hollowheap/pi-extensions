@@ -25,8 +25,8 @@ describe("S132 agent config validation", () => {
       trusted: false,
     });
     expect(result.agents.map((a) => a.name)).toEqual(["good"]);
-    expect(
-      result.diagnostics.some((line) => line.includes('"name"')),
-    ).toBe(true);
+    expect(result.diagnostics.some((line) => line.includes('"name"'))).toBe(
+      true,
+    );
   });
 });

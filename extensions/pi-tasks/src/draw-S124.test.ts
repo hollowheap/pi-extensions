@@ -2,11 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  createTaskRecord,
-  readTaskMetadata,
-  taskLogPath,
-} from "./registry.js";
+import { createTaskRecord, readTaskMetadata, taskLogPath } from "./registry.js";
 
 describe("S124 live task output and dependencies", () => {
   it("reads streamed log output and preserves declared dependencies", async () => {

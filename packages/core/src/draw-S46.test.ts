@@ -15,7 +15,9 @@ describe("S46: question blocks are recognized only as standalone tagged blocks",
       "'''question\n## Pick\n1. A\n'''",
     );
 
-    const fenced = ["```", "'''question", "not a block", "'''", "```"].join("\n");
+    const fenced = ["```", "'''question", "not a block", "'''", "```"].join(
+      "\n",
+    );
     expect(scanTaggedBlocks(fenced)).toEqual([]);
   });
 });

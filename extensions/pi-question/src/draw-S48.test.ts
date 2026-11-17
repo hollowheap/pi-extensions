@@ -25,7 +25,11 @@ describe("S48: cancelling a dialog cancels the set with no follow-up", () => {
     const ctx = {
       hasUI: true,
       mode: "tui",
-      ui: { select: vi.fn().mockResolvedValue(undefined), input: vi.fn(), custom: vi.fn() },
+      ui: {
+        select: vi.fn().mockResolvedValue(undefined),
+        input: vi.fn(),
+        custom: vi.fn(),
+      },
     };
 
     await expect(

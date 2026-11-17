@@ -10,7 +10,11 @@ function createCtx(cwd: string, trusted: boolean) {
     sessionManager: {},
     hasUI: true,
     isProjectTrusted: () => trusted,
-    ui: { notify: vi.fn(), setStatus: vi.fn(), confirm: vi.fn(async () => true) },
+    ui: {
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      confirm: vi.fn(async () => true),
+    },
   };
 }
 

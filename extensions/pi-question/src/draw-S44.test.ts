@@ -3,7 +3,7 @@ import { askQuestion, createQuestionTool } from "./index.js";
 import { DONE_LABEL } from "./questions.js";
 
 function textOf(result: { content: unknown[] }): string {
-  return ((result.content[0] as { text?: string }) ?? {}).text ?? "";
+  return (result.content[0] as { text?: string })?.text ?? "";
 }
 
 describe("S44: interactive gating and TUI-versus-RPC dialog paths", () => {
@@ -40,13 +40,11 @@ describe("S44: interactive gating and TUI-versus-RPC dialog paths", () => {
     expect(textOf(noUiResult)).toContain("requires an interactive session");
     expect(noUi.ui.select).not.toHaveBeenCalled();
 
-    const custom = vi
-      .fn()
-      .mockResolvedValue({
-        selected: [],
-        writeIn: undefined,
-        cancelled: false,
-      });
+    const custom = vi.fn().mockResolvedValue({
+      selected: [],
+      writeIn: undefined,
+      cancelled: false,
+    });
     const tuiUi = { select: vi.fn(), input: vi.fn(), custom };
     const tuiAnswer = await askQuestion(
       { prompt: "Many", mode: "multi", options: ["A"], page: 1 },

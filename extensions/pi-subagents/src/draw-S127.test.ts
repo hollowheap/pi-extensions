@@ -60,10 +60,7 @@ describe("S127 pause and steering", () => {
     const { command, ctx } = setup();
     await command.handler("pause sub-1", ctx);
     expect(mocks.abortSubagent).toHaveBeenCalledWith("/tmp/s127", "sub-1");
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Paused subagent sub-1",
-      "info",
-    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Paused subagent sub-1", "info");
 
     await command.handler("steer sub-1 change direction", ctx);
     expect(mocks.sendSubagent).toHaveBeenCalledWith("/tmp/s127", "sub-1", {

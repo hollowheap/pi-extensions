@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { describe, expect, it } from "vitest";
 
 describe("S94 process-wide FIFO prompt queue", () => {
   it("runs blocking prompts one at a time in acquisition order", async () => {
@@ -17,8 +17,8 @@ describe("S94 process-wide FIFO prompt queue", () => {
   });
 
   it("rejects a nested acquisition instead of deadlocking", async () => {
-    await expect(
-      withPromptLock(() => withPromptLock(() => 1)),
-    ).rejects.toThrow(/nested/);
+    await expect(withPromptLock(() => withPromptLock(() => 1))).rejects.toThrow(
+      /nested/,
+    );
   });
 });

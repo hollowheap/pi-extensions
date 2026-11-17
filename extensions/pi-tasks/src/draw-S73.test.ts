@@ -14,7 +14,9 @@ describe("S73: pi-tasks registers only the direct task tool", () => {
     extension(pi as never);
 
     expect(pi.registerTool).toHaveBeenCalledTimes(1);
-    const tool = pi.registerTool.mock.calls[0]?.[0] as { name: string } | undefined;
+    const tool = pi.registerTool.mock.calls[0]?.[0] as
+      | { name: string }
+      | undefined;
     expect(tool?.name).toBe("task");
     expect("exposure" in (tool ?? {})).toBe(false);
     expect(pi.registerCommand).toHaveBeenCalledTimes(1);

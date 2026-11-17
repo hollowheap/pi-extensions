@@ -20,12 +20,15 @@ function textOf(result: unknown): string {
 describe("S89: an explicit provider/model is required with no fallback", () => {
   it("validates a configured model and reports an unconfigured classifier", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
-    writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify({
-      model: "typesafe/jev-latest",
-      timeoutMs: 2000,
-      maxInputChars: 1000,
-      cacheTtlMs: 0,
-    }));
+    writeFileSync(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({
+        model: "typesafe/jev-latest",
+        timeoutMs: 2000,
+        maxInputChars: 1000,
+        cacheTtlMs: 0,
+      }),
+    );
     const config = loadDecideConfig(dir);
     expect(config.model).toBe("typesafe/jev-latest");
     expect(config.diagnostics).toEqual([]);

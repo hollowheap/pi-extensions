@@ -20,7 +20,8 @@ describe("S75: pi-web registers exactly web_search and web_fetch", () => {
     );
     expect(names).toEqual(["web_search", "web_fetch"]);
     const [search, fetch] = pi.registerTool.mock.calls.map(
-      ([tool]) => tool as { parameters: { properties?: Record<string, unknown> } },
+      ([tool]) =>
+        tool as { parameters: { properties?: Record<string, unknown> } },
     );
     expect(search.parameters.properties).toHaveProperty("query");
     expect(fetch.parameters.properties).toHaveProperty("url");

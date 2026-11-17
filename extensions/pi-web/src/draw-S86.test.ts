@@ -25,7 +25,13 @@ describe("S86: fetch returns Markdown with bounded links and media metadata", ()
       truncated: false,
     });
     const tool = createWebFetchTool({ fetch });
-    const result = await tool.execute("1", { url: "https://example.com" }, undefined, undefined, {} as never);
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
     const details = result.details as {
       content: string;
       links: unknown[];
@@ -35,6 +41,9 @@ describe("S86: fetch returns Markdown with bounded links and media metadata", ()
     expect(typeof details.content).toBe("string");
     expect(details.links).toHaveLength(FETCH_MAX_LINKS);
     expect(details.media).toHaveLength(FETCH_MAX_MEDIA);
-    expect(details.media[0]).toMatchObject({ kind: "image", mimeType: "image/png" });
+    expect(details.media[0]).toMatchObject({
+      kind: "image",
+      mimeType: "image/png",
+    });
   });
 });

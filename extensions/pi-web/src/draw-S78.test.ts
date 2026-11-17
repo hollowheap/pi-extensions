@@ -19,8 +19,17 @@ describe("S78: web tools return normalized fields under enforced caps", () => {
       })),
     );
     const tool = createWebSearchTool({ search });
-    const result = await tool.execute("1", { query: "q" }, undefined, undefined, {} as never);
-    const details = result.details as { results: unknown[]; truncated: boolean };
+    const result = await tool.execute(
+      "1",
+      { query: "q" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const details = result.details as {
+      results: unknown[];
+      truncated: boolean;
+    };
     expect(details.results).toHaveLength(SEARCH_DEFAULT_RESULTS);
     expect(details.truncated).toBe(true);
     expect(SEARCH_MAX_RESULTS).toBe(10);
@@ -44,7 +53,13 @@ describe("S78: web tools return normalized fields under enforced caps", () => {
       truncated: false,
     });
     const tool = createWebFetchTool({ fetch });
-    const result = await tool.execute("1", { url: "https://example.com" }, undefined, undefined, {} as never);
+    const result = await tool.execute(
+      "1",
+      { url: "https://example.com" },
+      undefined,
+      undefined,
+      {} as never,
+    );
     const details = result.details as {
       content: string;
       links: unknown[];

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
 import {
   USAGE_ENTRY_TYPE,
   extractLatestUsage,
   restoreSessionUsage,
 } from "@hollowheap/core/usage";
+import { describe, expect, it } from "vitest";
 
 function entry(inputTokens: number, outputTokens: number, totalCost: number) {
   return {

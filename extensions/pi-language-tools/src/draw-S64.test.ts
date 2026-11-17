@@ -32,8 +32,12 @@ describe("S64: the stdio LSP client lazily pools one server per command/args/roo
     const firstDir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
     const first = getLspClient(options(firstDir, join(firstDir, "log.jsonl")));
     const secondDir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
-    const second = getLspClient(options(secondDir, join(secondDir, "log.jsonl")));
-    const third = getLspClient(options(secondDir, join(secondDir, "log.jsonl")));
+    const second = getLspClient(
+      options(secondDir, join(secondDir, "log.jsonl")),
+    );
+    const third = getLspClient(
+      options(secondDir, join(secondDir, "log.jsonl")),
+    );
 
     expect(first).not.toBe(second);
     expect(third).toBe(second);

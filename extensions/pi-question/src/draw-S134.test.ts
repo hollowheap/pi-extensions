@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  capAnswer,
-  evaluateCondition,
-  formatAnswers,
-} from "./questions.js";
+import { capAnswer, evaluateCondition, formatAnswers } from "./questions.js";
 
 describe("S134 conditional multi-page questions", () => {
   it("evaluates page conditions and formats answers within the answer cap", () => {

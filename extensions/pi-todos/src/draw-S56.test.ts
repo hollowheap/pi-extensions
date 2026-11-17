@@ -34,7 +34,9 @@ describe("S56: a changed todo set appends one entry and refreshes the widget", (
     const pi = createMockPi();
     extension(pi as never);
     const tool = pi.registerTool.mock.calls[0]?.[0] as {
-      execute: (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }>;
+      execute: (
+        ...args: unknown[]
+      ) => Promise<{ content: Array<{ text?: string }> }>;
     };
     const ctx = context();
 
@@ -56,6 +58,9 @@ describe("S56: a changed todo set appends one entry and refreshes the widget", (
       nextId: 3,
       updatedAt: expect.any(Number),
     });
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith("todos", expect.any(Function));
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+      "todos",
+      expect.any(Function),
+    );
   });
 });

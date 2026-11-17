@@ -10,7 +10,9 @@ describe("S63: pi-language-tools is a workspace extension exposing lang", () => 
     const root = JSON.parse(readFileSync(`${repoRoot}package.json`, "utf8"));
     const pkg = JSON.parse(readFileSync(`${pkgRoot}package.json`, "utf8"));
     const source = readFileSync(`${pkgRoot}src/tool.ts`, "utf8");
-    expect(root.pi.extensions).toContain("./extensions/pi-language-tools/index.ts");
+    expect(root.pi.extensions).toContain(
+      "./extensions/pi-language-tools/index.ts",
+    );
     expect(pkg.dependencies["@hollowheap/core"]).toBe("^0.3.0");
     expect(pkg.dependencies.typebox).toBeUndefined();
     expect(source).toContain('name: "lang"');

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyTodoCommand,
-  emptyTodoState,
-  formatTodoList,
-} from "./todos.js";
+import { applyTodoCommand, emptyTodoState, formatTodoList } from "./todos.js";
 
 describe("S123 edit, priority, bulk complete", () => {
   it("renames, sorts by priority, and completes every todo", () => {
@@ -11,8 +7,11 @@ describe("S123 edit, priority, bulk complete", () => {
       type: "create",
       texts: ["first", "second"],
     }).state;
-    state = applyTodoCommand(state, { type: "edit", id: 1, text: "renamed" })
-      .state;
+    state = applyTodoCommand(state, {
+      type: "edit",
+      id: 1,
+      text: "renamed",
+    }).state;
     state = applyTodoCommand(state, {
       type: "priority",
       id: 2,

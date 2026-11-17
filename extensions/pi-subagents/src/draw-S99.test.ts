@@ -6,7 +6,10 @@ import { discoverAgents } from "./agents.js";
 
 function writeAgent(dir: string, name: string, description: string): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "agent.md"), `---\nname: ${name}\ndescription: ${description}\n---\nbody\n`);
+  writeFileSync(
+    join(dir, "agent.md"),
+    `---\nname: ${name}\ndescription: ${description}\n---\nbody\n`,
+  );
 }
 
 describe("S99 agent discovery and trust", () => {

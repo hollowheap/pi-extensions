@@ -20,12 +20,15 @@ function textOf(result: unknown): string {
 describe("S90: input cap and capability failures are reported as text", () => {
   it("rejects oversize input before the classifier runs and reports stop reasons", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
-    writeFileSync(join(dir, CONFIG_FILE_NAME), JSON.stringify({
-      model: "typesafe/jev-latest",
-      timeoutMs: 5000,
-      maxInputChars: 3,
-      cacheTtlMs: 0,
-    }));
+    writeFileSync(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({
+        model: "typesafe/jev-latest",
+        timeoutMs: 5000,
+        maxInputChars: 3,
+        cacheTtlMs: 0,
+      }),
+    );
     state.agentDir = dir;
     const classify = vi.fn();
     const tool = createDecideTool();

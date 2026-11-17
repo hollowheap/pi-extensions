@@ -1,8 +1,8 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import { requestJsonl, startJsonlServer } from "@hollowheap/runtime/socket";
+import { describe, expect, it } from "vitest";
 
 describe("S95 detached child control socket", () => {
   it("routes a correlated JSONL request to the handler and back", async () => {

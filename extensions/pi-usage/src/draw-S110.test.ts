@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
   calculateDollarCost,
   resolveModelPricing,
@@ -8,6 +7,7 @@ import {
   setSessionBudgetCap,
   setSessionUsage,
 } from "@hollowheap/core/usage";
+import { describe, expect, it } from "vitest";
 
 describe("S110 dollar budget caps", () => {
   it("computes dollar cost from pricing and flags usage at the configured cap", () => {

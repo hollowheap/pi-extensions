@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import * as runtime from "@hollowheap/runtime";
+import { describe, expect, it } from "vitest";
 
 describe("S103 runtime package exports", () => {
   it("exports detached lifecycle, state, and socket primitives", () => {

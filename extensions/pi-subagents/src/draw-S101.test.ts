@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { registerMode } from "@hollowheap/core/modes";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./agents.js";
 import type { SubagentState } from "./state.js";
 import { createSubagentTool } from "./tool.js";
@@ -37,7 +37,9 @@ vi.mock("./config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config.js")>();
   return { ...actual, loadSubagentsConfig: mocks.loadSubagentsConfig };
 });
-vi.mock("./swap.js", () => ({ resolveSubagentModel: mocks.resolveSubagentModel }));
+vi.mock("./swap.js", () => ({
+  resolveSubagentModel: mocks.resolveSubagentModel,
+}));
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();

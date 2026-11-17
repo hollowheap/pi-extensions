@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
 import { registerMode } from "@hollowheap/core/modes";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
 for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);

@@ -19,7 +19,11 @@ function server(): ServerConfig {
 }
 
 function config(): LanguageToolsConfig {
-  return { servers: [server()], path: "/agent/language-tools.json", diagnostics: [] };
+  return {
+    servers: [server()],
+    path: "/agent/language-tools.json",
+    diagnostics: [],
+  };
 }
 
 function fakeClient(overrides: Partial<LspClient> = {}): LspClient {
@@ -37,13 +41,15 @@ describe("S66: lang supports navigation with 1-based positions and bounded resul
     writeFileSync(path, "const x = 1;\n");
 
     const client = fakeClient({
-      definition: vi.fn(async () => [{
-        uri: pathToFileURL(path).href,
-        range: {
-          start: { line: 1, character: 2 },
-          end: { line: 1, character: 5 },
+      definition: vi.fn(async () => [
+        {
+          uri: pathToFileURL(path).href,
+          range: {
+            start: { line: 1, character: 2 },
+            end: { line: 1, character: 5 },
+          },
         },
-      }]),
+      ]),
     });
     const getClient = vi.fn(() => client);
     const tool = createLangTool({
@@ -67,7 +73,9 @@ describe("S66: lang supports navigation with 1-based positions and bounded resul
       ctx as never,
     );
 
-    expect((result.content as Array<{ text: string }>)[0].text).toBe("src/a.ts:2:3");
+    expect((result.content as Array<{ text: string }>)[0].text).toBe(
+      "src/a.ts:2:3",
+    );
     expect(client.definition).toHaveBeenCalledWith(path, "typescript", {
       line: 1,
       character: 2,

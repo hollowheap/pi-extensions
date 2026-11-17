@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import { SessionCache } from "@hollowheap/core/session-cache";
+import { describe, expect, it, vi } from "vitest";
 
 describe("S91 per-session decide result cache", () => {
   it("expires entries after their TTL and evicts the least-recently-used key", () => {

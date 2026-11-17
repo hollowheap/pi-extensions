@@ -15,10 +15,12 @@ describe("S79: provider selection auto-detects keys and falls through", () => {
     expect(FETCH_ORDER).toEqual(["exa", "tavily", "raw"]);
     expect(PROVIDER_TIMEOUT_MS).toBe(15_000);
     expect(hasProviderKey("raw", {})).toBe(true);
-    expect(resolveSearchOrder(["firecrawl", "exa", "exa", "unknown"], {
-      EXA_API_KEY: "x",
-      FIRECRAWL_API_KEY: "z",
-    })).toEqual(["firecrawl", "exa"]);
+    expect(
+      resolveSearchOrder(["firecrawl", "exa", "exa", "unknown"], {
+        EXA_API_KEY: "x",
+        FIRECRAWL_API_KEY: "z",
+      }),
+    ).toEqual(["firecrawl", "exa"]);
     expect(resolveFetchOrder(undefined, {})).toEqual(["raw"]);
 
     const seen: string[] = [];

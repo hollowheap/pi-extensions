@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
 function createMockPi() {
-  const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
+  const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
+    {};
   return {
-    on: vi.fn((event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
-      handlers[event] = handler;
-      return () => {};
-    }),
+    on: vi.fn(
+      (event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
+        handlers[event] = handler;
+        return () => {};
+      },
+    ),
     events: { on: vi.fn(), emit: vi.fn() },
     registerCommand: vi.fn(),
     appendEntry: vi.fn(),
@@ -54,6 +57,9 @@ describe("S53: todo state is restored from the branch-local custom entry", () =>
 
     pi.handlers.session_start({}, ctx);
 
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith("todos", expect.any(Function));
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+      "todos",
+      expect.any(Function),
+    );
   });
 });

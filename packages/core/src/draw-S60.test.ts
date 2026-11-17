@@ -3,7 +3,14 @@ import { scanTaggedBlocks } from "./blocks.js";
 
 describe("S60: malformed input never throws", () => {
   it("tolerates hostile and incomplete markdown", () => {
-    const inputs = ["", "'''", "'''question", "'''question\n", "```\n'''", "\u0000'''question\n'''"];
+    const inputs = [
+      "",
+      "'''",
+      "'''question",
+      "'''question\n",
+      "```\n'''",
+      "\u0000'''question\n'''",
+    ];
     for (const input of inputs) {
       expect(() => scanTaggedBlocks(input)).not.toThrow();
     }

@@ -25,7 +25,9 @@ describe("S113 model pre-flight swap", () => {
       agent,
       {
         model: "prov/fallback",
-        modelRegistry: { getAvailable: () => [{ provider: "prov", id: "available" }] },
+        modelRegistry: {
+          getAvailable: () => [{ provider: "prov", id: "available" }],
+        },
         ui: { select },
       },
       {},

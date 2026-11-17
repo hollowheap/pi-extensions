@@ -1,8 +1,8 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
 import { getBorderChars } from "@hollowheap/core/border";
+import { describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./keymap.js";
 
@@ -12,7 +12,10 @@ describe("S119 prompt prefix and rounded corners", () => {
     writeFileSync(join(dir, "modal.json"), JSON.stringify({ promptChar: "$" }));
     const config = loadModalConfig(dir);
     const editor = new ModalEditor(
-      { requestRender: vi.fn(), terminal: { rows: 24, columns: 80, write: vi.fn() } } as never,
+      {
+        requestRender: vi.fn(),
+        terminal: { rows: 24, columns: 80, write: vi.fn() },
+      } as never,
       { borderColor: (s: string) => s, selectList: {} } as never,
       { matches: vi.fn(() => false) } as never,
       config,

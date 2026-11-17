@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import {
   USAGE_ENTRY_TYPE,
   emptyUsage,
   extractLatestUsage,
   recordTurnUsage,
 } from "@hollowheap/core/usage";
+import { describe, expect, it } from "vitest";
 
 describe("S126 per-model, cache, and subagent usage", () => {
   it("tracks cache tokens per model, warns at 80% of cap, and reads subagent usage", () => {
