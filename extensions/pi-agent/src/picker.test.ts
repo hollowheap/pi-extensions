@@ -76,6 +76,19 @@ describe("showAgentPicker", () => {
     await expect(result).resolves.toBe("engineer");
   });
 
+  it("feeds bracketed-paste payload into the filter query", async () => {
+    const env = pickerContext();
+    const result = showAgentPicker(env.ctx as never, agents);
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    env.component()?.handleInput("\x1b[200~eng\x1b[201~");
+    const rendered = env.component()?.render(60).join("\n") ?? "";
+    env.component()?.handleInput("\r");
+
+    await expect(result).resolves.toBe("engineer");
+    expect(rendered).not.toContain("scout");
+  });
+
   it("returns undefined when cancelled", async () => {
     const env = pickerContext();
     const result = showAgentPicker(env.ctx as never, agents);

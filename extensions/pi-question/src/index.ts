@@ -44,6 +44,29 @@ function printableKey(data: string): string | undefined {
   return code >= 32 && code !== 127 ? data : undefined;
 }
 
+function insertAtCaret(
+  text: string,
+  caret: number,
+  value: string,
+): { text: string; caret: number } {
+  const chars = Array.from(text);
+  const inserted = Array.from(value);
+  return {
+    text: chars.slice(0, caret).concat(inserted, chars.slice(caret)).join(""),
+    caret: caret + inserted.length,
+  };
+}
+
+function deleteBeforeCaret(
+  text: string,
+  caret: number,
+): { text: string; caret: number } {
+  if (caret <= 0) return { text, caret };
+  const chars = Array.from(text);
+  chars.splice(caret - 1, 1);
+  return { text: chars.join(""), caret: caret - 1 };
+}
+
 export interface QuestionDialogOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -53,9 +76,11 @@ function isAbortOrTimeout(error: unknown, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   if (error instanceof Error) {
     if (error.name === "AbortError") return true;
+    const message = error.message.toLowerCase();
     if (
-      error.message.includes("aborted") ||
-      error.message.includes("timeout")
+      message.includes("aborted") ||
+      message.includes("timeout") ||
+      message.includes("timed out")
     ) {
       return true;
     }
@@ -83,6 +108,26 @@ function watchAbort(
   return () => signal.removeEventListener("abort", onAbort);
 }
 
+function deriveDialogSignal(lockOptions: {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}): { signal: AbortSignal; stop: () => void } {
+  const controller = new AbortController();
+  const stopWatching = watchAbort(lockOptions.signal, () => controller.abort());
+  const { timeoutMs } = lockOptions;
+  const timer =
+    timeoutMs !== undefined && Number.isFinite(timeoutMs)
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+  return {
+    signal: controller.signal,
+    stop: () => {
+      stopWatching();
+      if (timer !== undefined) clearTimeout(timer);
+    },
+  };
+}
+
 async function askMulti(
   question: Question,
   ctx: ExtensionContext,
@@ -105,19 +150,22 @@ async function askMulti(
               let editing = false;
               let writeIn = "";
               let draft = "";
+              let caret = 0;
               let finished = false;
 
               const refresh = () => tui.requestRender();
 
+              const dialogAbort = deriveDialogSignal(lockOptions);
               let stopWatching: () => void = () => {};
               const finish = (result: MultiResult) => {
                 if (finished) return;
                 finished = true;
+                dialogAbort.stop();
                 stopWatching();
                 done(result);
               };
 
-              stopWatching = watchAbort(lockOptions.signal, () =>
+              stopWatching = watchAbort(dialogAbort.signal, () =>
                 finish({ selected: [], writeIn: undefined, cancelled: true }),
               );
 
@@ -135,6 +183,7 @@ async function askMulti(
                 editing = true;
                 cursor = writeInRow;
                 draft = writeIn;
+                caret = Array.from(draft).length;
                 refresh();
               };
 
@@ -147,8 +196,11 @@ async function askMulti(
               const handleInput = (data: string) => {
                 if (editing) {
                   if (matchesKey(data, Key.escape)) {
-                    editing = false;
-                    refresh();
+                    finish({
+                      selected: [],
+                      writeIn: undefined,
+                      cancelled: true,
+                    });
                     return;
                   }
                   if (matchesKey(data, Key.enter)) {
@@ -158,14 +210,28 @@ async function askMulti(
                     refresh();
                     return;
                   }
+                  if (matchesKey(data, Key.left)) {
+                    caret = Math.max(0, caret - 1);
+                    refresh();
+                    return;
+                  }
+                  if (matchesKey(data, Key.right)) {
+                    caret = Math.min(Array.from(draft).length, caret + 1);
+                    refresh();
+                    return;
+                  }
                   if (matchesKey(data, Key.backspace)) {
-                    draft = Array.from(draft).slice(0, -1).join("");
+                    const next = deleteBeforeCaret(draft, caret);
+                    draft = next.text;
+                    caret = next.caret;
                     refresh();
                     return;
                   }
                   const printable = printableKey(data);
                   if (printable !== undefined) {
-                    draft = capAnswer(draft + printable);
+                    const next = insertAtCaret(draft, caret, printable);
+                    draft = capAnswer(next.text);
+                    caret = Math.min(next.caret, Array.from(draft).length);
                     refresh();
                   }
                   return;
@@ -208,7 +274,12 @@ async function askMulti(
                 const pointer = cursor === writeInRow ? ">" : " ";
                 const suffix = writeIn.length === 0 ? "" : `: ${writeIn}`;
                 lines.push(`${pointer} [ ] ${WRITE_IN_LABEL}${suffix}`);
-                if (editing) lines.push(`❯ ${draft}█`);
+                if (editing) {
+                  const chars = Array.from(draft);
+                  lines.push(
+                    `❯ ${chars.slice(0, caret).join("")}█${chars.slice(caret).join("")}`,
+                  );
+                }
                 lines.push(`${cursor === doneRow ? ">" : " "} Done`);
                 lines.push("Space toggles • Enter selects • Esc cancels");
                 const body = new Text(lines.join("\n"), 0, 0).render(
@@ -312,19 +383,29 @@ async function askWriteIn(
           ctx.ui.custom<string | undefined>(
             (tui, theme, _keybindings, done) => {
               let draft = "";
+              let caret = 0;
               let settled = false;
               let stopWatching: () => void = () => {};
 
+              const dialogAbort = deriveDialogSignal(lockOptions);
               const finish = (value: string | undefined): void => {
                 if (settled) return;
                 settled = true;
+                dialogAbort.stop();
                 stopWatching();
                 done(value);
               };
 
-              stopWatching = watchAbort(lockOptions.signal, () =>
+              stopWatching = watchAbort(dialogAbort.signal, () =>
                 finish(undefined),
               );
+
+              const insert = (value: string): void => {
+                const next = insertAtCaret(draft, caret, value);
+                draft = next.text;
+                caret = next.caret;
+                tui.requestRender();
+              };
 
               const border = (val: string) =>
                 typeof theme?.fg === "function" ? theme.fg("border", val) : val;
@@ -370,10 +451,11 @@ async function askWriteIn(
                     hintLabel +
                     border(`${"─".repeat(hintFill)}╯`);
 
+                  const chars = Array.from(draft);
                   const fullText =
                     draft.length === 0 && placeholder
                       ? `${fg("muted", placeholder)}█`
-                      : `${draft}█`;
+                      : `${chars.slice(0, caret).join("")}█${chars.slice(caret).join("")}`;
                   const wrappedLines = new Text(fullText, 0, 0).render(
                     innerWidth,
                   );
@@ -412,23 +494,33 @@ async function askWriteIn(
                     matchesKey(data, "shift+enter") ||
                     matchesKey(data, "alt+enter")
                   ) {
-                    draft += "\n";
-                    tui.requestRender();
+                    insert("\n");
                     return;
                   }
                   if (matchesKey(data, "enter")) {
                     finish(draft);
                     return;
                   }
+                  if (matchesKey(data, Key.left)) {
+                    caret = Math.max(0, caret - 1);
+                    tui.requestRender();
+                    return;
+                  }
+                  if (matchesKey(data, Key.right)) {
+                    caret = Math.min(Array.from(draft).length, caret + 1);
+                    tui.requestRender();
+                    return;
+                  }
                   if (matchesKey(data, "backspace")) {
-                    draft = Array.from(draft).slice(0, -1).join("");
+                    const next = deleteBeforeCaret(draft, caret);
+                    draft = next.text;
+                    caret = next.caret;
                     tui.requestRender();
                     return;
                   }
                   const kitty = decodeKittyPrintable(data);
                   if (kitty !== undefined) {
-                    draft += kitty;
-                    tui.requestRender();
+                    insert(kitty);
                     return;
                   }
                   if (!data.startsWith("\x1b")) {
@@ -436,8 +528,7 @@ async function askWriteIn(
                       .filter((c) => c >= " " || c === "\n")
                       .join("");
                     if (validChars.length > 0) {
-                      draft += validChars;
-                      tui.requestRender();
+                      insert(validChars);
                       return;
                     }
                   }

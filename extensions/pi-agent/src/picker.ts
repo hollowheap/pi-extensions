@@ -30,6 +30,17 @@ function selectTheme(theme: Theme): SelectListTheme {
 function printableKey(data: string): string | undefined {
   const kitty = decodeKittyPrintable(data);
   if (kitty !== undefined) return kitty;
+  if (data.includes("\x1b[200~") || data.includes("\x1b[201~")) {
+    const payload = Array.from(
+      data.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", ""),
+    )
+      .filter((char) => {
+        const code = char.charCodeAt(0);
+        return code >= 32 && code !== 127;
+      })
+      .join("");
+    return payload.length === 0 ? undefined : payload;
+  }
   if (data.length !== 1) return undefined;
   const code = data.charCodeAt(0);
   return code >= 32 && code !== 127 ? data : undefined;

@@ -69,6 +69,45 @@ function firstText(result: { content: unknown[] }): string {
   return item?.text ?? "";
 }
 
+interface CustomComponent {
+  render: (width: number) => string[];
+  handleInput: (data: string) => void;
+}
+
+function customDialog() {
+  let component: CustomComponent | undefined;
+  let done = vi.fn((_value: unknown) => {});
+  const custom = vi.fn(
+    (
+      factory: (
+        tui: unknown,
+        theme: unknown,
+        keys: unknown,
+        finish: (value: unknown) => void,
+      ) => CustomComponent,
+    ) =>
+      new Promise<unknown>((resolve) => {
+        done = vi.fn((value: unknown) => resolve(value));
+        component = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: () => (value: string) => value,
+            bold: (value: string) => value,
+          },
+          {},
+          done,
+        );
+      }),
+  );
+  return { custom, component: () => component, done: () => done };
+}
+
+function customContext(custom: ReturnType<typeof vi.fn>) {
+  return context(vi.fn(), vi.fn(), {
+    ui: { select: vi.fn(), input: vi.fn(), custom },
+  });
+}
+
 describe("pi-question extension", () => {
   it("registers question tool with codemode exposure and prompt guidelines", () => {
     const { pi } = createMockPi();
@@ -381,6 +420,128 @@ describe("pi-question extension", () => {
       cancelled: true,
     });
     await pending;
+  });
+
+  it("treats a prompt-lock timeout message as cancellation", async () => {
+    const select = vi
+      .fn()
+      .mockRejectedValue(new Error("prompt lock: timed out"));
+    const ctx = context(select);
+
+    const result = await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+      ctx as never,
+    );
+
+    expect(result).toBeUndefined();
+  });
+
+  it("dismisses a custom multi-select dialog on timeout", async () => {
+    const env = customDialog();
+    const ctx = customContext(env.custom);
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A", "B"], page: 1 },
+      ctx as never,
+      { timeoutMs: 5 },
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    await vi.waitFor(() =>
+      expect(env.done()).toHaveBeenCalledWith({
+        selected: [],
+        writeIn: undefined,
+        cancelled: true,
+      }),
+    );
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it("dismisses a custom text dialog on timeout", async () => {
+    const env = customDialog();
+    const ctx = customContext(env.custom);
+    const pending = askSingleQuestion(
+      { prompt: "Free", mode: "free", options: [], page: 1 },
+      ctx as never,
+      { timeoutMs: 5 },
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    await vi.waitFor(() => expect(env.done()).toHaveBeenCalledWith(undefined));
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it("cancels the flow when Escape is pressed while editing a write-in", async () => {
+    const env = customDialog();
+    const ctx = customContext(env.custom);
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A"], page: 1 },
+      ctx as never,
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component();
+    if (!component) throw new Error("component is undefined");
+    component.handleInput("\x1b[B");
+    component.handleInput(" ");
+    component.handleInput("\x1b");
+
+    expect(env.done()).toHaveBeenCalledWith({
+      selected: [],
+      writeIn: undefined,
+      cancelled: true,
+    });
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it("moves the caret in a multi-select write-in editor", async () => {
+    const env = customDialog();
+    const ctx = customContext(env.custom);
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A"], page: 1 },
+      ctx as never,
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component();
+    if (!component) throw new Error("component is undefined");
+    component.handleInput("\x1b[B");
+    component.handleInput(" ");
+    for (const char of "abc") component.handleInput(char);
+    component.handleInput("\x1b[D");
+    component.handleInput("\x1b[D");
+    component.handleInput("\x7f");
+    component.handleInput("\x1b[C");
+    component.handleInput("X");
+    component.handleInput("\r");
+    component.handleInput("\r");
+
+    await expect(pending).resolves.toEqual({
+      mode: "multi",
+      selected: [],
+      writeIn: "bXc",
+    });
+  });
+
+  it("moves the caret in a custom text editor", async () => {
+    const env = customDialog();
+    const ctx = customContext(env.custom);
+    const pending = askSingleQuestion(
+      { prompt: "Free", mode: "free", options: [], page: 1 },
+      ctx as never,
+    );
+
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component();
+    if (!component) throw new Error("component is undefined");
+    for (const char of "abc") component.handleInput(char);
+    component.handleInput("\x1b[D");
+    component.handleInput("\x1b[D");
+    component.handleInput("\x7f");
+    component.handleInput("\x1b[C");
+    component.handleInput("X");
+    component.handleInput("\r");
+
+    await expect(pending).resolves.toEqual({ mode: "free", value: "bXc" });
   });
 
   it("restores count and last question/answer on session_start and session_tree", async () => {

@@ -91,6 +91,45 @@ describe("showAgentSwitchPopup", () => {
     expect(done).toHaveBeenCalled();
   });
 
+  it("dismisses on Kitty CSI-u activations", async () => {
+    type FactoryFn = (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: () => void,
+    ) => {
+      render: (width: number) => string[];
+      handleInput: (data: string) => void;
+    };
+    let capturedFactory: FactoryFn | undefined;
+    const custom = vi.fn((factory: FactoryFn) => {
+      capturedFactory = factory;
+      return Promise.resolve();
+    });
+    const ctx = {
+      mode: "tui",
+      ui: { custom },
+    } as unknown as ExtensionContext;
+
+    await showAgentSwitchPopup(sampleAgent, ctx);
+    if (!capturedFactory) throw new Error("capturedFactory is undefined");
+    const done = vi.fn();
+    const component = capturedFactory(
+      { requestRender: vi.fn() },
+      {
+        fg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+      },
+      {},
+      done,
+    );
+
+    for (const data of ["\x1b[13u", "\x1b[32u", "\x1b[27u", "\x1b[99;5u"]) {
+      component.handleInput(data);
+    }
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to confirm in dialog mode", async () => {
     const confirm = vi.fn().mockResolvedValue(true);
     const ctx = {

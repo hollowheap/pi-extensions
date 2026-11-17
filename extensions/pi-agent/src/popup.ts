@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { session } from "@hollowheap/core/state";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import type { AgentConfig } from "./agents.js";
@@ -50,10 +51,10 @@ export async function showAgentSwitchPopup(
           invalidate(): void {},
           handleInput(data: string): void {
             if (
-              data === "\r" ||
-              data === "\n" ||
-              data === " " ||
-              data === "\x1b"
+              matchesKey(data, Key.enter) ||
+              matchesKey(data, Key.space) ||
+              matchesKey(data, Key.escape) ||
+              matchesKey(data, Key.ctrl("c"))
             ) {
               finish();
             }
