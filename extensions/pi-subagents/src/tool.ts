@@ -9,6 +9,10 @@ import {
   keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import {
+  type RosterAgent,
+  formatAgentRosterSection,
+} from "@hollowheap/core/agents";
 import { isPermissionError } from "@hollowheap/core/config";
 import { truncateText } from "@hollowheap/core/format";
 import { resolveModeName } from "@hollowheap/core/modes";
@@ -62,7 +66,35 @@ interface ChildSpec {
   env?: NodeJS.ProcessEnv;
 }
 
-function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
+function resolveChildAgentRoster(
+  agent: AgentConfig,
+  discovery: { agents: readonly AgentConfig[] },
+  sessionAgents: readonly AgentConfig[],
+  notify?: (message: string) => void,
+): string {
+  const names = agent.agents;
+  if (names === undefined || names.length === 0) return "";
+  const known = new Map<string, AgentConfig>();
+  for (const candidate of [...sessionAgents, ...discovery.agents]) {
+    known.set(candidate.name.toLowerCase(), candidate);
+  }
+  const roster: RosterAgent[] = [];
+  for (const requested of names) {
+    const match = known.get(requested.toLowerCase());
+    if (match !== undefined) {
+      roster.push({ name: match.name, description: match.description });
+    } else {
+      notify?.(`pi-subagents: unknown agent "${requested}" in agents roster`);
+    }
+  }
+  return formatAgentRosterSection(roster);
+}
+
+function piChildSpec(
+  agent: AgentConfig,
+  sessionPath: string,
+  rosterSection = "",
+): ChildSpec {
   const require = createRequire(import.meta.url);
   let policyDir: string;
   try {
@@ -80,7 +112,9 @@ function piChildSpec(agent: AgentConfig, sessionPath: string): ChildSpec {
     "-e",
     fileURLToPath(new URL("../child.ts", import.meta.url)),
     "--append-system-prompt",
-    agent.systemPrompt,
+    rosterSection === ""
+      ? agent.systemPrompt
+      : `${agent.systemPrompt}\n\n${rosterSection}`,
     "--session",
     sessionPath,
   ];
@@ -101,9 +135,10 @@ function childSpec(
   task: string,
   sessionPath: string,
   config: SubagentsConfig,
+  rosterSection = "",
 ): ChildSpec {
   if (agent.harness === undefined || agent.harness === "pi") {
-    return piChildSpec(agent, sessionPath);
+    return piChildSpec(agent, sessionPath, rosterSection);
   }
   const harness = config.harnesses[agent.harness];
   if (harness === undefined) {
@@ -591,7 +626,19 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             "subagents",
             `${id}.session.jsonl`,
           );
-          const spec = childSpec(effectiveAgent, task, sessionPath, config);
+          const rosterSection = resolveChildAgentRoster(
+            effectiveAgent,
+            discovery,
+            sessionAgents,
+            (message) => ctx.ui?.notify?.(message, "warning"),
+          );
+          const spec = childSpec(
+            effectiveAgent,
+            task,
+            sessionPath,
+            config,
+            rosterSection,
+          );
           const parentMode = ctx.sessionManager
             ? session(ctx.sessionManager).mode
             : undefined;
@@ -810,11 +857,18 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             resolvedModel !== undefined
               ? { ...resumeAgent, model: resolvedModel }
               : resumeAgent;
+          const rosterSection = resolveChildAgentRoster(
+            effectiveAgent,
+            discovery,
+            sessionAgents,
+            (message) => ctx.ui?.notify?.(message, "warning"),
+          );
           const spec = childSpec(
             effectiveAgent,
             state.task,
             sessionPath,
             config,
+            rosterSection,
           );
           const parentMode = ctx.sessionManager
             ? session(ctx.sessionManager).mode

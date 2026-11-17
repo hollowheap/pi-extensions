@@ -5,6 +5,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { renderAgentRoster } from "@hollowheap/core/agents";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
@@ -217,6 +218,24 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         agentDir: getAgentDir(),
         trusted,
       });
+
+    const resolveRosterAgent = (
+      cwd: string,
+      trusted: boolean,
+    ): AgentConfig | undefined => {
+      if (activeAgent !== undefined) return activeAgent;
+      const configured = loadAgentConfig({
+        agentDir: getAgentDir(),
+        cwd,
+        trusted,
+      }).default;
+      if (configured === undefined) return undefined;
+      const lower = configured.toLowerCase();
+      if (lower === "default" || lower === "none") return undefined;
+      return resolveAgentDiscovery(cwd, trusted).agents.find(
+        (candidate) => candidate.name.toLowerCase() === lower,
+      );
+    };
 
     const applyAgent = async (
       agent: AgentConfig,
@@ -679,6 +698,33 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             allowed.has(skill.name.toLowerCase()),
           );
       }
+
+      const sections = event.systemPromptOptions.sections;
+      if (!sections || sections.agents?.trim()) return;
+      const cwd = ctx?.cwd ?? lastCwd;
+      const trusted = ctx?.isProjectTrusted?.() ?? lastTrusted;
+      const rosterAgent = resolveRosterAgent(cwd, trusted);
+      const names = rosterAgent?.agents;
+      if (names === undefined || names.length === 0) return;
+
+      const known = new Map<string, AgentConfig>();
+      for (const candidate of resolveAgentDiscovery(cwd, trusted).agents) {
+        known.set(candidate.name.toLowerCase(), candidate);
+      }
+      const roster: Array<{ name: string; description: string }> = [];
+      for (const requested of names) {
+        const match = known.get(requested.toLowerCase());
+        if (match !== undefined) {
+          roster.push({ name: match.name, description: match.description });
+        } else {
+          ctx?.ui?.notify?.(
+            `pi-agent: unknown agent "${sanitizeTerminalText(requested)}" in agents roster`,
+            "warning",
+          );
+        }
+      }
+      const text = renderAgentRoster(roster);
+      if (text !== "") sections.agents = text;
     });
 
     const agentCommand = {
@@ -691,6 +737,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           {
             value: "default",
             label: "default",
+            description: "Reset to default agent",
+          },
+          {
+            value: "reset",
+            label: "reset",
             description: "Reset to default agent",
           },
           ...agents.map((a) => ({

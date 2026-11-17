@@ -469,6 +469,62 @@ describe("subagent tool", () => {
     expect(detailsOf(result).status).toBe("running");
   });
 
+  it("appends the agents roster to the child system prompt and skips unknown names", async () => {
+    const researcher: AgentConfig = {
+      name: "researcher",
+      description: "Deep research",
+      systemPrompt: "You research.",
+      source: "user",
+    };
+    mocks.discoverAgents.mockReturnValue({ agents: [agent, researcher] });
+    const notify = vi.fn();
+    const tool = createSubagentTool({
+      getSessionAgents: () => [
+        { ...agent, name: "lead", agents: ["scout", "researcher", "ghost"] },
+      ],
+    });
+
+    await tool.execute(
+      "1",
+      { action: "start", agent: "lead", task: "find" },
+      undefined,
+      undefined,
+      { ...ctx, ui: { notify } } as never,
+    );
+
+    const spec = mocks.startSubagent.mock.calls[0]?.[0] as {
+      args: string[];
+    };
+    const prompt = spec.args[spec.args.indexOf("--append-system-prompt") + 1];
+    expect(prompt.startsWith("You are a scout.")).toBe(true);
+    expect(prompt).toContain("<agents>");
+    expect(prompt).toContain("- scout: Fast recon");
+    expect(prompt).toContain("- researcher: Deep research");
+    expect(prompt).not.toContain("ghost");
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining('unknown agent "ghost"'),
+      "warning",
+    );
+  });
+
+  it("keeps the body as the whole child prompt when the agent has no roster", async () => {
+    const tool = createTool();
+    await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    const spec = mocks.startSubagent.mock.calls[0]?.[0] as {
+      args: string[];
+    };
+    const prompt = spec.args[spec.args.indexOf("--append-system-prompt") + 1];
+    expect(prompt).toBe("You are a scout.");
+    expect(prompt).not.toContain("<agents>");
+  });
+
   it("passes agent effort as the child thinking level", async () => {
     const tool = createSubagentTool({
       getSessionAgents: () => [

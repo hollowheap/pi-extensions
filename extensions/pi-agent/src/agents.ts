@@ -9,6 +9,7 @@ export interface AgentConfig {
   description: string;
   tools?: string[];
   skills?: string[];
+  agents?: string[];
   model?: string;
   thinking?: string;
   mode?: string;
@@ -34,6 +35,7 @@ type AgentFrontmatter = {
   description?: unknown;
   tools?: unknown;
   skills?: unknown;
+  agents?: unknown;
   model?: unknown;
   thinking?: unknown;
   mode?: unknown;
@@ -119,6 +121,7 @@ function loadDirectory(
       }
       const tools = parseList(frontmatter.tools);
       const skills = parseList(frontmatter.skills);
+      const agentRoster = parseList(frontmatter.agents);
       const cleanModel =
         typeof frontmatter.model === "string"
           ? sanitizeTerminalText(frontmatter.model).trim()
@@ -142,6 +145,7 @@ function loadDirectory(
         description: cleanDescription,
         ...(tools ? { tools } : {}),
         ...(skills ? { skills } : {}),
+        ...(agentRoster ? { agents: agentRoster } : {}),
         ...(modelRef.model !== "" ? { model: modelRef.model } : {}),
         ...(cleanThinking !== "" ? { thinking: cleanThinking } : {}),
         ...(cleanMode !== "" ? { mode: cleanMode } : {}),

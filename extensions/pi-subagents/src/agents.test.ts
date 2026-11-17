@@ -50,6 +50,30 @@ describe("discoverAgents", () => {
     expect(result.projectAgentsDir).toBeUndefined();
   });
 
+  it("parses the agents roster from a comma string or a YAML list", () => {
+    const base = root();
+    const agentDir = join(base, "agent");
+    writeAgent(
+      join(agentDir, "agents"),
+      "lead.md",
+      "name: lead\ndescription: Lead\nagents: scout, researcher",
+    );
+    writeAgent(
+      join(agentDir, "agents"),
+      "list.md",
+      "name: list\ndescription: List\nagents:\n  - scout\n  - worker",
+    );
+
+    const result = discoverAgents({
+      cwd: join(base, "project"),
+      agentDir,
+      trusted: false,
+    });
+    const byName = new Map(result.agents.map((a) => [a.name, a]));
+    expect(byName.get("lead")?.agents).toEqual(["scout", "researcher"]);
+    expect(byName.get("list")?.agents).toEqual(["scout", "worker"]);
+  });
+
   it("splits a provider/id:<thinking> model and lets the suffix win", () => {
     const base = root();
     const agentDir = join(base, "agent");

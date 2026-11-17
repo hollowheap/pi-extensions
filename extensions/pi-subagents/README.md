@@ -55,6 +55,7 @@ User agents live in `<agentDir>/agents/*.md`. Project agents live in the nearest
 name: scout
 description: Fast codebase recon
 tools: read, grep, find, ls
+agents: researcher, worker, code-reviewer
 model: provider/model-id
 thinking: medium
 harness: claude
@@ -63,7 +64,19 @@ harness: claude
 You are a read-only scout. Return compressed findings.
 ```
 
-`tools` accepts a comma-separated string or a YAML list. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
+`tools` and `agents` accept a comma-separated string or a YAML list. `agents` publishes a roster to the child's system prompt as an `<agents>` section:
+
+```text
+<agents>
+Available subagents. Spawn one with the `subagent` tool using
+{ action: "start", agent: "<name>", task: "<task>" }.
+- researcher: Deep web research
+- worker: Implementation
+- code-reviewer: Review and verification
+</agents>
+```
+
+Names resolve against user, project (when trusted), and session agents; unknown names are skipped with a warning. Children do not load `pi-agent`, so this appended section is the only way they see the roster. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
 
 ### Session definitions
 

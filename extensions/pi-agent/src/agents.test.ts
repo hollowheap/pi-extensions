@@ -62,6 +62,46 @@ describe("discoverAgents in pi-agent", () => {
     });
   });
 
+  it("parses the agents roster from a comma string or a YAML list", () => {
+    writeAgent(
+      join(agentDir, "agents"),
+      "lead.md",
+      "name: lead\ndescription: Lead\nagents: scout, researcher, worker",
+    );
+    writeAgent(
+      join(agentDir, "agents"),
+      "list.md",
+      "name: list\ndescription: List\nagents:\n  - scout\n  - code-reviewer",
+    );
+
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+    const byName = new Map(result.agents.map((a) => [a.name, a]));
+    expect(byName.get("lead")?.agents).toEqual([
+      "scout",
+      "researcher",
+      "worker",
+    ]);
+    expect(byName.get("list")?.agents).toEqual(["scout", "code-reviewer"]);
+  });
+
+  it("omits agents when the field is empty or absent", () => {
+    writeAgent(
+      join(agentDir, "agents"),
+      "plain.md",
+      "name: plain\ndescription: Plain\nagents: ''",
+    );
+    const result = discoverAgents({
+      cwd: join(baseDir, "project"),
+      agentDir,
+      trusted: false,
+    });
+    expect(result.agents[0]?.agents).toBeUndefined();
+  });
+
   it("splits a provider/id:<thinking> model into model and thinking", () => {
     writeAgent(
       join(agentDir, "agents"),

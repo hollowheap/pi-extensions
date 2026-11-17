@@ -9,6 +9,7 @@ export interface AgentConfig {
   name: string;
   description: string;
   tools?: string[];
+  agents?: string[];
   model?: string;
   thinking?: string;
   mode?: string;
@@ -35,6 +36,7 @@ type AgentFrontmatter = {
   name?: unknown;
   description?: unknown;
   tools?: unknown;
+  agents?: unknown;
   model?: unknown;
   thinking?: unknown;
   mode?: unknown;
@@ -42,17 +44,17 @@ type AgentFrontmatter = {
   harness?: unknown;
 };
 
-function parseTools(value: unknown): string[] | undefined {
+function parseList(value: unknown): string[] | undefined {
   const values = Array.isArray(value)
     ? value
     : typeof value === "string"
       ? value.split(",")
       : [];
-  const tools = values
+  const items = values
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
-  return tools.length > 0 ? tools : undefined;
+  return items.length > 0 ? items : undefined;
 }
 
 function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
@@ -79,7 +81,8 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
       ) {
         continue;
       }
-      const tools = parseTools(frontmatter.tools);
+      const tools = parseList(frontmatter.tools);
+      const agentRoster = parseList(frontmatter.agents);
       const modelRef =
         typeof frontmatter.model === "string" && frontmatter.model.trim() !== ""
           ? splitModelThinking(frontmatter.model)
@@ -94,6 +97,7 @@ function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
         name: frontmatter.name.trim(),
         description: frontmatter.description.trim(),
         ...(tools ? { tools } : {}),
+        ...(agentRoster ? { agents: agentRoster } : {}),
         ...(modelRef ? { model: modelRef.model } : {}),
         ...(thinking !== undefined ? { thinking } : {}),
         ...(typeof frontmatter.mode === "string" &&

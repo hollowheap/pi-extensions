@@ -202,6 +202,7 @@ describe("pi-agent extension", () => {
     const completions = cmd.getArgumentCompletions("");
     const values = completions.map((c) => c.value);
     expect(values).toContain("default");
+    expect(values).toContain("reset");
     expect(values).toContain("scout");
     expect(values).toContain("engineer");
 
@@ -432,6 +433,97 @@ describe("pi-agent extension", () => {
     expect(event.systemPromptOptions.skills.map((s) => s.name)).toEqual([
       "author-pr",
     ]);
+  });
+
+  it("renders an agents roster from the active agent and skips unknown names", async () => {
+    writeAgent(
+      agentsDir,
+      "lead",
+      "name: lead\ndescription: Lead\nagents: scout, ghost",
+      "Lead instructions",
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    await pi.getCommand("agent").handler("lead", ctx);
+
+    const event = {
+      systemPromptOptions: {
+        sections: {} as Record<string, string>,
+        skills: [],
+      },
+    };
+    pi.emit("before_agent_start", event, ctx);
+
+    const roster = event.systemPromptOptions.sections.agents ?? "";
+    expect(roster).toContain("<name>");
+    expect(roster).toContain("- scout: Recon");
+    expect(roster).not.toContain("ghost");
+    expect(event.systemPromptOptions.sections.agent).toBeUndefined();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('unknown agent "ghost"'),
+      "warning",
+    );
+  });
+
+  it("never overwrites an existing agents section", async () => {
+    writeAgent(
+      agentsDir,
+      "lead",
+      "name: lead\ndescription: Lead\nagents: scout",
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+    const ctx = createMockContext();
+    await pi.getCommand("agent").handler("lead", ctx);
+
+    const event = {
+      systemPromptOptions: {
+        sections: { agents: "preexisting", agent: "keep-me" },
+        skills: [],
+      },
+    };
+    pi.emit("before_agent_start", event, ctx);
+
+    expect(event.systemPromptOptions.sections.agents).toBe("preexisting");
+    expect(event.systemPromptOptions.sections.agent).toBe("keep-me");
+  });
+
+  it("renders the configured default agent's roster before an agent is activated", () => {
+    writeAgent(
+      agentsDir,
+      "lead",
+      "name: lead\ndescription: Lead\nagents: scout",
+    );
+    writeFileSync(
+      join(testDir, "agent.json"),
+      JSON.stringify({ default: "lead" }),
+      "utf8",
+    );
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const event = {
+      systemPromptOptions: { sections: {} as Record<string, string> },
+    };
+    pi.emit("before_agent_start", event, createMockContext());
+
+    expect(event.systemPromptOptions.sections.agents).toContain(
+      "- scout: Recon",
+    );
+  });
+
+  it("renders no roster when no agent is active and no default is configured", () => {
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const event = {
+      systemPromptOptions: { sections: {} as Record<string, string> },
+    };
+    pi.emit("before_agent_start", event, createMockContext());
+
+    expect(event.systemPromptOptions.sections.agents).toBeUndefined();
   });
 
   it("resets to default agent via /agent default", async () => {
