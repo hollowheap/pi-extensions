@@ -48,17 +48,20 @@ describe("S216 separate widget ownership", () => {
   });
 
   it("S216 C02: an empty todo source renders no todo widget", () => {
-    expect(formatTodoWidget([], subagents, tasks, { now: Date.now() })).toBeUndefined();
-    expect(formatTodoWidget(todos, subagents, tasks, { collapsed: true })).toBeUndefined();
+    expect(
+      formatTodoWidget([], subagents, tasks, { now: Date.now() }),
+    ).toBeUndefined();
+    expect(
+      formatTodoWidget(todos, subagents, tasks, { collapsed: true }),
+    ).toBeUndefined();
   });
 
   it("S216 C03: each widget renders only its own rows", () => {
     const now = 1_000_000;
     const subLines =
-      formatSubagentWidget(
-        [{ ...subagents[0], startedAt: now - 9_000 }],
-        { now },
-      ) ?? [];
+      formatSubagentWidget([{ ...subagents[0], startedAt: now - 9_000 }], {
+        now,
+      }) ?? [];
     const taskLines = formatTaskWidget(tasks, { now }) ?? [];
 
     const subRendered = subLines.join("\n");
@@ -76,7 +79,8 @@ describe("S216 separate widget ownership", () => {
   it("S216 C04: removing the subagent source leaves the other widgets intact", () => {
     expect(formatSubagentWidget([], { now: Date.now() })).toBeUndefined();
 
-    const todoLines = formatTodoWidget(todos, [], tasks, { now: Date.now() }) ?? [];
+    const todoLines =
+      formatTodoWidget(todos, [], tasks, { now: Date.now() }) ?? [];
     const taskLines = formatTaskWidget(tasks, { now: Date.now() }) ?? [];
     expect(todoLines.join("\n")).toContain("Write specs");
     expect(taskLines.join("\n")).toContain("task-1");

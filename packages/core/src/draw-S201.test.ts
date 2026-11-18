@@ -1,6 +1,6 @@
 import * as agentsModule from "@hollowheap/core/agents";
-import * as stateModule from "@hollowheap/core/state";
 import { renderAgentRoster } from "@hollowheap/core/agents";
+import * as stateModule from "@hollowheap/core/state";
 import { describe, expect, it, vi } from "vitest";
 
 interface Agent {

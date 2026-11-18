@@ -1227,9 +1227,7 @@ describe("subagent tool", () => {
       maxConcurrent: 1,
     });
     mocks.attachSubagent.mockResolvedValue({ ...running, status: "failed" });
-    mocks.listSubagents.mockResolvedValue([
-      { ...running, id: "sub-busy" },
-    ]);
+    mocks.listSubagents.mockResolvedValue([{ ...running, id: "sub-busy" }]);
 
     const result = await createTool().execute(
       "1",
@@ -1283,9 +1281,7 @@ describe("subagent tool", () => {
       ...baseConfig,
       maxConcurrent: 1,
     });
-    mocks.listSubagents.mockResolvedValue([
-      { ...running, id: "sub-here" },
-    ]);
+    mocks.listSubagents.mockResolvedValue([{ ...running, id: "sub-here" }]);
     const tool = createTool();
 
     const inRepo = await tool.execute(

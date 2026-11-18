@@ -176,7 +176,9 @@ describe("classifier guard layer", () => {
     );
     vi.unstubAllEnvs();
     expect((result as { block?: unknown } | undefined)?.block).toBe(true);
-    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(/classifier/);
+    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(
+      /classifier/,
+    );
   });
 
   it("S189 C04: a classifier block is recorded in the guard audit", async () => {
@@ -345,6 +347,8 @@ describe("classifier guard layer", () => {
     );
     vi.unstubAllEnvs();
     expect((result as { block?: unknown } | undefined)?.block).toBe(true);
-    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(/classifier/);
+    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(
+      /classifier/,
+    );
   });
 });

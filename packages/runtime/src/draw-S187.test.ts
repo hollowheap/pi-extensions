@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   cancelProcessGroup,
   isProcessAlive,
