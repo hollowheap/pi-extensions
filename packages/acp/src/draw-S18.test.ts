@@ -112,3 +112,53 @@ describe("S18: adapter lifecycle and prompt dispatch", () => {
     await expect(inFlight).rejects.toThrow("session closed");
   });
 });
+
+describe("S18: initialize boundary, load failures and capability propagation", () => {
+  it("S18 C02: initialize advertises the agent and a relative cwd is rejected", async () => {
+    const { adapter } = setup();
+    const info = await adapter.handle("initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: true } },
+    });
+    expect(info).toMatchObject({
+      protocolVersion: 1,
+      agentInfo: { name: "hollowheap-pi-acp" },
+    });
+    await expect(
+      adapter.handle("session/new", { cwd: "relative" }),
+    ).rejects.toMatchObject({ code: -32602 });
+  });
+
+  it("S18 C03: loading an unknown session or a mismatched cwd is rejected", async () => {
+    const { adapter } = setup();
+    await expect(
+      adapter.handle("session/load", { sessionId: "missing", cwd: "/repo" }),
+    ).rejects.toMatchObject({ code: -32602 });
+
+    const created = setup();
+    const result = (await created.adapter.handle("session/new", {
+      cwd: "/repo",
+    })) as { sessionId: string };
+    await expect(
+      created.adapter.handle("session/load", {
+        sessionId: result.sessionId,
+        cwd: "/other",
+      }),
+    ).rejects.toMatchObject({ code: -32602 });
+  });
+
+  it("S18 C04: initialize capabilities reach the spawned pi options", async () => {
+    const { adapter, spawns } = setup();
+    const caps = {
+      fs: { readTextFile: true, writeTextFile: true },
+      terminal: true,
+    };
+    await adapter.handle("initialize", {
+      protocolVersion: 1,
+      clientCapabilities: caps,
+    });
+    await adapter.handle("session/new", { cwd: "/repo" });
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].caps).toEqual(caps);
+  });
+});

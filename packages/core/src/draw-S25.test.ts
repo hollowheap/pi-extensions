@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadModesConfig } from "./config.js";
+import { getModeLayer, modeNames, replaceConfigModes } from "./modes.js";
 
 function agentDir(): string {
   return mkdtempSync(join(tmpdir(), "pi-core-modes-"));
@@ -41,5 +42,56 @@ describe("S25: config modes load from <agentDir>/modes.json", () => {
     expect(layers[0].defaults.edit).toBe("deny");
     expect(layers[0].defaults.external).toBe("allow");
     expect(loadModesConfig(agentDir())).toEqual([]);
+  });
+});
+
+describe("S25: empty document, invalid JSON and registry consumer", () => {
+  it("S25 C02: an empty or malformed modes document yields no layers", () => {
+    const dir = agentDir();
+    write(join(dir, "modes.json"), JSON.stringify({ modes: {} }), 1_000);
+    expect(loadModesConfig(dir)).toEqual([]);
+
+    const other = agentDir();
+    const diagnostics: string[] = [];
+    write(join(other, "modes.json"), JSON.stringify([]), 1_000);
+    expect(
+      loadModesConfig(other, (message) => diagnostics.push(message)),
+    ).toEqual([]);
+    expect(diagnostics.join(" ")).toContain('{"modes": {...}}');
+  });
+
+  it("S25 C03: invalid JSON in modes.json is reported and ignored", () => {
+    const dir = agentDir();
+    const diagnostics: string[] = [];
+    write(join(dir, "modes.json"), "{bad", 1_000);
+    expect(
+      loadModesConfig(dir, (message) => diagnostics.push(message)),
+    ).toEqual([]);
+    expect(diagnostics.join(" ")).toContain("not valid JSON");
+  });
+
+  it("S25 C04: loaded config layers can be registered and looked up", () => {
+    const dir = agentDir();
+    write(
+      join(dir, "modes.json"),
+      JSON.stringify({
+        modes: {
+          readonly: {
+            defaults: {
+              read: "allow",
+              search: "allow",
+              edit: "deny",
+              shell: "deny",
+            },
+          },
+        },
+      }),
+      1_000,
+    );
+    replaceConfigModes(loadModesConfig(dir));
+    expect(getModeLayer("readonly")?.defaults.edit).toBe("deny");
+    expect(modeNames()).toContain("readonly");
+    replaceConfigModes([]);
+    expect(getModeLayer("readonly")).toBeUndefined();
   });
 });

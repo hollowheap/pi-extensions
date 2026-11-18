@@ -31,3 +31,39 @@ describe("S16: ACP extension consumes core instead of local policy code", () => 
     expect(sources.some((text) => forbiddenSymbols.test(text))).toBe(false);
   });
 });
+
+describe("S16: core subpath imports, no local policy modules and delegation", () => {
+  it("S16 C02: every core import in the extension uses a subpath", () => {
+    const files = readdirSync(EXT).filter(
+      (name) => name.endsWith(".ts") && !name.includes(".test."),
+    );
+    let imports = 0;
+    for (const file of files) {
+      const source = readFileSync(`${EXT}${file}`, "utf8");
+      for (const match of source.matchAll(
+        /from\s+["']@hollowheap\/core([^"']*)["']/g,
+      )) {
+        expect(match[1]).toMatch(/^\//);
+        imports += 1;
+      }
+    }
+    expect(imports).toBeGreaterThan(0);
+  });
+
+  it("S16 C03: no extension file imports a local policy or shell module", () => {
+    const localPolicy = /from\s+["']\.\/(rules|loader|bash|modes|exec)\.js["']/;
+    for (const file of readdirSync(EXT).filter((name) =>
+      name.endsWith(".ts"),
+    )) {
+      expect(readFileSync(`${EXT}${file}`, "utf8")).not.toMatch(localPolicy);
+    }
+  });
+
+  it("S16 C04: the extension permissions module delegates to core config and trust", () => {
+    const source = readFileSync(`${EXT}permissions.ts`, "utf8");
+    expect(source).toContain('from "@hollowheap/core/config"');
+    expect(source).toContain("loadPermissions as loadCorePermissions");
+    expect(source).toContain('from "@hollowheap/core/trust"');
+    expect(source).toContain("loadGuardTrust");
+  });
+});

@@ -47,3 +47,61 @@ describe("S27: restoring a mode re-runs entry gates and veto falls back to the d
     dropSession(owner);
   });
 });
+
+describe("S27: no-persisted boundary, retired mode and gate-driven restore", () => {
+  it("S27 C02: restoring with no persisted mode stays manual and skips gates", () => {
+    const calls: string[] = [];
+    const stop = registerModeGate(() => {
+      calls.push("gate");
+      return undefined;
+    });
+    const owner = {};
+    const result = resetSession(owner);
+    expect(result.mode).toBe("manual");
+    expect(result.notices).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(session(owner).mode).toBe("manual");
+    stop();
+    dropSession(owner);
+  });
+
+  it("S27 C03: a persisted mode that no longer exists falls back with a diagnostic", () => {
+    const entries = [
+      {
+        customType: "hollowheap.core.mode",
+        data: { mode: "draw-s27-retired" },
+      },
+    ];
+    const owner = { getEntries: () => entries };
+    const result = resetSession(owner);
+    expect(result.mode).toBe("manual");
+    expect(result.diagnostic).toContain("no longer exists");
+    expect(session(owner).mode).toBe("manual");
+    dropSession(owner);
+  });
+
+  it("S27 C04: a registered gate veto restores the default mode on reset", () => {
+    registerMode({ name: "draw-s27-gated", defaults: ALLOW });
+    const stop = registerModeGate((mode) =>
+      mode === "draw-s27-gated"
+        ? {
+            veto: "gate says no",
+            notice: { text: "gate notice", level: "warning" },
+          }
+        : undefined,
+    );
+    const entries = [
+      { customType: "hollowheap.core.mode", data: { mode: "draw-s27-gated" } },
+    ];
+    const owner = { getEntries: () => entries };
+    const result = resetSession(owner);
+    expect(result.mode).toBe("manual");
+    expect(result.veto).toBe("gate says no");
+    expect(result.notices.map((notice) => notice.text)).toContain(
+      "gate notice",
+    );
+    expect(session(owner).mode).toBe("manual");
+    stop();
+    dropSession(owner);
+  });
+});

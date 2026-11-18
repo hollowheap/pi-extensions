@@ -62,3 +62,65 @@ describe("S10: first-wins registry and ordered entry gates", () => {
     dropSession(owner);
   });
 });
+
+describe("S10: keyed gate replacement, gate failure and onEnter composition", () => {
+  it("S10 C02: a keyed gate registration replaces the earlier gate with that key", () => {
+    const calls: string[] = [];
+    const first = registerModeGate(() => {
+      calls.push("first");
+      return undefined;
+    }, "draw-s10-key");
+    const second = registerModeGate(() => {
+      calls.push("second");
+      return undefined;
+    }, "draw-s10-key");
+
+    expect(enterMode({}, "manual").notices).toEqual([]);
+    expect(calls).toEqual(["second"]);
+    first();
+    second();
+  });
+
+  it("S10 C03: a throwing entry gate propagates to the caller of enterMode", () => {
+    const name = "draw-s10-throw-gate";
+    registerMode({ name, defaults: ALLOW });
+    const stop = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      throw new Error("gate exploded");
+    });
+    const owner = {};
+    expect(() => enterMode(owner, name)).toThrow("gate exploded");
+    expect(session(owner).mode).toBe("manual");
+    stop();
+    dropSession(owner);
+  });
+
+  it("S10 C04: a layer's onEnter and a registered gate both run through enterMode", () => {
+    const calls: string[] = [];
+    const name = "draw-s10-composed";
+    registerMode({
+      name,
+      defaults: ALLOW,
+      onEnter: () => {
+        calls.push("onEnter");
+        return { notice: { text: "entered", level: "info" } };
+      },
+    });
+    const stop = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("gate");
+      return { notice: { text: "gated", level: "warning" } };
+    });
+    const owner = {};
+    const result = enterMode(owner, name);
+    expect(calls).toEqual(["onEnter", "gate"]);
+    expect(result.mode).toBe(name);
+    expect(result.notices.map((notice) => notice.text)).toEqual([
+      "entered",
+      "gated",
+    ]);
+    expect(session(owner).mode).toBe(name);
+    stop();
+    dropSession(owner);
+  });
+});

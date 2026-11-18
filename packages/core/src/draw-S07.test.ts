@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getModeLayer, modeLayers, registerMode } from "./modes.js";
+import { evaluate, getModeLayer, modeLayers, registerMode } from "./modes.js";
+import { dropSession, setMode } from "./state.js";
 import type { ModeLayer } from "./types.js";
 
 describe("S07: ModeLayer is the public registration shape", () => {
@@ -23,5 +24,66 @@ describe("S07: ModeLayer is the public registration shape", () => {
     expect(modeLayers()).toContainEqual(registered);
     expect(Object.keys(registered ?? {})).not.toContain("apply");
     expect(Object.keys(registered ?? {})).not.toContain("inPlanPaths");
+  });
+});
+
+describe("S07: minimal layer shape, duplicate rejection and evaluator consumer", () => {
+  it("S07 C02: a layer registered without optional fields keeps only name and defaults", () => {
+    const layer: ModeLayer = {
+      name: "draw-s07-minimal",
+      defaults: { edit: "ask" },
+    };
+    expect(registerMode(layer)).toBe(true);
+    const registered = getModeLayer("draw-s07-minimal");
+    expect(Object.keys(registered ?? {}).sort()).toEqual(["defaults", "name"]);
+    expect(registered?.overrides).toBeUndefined();
+    expect(registered?.onEnter).toBeUndefined();
+  });
+
+  it("S07 C03: a duplicate registration is rejected without replacing the first layer", () => {
+    const name = "draw-s07-duplicate";
+    expect(registerMode({ name, defaults: { edit: "allow" } })).toBe(true);
+    const diagnostics: string[] = [];
+    expect(
+      registerMode({ name, defaults: { edit: "deny" } }, (message) =>
+        diagnostics.push(message),
+      ),
+    ).toBe(false);
+    expect(diagnostics[0]).toContain("already registered");
+    expect(getModeLayer(name)?.defaults.edit).toBe("allow");
+  });
+
+  it("S07 C04: a registered layer's defaults decide evaluation with no rules", () => {
+    registerMode({
+      name: "draw-s07-consumer",
+      defaults: {
+        read: "allow",
+        search: "allow",
+        edit: "deny",
+        shell: "deny",
+        external: "allow",
+      },
+    });
+    const owner = {};
+    setMode(owner, "draw-s07-consumer");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "src/a.ts",
+        rules: [],
+      }),
+    ).toBe("deny");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "read",
+        target: "src/a.ts",
+        rules: [],
+      }),
+    ).toBe("allow");
+    dropSession(owner);
   });
 });

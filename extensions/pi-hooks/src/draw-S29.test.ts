@@ -4,6 +4,7 @@ import {
   type HookEntry,
   type HookPayload,
   interpretPreHook,
+  runPostHook,
   runPreHook,
 } from "./hooks.js";
 
@@ -55,5 +56,51 @@ describe("S29: a hook reads the tool call on stdin and decides via stdout or exi
     );
     expect(verdict.block).toBe(true);
     expect(verdict.reason).toBeTruthy();
+  });
+});
+
+describe("S29: allow boundary, malformed decisions and post-hook formatting", () => {
+  it("S29 C02: an allow decision and empty stdout do not block", async () => {
+    const allow: HookEntry = {
+      matcher: "",
+      command: node,
+      args: ["-e", "process.stdout.write(JSON.stringify({decision:'allow'}))"],
+      timeoutMs: 5_000,
+    };
+    await expect(runPreHook(allow, payload())).resolves.toEqual({
+      block: false,
+    });
+    expect(interpretPreHook({ code: 0, stdout: "   ", stderr: "" })).toEqual({
+      block: false,
+    });
+  });
+
+  it("S29 C03: malformed or unknown stdout decisions block with reasons", () => {
+    expect(
+      interpretPreHook({ code: 0, stdout: "not json", stderr: "" }),
+    ).toEqual({
+      block: true,
+      reason: "hook printed output that is not a decision",
+    });
+    expect(
+      interpretPreHook({
+        code: 0,
+        stdout: JSON.stringify({ decision: "maybe" }),
+        stderr: "",
+      }),
+    ).toEqual({ block: true, reason: "hook returned an unknown decision" });
+  });
+
+  it("S29 C04: a post hook's markdown format wraps its stdout", async () => {
+    const entry: HookEntry = {
+      matcher: "",
+      command: node,
+      args: ["-e", "process.stdout.write('summary')"],
+      timeoutMs: 5_000,
+      format: "markdown",
+    };
+    await expect(runPostHook(entry, payload())).resolves.toEqual({
+      output: "```\nsummary\n```",
+    });
   });
 });

@@ -134,3 +134,57 @@ describe("S20: ACP tool protocol details", () => {
     );
   });
 });
+
+describe("S20: write input boundary, read failure and write-to-read flow", () => {
+  function localTools() {
+    const local: ToolDeps = {
+      getCaps: () => ({}),
+      connected: () => false,
+      callSocket: vi.fn(async () => ({})),
+    };
+    const tools = createAcpTools(local);
+    return (name: string) =>
+      tools.find((entry) => entry.name === name) as {
+        execute: (...args: never[]) => Promise<unknown>;
+      };
+  }
+
+  it("S20 C02: acp_write refuses conflict markers and existing paths", async () => {
+    const { ctx, dir } = project();
+    const tool = localTools();
+    await expect(
+      run(
+        tool("acp_write"),
+        { path: "conflict.txt", content: "<<<<<<< HEAD\n" },
+        ctx,
+      ),
+    ).rejects.toThrow("conflict markers");
+    writeFileSync(join(dir, "exists.txt"), "old");
+    await expect(
+      run(tool("acp_write"), { path: "exists.txt", content: "new" }, ctx),
+    ).rejects.toThrow("path already exists");
+  });
+
+  it("S20 C03: reading a missing file fails instead of returning empty content", async () => {
+    const { ctx } = project();
+    await expect(
+      run(localTools()("acp_read"), { path: "missing.txt" }, ctx),
+    ).rejects.toThrow(/ENOENT|no such file/i);
+  });
+
+  it("S20 C04: a written file is read back through the companion tool", async () => {
+    const { ctx, dir } = project();
+    const tool = localTools();
+    const created = await run(
+      tool("acp_write"),
+      { path: "nested/round.txt", content: "hello round" },
+      ctx,
+    );
+    expect(created).toContain("Created");
+    const text = await run(tool("acp_read"), { path: "nested/round.txt" }, ctx);
+    expect(text).toContain("hello round");
+    expect(readFileSync(join(dir, "nested/round.txt"), "utf8")).toBe(
+      "hello round",
+    );
+  });
+});

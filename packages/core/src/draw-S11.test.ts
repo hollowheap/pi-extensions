@@ -41,3 +41,62 @@ describe("S11: plan mode edit paths", () => {
     dropSession(owner);
   });
 });
+
+describe("S11: non-edit tags, outside-path refusal and decision consumer", () => {
+  it("S11 C02: plan mode leaves read, search and shell defaults intact", () => {
+    const owner = {};
+    setMode(owner, "plan");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "read",
+        target: "src/a.ts",
+        rules: [],
+      }),
+    ).toBe("allow");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "search",
+        target: "src/a.ts",
+        rules: [],
+      }),
+    ).toBe("allow");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "shell",
+        target: "echo hi",
+        rules: [],
+      }),
+    ).toBe("ask");
+    dropSession(owner);
+  });
+
+  it("S11 C03: an artifact-named path outside the cwd is still denied", () => {
+    const allow: Rule[] = [{ tag: "edit", pattern: "**", effect: "allow" }];
+    expect(evaluateInPlan("/outside/artifacts/plan.md", allow)).toBe("deny");
+  });
+
+  it("S11 C04: a persistent deny decision overrides the plan artifact ask", () => {
+    const owner = {};
+    setMode(owner, "plan");
+    const persistentDecisions = new Map<string, "allow" | "ask" | "deny">([
+      ["/work/artifacts/plan.md", "deny"],
+    ]);
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "artifacts/plan.md",
+        rules: [],
+        persistentDecisions,
+      }),
+    ).toBe("deny");
+    dropSession(owner);
+  });
+});

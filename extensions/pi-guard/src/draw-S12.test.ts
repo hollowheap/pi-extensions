@@ -108,3 +108,43 @@ describe("S12: pi-guard ask and deny decisions at the tool seam", () => {
     });
   });
 });
+
+describe("S12: guard boundary, declined approval and tool_result truncation", () => {
+  it("S12 C02: an ask with no UI blocks with a no-UI reason", async () => {
+    const { ctx, call } = setup();
+    ctx.hasUI = false;
+    await expect(call("bash", { command: "echo hi" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("needs approval (no UI)"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("S12 C03: declining the approval dialog blocks the tool call", async () => {
+    const { ctx, call } = setup();
+    ctx.ui.confirm.mockResolvedValue(false);
+    await expect(call("bash", { command: "echo hi" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("was not approved"),
+    });
+    expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("S12 C04: long tool output is truncated through the tool_result seam", () => {
+    const { pi } = setup();
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    ) as Record<string, (event: never, ctx: never) => unknown>;
+    const long = "y".repeat(6000);
+    const result = handlers.tool_result?.(
+      {
+        toolName: "bash",
+        content: [{ type: "text", text: long }],
+      } as never,
+      undefined as never,
+    ) as { content: { text: string }[] } | undefined;
+    expect(result).toBeDefined();
+    expect(result?.content[0].text).toContain("pi-guard");
+    expect(result?.content[0].text.length).toBeLessThan(long.length);
+  });
+});

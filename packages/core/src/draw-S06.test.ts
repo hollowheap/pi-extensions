@@ -2,7 +2,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import { loadPermissions } from "./config.js";
+import { evaluate, registerMode } from "./modes.js";
+import { dropSession, setMode } from "./state.js";
 
 function write(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -31,5 +34,77 @@ describe("S06: allow, ask and deny effects end to end", () => {
       { tag: "shell", pattern: "rm -rf", effect: "deny" },
       { tag: "read", pattern: "*", effect: "allow" },
     ]);
+  });
+});
+
+describe("S06: effect parsing boundary, failure fallback and evaluator consumer", () => {
+  it("S06 C02: an explicit rule list of malformed entries yields no effects", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-core-draw-s06-"));
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({ rules: ["nonsense", 42] }),
+    );
+    expect(
+      loadPermissions({
+        agentDir,
+        workspaceRoot: root,
+        trusted: false,
+        onDiagnostic: (message) => diagnostics.push(message),
+      }),
+    ).toEqual([]);
+    expect(diagnostics.join(" ")).toContain("ignoring rule");
+  });
+
+  it("S06 C03: invalid JSON falls back to ask rules for every category", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-core-draw-s06-"));
+    const agentDir = join(root, "agent");
+    const diagnostics: string[] = [];
+    write(join(agentDir, "permissions.json"), "{not json");
+    const rules = loadPermissions({
+      agentDir,
+      workspaceRoot: root,
+      trusted: false,
+      onDiagnostic: (message) => diagnostics.push(message),
+    });
+    expect(diagnostics.join(" ")).toContain("not valid JSON");
+    expect(rules).toHaveLength(5);
+    expect(rules.every((rule) => rule.effect === "ask")).toBe(true);
+  });
+
+  it("S06 C04: loaded effects drive evaluation through the mode layer", () => {
+    for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+    const root = mkdtempSync(join(tmpdir(), "pi-core-draw-s06-"));
+    const agentDir = join(root, "agent");
+    write(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({
+        rules: ["allow edit src/**", "ask shell npm", "deny edit secrets/**"],
+      }),
+    );
+    const rules = loadPermissions({
+      agentDir,
+      workspaceRoot: root,
+      trusted: false,
+    });
+    const owner = {};
+    setMode(owner, "manual");
+    expect(
+      evaluate({ owner, cwd: root, tag: "edit", target: "src/a.ts", rules }),
+    ).toBe("allow");
+    expect(
+      evaluate({
+        owner,
+        cwd: root,
+        tag: "edit",
+        target: "secrets/key.ts",
+        rules,
+      }),
+    ).toBe("deny");
+    expect(
+      evaluate({ owner, cwd: root, tag: "shell", target: "npm test", rules }),
+    ).toBe("ask");
+    dropSession(owner);
   });
 });

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerMode } from "@hollowheap/core/modes";
+import { effectiveCwd, setCwd } from "@hollowheap/core/state";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it, vi } from "vitest";
 import { createAcpTools } from "../../../packages/acp/src/extension/tools.js";
@@ -91,5 +92,77 @@ describe("S14: /cd and search filtering without a guard dependency", () => {
     expect(args).toContain("--regexp");
     expect(args[args.length - 2]).toBe("--");
     expect(deps.callSocket).not.toHaveBeenCalled();
+  });
+});
+
+describe("S14: /cd boundary, bad targets and acp_fd filtering", () => {
+  function cdCommand() {
+    const pi = {
+      on: vi.fn(() => () => {}),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+    };
+    extension(pi as never);
+    return pi.registerCommand.mock.calls.find(
+      ([name]) => name === "cd",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+  }
+
+  it("S14 C02: /cd with no argument resets the effective cwd to the root", async () => {
+    const cd = cdCommand();
+    const { ctx } = project([]);
+    const owner = ctx.sessionManager;
+    setCwd(owner, join(ctx.cwd, "sub"));
+    expect(effectiveCwd(ctx.cwd, owner)).toBe(join(ctx.cwd, "sub"));
+
+    await cd.handler("", ctx);
+    expect(effectiveCwd(ctx.cwd, owner)).toBe(ctx.cwd);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(ctx.cwd),
+    );
+  });
+
+  it("S14 C03: /cd rejects non-directories and paths outside the root", async () => {
+    const cd = cdCommand();
+    const { ctx, dir } = project([]);
+    writeFileSync(join(dir, "file.txt"), "x");
+    await cd.handler("file.txt", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("not a directory"),
+      "error",
+    );
+
+    const outside = mkdtempSync(join(tmpdir(), "draw-s14-outside-"));
+    await cd.handler(outside, ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("outside project root"),
+      "error",
+    );
+  });
+
+  it("S14 C04: acp_fd keeps only allowed files and terminates its glob flags", async () => {
+    const { ctx, dir } = project(["deny search secret.txt"]);
+    writeFileSync(join(dir, "secret.txt"), "s");
+    writeFileSync(join(dir, "keep.txt"), "k");
+    const deps = {
+      getCaps: () => ({}),
+      connected: () => false,
+      callSocket: vi.fn(async () => ({})),
+    };
+    runBinaryMock.mockClear();
+    runBinaryMock.mockResolvedValueOnce("secret.txt\nkeep.txt\n");
+    const [fd] = createAcpTools(deps).filter((tool) => tool.name === "acp_fd");
+    const text = await run(
+      fd as { execute: (...args: never[]) => Promise<unknown> },
+      { pattern: "*.txt" },
+      ctx,
+    );
+    expect(text).toContain("keep.txt");
+    expect(text).not.toContain("secret.txt");
+    const args = runBinaryMock.mock.calls[0][1] as string[];
+    expect(args).toContain("--glob");
+    expect(args[args.length - 2]).toBe("--");
   });
 });
