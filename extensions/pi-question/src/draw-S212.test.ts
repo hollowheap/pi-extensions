@@ -118,6 +118,6 @@ describe("question mode flow", () => {
     dialog.component()?.handleInput("\x1b[B");
     dialog.component()?.handleInput("\r");
     const answer = await dialog.pending;
-    expect(answer).toMatchObject({ mode: "multi", selected: [0] });
+    expect(answer).toMatchObject({ mode: "multi", selected: ["A"] });
   });
 });
