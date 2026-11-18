@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createSubagentsExtension } from "./index.js";
 
 function register(listSubagents = vi.fn(async () => [])) {
-  const handlers: Record<string, (...args: never[]) => unknown> = {};
+  const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const pi = {
-    on: vi.fn((event: string, handler: (...args: never[]) => unknown) => {
+    on: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
       handlers[event] = handler;
       return () => {};
     }),
@@ -22,9 +22,9 @@ function register(listSubagents = vi.fn(async () => [])) {
 
 describe("subagent turn ownership", () => {
   it("S213 C01: subscribes to turn end so turn-scoped children are cancelled", () => {
-    const handlers: Record<string, (...args: never[]) => unknown> = {};
+    const handlers: Record<string, (...args: unknown[]) => unknown> = {};
     const pi = {
-      on: vi.fn((event: string, handler: (...args: never[]) => unknown) => {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
         handlers[event] = handler;
         return () => {};
       }),
