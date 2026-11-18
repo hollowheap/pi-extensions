@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   cancelProcessGroup,
   isProcessAlive,
+  terminateProcessGroups,
 } from "@hollowheap/runtime/process";
 export { readProcStartTime } from "@hollowheap/runtime/process";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
@@ -188,20 +189,22 @@ export async function cancelTask(
     return toTaskRecord(agentDir, meta);
   }
 
-  const kills: Array<Promise<boolean>> = [];
-  if (meta.pid !== undefined) {
-    kills.push(cancelProcessGroup(meta.pid, meta.startTime, graceMs));
-  }
-  if (meta.innerPid !== undefined) {
-    kills.push(cancelProcessGroup(meta.innerPid, meta.innerStartTime, graceMs));
-  }
-  await Promise.all(kills);
-
-  const stillAlive =
-    (meta.pid !== undefined && isProcessAlive(meta.pid, meta.startTime)) ||
-    (meta.innerPid !== undefined &&
-      isProcessAlive(meta.innerPid, meta.innerStartTime));
-  if (stillAlive) {
+  const groups = [
+    ...(meta.pid !== undefined
+      ? [{ pid: meta.pid, startTime: meta.startTime }]
+      : []),
+    ...(meta.innerPid !== undefined
+      ? [{ pid: meta.innerPid, startTime: meta.innerStartTime }]
+      : []),
+  ];
+  const wasAlive = groups.some((group) =>
+    isProcessAlive(group.pid, group.startTime),
+  );
+  const allTerminated =
+    groups.length > 0
+      ? await terminateProcessGroups(groups, { graceMs })
+      : false;
+  if (!wasAlive || !allTerminated) {
     return toTaskRecord(agentDir, readTaskMetadata(agentDir, id) ?? meta);
   }
 

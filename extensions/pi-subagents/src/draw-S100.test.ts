@@ -26,8 +26,8 @@ describe("S100 subagent state safety", () => {
     });
     expect(statSync(store.dir).mode & 0o777).toBe(0o700);
     expect(statSync(store.statePath("s1")).mode & 0o777).toBe(0o600);
-    expect(
-      subagentDisplayName({ agent: "scout", task: "find things" }),
-    ).toContain("find things");
+    expect(subagentDisplayName({ agent: "scout", task: "find things" })).toBe(
+      "@scout-1",
+    );
   });
 });

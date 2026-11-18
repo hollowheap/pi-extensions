@@ -188,7 +188,7 @@ function stateIcon(state: string): string {
   }
 }
 
-function formatDuration(ms: number): string {
+function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -197,241 +197,103 @@ function formatDuration(ms: number): string {
 
 function formatToolDuration(ms: number): string {
   const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
-  if (totalSeconds < 60) {
-    return `${totalSeconds}s`;
-  }
+  if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m${seconds > 0 ? `${seconds}s` : ""}`;
 }
 
-interface WidgetSection {
-  title: string;
-  items: string[];
+function fitWidth(lines: string[], width: number | undefined): string[] {
+  if (width === undefined || width <= 0) return lines;
+  return lines.map((line) =>
+    visibleWidth(line) > width ? truncateToWidth(line, width, "") : line,
+  );
+}
+
+export function formatSubagentWidget(
+  subagents: readonly SubagentStateItem[],
+  options: FormatTodoWidgetOptions = {},
+): string[] | undefined {
+  if (options.collapsed || subagents.length === 0) return undefined;
+  const now = options.now ?? Date.now();
+  const lines = [`Subagents (${subagents.length} active)`];
+  for (const sub of subagents) {
+    const id = sanitizeTerminalText(sub.id);
+    if (sub.startedAt !== undefined) {
+      const task = sub.task
+        ? sanitizeTerminalText(sub.task).replace(/\s+/g, " ").trim()
+        : "";
+      const taskText = task.length > 25 ? `${task.slice(0, 24)}…` : task;
+      const taskPart = task === "" ? "" : ` (${taskText})`;
+      const toolPart = sub.activeTool
+        ? ` · ${sanitizeTerminalText(sub.activeTool)}${
+            sub.activeToolStartedAt !== undefined
+              ? ` ${formatToolDuration(now - sub.activeToolStartedAt)}`
+              : ""
+          }`
+        : "";
+      lines.push(
+        `@${id} ${formatElapsed(now - sub.startedAt)}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
+      );
+    } else {
+      const agent = sub.agent ? ` (${sanitizeTerminalText(sub.agent)})` : "";
+      lines.push(`@${id} ${stateIcon(sub.state)}${agent}`);
+    }
+  }
+  return fitWidth(lines, options.width);
+}
+
+export function formatTaskWidget(
+  tasks: readonly TaskStateItem[],
+  options: FormatTodoWidgetOptions = {},
+): string[] | undefined {
+  if (options.collapsed) return undefined;
+  const running = tasks.filter((task) => task.status === "running");
+  if (running.length === 0) return undefined;
+  const lines = [`Tasks (${running.length} running)`];
+  for (const task of running) {
+    const command = task.command
+      ? ` (${sanitizeTerminalText(task.command)})`
+      : "";
+    lines.push(`${sanitizeTerminalText(task.id)} ●${command}`);
+  }
+  return fitWidth(lines, options.width);
 }
 
 export function formatTodoWidget(
   todos: readonly Todo[],
-  subagents: readonly SubagentStateItem[] = [],
-  tasks: readonly TaskStateItem[] = [],
+  _subagents: readonly SubagentStateItem[] = [],
+  _tasks: readonly TaskStateItem[] = [],
   options: FormatTodoWidgetOptions = {},
 ): string[] | undefined {
-  const opts = options;
-  if (opts.collapsed) return undefined;
+  if (options.collapsed || todos.length === 0) return undefined;
 
-  const sections: WidgetSection[] = [];
+  const sorted = byId(todos);
+  const open = sorted.filter((todo) => !todo.done);
+  const done = sorted.filter((todo) => todo.done);
+  const header =
+    open.length === 0
+      ? `Todos (${done.length} ✓)`
+      : done.length > 0
+        ? `Todos (${open.length} open, ${done.length} ✓)`
+        : `Todos (${open.length} open)`;
+
   const strikethrough =
-    opts?.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
-
-  if (todos.length > 0) {
-    const sorted = byId(todos);
-    const open = sorted.filter((todo) => !todo.done);
-    const done = sorted.filter((todo) => todo.done);
-    const openCount = open.length;
-    const doneCount = done.length;
-
-    let header: string;
-    if (openCount === 0) {
-      header = `Todos (${doneCount} ✓)`;
-    } else if (doneCount > 0) {
-      header = `Todos (${openCount} open, ${doneCount} ✓)`;
-    } else {
-      header = `Todos (${openCount} open)`;
-    }
-
-    const items: string[] = [];
-    for (const todo of [...open, ...done].slice(0, WIDGET_LIMIT)) {
-      const safeText = sanitizeTerminalText(todo.text);
-      if (todo.done) {
-        items.push(`✓ ${todo.id} ${strikethrough(safeText)}`);
-      } else {
-        items.push(`• ${todo.id} ${safeText}`);
-      }
-    }
-    if (sorted.length > WIDGET_LIMIT) {
-      items.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
-    }
-    sections.push({ title: header, items });
+    options.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
+  const lines = [header];
+  for (const todo of [...open, ...done].slice(0, WIDGET_LIMIT)) {
+    const safeText = sanitizeTerminalText(todo.text);
+    lines.push(
+      todo.done
+        ? `✓ ${todo.id} ${strikethrough(safeText)}`
+        : `• ${todo.id} ${safeText}`,
+    );
+  }
+  if (sorted.length > WIDGET_LIMIT) {
+    lines.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
   }
 
-  const runningTasks = tasks.filter((t) => t.status === "running");
-  if (runningTasks.length > 0) {
-    const items: string[] = [];
-    for (const t of runningTasks) {
-      const cmdInfo = t.command ? ` (${sanitizeTerminalText(t.command)})` : "";
-      items.push(`${sanitizeTerminalText(t.id)} ●${cmdInfo}`);
-    }
-    sections.push({
-      title: `Tasks (${runningTasks.length} running)`,
-      items,
-    });
-  }
-
-  if (subagents.length > 0) {
-    const items: string[] = [];
-    const now = opts?.now ?? Date.now();
-    for (const sub of subagents) {
-      const subId = sanitizeTerminalText(sub.id);
-      if (sub.startedAt !== undefined) {
-        const elapsed = formatDuration(now - sub.startedAt);
-        const normalizedTask = sub.task
-          ? sanitizeTerminalText(sub.task).replace(/\s+/g, " ").trim()
-          : "";
-        const taskText = normalizedTask
-          ? normalizedTask.length > 25
-            ? `${normalizedTask.slice(0, 24)}…`
-            : normalizedTask
-          : "";
-        const taskPart = taskText !== "" ? ` (${taskText})` : "";
-        let toolPart = "";
-        if (sub.activeTool) {
-          const toolTime =
-            sub.activeToolStartedAt !== undefined
-              ? ` ${formatToolDuration(now - sub.activeToolStartedAt)}`
-              : "";
-          toolPart = ` · ${sanitizeTerminalText(sub.activeTool)}${toolTime}`;
-        }
-        items.push(
-          `@${subId} ${elapsed}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
-        );
-      } else {
-        const agentInfo = sub.agent
-          ? ` (${sanitizeTerminalText(sub.agent)})`
-          : "";
-        items.push(`@${subId} ${stateIcon(sub.state)}${agentInfo}`);
-      }
-    }
-    sections.push({
-      title: `Subagents (${subagents.length} active)`,
-      items,
-    });
-  }
-
-  if (sections.length === 0) return undefined;
-
-  let maxInner = 0;
-  for (const s of sections) {
-    maxInner = Math.max(maxInner, visibleWidth(s.title) + 5);
-    for (const item of s.items) {
-      maxInner = Math.max(maxInner, visibleWidth(item) + 4);
-    }
-  }
-
-  const todoSections = sections.filter((s) => s.title.startsWith("Todos"));
-  const otherSections = sections.filter((s) => !s.title.startsWith("Todos"));
-  const canSplit =
-    (opts?.width ?? 0) >= 80 &&
-    todoSections.length > 0 &&
-    otherSections.length > 0;
-
-  const b = opts?.borderColor ?? ((s: string) => s);
-  const lines: string[] = [];
-
-  if (canSplit) {
-    const boxWidth = Math.max(opts?.width ?? 0, 80);
-    const col1Width = Math.floor((boxWidth - 1) / 2);
-    const col2Width = boxWidth - 1 - col1Width;
-    const col1Inner = col1Width - 3;
-    const col2Inner = col2Width - 3;
-
-    const leftRows: { text: string }[] = [];
-    for (const item of todoSections.flatMap((section) => section.items)) {
-      const fit =
-        visibleWidth(item) > col1Inner
-          ? `${truncateToWidth(item, col1Inner - 1, "")}…`
-          : item;
-      leftRows.push({ text: fit });
-    }
-
-    type RightRow =
-      | { type: "item"; text: string }
-      | { type: "divider"; title: string };
-    const rightRows: RightRow[] = [];
-    otherSections.forEach((sec, idx) => {
-      if (idx > 0) {
-        rightRows.push({ type: "divider", title: sec.title });
-      }
-      for (const item of sec.items) {
-        const fit =
-          visibleWidth(item) > col2Inner
-            ? `${truncateToWidth(item, col2Inner - 1, "")}…`
-            : item;
-        rightRows.push({ type: "item", text: fit });
-      }
-    });
-
-    const title1 = todoSections.map((section) => section.title).join(" · ");
-    const title2 = otherSections[0]?.title ?? "";
-
-    const fill1 = "─".repeat(Math.max(0, col1Width - 4 - visibleWidth(title1)));
-    const fill2 = "─".repeat(Math.max(0, col2Width - 4 - visibleWidth(title2)));
-
-    const top = `${b("╭─ ")}${title1}${b(` ${fill1}`)}${b("┬─ ")}${title2}${b(` ${fill2}╮`)}`;
-    lines.push(top);
-
-    const rowCount = Math.max(leftRows.length, rightRows.length);
-    for (let i = 0; i < rowCount; i++) {
-      const leftRow = leftRows[i];
-      const leftText = leftRow ? leftRow.text : "";
-      const leftPad = " ".repeat(
-        Math.max(0, col1Inner - visibleWidth(leftText)),
-      );
-      const leftCell = `${b("│ ")}${leftText}${leftPad}${b(" ")}`;
-
-      const rightRow = rightRows[i];
-      if (rightRow && rightRow.type === "divider") {
-        const fillDivider = "─".repeat(
-          Math.max(0, col2Width - 4 - visibleWidth(rightRow.title)),
-        );
-        lines.push(
-          `${leftCell}${b("┼─ ")}${rightRow.title}${b(` ${fillDivider}┤`)}`,
-        );
-      } else {
-        const rightText = rightRow ? rightRow.text : "";
-        const rightPad = " ".repeat(
-          Math.max(0, col2Inner - visibleWidth(rightText)),
-        );
-        lines.push(`${leftCell}${b("│ ")}${rightText}${rightPad}${b(" │")}`);
-      }
-    }
-
-    const bot = `${b("╰")}${b("─".repeat(col1Width - 1))}${b("┴")}${b("─".repeat(col2Width - 1))}${b("╯")}`;
-    lines.push(bot);
-    return lines;
-  }
-
-  const boxWidth =
-    opts?.width !== undefined && opts.width > 0 ? opts.width : maxInner;
-  const contentWidth = Math.max(0, boxWidth - 4);
-
-  sections.forEach((s, idx) => {
-    const rawTitle = s.title;
-    const maxTitleW = Math.max(0, boxWidth - 5);
-    const fitTitle =
-      visibleWidth(rawTitle) > maxTitleW
-        ? `${truncateToWidth(rawTitle, Math.max(0, maxTitleW - 1), "")}…`
-        : rawTitle;
-    const titleWidth = visibleWidth(fitTitle);
-    const fillCount = Math.max(0, boxWidth - 5 - titleWidth);
-    const fill = "─".repeat(fillCount);
-    if (idx === 0) {
-      lines.push(`${b("╭─ ")}${fitTitle}${b(` ${fill}╮`)}`);
-    } else {
-      lines.push(`${b("├─ ")}${fitTitle}${b(` ${fill}┤`)}`);
-    }
-    for (const item of s.items) {
-      const fit =
-        visibleWidth(item) > contentWidth
-          ? `${truncateToWidth(item, Math.max(0, contentWidth - 1), "")}…`
-          : item;
-      const itemW = visibleWidth(fit);
-      const pad = " ".repeat(Math.max(0, contentWidth - itemW));
-      lines.push(`${b("│ ")}${fit}${pad}${b(" │")}`);
-    }
-  });
-
-  lines.push(`${b("╰")}${b("─".repeat(Math.max(0, boxWidth - 2)))}${b("╯")}`);
-  return lines;
+  return fitWidth(lines, options.width);
 }
 
 export function formatTodoConfirmation(

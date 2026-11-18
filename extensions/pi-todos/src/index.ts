@@ -10,12 +10,15 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import { Type } from "typebox";
 import {
+  type FormatTodoWidgetOptions,
   type SubagentStateItem,
   type TaskStateItem,
   type Todo,
   type TodoState,
   applyTodoCommand,
   emptyTodoState,
+  formatSubagentWidget,
+  formatTaskWidget,
   formatTodoConfirmation,
   formatTodoList,
   formatTodoWidget,
@@ -435,19 +438,23 @@ export default function (pi: ExtensionAPI) {
       : borderColor
         ? { borderColor, collapsed: panelCollapsed }
         : { collapsed: panelCollapsed };
-    const preview = formatTodoWidget(state.todos, subagents, tasks, options);
-    if (preview === undefined) {
-      ctx.ui.setWidget("todos", undefined);
-      return;
-    }
-    ctx.ui.setWidget("todos", () => ({
-      render: (width: number) =>
-        formatTodoWidget(state.todos, subagents, tasks, {
-          ...options,
-          width: width >= 80 ? width : 0,
-        }) ?? [],
-      invalidate: () => {},
-    }));
+    const mount = (
+      name: string,
+      format: (opts: FormatTodoWidgetOptions) => string[] | undefined,
+    ) => {
+      if (format(options) === undefined) {
+        ctx.ui.setWidget(name, undefined);
+        return;
+      }
+      ctx.ui.setWidget(name, () => ({
+        render: (width: number) =>
+          format({ ...options, width: width >= 80 ? width : 0 }) ?? [],
+        invalidate: () => {},
+      }));
+    };
+    mount("todos", (opts) => formatTodoWidget(state.todos, [], [], opts));
+    mount("subagents", (opts) => formatSubagentWidget(subagents, opts));
+    mount("tasks", (opts) => formatTaskWidget(tasks, opts));
   };
 
   pi.registerTool(
@@ -847,26 +854,43 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("panel", {
-    description: "Toggle sticky panel: /panel toggle [todos|dashboard|all]",
+  const widgetTargets = ["todos", "tasks", "subagents", "all"] as const;
+  pi.registerCommand("widget", {
+    description:
+      "Toggle sticky widgets: /widget toggle [todos|tasks|subagents|all]",
+    getArgumentCompletions: (prefix: string) => {
+      const parts = prefix.trimStart().split(/\s+/);
+      if (parts.length <= 1) {
+        const query = (parts[0] ?? "").toLowerCase();
+        return ["toggle"]
+          .filter((value) => value.startsWith(query))
+          .map((value) => ({ value, label: value }));
+      }
+      if (parts[0]?.toLowerCase() !== "toggle" || parts.length > 2) return null;
+      const query = (parts[1] ?? "").toLowerCase();
+      return widgetTargets
+        .filter((value) => value.startsWith(query))
+        .map((value) => ({ value, label: value }));
+    },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts[0] !== "toggle") {
         if (ctx.hasUI) {
-          ctx.ui.notify("Usage: /panel toggle [todos|dashboard|all]", "info");
+          ctx.ui.notify(
+            "Usage: /widget toggle [todos|tasks|subagents|all]",
+            "info",
+          );
         }
         return;
       }
       const target = parts[1];
       if (
         target !== undefined &&
-        target !== "todos" &&
-        target !== "dashboard" &&
-        target !== "all"
+        !widgetTargets.some((value) => value === target)
       ) {
         if (ctx.hasUI) {
           ctx.ui.notify(
-            `Unsupported panel target: ${sanitizeTerminalText(target)}. Use todos, dashboard, or all.`,
+            `Unsupported widget target: ${sanitizeTerminalText(target)}. Use todos, tasks, subagents, or all.`,
             "error",
           );
         }
@@ -876,7 +900,7 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) {
         updateUI(ctx);
         ctx.ui.notify(
-          panelCollapsed ? "Panel collapsed" : "Panel expanded",
+          panelCollapsed ? "Widget collapsed" : "Widget expanded",
           "info",
         );
       }

@@ -420,11 +420,12 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             agent: a.agent,
             task: a.task ?? "",
           });
+          const model = a.model ? ` ${theme.fg("dim", `(${a.model})`)}` : "";
           const location = a.workspace
             ? ` ${theme.fg("dim", a.workspace)}`
             : "";
           lines.push(
-            `  ${icon} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("toolTitle", name)}${location}`,
+            `  ${icon} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("toolTitle", name)}${model}${location}`,
           );
         }
         text.setText(lines.join("\n"));
@@ -448,6 +449,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       }
 
       let header = `${icon} ${theme.fg("accent", `[${status}]`)} ${theme.fg("toolTitle", subagentDisplayName({ model: typeof details.model === "string" ? details.model : undefined, agent, task: typeof details.task === "string" ? details.task : "" }))}`;
+      if (typeof details.model === "string") {
+        header += ` ${theme.fg("dim", `(${details.model})`)}`;
+      }
       if (typeof details.workspace === "string") {
         header += ` ${theme.fg("dim", details.workspace)}`;
       }

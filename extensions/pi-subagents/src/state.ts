@@ -50,17 +50,11 @@ export function requireTrustedProject(trusted: boolean): void {
   }
 }
 
-/** Model and task summary used instead of the full subagent id in UI surfaces. */
+/** Stable per-role handle used as the subagent's row label. */
 export function subagentDisplayName(
   state: Pick<SubagentState, "model" | "agent" | "task">,
 ): string {
-  const model = state.model ?? state.agent;
-  const task = state.task.replace(/\s+/g, " ").trim();
-  const prefix =
-    state.model === undefined ? state.agent : `${state.agent} (${model})`;
-  if (task === "") return prefix;
-  const summary = task.length > 48 ? `${task.slice(0, 45)}...` : task;
-  return `${prefix} \u00b7 ${summary}`;
+  return `@${state.agent}-1`;
 }
 
 function sanitize(state: SubagentState): ProcessState {

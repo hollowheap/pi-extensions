@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatTodoWidget } from "./todos.js";
+import { formatSubagentWidget } from "./todos.js";
 
 describe("S116 active tool duration in subagent rows", () => {
   it("renders elapsed time and the active tool duration on a subagent row", () => {
-    const lines = formatTodoWidget(
-      [],
+    const lines = formatSubagentWidget(
       [
         {
           id: "s1",
@@ -15,7 +14,6 @@ describe("S116 active tool duration in subagent rows", () => {
           activeToolStartedAt: 4_000,
         },
       ],
-      [],
       { now: 7_000 },
     );
     const text = lines?.join("\n") ?? "";

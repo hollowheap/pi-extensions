@@ -374,6 +374,37 @@ export function createSubagentsExtension(
       void syncSubagentsSnapshot();
     });
 
+    let turnStartedAt: number | undefined;
+    pi.on("turn_start", () => {
+      turnStartedAt = Date.now();
+    });
+
+    pi.on("turn_end", (_event, ctx) => {
+      const startedAt = turnStartedAt;
+      turnStartedAt = undefined;
+      if (startedAt === undefined) return;
+      void (async () => {
+        try {
+          const dir = resolveAgentDir();
+          const scoped = (await list(dir)).filter(
+            (state) =>
+              (state.status === "running" || state.status === "starting") &&
+              state.startedAt >= startedAt &&
+              isInProject(state, ctx?.cwd),
+          );
+          if (scoped.length === 0) return;
+          await Promise.all(
+            scoped.map((state) =>
+              abortSubagent(dir, state.id).catch(() => undefined),
+            ),
+          );
+          void emitSubagentsState();
+        } catch {
+          // Turn cleanup must never break the agent turn.
+        }
+      })();
+    });
+
     pi.registerCommand("subagent", {
       description:
         "Manage subagents: /subagent [logs] [id] | pause|resume|steer <id> [message] | settings|config",

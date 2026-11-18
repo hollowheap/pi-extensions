@@ -99,7 +99,7 @@ describe("pi-todos extension", () => {
     );
     expect(pi.registerCommand).toHaveBeenCalledWith("todo", expect.any(Object));
     expect(pi.registerCommand).toHaveBeenCalledWith(
-      "panel",
+      "widget",
       expect.any(Object),
     );
   });
@@ -604,23 +604,30 @@ describe("pi-todos extension", () => {
     await expect(withPromptLock(async () => "next")).resolves.toBe("next");
   });
 
-  it("validates the /panel toggle target", async () => {
+  it("validates the /widget toggle target", async () => {
     const { pi } = createMockPi();
     extension(pi as never);
     const ctx = context();
-    const panelCmd = pi.registerCommand.mock.calls.find(
-      ([name]) => name === "panel",
-    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+    const widgetCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "widget",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+      getArgumentCompletions: (prefix: string) => Array<{ value: string }>;
+    };
 
-    await panelCmd.handler("toggle bogus", ctx);
+    expect(
+      widgetCmd.getArgumentCompletions("toggle ").map((c) => c.value),
+    ).toContain("subagents");
+
+    await widgetCmd.handler("toggle bogus", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("bogus"),
       "error",
     );
-    expect(ctx.ui.notify).not.toHaveBeenCalledWith("Panel collapsed", "info");
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith("Widget collapsed", "info");
 
     ctx.ui.notify.mockClear();
-    await panelCmd.handler("toggle todos", ctx);
-    expect(ctx.ui.notify).toHaveBeenCalledWith("Panel collapsed", "info");
+    await widgetCmd.handler("toggle todos", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Widget collapsed", "info");
   });
 });

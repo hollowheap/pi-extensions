@@ -10,6 +10,7 @@ import {
   truncateText,
 } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
@@ -267,7 +268,10 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
             { action, runningCount },
           );
         }
-        if (verdict === "ask") {
+        const guardGrantActive =
+          (getSessionSnapshot(ctx.sessionManager).guard?.activeGrantCount ??
+            0) > 0;
+        if (verdict === "ask" && !guardGrantActive) {
           if (!ctx.hasUI || typeof ctx.ui.confirm !== "function") {
             const runningCount = refreshRunningCount();
             return textResult(

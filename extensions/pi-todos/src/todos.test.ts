@@ -4,6 +4,8 @@ import {
   type TodoState,
   applyTodoCommand,
   emptyTodoState,
+  formatSubagentWidget,
+  formatTaskWidget,
   formatTodoConfirmation,
   formatTodoList,
   formatTodoWidget,
@@ -97,20 +99,18 @@ describe("todo formatting", () => {
   it("formats a compact widget of todos with status checkboxes and strikethrough", () => {
     expect(formatTodoWidget([])).toBeUndefined();
     expect(formatTodoWidget([{ id: 1, text: "Done", done: true }])).toEqual([
-      "╭─ Todos (1 ✓) ╮",
-      "│ ✓ 1 \x1b[9mDone\x1b[29m     │",
-      "╰──────────────╯",
+      "Todos (1 ✓)",
+      "✓ 1 \x1b[9mDone\x1b[29m",
     ]);
     expect(
       formatTodoWidget([{ id: 1, text: "Done", done: true }], [], [], {
         strikethrough: (s) => `~~${s}~~`,
       }),
-    ).toEqual(["╭─ Todos (1 ✓) ╮", "│ ✓ 1 ~~Done~~ │", "╰──────────────╯"]);
+    ).toEqual(["Todos (1 ✓)", "✓ 1 ~~Done~~"]);
     expect(formatTodoWidget(todos)).toEqual([
-      "╭─ Todos (1 open, 1 ✓) ╮",
-      "│ • 1 First            │",
-      "│ ✓ 2 \x1b[9mSecond\x1b[29m           │",
-      "╰──────────────────────╯",
+      "Todos (1 open, 1 ✓)",
+      "• 1 First",
+      "✓ 2 \x1b[9mSecond\x1b[29m",
     ]);
 
     const completed = Array.from({ length: 10 }, (_, index) => ({
@@ -132,29 +132,26 @@ describe("todo formatting", () => {
       done: false,
     }));
     expect(formatTodoWidget(open)).toEqual([
-      "╭─ Todos (12 open) ╮",
-      "│ • 1 Task 1       │",
-      "│ • 2 Task 2       │",
-      "│ • 3 Task 3       │",
-      "│ • 4 Task 4       │",
-      "│ • 5 Task 5       │",
-      "│ • 6 Task 6       │",
-      "│ • 7 Task 7       │",
-      "│ • 8 Task 8       │",
-      "│ • 9 Task 9       │",
-      "│ • 10 Task 10     │",
-      "│ +2 more (/todos) │",
-      "╰──────────────────╯",
+      "Todos (12 open)",
+      "• 1 Task 1",
+      "• 2 Task 2",
+      "• 3 Task 3",
+      "• 4 Task 4",
+      "• 5 Task 5",
+      "• 6 Task 6",
+      "• 7 Task 7",
+      "• 8 Task 8",
+      "• 9 Task 9",
+      "• 10 Task 10",
+      "+2 more (/todos)",
     ]);
-    expect(formatTodoWidget([], [{ id: "sub-1", state: "running" }])).toEqual([
-      "╭─ Subagents (1 active) ╮",
-      "│ @sub-1 ●              │",
-      "╰───────────────────────╯",
+    expect(formatSubagentWidget([{ id: "sub-1", state: "running" }])).toEqual([
+      "Subagents (1 active)",
+      "@sub-1 ●",
     ]);
     const testNow = 1_000_000;
     expect(
-      formatTodoWidget(
-        [],
+      formatSubagentWidget(
         [
           {
             id: "scout-1",
@@ -166,17 +163,14 @@ describe("todo formatting", () => {
             activeToolStartedAt: testNow - 10_000,
           },
         ],
-        undefined,
         { now: testNow },
       ),
     ).toEqual([
-      "╭─ Subagents (1 active) ─────────────────────╮",
-      "│ @scout-1 01:24 (Analyze auth) ● · edit 10s │",
-      "╰────────────────────────────────────────────╯",
+      "Subagents (1 active)",
+      "@scout-1 01:24 (Analyze auth) ● · edit 10s",
     ]);
     expect(
-      formatTodoWidget(
-        [],
+      formatSubagentWidget(
         [
           {
             id: "scout-2",
@@ -185,14 +179,9 @@ describe("todo formatting", () => {
             startedAt: testNow - 10_000,
           },
         ],
-        undefined,
         { now: testNow },
       ),
-    ).toEqual([
-      "╭─ Subagents (1 active) ───────────────╮",
-      "│ @scout-2 00:10 (Analyze auth flow) ● │",
-      "╰──────────────────────────────────────╯",
-    ]);
+    ).toEqual(["Subagents (1 active)", "@scout-2 00:10 (Analyze auth flow) ●"]);
     expect(
       formatTodoWidget(
         todos,
@@ -203,16 +192,21 @@ describe("todo formatting", () => {
         [{ id: "task-1", command: "npm test", status: "running" }],
       ),
     ).toEqual([
-      "╭─ Todos (1 open, 1 ✓) ─╮",
-      "│ • 1 First             │",
-      "│ ✓ 2 \x1b[9mSecond\x1b[29m            │",
-      "├─ Tasks (1 running) ───┤",
-      "│ task-1 ● (npm test)   │",
-      "├─ Subagents (2 active) ┤",
-      "│ @sub-1 ● (worker)     │",
-      "│ @sub-2 ⏸              │",
-      "╰───────────────────────╯",
+      "Todos (1 open, 1 ✓)",
+      "• 1 First",
+      "✓ 2 \x1b[9mSecond\x1b[29m",
     ]);
+    expect(
+      formatSubagentWidget([
+        { id: "sub-1", agent: "worker", state: "running" },
+        { id: "sub-2", state: "blocked" },
+      ]),
+    ).toEqual(["Subagents (2 active)", "@sub-1 ● (worker)", "@sub-2 ⏸"]);
+    expect(
+      formatTaskWidget([
+        { id: "task-1", command: "npm test", status: "running" },
+      ]),
+    ).toEqual(["Tasks (1 running)", "task-1 ● (npm test)"]);
   });
 
   it("returns no lines when the panel is collapsed", () => {
@@ -221,7 +215,7 @@ describe("todo formatting", () => {
     ).toBeUndefined();
   });
 
-  it("formats side-by-side sections when width is at least 80 and both todos and agents exist", () => {
+  it("keeps separate widget rows instead of a composite panel at any width", () => {
     const wideLines = formatTodoWidget(
       todos,
       [
@@ -232,13 +226,11 @@ describe("todo formatting", () => {
       { width: 80 },
     );
     expect(wideLines).toEqual([
-      "╭─ Todos (1 open, 1 ✓) ────────────────┬─ Tasks (1 running) ───────────────────╮",
-      "│ • 1 First                            │ task-1 ● (npm test)                   │",
-      "│ ✓ 2 \x1b[9mSecond\x1b[29m                           ┼─ Subagents (2 active) ────────────────┤",
-      "│                                      │ @sub-1 ● (worker)                     │",
-      "│                                      │ @sub-2 ⏸                              │",
-      "╰──────────────────────────────────────┴───────────────────────────────────────╯",
+      "Todos (1 open, 1 ✓)",
+      "• 1 First",
+      "✓ 2 \x1b[9mSecond\x1b[29m",
     ]);
+    expect(wideLines?.join("\n")).not.toMatch(/│.*[│├┤]/);
 
     const narrowLines = formatTodoWidget(
       todos,
@@ -246,10 +238,10 @@ describe("todo formatting", () => {
       undefined,
       { width: 60 },
     );
-    expect(narrowLines?.[0]).toBe(
-      "╭─ Todos (1 open, 1 ✓) ────────────────────────────────────╮",
+    expect(narrowLines?.[0]).toBe("Todos (1 open, 1 ✓)");
+    expect(formatSubagentWidget([{ id: "sub-1", state: "running" }])?.[0]).toBe(
+      "Subagents (1 active)",
     );
-    expect(narrowLines?.some((l) => l.startsWith("├─ Subagents"))).toBe(true);
   });
 
   it("starts from a fresh state", () => {
@@ -257,27 +249,28 @@ describe("todo formatting", () => {
   });
 
   it("sanitizes task command and subagent id and activeTool fields before rendering", () => {
-    const lines = formatTodoWidget(
-      [],
-      [
-        {
-          id: "sub\x1b[31m-1\x1b[0m",
-          state: "running",
-          activeTool: "edit\x1b[2K",
-          startedAt: 1000,
-          activeToolStartedAt: 1000,
-        },
-      ],
-      [
+    const lines = [
+      ...(formatSubagentWidget(
+        [
+          {
+            id: "sub\x1b[31m-1\x1b[0m",
+            state: "running",
+            activeTool: "edit\x1b[2K",
+            startedAt: 1000,
+            activeToolStartedAt: 1000,
+          },
+        ],
+        { now: 2000 },
+      ) ?? []),
+      ...(formatTaskWidget([
         {
           id: "task-1",
           command: "npm run build\x1b]0;title\x07",
           status: "running",
         },
-      ],
-      { now: 2000 },
-    );
-    expect(lines).toBeDefined();
+      ]) ?? []),
+    ];
+    expect(lines).not.toHaveLength(0);
     for (const line of lines ?? []) {
       expect(line).not.toContain("\x1b[31m");
       expect(line).not.toContain("\x1b[0m");
