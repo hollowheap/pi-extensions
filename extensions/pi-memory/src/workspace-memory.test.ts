@@ -5,8 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
 function pi() {
+  const handlers = new Map<string, (...args: unknown[]) => void>();
   return {
-    on: vi.fn(() => () => {}),
+    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      handlers.set(event, handler);
+      return () => {};
+    }),
+    handlers,
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
@@ -53,7 +58,9 @@ describe("workspace memory seams", () => {
     process.env.PI_CODING_AGENT_DIR = join(base, "agent");
     const p = pi();
     extension(p as never);
-    // Public seam: entries appended for workspace memory include origin fields.
+    // Public seam: workspace entry is appended at session start, never at load.
+    expect(p.appendEntry).not.toHaveBeenCalled();
+    p.handlers.get("session_start")?.({}, {});
     const appended = p.appendEntry.mock.calls.map((c: unknown[]) => c[1]);
     expect(appended.length).toBeGreaterThan(0);
     expect(appended[0]).toEqual(

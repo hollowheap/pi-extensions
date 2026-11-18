@@ -853,13 +853,15 @@ export function createMemoryExtension(
 function memoryExtension(pi: ExtensionAPI): void {
   createMemoryExtension()(pi);
   if (process.env.PI_ACP) return;
-  const config = loadMemoryConfig(getAgentDir());
-  pi.appendEntry(MEMORY_WORKSPACE_TYPE, {
-    workspace: resolveWorkspaceRoot(process.cwd()),
-    origin: "workspace",
-    sessionOrigin: "",
-    redacted: config.redactSecrets,
-    createdAt: Date.now(),
+  pi.on("session_start", () => {
+    const config = loadMemoryConfig(getAgentDir());
+    pi.appendEntry(MEMORY_WORKSPACE_TYPE, {
+      workspace: resolveWorkspaceRoot(process.cwd()),
+      origin: "workspace",
+      sessionOrigin: "",
+      redacted: config.redactSecrets,
+      createdAt: Date.now(),
+    });
   });
 }
 
