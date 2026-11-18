@@ -93,7 +93,6 @@ describe("S12: pi-guard ask and deny decisions at the tool seam", () => {
     expect(pi.registerShortcut).not.toHaveBeenCalled();
     expect(pi.registerCommand.mock.calls.map(([name]) => name)).toEqual([
       "grant",
-      "grants",
       "context",
       "guard",
     ]);

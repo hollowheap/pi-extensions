@@ -22,6 +22,7 @@ import {
   session,
   setMode,
 } from "./state.js";
+import type { TrustedRoot } from "./trust.js";
 import type {
   Effect,
   ModeLayer,
@@ -69,7 +70,7 @@ export interface EvaluateOptions {
   tag: Tag;
   target: string;
   rules: readonly Rule[];
-  trustedRoots?: readonly string[];
+  trustedRoots?: readonly TrustedRoot[];
   sessionDecisions?: DecisionMap;
   persistentDecisions?: DecisionMap;
 }
@@ -276,7 +277,10 @@ function evaluatePath(
   }
 
   const inTrustedRoot = (options.trustedRoots ?? []).some(
-    (root) => isPolicySubpath(root, actual, base).matches,
+    (root) =>
+      (typeof root === "string" || root.tags.includes(options.tag)) &&
+      isPolicySubpath(typeof root === "string" ? root : root.path, actual, base)
+        .matches,
   );
 
   if (hard.outside) {

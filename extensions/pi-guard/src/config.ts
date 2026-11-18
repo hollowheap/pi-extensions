@@ -4,11 +4,15 @@ import {
   type UpdateJsonConfigResult,
   updateJsonConfig,
 } from "@hollowheap/core/config";
-import { loadGuardTrust } from "@hollowheap/core/trust";
+import { type TrustedRoot, loadGuardTrust } from "@hollowheap/core/trust";
 
 export interface GuardConfig {
-  trustedRoots?: string[];
+  trustedRoots?: TrustedRoot[];
   decisions?: Record<string, "allow" | "ask" | "deny">;
+}
+
+export function trustedRootPath(root: TrustedRoot): string {
+  return typeof root === "string" ? root : root.path;
 }
 
 export function getGuardConfigPath(agentDir: string): string {

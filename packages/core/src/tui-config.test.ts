@@ -64,6 +64,8 @@ describe("tui-config", () => {
       loadingIndicator: "crush",
       markdownRender: true,
       thinkingVerbosity: "verbose",
+      toolVerbosity: "medium",
+      modeIndicator: true,
       thinkingAnimate: true,
       verbPack: "playful",
       panel: {

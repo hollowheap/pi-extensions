@@ -52,7 +52,7 @@ describe("S135 temporary permission grants", () => {
       );
 
       ctx.ui.notify.mockClear();
-      await commandHandler(pi, "grants")("", ctx);
+      await commandHandler(pi, "grant")("list", ctx);
       expect(ctx.ui.notify).toHaveBeenCalledWith(
         expect.stringContaining("/tmp/granted (expires in"),
         "info",
@@ -60,7 +60,7 @@ describe("S135 temporary permission grants", () => {
 
       vi.advanceTimersByTime(31_000);
       ctx.ui.notify.mockClear();
-      await commandHandler(pi, "grants")("", ctx);
+      await commandHandler(pi, "grant")("list", ctx);
       expect(ctx.ui.notify).toHaveBeenCalledWith("No active grants", "info");
     } finally {
       vi.useRealTimers();

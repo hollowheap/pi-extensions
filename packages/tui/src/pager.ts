@@ -28,12 +28,13 @@ function clamp(value: number, min: number, max: number): number {
 function pagerMarkdownTheme(theme: Theme, colored: boolean): MarkdownTheme {
   const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
     colored ? theme.fg(token, text) : text;
+  const codeBlock = (text: string) => fg("toolOutput", text);
   return {
     heading: (text) => fg("accent", theme.bold(text)),
     link: (text) => fg("accent", text),
     linkUrl: (text) => fg("dim", text),
     code: (text) => fg("toolOutput", text),
-    codeBlock: (text) => fg("toolOutput", text),
+    codeBlock,
     codeBlockBorder: (text) => fg("border", text),
     quote: (text) => fg("muted", text),
     quoteBorder: (text) => fg("border", text),
@@ -43,7 +44,8 @@ function pagerMarkdownTheme(theme: Theme, colored: boolean): MarkdownTheme {
     italic: (text) => theme.italic(text),
     strikethrough: (text) => theme.strikethrough(text),
     underline: (text) => theme.underline(text),
-    highlightCode,
+    highlightCode: (code, lang) =>
+      colored ? highlightCode(code, lang) : code.split("\n").map(codeBlock),
   };
 }
 

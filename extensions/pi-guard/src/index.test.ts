@@ -204,7 +204,7 @@ describe("pi-guard extension", () => {
       "tool_result",
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commands).toEqual(["grant", "grants", "context", "guard"]);
+    expect(commands).toEqual(["grant", "context", "guard"]);
     expect(pi.registerShortcut).not.toHaveBeenCalled();
   });
 
@@ -217,7 +217,7 @@ describe("pi-guard extension", () => {
     const secondCtx = createContext(process.cwd());
 
     await commandHandler(first, "grant")("src/x.ts 5m", firstCtx);
-    await commandHandler(second, "grants")("", secondCtx);
+    await commandHandler(second, "grant")("list", secondCtx);
 
     expect(secondCtx.ui.notify).toHaveBeenCalledWith(
       "No active grants",
@@ -230,7 +230,7 @@ describe("pi-guard extension", () => {
     extension(pi as never);
     const ctx = createContext(process.cwd());
     const grant = commandHandler(pi, "grant");
-    const grants = commandHandler(pi, "grants");
+    const listGrants = commandHandler(pi, "grant");
 
     await grant("src/x.ts 5m", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -238,7 +238,7 @@ describe("pi-guard extension", () => {
       "info",
     );
 
-    await grants("", ctx);
+    await listGrants("list", ctx);
     expect(ctx.ui.notify).toHaveBeenLastCalledWith(
       expect.stringContaining("src/x.ts (expires in 300s)"),
       "info",
@@ -1302,7 +1302,7 @@ describe("/guard settings|config|status", () => {
     const ctx = createContext(dir);
     await guardCmd.handler("status", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("mode=manual · trustedRoots=0"),
+      expect.stringContaining("mode=manual · trustedRoots=1"),
       "info",
     );
   });
@@ -1364,8 +1364,9 @@ describe("/guard settings|config|status", () => {
 
     const saved = JSON.parse(
       readFileSync(join(agentDir, "guard.json"), "utf8"),
-    ) as { trustedRoots: string[] };
-    expect(saved.trustedRoots.length).toBe(1);
+    ) as { trustedRoots: unknown[] };
+    expect(saved.trustedRoots).toHaveLength(2);
+    expect(JSON.stringify(saved.trustedRoots)).toContain(workspaceDir);
   });
 
   it("warns on EACCES read and notifies error on EACCES write in /guard settings", async () => {

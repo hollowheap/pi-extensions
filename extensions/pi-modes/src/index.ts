@@ -16,6 +16,7 @@ import {
   registerMode,
   replaceConfigModes,
   resetSession,
+  resolveModeName,
 } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readPersistedMode, session, setMode } from "@hollowheap/core/state";
@@ -104,14 +105,15 @@ async function setDefaultMode(
     ctx.ui.notify(`pi-modes: unknown mode "${name}"`, "error");
     return;
   }
+  const canonical = getModeLayer(name)?.name ?? resolveModeName(name);
   const result = updateJsonConfig(getModesConfigPath(), (root) => {
-    root.default = name;
+    root.default = canonical;
   });
   if (!result.ok) {
     ctx.ui.notify(`pi-modes: ${sanitizeTerminalText(result.error)}`, "error");
     return;
   }
-  ctx.ui.notify(`pi-modes: default mode ${name}`);
+  ctx.ui.notify(`pi-modes: default mode ${canonical}`);
   publishMode(pi, ctx.sessionManager);
 }
 
@@ -210,12 +212,16 @@ export default function (pi: ExtensionAPI): void {
       );
     }
     const configuredDefault = readConfiguredDefault();
+    const canonicalDefault =
+      configuredDefault === undefined
+        ? undefined
+        : resolveModeName(configuredDefault);
     if (
       persisted === undefined &&
-      configuredDefault !== undefined &&
-      getModeLayer(configuredDefault) !== undefined
+      canonicalDefault !== undefined &&
+      getModeLayer(canonicalDefault) !== undefined
     ) {
-      setMode(ctx.sessionManager, configuredDefault, { persist: false });
+      setMode(ctx.sessionManager, canonicalDefault, { persist: false });
     }
     publishMode(pi, ctx.sessionManager);
     publishStatus(ctx);
@@ -240,8 +246,9 @@ export default function (pi: ExtensionAPI): void {
       }
       const lower = raw.toLowerCase();
       if (lower === "ask" || lower === "autopilot") {
+        const replacement = lower === "autopilot" ? "auto" : "manual";
         ctx.ui.notify(
-          `pi-modes: "${raw}" is a legacy mode name; use "manual" instead`,
+          `pi-modes: "${raw}" is a legacy mode name; use "${replacement}" instead`,
           "error",
         );
         return;

@@ -151,8 +151,8 @@ export function createDirtyFlusher(): DirtyFlusher {
     },
     flush(write) {
       if (!dirty) return;
-      dirty = false;
       write();
+      dirty = false;
     },
   };
 }

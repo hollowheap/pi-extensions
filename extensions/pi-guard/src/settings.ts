@@ -8,6 +8,7 @@ import {
   getGuardConfigPath,
   loadGuardConfig,
   saveGuardConfig,
+  trustedRootPath,
 } from "./config.js";
 import { resolveCanonicalPath } from "./rules.js";
 
@@ -69,7 +70,8 @@ export async function showGuardSettings(
   const canonicalCwd = resolveCanonicalPath(cwd, ".");
   const isWorkspaceTrusted = (cfg: GuardConfig): boolean =>
     (cfg.trustedRoots ?? []).some(
-      (root) => resolveCanonicalPath(cwd, root) === canonicalCwd,
+      (root) =>
+        resolveCanonicalPath(cwd, trustedRootPath(root)) === canonicalCwd,
     );
 
   await withPromptLock(() =>
@@ -117,7 +119,9 @@ export async function showGuardSettings(
               const prevTrust = trustValue(guardConfig);
               const existingRoots = guardConfig.trustedRoots ?? [];
               const filteredRoots = existingRoots.filter(
-                (root) => resolveCanonicalPath(cwd, root) !== canonicalCwd,
+                (root) =>
+                  resolveCanonicalPath(cwd, trustedRootPath(root)) !==
+                  canonicalCwd,
               );
               const nextRoots =
                 newValue === "trusted"

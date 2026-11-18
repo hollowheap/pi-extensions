@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -12,11 +12,17 @@ function agentDir(): string {
 }
 
 describe("loadGuardTrust", () => {
-  it("returns empty trust when guard.json is absent", () => {
+  it("seeds the agent dir as a read/search root when guard.json is absent", () => {
     const diagnostics: string[] = [];
-    expect(loadGuardTrust(agentDir(), (m) => diagnostics.push(m))).toEqual({
-      trustedRoots: [],
-      persistentDecisions: {},
+    const dir = agentDir();
+    const trust = loadGuardTrust(dir, (m) => diagnostics.push(m));
+    expect(trust.trustedRoots).toEqual([
+      { path: dir, tags: ["read", "search"] },
+    ]);
+    expect(trust.persistentDecisions).toEqual({});
+    expect(JSON.parse(readFileSync(join(dir, "guard.json"), "utf8"))).toEqual({
+      trustedRoots: [{ path: dir, tags: ["read", "search"] }],
+      decisions: {},
     });
     expect(diagnostics).toEqual([]);
   });

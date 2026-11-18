@@ -1,10 +1,17 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatFsPermissionError, isPermissionError } from "./config.js";
 import type { Verdict } from "./types.js";
 
+export interface TrustedRootTag {
+  path: string;
+  tags: readonly string[];
+}
+
+export type TrustedRoot = string | TrustedRootTag;
+
 export interface GuardTrust {
-  trustedRoots: readonly string[];
+  trustedRoots: readonly TrustedRoot[];
   persistentDecisions: Readonly<Record<string, Verdict>>;
 }
 
@@ -17,6 +24,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parseTrustedRoot(value: unknown): TrustedRoot | undefined {
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? value : undefined;
+  }
+  if (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    value.path.trim().length > 0 &&
+    Array.isArray(value.tags)
+  ) {
+    const tags = value.tags.filter(
+      (tag: unknown): tag is string =>
+        typeof tag === "string" && tag.trim().length > 0,
+    );
+    return Object.freeze({
+      path: value.path,
+      tags: Object.freeze(tags),
+    });
+  }
+  return undefined;
+}
+
 export function parseGuardTrust(
   value: unknown,
   path: string,
@@ -27,10 +56,9 @@ export function parseGuardTrust(
     return EMPTY_TRUST;
   }
   const trustedRoots = Array.isArray(value.trustedRoots)
-    ? value.trustedRoots.filter(
-        (root: unknown): root is string =>
-          typeof root === "string" && root.trim().length > 0,
-      )
+    ? value.trustedRoots
+        .map(parseTrustedRoot)
+        .filter((root): root is TrustedRoot => root !== undefined)
     : [];
   const decisions: Record<string, Verdict> = {};
   if (isRecord(value.decisions)) {
@@ -46,6 +74,29 @@ export function parseGuardTrust(
   });
 }
 
+function seedGuardTrust(agentDir: string): GuardTrust {
+  const root: TrustedRootTag = { path: agentDir, tags: ["read", "search"] };
+  const trust: GuardTrust = Object.freeze({
+    trustedRoots: Object.freeze([
+      Object.freeze({
+        path: agentDir,
+        tags: Object.freeze(["read", "search"]),
+      }),
+    ]),
+    persistentDecisions: Object.freeze({}),
+  });
+  try {
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "guard.json"),
+      JSON.stringify({ trustedRoots: [root], decisions: {} }, null, 2),
+    );
+  } catch {
+    // Best effort: the in-memory seed still applies when the agent dir is read-only.
+  }
+  return trust;
+}
+
 export function loadGuardTrust(
   agentDir: string,
   onDiagnostic?: (message: string) => void,
@@ -56,7 +107,7 @@ export function loadGuardTrust(
     raw = readFileSync(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      return EMPTY_TRUST;
+      return seedGuardTrust(agentDir);
     }
     const message = isPermissionError(error)
       ? formatFsPermissionError("read guard config", path, error)

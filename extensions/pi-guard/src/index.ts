@@ -27,7 +27,11 @@ import {
   readCommandArg,
   readToolTarget,
 } from "@hollowheap/policy";
-import { hasConfiguredTrustedRoots, loadGuardConfig } from "./config.js";
+import {
+  hasConfiguredTrustedRoots,
+  loadGuardConfig,
+  trustedRootPath,
+} from "./config.js";
 import {
   calculateContextBreakdown,
   formatContextBreakdown,
@@ -496,12 +500,17 @@ export default function (pi: ExtensionAPI) {
       };
     }
     if (classifierVerdict?.kind === "error") {
+      const detail = sanitizeTerminalText(classifierVerdict.detail);
+      const message = `pi-guard: classifier failure (${detail}); continuing with standard guard evaluation (fail-open)`;
       const auditSink = (
         ctx as { audit?: { warn?: (message: string) => void } }
       ).audit;
-      auditSink?.warn?.(
-        `pi-guard: classifier audit note: ${classifierVerdict.detail}`,
-      );
+      auditSink?.warn?.(message);
+      if (ctx.hasUI) ctx.ui.notify(message, "warning");
+      pi.events?.emit?.("guard:classifier-error", {
+        detail: classifierVerdict.detail,
+        tool: event.toolName,
+      });
     }
 
     if (tag === undefined) {
@@ -535,19 +544,29 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI)
         ctx.ui.notify(`pi-guard: ${sanitizeTerminalText(msg)}`, "warning");
     });
+    const configuredRoots = guardConfig.trustedRoots ?? [];
+    // A scoped root applies only to the tool tag being evaluated, so fold it
+    // into the path list for the current tag before trust and policy checks.
+    const decisionRoots = configuredRoots.flatMap((root) =>
+      typeof root === "string"
+        ? [root]
+        : root.tags.includes(tag)
+          ? [root.path]
+          : [],
+    );
     const sessionMap = runtime.sessionDecisions.get(ctx.sessionManager);
     const decisionOptions: Pick<
       EvaluateOptions,
       "trustedRoots" | "sessionDecisions" | "persistentDecisions"
     > = {
-      trustedRoots: guardConfig.trustedRoots ?? [],
+      trustedRoots: decisionRoots,
       sessionDecisions: sessionMap,
       persistentDecisions: guardConfig.decisions,
     };
     const trust = checkPathTrust(
       target,
       ctx.cwd,
-      guardConfig.trustedRoots ?? [],
+      decisionRoots,
       sessionMap,
       guardConfig.decisions,
     );
@@ -602,13 +621,12 @@ export default function (pi: ExtensionAPI) {
         if (trust.cachedDecision === "ask") {
           return requestApproval(runtime, event.toolName, target, ctx, pi);
         }
-        // Core drops tag-scoped root objects, so key presence is the signal
-        // that the implicit agent-dir seed was kept or removed.
         const agentRootActive =
           !hasConfiguredTrustedRoots(agentDir) ||
-          (guardConfig.trustedRoots ?? []).some(
+          configuredRoots.some(
             (root) =>
-              typeof root === "string" && isSubpath(root, agentDir, ctx.cwd),
+              (typeof root === "string" || root.tags.includes(tag)) &&
+              isSubpath(trustedRootPath(root), agentDir, ctx.cwd),
           );
         if (
           (tag === "read" || tag === "search") &&
