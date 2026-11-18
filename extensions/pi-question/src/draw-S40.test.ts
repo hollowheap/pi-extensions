@@ -83,3 +83,69 @@ describe("S40: question mode is derived from tool parameters", () => {
     );
   });
 });
+
+describe("shorthand, empty, and sanitization seams", () => {
+  it("S40 C02: a string in the questions array becomes a free-text question", async () => {
+    const { pi, questionTool } = tool();
+    await questionTool.execute(
+      "c2",
+      { questions: ["Why?"] },
+      undefined,
+      undefined,
+      ctx("because") as never,
+    );
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ANSWERS_TYPE,
+      expect.objectContaining({
+        answers: [expect.objectContaining({ mode: "free", value: "because" })],
+      }),
+    );
+  });
+
+  it("S40 C03: an empty parameter set reports an error without emitting", async () => {
+    const { pi, questionTool } = tool();
+    const result = (await questionTool.execute(
+      "c3",
+      {},
+      undefined,
+      undefined,
+      ctx() as never,
+    )) as { content: { text: string }[] };
+    expect(result.content[0].text).toBe("Error: No question prompt provided.");
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("S40 C04: prompt and options are sanitized in the emitted entry", async () => {
+    const { pi, questionTool } = tool();
+    const interactive = {
+      hasUI: true,
+      mode: "rpc",
+      ui: {
+        select: vi.fn().mockResolvedValue("A"),
+        input: vi.fn(),
+      },
+    };
+    await questionTool.execute(
+      "c4",
+      {
+        prompt: "\u001b[31mPick\u001b[0m",
+        options: ["\u001b[31mA\u001b[0m", "B"],
+      },
+      undefined,
+      undefined,
+      interactive as never,
+    );
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ANSWERS_TYPE,
+      expect.objectContaining({
+        questions: [
+          expect.objectContaining({
+            prompt: "Pick",
+            mode: "single",
+            options: ["A", "B"],
+          }),
+        ],
+      }),
+    );
+  });
+});

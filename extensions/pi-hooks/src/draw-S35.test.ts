@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "./index.js";
 
@@ -37,5 +38,38 @@ describe("S35: the bundled skill is opt-in via PI_HOOKS_DISCOVER_SKILL", () => {
     )) as { skillPaths?: string[] };
     expect(result.skillPaths).toHaveLength(1);
     expect(result.skillPaths?.[0]).toContain("hooks-init");
+  });
+});
+
+describe("skill discovery boundary seams", () => {
+  it("S35 C02: only the exact flag value 1 enables discovery", () => {
+    process.env.PI_HOOKS_DISCOVER_SKILL = "0";
+    expect(setup().handlers.resources_discover).toBeUndefined();
+    process.env.PI_HOOKS_DISCOVER_SKILL = "true";
+    expect(setup().handlers.resources_discover).toBeUndefined();
+  });
+
+  it("S35 C03: the contributed skill path points at an on-disk SKILL.md", async () => {
+    process.env.PI_HOOKS_DISCOVER_SKILL = "1";
+    const { handlers } = setup();
+    const result = (await handlers.resources_discover({}, {})) as {
+      skillPaths: string[];
+    };
+    const path = result.skillPaths[0] ?? "";
+    expect(path).toMatch(/hooks-init[\\/]SKILL\.md$/);
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("S35 C04: repeated discovery yields the same single path without duplication", async () => {
+    process.env.PI_HOOKS_DISCOVER_SKILL = "1";
+    const { handlers } = setup();
+    const first = (await handlers.resources_discover({}, {})) as {
+      skillPaths: string[];
+    };
+    const second = (await handlers.resources_discover({}, {})) as {
+      skillPaths: string[];
+    };
+    expect(first.skillPaths).toHaveLength(1);
+    expect(second.skillPaths).toEqual(first.skillPaths);
   });
 });

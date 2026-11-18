@@ -23,3 +23,37 @@ describe("S55: complete marks known IDs once and reports unknowns", () => {
     expect(initial.todos[0].done).toBe(false);
   });
 });
+
+describe("idempotence, empty, and field-preservation seams", () => {
+  it("S55 C02: completing an already-done todo is not a change", () => {
+    const result = applyTodoCommand(
+      { todos: [{ id: 1, text: "A", done: true }], nextId: 2 },
+      { type: "complete", ids: [1] },
+    );
+    expect(result.changed).toBe(false);
+    expect(result.unknownIds).toEqual([]);
+  });
+
+  it("S55 C03: completing with no ids changes nothing", () => {
+    const state = { todos: [{ id: 1, text: "A", done: false }], nextId: 2 };
+    const result = applyTodoCommand(state, { type: "complete", ids: [] });
+    expect(result.changed).toBe(false);
+    expect(result.state).toEqual(state);
+  });
+
+  it("S55 C04: completing a todo preserves its priority field", () => {
+    const result = applyTodoCommand(
+      {
+        todos: [{ id: 1, text: "A", done: false, priority: "high" }],
+        nextId: 2,
+      },
+      { type: "complete", ids: [1] },
+    );
+    expect(result.state.todos[0]).toEqual({
+      id: 1,
+      text: "A",
+      done: true,
+      priority: "high",
+    });
+  });
+});

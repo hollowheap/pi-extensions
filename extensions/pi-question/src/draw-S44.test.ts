@@ -66,3 +66,57 @@ describe("S44: interactive gating and TUI-versus-RPC dialog paths", () => {
     expect(rpcSelect).toHaveBeenCalled();
   });
 });
+
+describe("abort, empty input, and details seams", () => {
+  it("S44 C02: an aborted dialog resolves to no answer", async () => {
+    const controller = new AbortController();
+    const ctx = {
+      hasUI: true,
+      mode: "rpc",
+      ui: {
+        select: vi
+          .fn()
+          .mockRejectedValue(new DOMException("aborted", "AbortError")),
+      },
+    };
+    await expect(
+      askQuestion(
+        { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+        ctx as never,
+        { signal: controller.signal },
+      ),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("S44 C03: a tool call with no prompt reports an error", async () => {
+    const pi = { appendEntry: vi.fn() };
+    const questionTool = createQuestionTool(pi as never);
+    const ui = { select: vi.fn(), input: vi.fn(), custom: vi.fn() };
+    const result = (await questionTool.execute("c2", {}, undefined, undefined, {
+      hasUI: true,
+      mode: "rpc",
+      ui,
+    } as never)) as { content: unknown[] };
+    expect(textOf(result)).toBe("Error: No question prompt provided.");
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(ui.select).not.toHaveBeenCalled();
+  });
+
+  it("S44 C04: non-interactive execution returns a no-ui details contract", async () => {
+    const pi = { appendEntry: vi.fn() };
+    const questionTool = createQuestionTool(pi as never);
+    const result = (await questionTool.execute(
+      "c3",
+      { prompt: "Pick", options: ["A"] },
+      undefined,
+      undefined,
+      { hasUI: true, mode: "print", ui: {} } as never,
+    )) as { details: unknown };
+    expect(result.details).toEqual({
+      cancelled: true,
+      answers: [],
+      reason: "no-ui",
+    });
+  });
+});

@@ -101,3 +101,52 @@ describe("S42: TUI multi-select uses a custom checkbox dialog", () => {
     });
   });
 });
+
+describe("cancel, write-in, and cleanup seams", () => {
+  it("S42 C02: Escape cancels the multi-select dialog", async () => {
+    const env = customDialog();
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A", "B"], page: 1 },
+      context(env.custom) as never,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    env.component()?.handleInput("\x1b");
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it("S42 C03: the write-in row edits and submits custom text", async () => {
+    const env = customDialog();
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A", "B"], page: 1 },
+      context(env.custom) as never,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component();
+    if (!component) throw new Error("component is undefined");
+    component.handleInput("\x1b[B");
+    component.handleInput("\x1b[B");
+    component.handleInput(" ");
+    component.handleInput("custom");
+    component.handleInput("\r");
+    component.handleInput("\r");
+    await expect(pending).resolves.toEqual({
+      mode: "multi",
+      selected: [],
+      writeIn: "custom",
+    });
+  });
+
+  it("S42 C04: disposing the dialog cancels the pending question", async () => {
+    const env = customDialog();
+    const pending = askSingleQuestion(
+      { prompt: "Pick many", mode: "multi", options: ["A"], page: 1 },
+      context(env.custom) as never,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    const component = env.component() as CustomComponent & {
+      dispose: () => void;
+    };
+    component.dispose();
+    await expect(pending).resolves.toBeUndefined();
+  });
+});

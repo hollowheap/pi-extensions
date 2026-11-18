@@ -64,3 +64,91 @@ describe("S56: a changed todo set appends one entry and refreshes the widget", (
     );
   });
 });
+
+describe("no-op, validation, and state-broadcast seams", () => {
+  it("S56 C02: a no-op change appends no entry and leaves widgets untouched", async () => {
+    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
+    const pi = {
+      ...createMockPi(),
+      on: vi.fn(
+        (event: string, handler: (event: unknown, ctx: unknown) => void) => {
+          handlers[event] = handler;
+          return () => {};
+        },
+      ),
+    };
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0]?.[0] as {
+      execute: (...args: unknown[]) => Promise<{ content: unknown[] }>;
+    };
+    const ctx = {
+      ...context(),
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: "custom",
+            customType: "hollowheap.todos",
+            data: {
+              todos: [{ id: 1, text: "Done", done: true }],
+              nextId: 2,
+            },
+          },
+        ],
+      },
+    };
+    handlers.session_start?.({}, ctx);
+    pi.appendEntry.mockClear();
+    ctx.ui.setWidget.mockClear();
+
+    await tool.execute(
+      "c1",
+      { action: "complete", id: 1 },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+  });
+
+  it("S56 C03: an empty create reports an error and appends nothing", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0]?.[0] as {
+      execute: (...args: unknown[]) => Promise<{ content: { text: string }[] }>;
+    };
+
+    const result = await tool.execute(
+      "c1",
+      { action: "create", tasks: [] },
+      undefined,
+      undefined,
+      context(),
+    );
+
+    expect(result.content[0].text).toBe("Error: No tasks provided to create.");
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("S56 C04: a changed set broadcasts full todos:state totals", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0]?.[0] as {
+      execute: (...args: unknown[]) => Promise<{ content: unknown[] }>;
+    };
+
+    await tool.execute(
+      "c1",
+      { action: "create", tasks: ["A", "B"] },
+      undefined,
+      undefined,
+      context(),
+    );
+
+    expect(pi.events.emit).toHaveBeenCalledWith(
+      "todos:state",
+      expect.objectContaining({ open: 2, total: 2 }),
+    );
+  });
+});

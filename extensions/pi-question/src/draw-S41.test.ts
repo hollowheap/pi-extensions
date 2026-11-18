@@ -34,3 +34,61 @@ describe("S41: TUI single-select offers a write-in row then asks for text", () =
     ).resolves.toBeUndefined();
   });
 });
+
+describe("option, cap, and draft seams", () => {
+  it("S41 C02: picking a regular option skips the write-in input", async () => {
+    const select = vi.fn().mockResolvedValue("A");
+    const input = vi.fn();
+    const ctx = { hasUI: true, mode: "tui", ui: { select, input } };
+    const answer = await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["A", "B"], page: 1 },
+      ctx as never,
+    );
+    expect(answer).toEqual({ mode: "single", value: "A" });
+    expect(input).not.toHaveBeenCalled();
+  });
+
+  it("S41 C03: a write-in answer is capped at 500 characters", async () => {
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        select: vi.fn().mockResolvedValue(WRITE_IN_LABEL),
+        input: vi.fn().mockResolvedValue("x".repeat(600)),
+      },
+    };
+    const answer = await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+      ctx as never,
+    );
+    expect(answer).toEqual({ mode: "single", value: "x".repeat(500) });
+  });
+
+  it("S41 C04: the editor draft is cleared during the dialog and restored after", async () => {
+    const component = { type: "original-editor" };
+    const getEditorComponent = vi.fn(() => component);
+    const setEditorComponent = vi.fn();
+    const getEditorText = vi.fn(() => "draft text");
+    const setEditorText = vi.fn();
+    const ctx = {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        select: vi.fn().mockResolvedValue("A"),
+        getEditorComponent,
+        setEditorComponent,
+        getEditorText,
+        setEditorText,
+      },
+    };
+
+    await askSingleQuestion(
+      { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+      ctx as never,
+    );
+
+    expect(setEditorComponent).toHaveBeenCalledWith(undefined);
+    expect(setEditorComponent).toHaveBeenCalledWith(component);
+    expect(setEditorText).toHaveBeenCalledWith("draft text");
+  });
+});

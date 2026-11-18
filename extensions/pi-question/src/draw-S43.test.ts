@@ -66,3 +66,69 @@ describe("S43: RPC uses select-based single and toggle-loop multi dialogs", () =
     expect(cancelled?.cancelled).toBe(true);
   });
 });
+
+describe("write-in and branching seams", () => {
+  it("S43 C02: an RPC single write-in returns the typed value", async () => {
+    const ctx = {
+      hasUI: true,
+      mode: "rpc",
+      ui: {
+        select: vi.fn().mockResolvedValue(WRITE_IN_LABEL),
+        input: vi.fn().mockResolvedValue("custom"),
+      },
+    };
+    await expect(
+      askQuestion(
+        { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+        ctx as never,
+      ),
+    ).resolves.toEqual({ mode: "single", value: "custom" });
+    expect(ctx.ui.input).toHaveBeenCalled();
+  });
+
+  it("S43 C03: an RPC multi write-in is capped at 500 characters", async () => {
+    const ctx = {
+      hasUI: true,
+      mode: "rpc",
+      ui: {
+        select: vi
+          .fn()
+          .mockResolvedValueOnce(WRITE_IN_LABEL)
+          .mockResolvedValueOnce(DONE_LABEL),
+        input: vi.fn().mockResolvedValue("x".repeat(600)),
+      },
+    };
+    await expect(
+      askQuestion(
+        { prompt: "Many", mode: "multi", options: ["A"], page: 1 },
+        ctx as never,
+      ),
+    ).resolves.toEqual({
+      mode: "multi",
+      selected: [],
+      writeIn: "x".repeat(500),
+    });
+  });
+
+  it("S43 C04: a condition that evaluates false skips its question", async () => {
+    const select = vi.fn().mockResolvedValue("A");
+    const ctx = { hasUI: true, mode: "rpc", ui: { select } };
+    const answers = await askQuestions(
+      [
+        { prompt: "Q1", mode: "single", options: ["A", "B"], page: 1 },
+        {
+          prompt: "Q2",
+          mode: "single",
+          options: ["A"],
+          page: 1,
+          condition: "answer1 == 'Yes'",
+        },
+      ],
+      ctx as never,
+    );
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(answers?.[0]).toEqual({ mode: "single", value: "A" });
+    expect(answers?.[1]).toBeUndefined();
+    expect(answers?.cancelled).toBeUndefined();
+  });
+});
