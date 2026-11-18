@@ -71,4 +71,53 @@ describe("S217 grant list command surface", () => {
     const completions = command(pi, "grant").getArgumentCompletions?.("li");
     expect((completions ?? []).map((item) => item.value)).toContain("list");
   });
+
+  it("S217 C02: listing with no grants reports an empty result", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createCtx();
+
+    await command(pi, "grant").handler?.("list", ctx);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith("No active grants", "info");
+  });
+
+  it("S217 C03: an invalid duration is refused and stores no grant", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    const grant = command(pi, "grant");
+
+    await grant.handler?.("src/y.ts tomorrow", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Invalid duration. Use e.g. 5m, 1h, 30s",
+      "error",
+    );
+
+    ctx.ui.notify.mockClear();
+    await grant.handler?.("list", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("No active grants", "info");
+  });
+
+  it("S217 C04: every active grant is listed and durations complete", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createCtx();
+    const grant = command(pi, "grant");
+
+    await grant.handler?.("src/a.ts 5m", ctx);
+    await grant.handler?.("src/b.ts 1h", ctx);
+    ctx.ui.notify.mockClear();
+
+    await grant.handler?.("list", ctx);
+    const text = ctx.ui.notify.mock.calls[0]?.[0] as string;
+    expect(text).toContain("src/a.ts");
+    expect(text).toContain("src/b.ts");
+    expect(text.match(/expires in/g)).toHaveLength(2);
+
+    const durations = (grant.getArgumentCompletions?.("src/a.ts 1") ?? []).map(
+      (item) => item.value,
+    );
+    expect(durations).toContain("1h");
+  });
 });

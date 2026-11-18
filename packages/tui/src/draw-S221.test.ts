@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resetActiveTuiConfig } from "./state.js";
+import {
+  getActiveTuiConfig,
+  resetActiveTuiConfig,
+  setActiveTuiConfig,
+} from "./state.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -70,5 +74,50 @@ describe("S221 pager code fence highlighting", () => {
 
     const rendered = env.component()?.render(80).join("\n") ?? "";
     expect(rendered).toContain("HL-ts");
+  });
+
+  it("S221 C02: a fence without a language uses the plain highlighter token", async () => {
+    const env = pagerContext();
+    await showMarkdownPager(env.ctx as never, {
+      title: "Report",
+      markdown: "```\nplain text\n```",
+    });
+
+    const rendered = env.component()?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("HL-");
+    expect(rendered).not.toContain("HL-ts");
+  });
+
+  it("S221 C03: uncolored config bypasses host highlighting", async () => {
+    setActiveTuiConfig({ ...getActiveTuiConfig(), colored: false });
+    const env = pagerContext();
+    await showMarkdownPager(env.ctx as never, {
+      title: "Report",
+      markdown: "```ts\nconst x = 1;\n```",
+    });
+
+    const rendered = env.component()?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("const x = 1;");
+    expect(rendered).not.toContain("HL-ts");
+  });
+
+  it("S221 C04: blockquotes and lists keep their styled borders and bullets", async () => {
+    const tokenTheme = {
+      fg: (token: string, text: string) => `<${token}>${text}</${token}>`,
+      bold: (text: string) => `<bold>${text}</bold>`,
+      italic: (text: string) => `<italic>${text}</italic>`,
+      underline: (text: string) => `<underline>${text}</underline>`,
+      strikethrough: (text: string) => `<strike>${text}</strike>`,
+    };
+    const env = pagerContext();
+    (env.ctx.ui as { theme?: unknown }).theme = tokenTheme;
+    await showMarkdownPager(env.ctx as never, {
+      title: "Report",
+      markdown: "> quoted line\n\n- bullet item",
+    });
+
+    const rendered = env.component()?.render(80).join("\n") ?? "";
+    expect(rendered).toContain("<muted><italic>quoted line</italic></muted>");
+    expect(rendered).toContain("<accent>- </accent>");
   });
 });

@@ -1221,6 +1221,94 @@ describe("subagent tool", () => {
     expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
   });
 
+  it("S223 C02: resume is blocked by same-project running children", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      maxConcurrent: 1,
+    });
+    mocks.attachSubagent.mockResolvedValue({ ...running, status: "failed" });
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-busy" },
+    ]);
+
+    const result = await createTool().execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(textOf(result)).toContain("maxConcurrent 1 reached");
+    expect(mocks.startSubagent).not.toHaveBeenCalled();
+  });
+
+  it("S223 C03: only running or starting children consume the cap", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      maxConcurrent: 1,
+    });
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-done", status: "completed" },
+      { ...running, id: "sub-failed", status: "failed" },
+      { ...running, id: "sub-cancelled", status: "cancelled" },
+    ]);
+
+    const tool = createTool();
+    const started = await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(started)).not.toContain("maxConcurrent");
+    expect(mocks.startSubagent).toHaveBeenCalledTimes(1);
+
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-starting", status: "starting" },
+    ]);
+    const blocked = await tool.execute(
+      "2",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
+  });
+
+  it("S223 C04: the same children are counted per caller project", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      maxConcurrent: 1,
+    });
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-here" },
+    ]);
+    const tool = createTool();
+
+    const inRepo = await tool.execute(
+      "1",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(inRepo)).toContain("maxConcurrent 1 reached");
+    expect(mocks.startSubagent).not.toHaveBeenCalled();
+
+    const elsewhere = await tool.execute(
+      "2",
+      { action: "start", agent: "scout", task: "find" },
+      undefined,
+      undefined,
+      { ...ctx, cwd: "/elsewhere" } as never,
+    );
+    expect(textOf(elsewhere)).not.toContain("maxConcurrent");
+    expect(mocks.startSubagent).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the isolated workspace when a failed child resumes", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-subagents-isolated-"));
     try {

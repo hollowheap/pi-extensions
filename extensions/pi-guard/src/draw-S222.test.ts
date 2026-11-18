@@ -94,4 +94,71 @@ describe("S222 tag-scoped trusted roots", () => {
       expect.objectContaining({ block: true, reason: expect.any(String) }),
     );
   });
+
+  it("S222 C02: malformed roots are dropped while valid ones survive", () => {
+    const trust = parseGuardTrust(
+      {
+        trustedRoots: [
+          "/agents",
+          "   ",
+          42,
+          { path: "", tags: ["read"] },
+          { path: "/tools", tags: [] },
+        ],
+      },
+      "guard.json",
+    );
+
+    expect(trust.trustedRoots).toEqual([
+      "/agents",
+      { path: "/tools", tags: [] },
+    ]);
+  });
+
+  it("S222 C03: the seeded agent root does not grant write access", async () => {
+    const dir = tempDir();
+    const seeded = loadGuardTrust(dir);
+    expect(seeded.trustedRoots.length).toBeGreaterThan(0);
+    agentState.agentDir = dir;
+
+    const skillDir = join(dir, "skills", "demo");
+    mkdirSync(skillDir, { recursive: true });
+    const skillFile = join(skillDir, "SKILL.md");
+    writeFileSync(skillFile, "demo");
+
+    const hook = guardToolCall();
+    const ctx = {
+      cwd: tempDir(),
+      sessionManager: {},
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(), select: vi.fn() },
+    };
+
+    const result = await hook(
+      { toolName: "write", input: { path: skillFile, content: "edit" } },
+      ctx,
+    );
+    expect(result).toEqual(
+      expect.objectContaining({ block: true, reason: expect.any(String) }),
+    );
+  });
+
+  it("S222 C04: persistent decisions are parsed for downstream consumers", () => {
+    const trust = parseGuardTrust(
+      {
+        decisions: {
+          "/repo/a": "allow",
+          "/repo/b": "deny",
+          "/repo/c": "bogus",
+        },
+      },
+      "guard.json",
+    );
+
+    expect(trust.persistentDecisions).toEqual({
+      "/repo/a": "allow",
+      "/repo/b": "deny",
+    });
+  });
 });

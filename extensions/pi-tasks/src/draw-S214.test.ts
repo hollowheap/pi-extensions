@@ -79,4 +79,96 @@ describe("S214 task permission verdict consistency", () => {
 
     expect(confirm).not.toHaveBeenCalled();
   });
+
+  it("S214 C02: an empty command is rejected before approval or spawn", async () => {
+    const tool = createTaskTool({
+      getAgentDir: () => tempDir(),
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+    });
+    const confirm = vi.fn(async () => true);
+    const ctx = {
+      cwd: tempDir(),
+      sessionManager: {},
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm },
+    };
+
+    const result = await tool.execute(
+      "2",
+      { action: "start", command: "   " } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect((result.content as Array<{ text: string }>)[0].text).toContain(
+      "task start requires a command.",
+    );
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("S214 C03: an untrusted project blocks the start before permission checks", async () => {
+    const tool = createTaskTool({
+      getAgentDir: () => tempDir(),
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+    });
+    const confirm = vi.fn(async () => true);
+    const ctx = {
+      cwd: tempDir(),
+      sessionManager: {},
+      hasUI: true,
+      isProjectTrusted: () => false,
+      ui: { notify: vi.fn(), confirm },
+    };
+
+    const result = await tool.execute(
+      "3",
+      { action: "start", command: "echo hi" } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect((result.content as Array<{ text: string }>)[0].text).toContain(
+      "task start requires a trusted project",
+    );
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("S214 C04: headless ask blocks instead of becoming an allow", async () => {
+    const agentDir = tempDir();
+    writeFileSync(
+      join(agentDir, "permissions.json"),
+      JSON.stringify({ rules: [] }),
+    );
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+    });
+    const confirm = vi.fn(async () => true);
+    const ctx = {
+      cwd: tempDir(),
+      sessionManager: {},
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm },
+    };
+
+    const result = await tool.execute(
+      "4",
+      { action: "start", command: "echo hi" } as never,
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect((result.content as Array<{ text: string }>)[0].text).toContain(
+      "needs approval (no UI)",
+    );
+    expect(confirm).not.toHaveBeenCalled();
+  });
 });
