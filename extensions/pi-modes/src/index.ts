@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -5,7 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
-import { loadModesConfig } from "@hollowheap/core/config";
+import { loadModesConfig, updateJsonConfig } from "@hollowheap/core/config";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import {
   enterMode,
@@ -16,9 +18,10 @@ import {
   resetSession,
 } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import { session } from "@hollowheap/core/state";
+import { readPersistedMode, session, setMode } from "@hollowheap/core/state";
 import type { ModeLayer } from "@hollowheap/core/types";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { getActiveTuiConfig } from "@hollowheap/tui/state";
 
 export const AUTO_MODE: ModeLayer = Object.freeze({
   name: "auto",
@@ -42,6 +45,74 @@ function publishMode(pi: ExtensionAPI, owner: unknown): void {
   const mode = session(owner).mode;
   updateSessionSnapshot(owner, "mode", { name: mode, updatedAt: Date.now() });
   pi.events?.emit?.("mode:changed", { mode });
+}
+
+function publishStatus(ctx: ExtensionContext): void {
+  const ui = ctx.ui as unknown as {
+    setStatus?: (key: string, value: string | undefined) => void;
+  };
+  if (typeof ui.setStatus !== "function") return;
+  const config = getActiveTuiConfig() as unknown as {
+    modeIndicator?: boolean;
+  };
+  const visible = config.modeIndicator !== false;
+  ui.setStatus("mode", visible ? session(ctx.sessionManager).mode : undefined);
+}
+
+function getModesConfigPath(): string {
+  return join(getAgentDir(), "modes.json");
+}
+
+function readModesDocument(): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(getModesConfigPath(), "utf8"),
+    );
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+function readConfiguredDefault(): string | undefined {
+  const value = readModesDocument().default;
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+function isKnownMode(name: string): boolean {
+  if (getModeLayer(name) !== undefined) return true;
+  const modes = readModesDocument().modes;
+  if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
+    return false;
+  }
+  return Object.hasOwn(modes, name);
+}
+
+async function setDefaultMode(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  name: string,
+): Promise<void> {
+  if (name === "" || !isKnownMode(name)) {
+    ctx.ui.notify(`pi-modes: unknown mode "${name}"`, "error");
+    return;
+  }
+  const result = updateJsonConfig(getModesConfigPath(), (root) => {
+    root.default = name;
+  });
+  if (!result.ok) {
+    ctx.ui.notify(`pi-modes: ${sanitizeTerminalText(result.error)}`, "error");
+    return;
+  }
+  ctx.ui.notify(`pi-modes: default mode ${name}`);
+  publishMode(pi, ctx.sessionManager);
 }
 
 async function switchMode(
@@ -72,6 +143,7 @@ async function switchMode(
     ctx.ui.notify(`pi-modes: mode ${sanitizeTerminalText(result.mode)}`);
   }
   publishMode(pi, ctx.sessionManager);
+  publishStatus(ctx);
 }
 
 async function pickMode(
@@ -123,6 +195,7 @@ export default function (pi: ExtensionAPI): void {
     const notify = (message: string) =>
       ctx.ui.notify(`pi-modes: ${sanitizeTerminalText(message)}`, "warning");
     replaceConfigModes(loadModesConfig(getAgentDir(), notify), notify);
+    const persisted = readPersistedMode(ctx.sessionManager);
     const restored = resetSession(ctx.sessionManager);
     if (restored.diagnostic !== undefined) {
       ctx.ui.notify(
@@ -136,7 +209,16 @@ export default function (pi: ExtensionAPI): void {
         "error",
       );
     }
+    const configuredDefault = readConfiguredDefault();
+    if (
+      persisted === undefined &&
+      configuredDefault !== undefined &&
+      getModeLayer(configuredDefault) !== undefined
+    ) {
+      setMode(ctx.sessionManager, configuredDefault, { persist: false });
+    }
     publishMode(pi, ctx.sessionManager);
+    publishStatus(ctx);
   };
 
   pi.on("session_start", (_event, ctx) => restore(ctx));
@@ -154,6 +236,26 @@ export default function (pi: ExtensionAPI): void {
       const raw = args.trim();
       if (raw === "") {
         await pickMode(pi, ctx);
+        return;
+      }
+      const lower = raw.toLowerCase();
+      if (lower === "ask" || lower === "autopilot") {
+        ctx.ui.notify(
+          `pi-modes: "${raw}" is a legacy mode name; use "manual" instead`,
+          "error",
+        );
+        return;
+      }
+      const parts = raw.split(/\s+/);
+      if (parts[0]?.toLowerCase() === "settings") {
+        if (parts[1]?.toLowerCase() === "default") {
+          await setDefaultMode(pi, ctx, parts[2] ?? "");
+          return;
+        }
+        ctx.ui.notify(
+          "pi-modes: usage: /mode settings default <mode>",
+          "error",
+        );
         return;
       }
       await switchMode(pi, ctx, resolveInput(raw));

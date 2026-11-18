@@ -262,23 +262,6 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   });
 
-  pi.registerCommand("theme", {
-    description: "Select the interactive color theme",
-    handler: async (_args, ctx) => {
-      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
-        if (ctx.hasUI) {
-          ctx.ui.notify("Theme selection requires TUI mode.", "info");
-        }
-        return;
-      }
-      const { showThemePicker } = await import("./theme-picker.js");
-      const picked = await showThemePicker(ctx);
-      if (picked !== undefined && ctx.hasUI) {
-        ctx.ui.notify(`Theme: ${picked}`, "info");
-      }
-    },
-  });
-
   const STATUSLINE_SUBCOMMANDS = [
     "click",
     "settings",

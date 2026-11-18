@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type UpdateJsonConfigResult,
@@ -23,6 +24,17 @@ export function loadGuardConfig(
     trustedRoots: [...trust.trustedRoots],
     decisions: { ...trust.persistentDecisions },
   };
+}
+
+export function hasConfiguredTrustedRoots(agentDir: string): boolean {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(getGuardConfigPath(agentDir), "utf8"),
+    ) as Record<string, unknown>;
+    return Array.isArray(parsed.trustedRoots);
+  } catch {
+    return false;
+  }
 }
 
 export function saveGuardConfig(

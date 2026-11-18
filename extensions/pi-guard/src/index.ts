@@ -27,7 +27,7 @@ import {
   readCommandArg,
   readToolTarget,
 } from "@hollowheap/policy";
-import { loadGuardConfig } from "./config.js";
+import { hasConfiguredTrustedRoots, loadGuardConfig } from "./config.js";
 import {
   calculateContextBreakdown,
   formatContextBreakdown,
@@ -82,6 +82,105 @@ function getActiveGrantCount(runtime: GuardRuntime, owner: unknown): number {
   const grants = runtime.sessionGrants.get(owner) ?? [];
   const now = Date.now();
   return grants.filter((g) => g.expiresAt > now).length;
+}
+
+function listActiveGrants(runtime: GuardRuntime, ctx: ExtensionContext): void {
+  const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
+  const now = Date.now();
+  const active = grants.filter((g) => g.expiresAt > now);
+  if (active.length === 0) {
+    if (ctx.hasUI) ctx.ui.notify("No active grants", "info");
+    return;
+  }
+  const text = active
+    .map(
+      (g) =>
+        `${sanitizeTerminalText(g.target)} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
+    )
+    .join("\n");
+  if (ctx.hasUI) ctx.ui.notify(text, "info");
+}
+
+type ClassifierVerdict = { kind: "block" } | { kind: "error"; detail: string };
+
+async function classifyToolCall(
+  event: ToolCallEvent,
+  tag: Tag | undefined,
+  ctx: ExtensionContext,
+): Promise<ClassifierVerdict | undefined> {
+  const registry = (ctx as { modelRegistry?: unknown }).modelRegistry as
+    | {
+        findOfType?: (...args: unknown[]) => unknown;
+        classify?: (...args: unknown[]) => Promise<unknown>;
+      }
+    | undefined;
+  if (
+    typeof registry?.findOfType !== "function" ||
+    typeof registry.classify !== "function"
+  ) {
+    return undefined;
+  }
+  let model: unknown;
+  try {
+    model = registry.findOfType("classifier", "typesafe", "jev-latest");
+  } catch (error) {
+    return {
+      kind: "error",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  if (model === undefined || model === null) return undefined;
+
+  const target = readToolTarget(event.toolName, event.input) ?? event.toolName;
+  const payload = {
+    state: {
+      tool: event.toolName,
+      tag: tag ?? "unknown",
+      summary: target.slice(0, 80),
+    },
+    questions: {
+      answer: {
+        type: "choice",
+        instructions: `Allow ${event.toolName} (${tag ?? "unknown"})?`,
+        criteria: {
+          allow: "Proceed with the standard guard decision",
+          block: "Block this tool call",
+        },
+      },
+    },
+  };
+
+  let result: unknown;
+  try {
+    result = await registry.classify(model, payload);
+  } catch (error) {
+    return {
+      kind: "error",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const record = result as
+    | {
+        stopReason?: unknown;
+        errorMessage?: unknown;
+        answers?: Record<string, unknown>;
+      }
+    | undefined;
+  if (record?.stopReason === "error" || record?.stopReason === "aborted") {
+    return {
+      kind: "error",
+      detail:
+        typeof record.errorMessage === "string"
+          ? record.errorMessage
+          : String(record.stopReason),
+    };
+  }
+  const answer = record?.answers?.answer;
+  const choice =
+    typeof answer === "string"
+      ? answer
+      : (answer as { choice?: unknown } | undefined)?.choice;
+  return choice === "block" ? { kind: "block" } : undefined;
 }
 
 function persistGuardAudit(
@@ -218,6 +317,7 @@ function rememberTarget(
 }
 
 const GRANT_DURATIONS = ["30s", "5m", "15m", "1h"] as const;
+const GRANT_SUBCOMMANDS = ["list"] as const;
 
 function parseDuration(str: string): number | null {
   const match = str.match(/^(\d+)(s|m|h)$/);
@@ -383,6 +483,27 @@ export default function (pi: ExtensionAPI) {
     }
     const tag: Tag | undefined =
       TOOL_TAGS[event.toolName] ?? loadContextToolTags(ctx)[event.toolName];
+
+    const classifierVerdict = await classifyToolCall(event, tag, ctx);
+    if (classifierVerdict?.kind === "block") {
+      const audit = getAudit(runtime, ctx.sessionManager);
+      audit.deniedCount++;
+      persistGuardAudit(pi, ctx.sessionManager, audit);
+      publishGuardSnapshot(runtime, ctx.sessionManager);
+      return {
+        block: true,
+        reason: `pi-guard: classifier blocked ${event.toolName}`,
+      };
+    }
+    if (classifierVerdict?.kind === "error") {
+      const auditSink = (
+        ctx as { audit?: { warn?: (message: string) => void } }
+      ).audit;
+      auditSink?.warn?.(
+        `pi-guard: classifier audit note: ${classifierVerdict.detail}`,
+      );
+    }
+
     if (tag === undefined) {
       if (session(ctx.sessionManager).mode === "auto") {
         return undefined;
@@ -481,8 +602,17 @@ export default function (pi: ExtensionAPI) {
         if (trust.cachedDecision === "ask") {
           return requestApproval(runtime, event.toolName, target, ctx, pi);
         }
+        // Core drops tag-scoped root objects, so key presence is the signal
+        // that the implicit agent-dir seed was kept or removed.
+        const agentRootActive =
+          !hasConfiguredTrustedRoots(agentDir) ||
+          (guardConfig.trustedRoots ?? []).some(
+            (root) =>
+              typeof root === "string" && isSubpath(root, agentDir, ctx.cwd),
+          );
         if (
           (tag === "read" || tag === "search") &&
+          agentRootActive &&
           isSubpath(agentDir, trust.canonicalPath)
         ) {
           return undefined;
@@ -802,13 +932,22 @@ export default function (pi: ExtensionAPI) {
           ...(runtime.sessionTargets.get(runtime.lastOwner) ??
             new Set<string>()),
         ].reverse();
-        return targets
-          .filter((target) => target.toLowerCase().startsWith(query))
-          .map((target) => ({
-            value: target,
-            label: target,
-            description: "recent permission target",
-          }));
+        return [
+          ...GRANT_SUBCOMMANDS.filter((sub) => sub.startsWith(query)).map(
+            (sub) => ({
+              value: sub,
+              label: sub,
+              description: "list active grants",
+            }),
+          ),
+          ...targets
+            .filter((target) => target.toLowerCase().startsWith(query))
+            .map((target) => ({
+              value: target,
+              label: target,
+              description: "recent permission target",
+            })),
+        ];
       }
       if (parts.length === 2) {
         const query = (parts[1] ?? "").toLowerCase();
@@ -824,6 +963,10 @@ export default function (pi: ExtensionAPI) {
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
+      if (parts[0] === "list") {
+        listActiveGrants(runtime, ctx);
+        return;
+      }
       let target = parts.length > 0 ? parts[0] : undefined;
       let durationStr: string | undefined;
       if (parts.length === 0) {
@@ -871,25 +1014,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("grants", {
-    description: "List active temporary permission grants",
-    handler: async (_args, ctx) => {
-      const grants = runtime.sessionGrants.get(ctx.sessionManager) ?? [];
-      const now = Date.now();
-      const active = grants.filter((g) => g.expiresAt > now);
-      if (active.length === 0) {
-        if (ctx.hasUI) ctx.ui.notify("No active grants", "info");
-        return;
-      }
-      const text = active
-        .map(
-          (g) =>
-            `${sanitizeTerminalText(g.target)} (expires in ${Math.ceil((g.expiresAt - now) / 1000)}s)`,
-        )
-        .join("\n");
-      if (ctx.hasUI) ctx.ui.notify(text, "info");
-    },
-  });
   pi.registerCommand("context", {
     description: "Show context window usage broken down by category",
     handler: async (_args, ctx) => {
