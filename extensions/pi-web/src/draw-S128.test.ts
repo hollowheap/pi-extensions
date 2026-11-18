@@ -38,4 +38,55 @@ describe("S128 caching and content negotiation", () => {
     });
     expect(jsonFetch.mock.calls[0][1].headers.Accept).toBe("application/json");
   });
+
+  it("S128 C02: different accept types keep separate cache entries", async () => {
+    const url = `https://example.com/s128-key-${Date.now()}`;
+    const fetchImpl = vi.fn(async () => response("body", "text/plain"));
+    const options = {
+      providers: [],
+      cacheTtlMs: 60_000,
+      fetchImpl: fetchImpl as never,
+      resolveHost: publicResolver,
+    };
+    await fetchUrl(url, { ...options, acceptType: "text" });
+    await fetchUrl(url, { ...options, acceptType: "text" });
+    await fetchUrl(url, { ...options, acceptType: "json" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("S128 C03: unsafe URLs are rejected before any network call", async () => {
+    const fetchImpl = vi.fn(async () => response("body", "text/plain"));
+    await expect(
+      fetchUrl("file:///etc/passwd", { fetchImpl: fetchImpl as never }),
+    ).rejects.toThrow("URL must use http or https");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("S128 C04: a provider result short-circuits the raw fetch path", async () => {
+    const fetchImpl = vi.fn(async () => response("raw", "text/plain"));
+    const provider = {
+      id: "exa" as const,
+      name: "fake",
+      capabilities: { search: false, fetch: true },
+      search: vi.fn(async () => []),
+      fetch: vi.fn(async () => ({
+        url: "https://example.com/s128-provider",
+        finalUrl: "https://example.com/s128-provider",
+        provider: "exa" as const,
+        contentType: "text/plain",
+        content: "provider body",
+        links: [],
+        media: [],
+        truncated: false,
+      })),
+    };
+    const result = await fetchUrl("https://example.com/s128-provider", {
+      providers: [provider],
+      fetchImpl: fetchImpl as never,
+      resolveHost: publicResolver,
+    });
+    expect(result.content).toBe("provider body");
+    expect(result.provider).toBe("exa");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

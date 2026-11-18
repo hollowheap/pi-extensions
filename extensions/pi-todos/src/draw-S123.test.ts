@@ -22,4 +22,41 @@ describe("S123 edit, priority, bulk complete", () => {
     state = applyTodoCommand(state, { type: "complete", ids: [1, 2] }).state;
     expect(state.todos.every((todo) => todo.done)).toBe(true);
   });
+
+  it("S123 C02: creating with no texts leaves state untouched", () => {
+    const empty = emptyTodoState();
+    const result = applyTodoCommand(empty, { type: "create", texts: [] });
+    expect(result.changed).toBe(false);
+    expect(result.state.todos).toEqual([]);
+    expect(result.state.nextId).toBe(1);
+  });
+
+  it("S123 C03: editing an unknown id is reported instead of throwing", () => {
+    const state = applyTodoCommand(emptyTodoState(), {
+      type: "create",
+      texts: ["only"],
+    }).state;
+    const result = applyTodoCommand(state, {
+      type: "edit",
+      id: 42,
+      text: "missing",
+    });
+    expect(result.unknownIds).toEqual([42]);
+    expect(result.changed).toBe(false);
+    expect(result.state.todos[0]?.text).toBe("only");
+  });
+
+  it("S123 C04: priority tags and completion glyphs reach the formatted list", () => {
+    let state = applyTodoCommand(emptyTodoState(), {
+      type: "create",
+      texts: ["t"],
+    }).state;
+    state = applyTodoCommand(state, {
+      type: "priority",
+      id: 1,
+      priority: "high",
+    }).state;
+    state = applyTodoCommand(state, { type: "complete", ids: [1] }).state;
+    expect(formatTodoList(state.todos)).toBe("✓ 1 [high] t");
+  });
 });

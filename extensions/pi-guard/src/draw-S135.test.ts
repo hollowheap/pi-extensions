@@ -66,4 +66,81 @@ describe("S135 temporary permission grants", () => {
       vi.useRealTimers();
     }
   });
+
+  it("S135 C02: listing on a fresh session reports no grants", async () => {
+    const pi = {
+      on: vi.fn(() => () => {}),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      events: { on: vi.fn(() => () => {}), emit: vi.fn() },
+    };
+    extension(pi as never);
+    const ctx = {
+      cwd: "/repo",
+      sessionManager: {},
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    await commandHandler(pi, "grant")("list", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("No active grants", "info");
+  });
+
+  it("S135 C03: an invalid duration is rejected without creating a grant", async () => {
+    const pi = {
+      on: vi.fn(() => () => {}),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      events: { on: vi.fn(() => () => {}), emit: vi.fn() },
+    };
+    extension(pi as never);
+    const ctx = {
+      cwd: "/repo",
+      sessionManager: {},
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    await commandHandler(pi, "grant")("/tmp/nope forever", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Invalid duration. Use e.g. 5m, 1h, 30s",
+      "error",
+    );
+    ctx.ui.notify.mockClear();
+    await commandHandler(pi, "grant")("list", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("No active grants", "info");
+  });
+
+  it("S135 C04: grants are scoped to their own session owner", async () => {
+    const pi = {
+      on: vi.fn(() => () => {}),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      events: { on: vi.fn(() => () => {}), emit: vi.fn() },
+    };
+    extension(pi as never);
+    const first = {
+      cwd: "/repo",
+      sessionManager: {},
+      hasUI: true,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    const second = {
+      ...first,
+      sessionManager: {},
+      ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+    };
+    await commandHandler(pi, "grant")("/tmp/owned 30s", first);
+    await commandHandler(pi, "grant")("list", first);
+    expect(first.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("/tmp/owned (expires in"),
+      "info",
+    );
+    await commandHandler(pi, "grant")("list", second);
+    expect(second.ui.notify).toHaveBeenCalledWith("No active grants", "info");
+  });
 });

@@ -52,4 +52,53 @@ describe("S133 hook conditions and formatting", () => {
       await runPostHook(entry({ format: "plain" }), payload("read")),
     ).toEqual({ output: "hello hook" });
   });
+
+  it("S133 C02: empty conditions and matchers accept everything", () => {
+    const withCommand = {
+      ...payload("read"),
+      input: { command: "/repo/secret/key" },
+    };
+    expect(evaluateCondition(entry(), withCommand)).toBe(true);
+    expect(matchesTool(entry({ matcher: "" }), "anything")).toBe(true);
+    expect(
+      evaluateCondition(
+        entry({ condition: "path contains 'secret'" }),
+        withCommand,
+      ),
+    ).toBe(true);
+    expect(
+      evaluateCondition(
+        entry({ condition: "path contains 'public'" }),
+        withCommand,
+      ),
+    ).toBe(false);
+  });
+
+  it("S133 C03: non-conforming hook output blocks with a reason", () => {
+    expect(
+      interpretPreHook({ code: 2, stdout: "", stderr: "denied by policy" }),
+    ).toEqual({ block: true, reason: "denied by policy" });
+    expect(
+      interpretPreHook({ code: 0, stdout: "not json", stderr: "" }),
+    ).toEqual({
+      block: true,
+      reason: "hook printed output that is not a decision",
+    });
+    expect(
+      interpretPreHook({
+        code: 0,
+        stdout: '{"decision":"allow"}',
+        stderr: "",
+      }),
+    ).toEqual({ block: false });
+  });
+
+  it("S133 C04: a relative command without a config dir is refused", async () => {
+    expect(
+      await runPostHook(entry({ command: "./missing.sh" }), payload("read")),
+    ).toEqual({
+      error:
+        'cannot execute relative command "./missing.sh" without declaring config directory',
+    });
+  });
 });

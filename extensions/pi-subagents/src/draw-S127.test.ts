@@ -72,4 +72,32 @@ describe("S127 pause and steering", () => {
       "info",
     );
   });
+
+  it("S127 C02: steering without a message is rejected before any send", async () => {
+    const { command, ctx } = setup();
+    await command.handler("steer sub-1", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Usage: /subagent steer <id> <message>",
+      "error",
+    );
+    expect(mocks.sendSubagent).not.toHaveBeenCalled();
+  });
+
+  it("S127 C03: pausing an unknown child reports an error without aborting", async () => {
+    mocks.attachSubagent.mockResolvedValueOnce(undefined as never);
+    const { command, ctx } = setup();
+    await command.handler("pause ghost", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unknown subagent ghost",
+      "error",
+    );
+    expect(mocks.abortSubagent).not.toHaveBeenCalled();
+  });
+
+  it("S127 C04: a bare command lists children through the runner seam", async () => {
+    const { command, ctx } = setup();
+    await command.handler("", ctx);
+    expect(mocks.listSubagents).toHaveBeenCalledWith("/tmp/s127");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("No subagents found.", "info");
+  });
 });

@@ -60,4 +60,62 @@ describe("S143 state survives compaction", () => {
       expect.any(Object),
     );
   });
+
+  it("S143 C02: malformed subagent and task event payloads are ignored", () => {
+    const handlers: Record<string, (data: unknown) => void> = {};
+    const pi = createMockPi();
+    pi.events.on.mockImplementation(
+      (event: string, handler: (data: unknown) => void) => {
+        handlers[event] = handler;
+        return () => {};
+      },
+    );
+    extension(pi as never);
+    expect(() => {
+      handlers["subagents:state"]?.("not an array");
+      handlers["subagents:state"]?.([{ id: 3 }]);
+      handlers["tasks:state"]?.({ nope: true });
+    }).not.toThrow();
+  });
+
+  it("S143 C03: terminal listeners are disposed before replacement and on shutdown", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const disposeFirst = vi.fn();
+    const disposeSecond = vi.fn();
+    const onTerminalInput = vi
+      .fn()
+      .mockReturnValueOnce(disposeFirst)
+      .mockReturnValueOnce(disposeSecond);
+    const ctx = { ...context(), ui: { ...context().ui, onTerminalInput } };
+
+    pi.handlers.session_start?.({}, ctx);
+    pi.handlers.session_start?.({}, ctx);
+    expect(disposeFirst).toHaveBeenCalledTimes(1);
+    expect(disposeSecond).not.toHaveBeenCalled();
+    pi.handlers.session_shutdown?.({});
+    expect(disposeSecond).toHaveBeenCalledTimes(1);
+  });
+
+  it("S143 C04: a headless tool call persists state without touching widgets", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0][0];
+    const ctx = { ...context(), hasUI: false };
+
+    await tool.execute(
+      "call-headless",
+      { action: "create", text: "No UI" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      "hollowheap.todos",
+      expect.objectContaining({
+        todos: [expect.objectContaining({ text: "No UI" })],
+      }),
+    );
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+  });
 });
