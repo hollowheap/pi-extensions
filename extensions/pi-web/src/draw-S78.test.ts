@@ -71,4 +71,63 @@ describe("S78: web tools return normalized fields under enforced caps", () => {
     expect(details.media).toHaveLength(FETCH_MAX_MEDIA);
     expect(details.truncated).toBe(true);
   });
+
+  it("S78 C02: clamps max_results to the hard maximum", async () => {
+    const search = vi.fn().mockResolvedValue(
+      Array.from({ length: 15 }, (_, i) => ({
+        title: `t${i}`,
+        url: `https://example.com/${i}`,
+        snippet: `s${i}`,
+      })),
+    );
+    const tool = createWebSearchTool({ search });
+    const result = await tool.execute(
+      "1",
+      { query: "q", max_results: 15 } as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect((result.details as { results: unknown[] }).results).toHaveLength(
+      SEARCH_MAX_RESULTS,
+    );
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ maxResults: SEARCH_MAX_RESULTS }),
+    );
+  });
+
+  it("S78 C03: reports a search provider failure as tool error text", async () => {
+    const search = vi.fn().mockRejectedValue(new Error("provider down"));
+    const tool = createWebSearchTool({ search });
+    const result = await tool.execute(
+      "1",
+      { query: "q" } as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect((result.content as Array<{ text: string }>)[0].text).toContain(
+      "web_search unavailable",
+    );
+    expect(result.details).toMatchObject({ error: "provider down" });
+  });
+
+  it("S78 C04: drops unsafe search result URLs before normalizing", async () => {
+    const search = vi.fn().mockResolvedValue([
+      { title: "ok", url: "https://example.com/a", snippet: "a" },
+      { title: "private", url: "http://127.0.0.1/secret", snippet: "b" },
+    ]);
+    const tool = createWebSearchTool({ search });
+    const result = await tool.execute(
+      "1",
+      { query: "q" } as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const results = (result.details as { results: Array<{ url: string }> })
+      .results;
+    expect(results).toHaveLength(1);
+    expect(results[0].url).toBe("https://example.com/a");
+  });
 });

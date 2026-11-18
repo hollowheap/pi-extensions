@@ -7,6 +7,7 @@ import {
   type LspClientOptions,
   disposeAllLspClients,
   getLspClient,
+  listLspStatus,
 } from "./lsp.js";
 
 const fixturePath = fileURLToPath(
@@ -41,5 +42,35 @@ describe("S64: the stdio LSP client lazily pools one server per command/args/roo
 
     expect(first).not.toBe(second);
     expect(third).toBe(second);
+  });
+
+  it("S64 C02: disposes pooled clients so the next request creates a fresh one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
+    const opts = options(dir, join(dir, "log.jsonl"));
+    const first = getLspClient(opts);
+    expect(getLspClient(opts)).toBe(first);
+    await disposeAllLspClients();
+    expect(listLspStatus()).toHaveLength(0);
+    const second = getLspClient(opts);
+    expect(second).not.toBe(first);
+  });
+
+  it("S64 C03: reports pooled clients through status and filters by root", () => {
+    const firstDir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
+    const secondDir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
+    getLspClient(options(firstDir, join(firstDir, "log.jsonl")));
+    getLspClient(options(secondDir, join(secondDir, "log.jsonl")));
+    expect(listLspStatus()).toHaveLength(2);
+    const filtered = listLspStatus(undefined, secondDir);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toMatchObject({ name: "fake", status: "running" });
+  });
+
+  it("S64 C04: distinguishes pool entries by arguments as well as root", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-lsp-draw-"));
+    const first = getLspClient(options(dir, join(dir, "one.jsonl")));
+    const second = getLspClient(options(dir, join(dir, "two.jsonl")));
+    expect(first).not.toBe(second);
+    expect(listLspStatus()).toHaveLength(2);
   });
 });

@@ -4,9 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createTaskRecord,
+  ensureTasksDir,
+  generateTaskId,
+  listTaskMetadata,
+  readTaskLog,
+  readTaskMetadata,
   taskLogPath,
   taskMetaPath,
   tasksDir,
+  writeTaskMetadata,
 } from "./registry.js";
 
 describe("S69: the task registry persists durable records with tight permissions", () => {
@@ -45,5 +51,52 @@ describe("S69: the task registry persists durable records with tight permissions
 
     writeFileSync(taskLogPath(agentDir, "task-1"), "hello\n", { mode: 0o600 });
     expect(await record.output()).toBe("hello\n");
+  });
+
+  it("S69 C02: generates unique task-prefixed identifiers", () => {
+    const ids = Array.from({ length: 10 }, () => generateTaskId());
+    for (const id of ids) expect(id).toMatch(/^task-/);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("S69 C03: ignores corrupt and schema-invalid metadata", () => {
+    ensureTasksDir(agentDir);
+    writeTaskMetadata(agentDir, {
+      id: "valid",
+      kind: "shell",
+      status: "running",
+      cwd: "/repo",
+      startedAt: 1_000,
+    });
+    writeFileSync(taskMetaPath(agentDir, "corrupt"), "{not json");
+    writeTaskMetadata(agentDir, {
+      id: "wrong-shape",
+      kind: "shell",
+      status: "running",
+      cwd: "/repo",
+      startedAt: Number.NaN,
+    } as never);
+    expect(listTaskMetadata(agentDir).map((meta) => meta.id)).toEqual([
+      "valid",
+    ]);
+    expect(readTaskMetadata(agentDir, "corrupt")).toBeUndefined();
+    expect(readTaskMetadata(agentDir, "wrong-shape")).toBeUndefined();
+  });
+
+  it("S69 C04: round-trips metadata and reads the log behind a task id", () => {
+    const meta = {
+      id: "task-roundtrip",
+      kind: "shell" as const,
+      status: "completed" as const,
+      cwd: "/repo",
+      pid: 42,
+      startedAt: 1_000,
+      finishedAt: 2_000,
+      exitCode: 0,
+    };
+    writeTaskMetadata(agentDir, meta);
+    writeFileSync(taskLogPath(agentDir, meta.id), "line\n");
+    expect(readTaskMetadata(agentDir, meta.id)).toEqual(meta);
+    expect(readTaskLog(agentDir, meta.id)).toBe("line\n");
   });
 });

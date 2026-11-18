@@ -32,4 +32,35 @@ describe("S79: provider selection auto-detects keys and falls through", () => {
     expect(result).toBe("b");
     expect(seen).toEqual(["a", "b"]);
   });
+
+  it("S79 C02: treats blank and whitespace env keys as absent", () => {
+    expect(hasProviderKey("exa", { EXA_API_KEY: "   " })).toBe(false);
+    expect(hasProviderKey("exa", { EXA_API_KEY: "" })).toBe(false);
+    expect(hasProviderKey("exa", { EXA_API_KEY: "k" })).toBe(true);
+    expect(hasProviderKey("raw", {})).toBe(true);
+    expect(hasProviderKey("nope" as never, {})).toBe(false);
+  });
+
+  it("S79 C03: propagates the last provider error and honors abort", async () => {
+    await expect(
+      withProviderFallback(["a", "b"], async (provider) => {
+        throw new Error(`failed ${provider}`);
+      }),
+    ).rejects.toThrow("failed b");
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      withProviderFallback(["a"], async () => "x", controller.signal),
+    ).rejects.toThrow(/aborted/);
+  });
+
+  it("S79 C04: advances past an empty result to the next provider", async () => {
+    const seen: string[] = [];
+    const result = await withProviderFallback(["a", "b"], async (provider) => {
+      seen.push(provider);
+      return provider === "a" ? [] : ["hit"];
+    });
+    expect(result).toEqual(["hit"]);
+    expect(seen).toEqual(["a", "b"]);
+  });
 });

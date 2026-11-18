@@ -13,4 +13,29 @@ describe("S74: pi-tasks README documents the direct task tool", () => {
     expect(readme).toContain("bash");
     expect(readme).toContain("0600");
   });
+
+  it("S74 C02: documents the trust gate and ACP inactivity", () => {
+    const readme = readFileSync(`${pkgRoot}README.md`, "utf8");
+    expect(readme).toContain("Project trust gate");
+    expect(readme).toContain("isProjectTrusted() === true");
+    expect(readme).toContain("ACP inactivity");
+    expect(readme).toContain("PI_ACP");
+    expect(readme).toContain("acp_bash");
+  });
+
+  it("S74 C03: documents wait bounds and cancel signals", () => {
+    const readme = readFileSync(`${pkgRoot}README.md`, "utf8");
+    expect(readme).toContain("30000");
+    expect(readme).toContain("600000");
+    expect(readme).toContain("SIGTERM");
+    expect(readme).toContain("SIGKILL");
+  });
+
+  it("S74 C04: documents PID reconciliation and shared runtime primitives", () => {
+    const readme = readFileSync(`${pkgRoot}README.md`, "utf8");
+    expect(readme).toContain("PID-reuse");
+    expect(readme).toContain("startTime");
+    expect(readme).toContain("LockedProcessStore");
+    expect(readme).toContain("spawnDetachedTask");
+  });
 });

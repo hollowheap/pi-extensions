@@ -8,7 +8,11 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAgentDir: () => state.agentDir,
 }));
-import { CONFIG_FILE_NAME, loadDecideConfig } from "./config.js";
+import {
+  CONFIG_FILE_NAME,
+  LEGACY_CONFIG_FILE_NAME,
+  loadDecideConfig,
+} from "./config.js";
 import { createDecideTool } from "./decide.js";
 
 function textOf(result: unknown): string {
@@ -87,5 +91,60 @@ describe("S89: an explicit provider/model is required with no fallback", () => {
       } as never,
     );
     expect(textOf(unconfigured)).toContain("not configured");
+  });
+
+  it("S89 C02: diagnoses out-of-range values and applies defaults", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
+    writeFileSync(
+      join(dir, CONFIG_FILE_NAME),
+      JSON.stringify({
+        model: "bad-model",
+        timeoutMs: 0,
+        maxInputChars: 0,
+        cacheTtlMs: -1,
+      }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadDecideConfig(dir, (m) => diagnostics.push(m));
+    const joined = diagnostics.join(" ");
+    expect(joined).toContain("provider/model-id");
+    expect(joined).toContain("timeoutMs");
+    expect(joined).toContain("maxInputChars");
+    expect(joined).toContain("cacheTtlMs");
+    expect(config.model).toBeUndefined();
+    expect(config.timeoutMs).toBe(5000);
+    expect(config.maxInputChars).toBe(20000);
+    expect(config.cacheTtlMs).toBe(600000);
+  });
+
+  it("S89 C03: loads a legacy classifier.json with a deprecation diagnostic", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
+    writeFileSync(
+      join(dir, LEGACY_CONFIG_FILE_NAME),
+      JSON.stringify({ model: "typesafe/jev-latest" }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadDecideConfig(dir, (m) => diagnostics.push(m));
+    expect(config.model).toBe("typesafe/jev-latest");
+    expect(config.path).toContain(LEGACY_CONFIG_FILE_NAME);
+    expect(diagnostics.join(" ")).toContain("deprecated");
+  });
+
+  it("S89 C04: falls back to defaults for malformed or non-object configs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
+    writeFileSync(join(dir, CONFIG_FILE_NAME), "{not json");
+    const jsonDiagnostics: string[] = [];
+    const jsonConfig = loadDecideConfig(dir, (m) => jsonDiagnostics.push(m));
+    expect(jsonDiagnostics.join(" ")).toContain("not valid JSON");
+    expect(jsonConfig.model).toBeUndefined();
+
+    const other = mkdtempSync(join(tmpdir(), "pi-decide-draw-"));
+    writeFileSync(join(other, CONFIG_FILE_NAME), "[]");
+    const shapeDiagnostics: string[] = [];
+    const shapeConfig = loadDecideConfig(other, (m) =>
+      shapeDiagnostics.push(m),
+    );
+    expect(shapeDiagnostics.join(" ")).toContain("must be an object");
+    expect(shapeConfig.timeoutMs).toBe(5000);
   });
 });

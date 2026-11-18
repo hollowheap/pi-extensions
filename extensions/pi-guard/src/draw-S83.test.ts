@@ -47,6 +47,7 @@ function setup(rules: string) {
     ui: { notify: vi.fn(), confirm: vi.fn(async () => false) },
   };
   return {
+    ctx,
     call: (toolName: string, input: unknown) =>
       handler(
         { type: "tool_call", toolCallId: "1", toolName, input } as never,
@@ -72,5 +73,50 @@ describe("S83: web tool tags are built-in and authoritative", () => {
       block: true,
       reason: expect.stringContaining("denied"),
     });
+  });
+
+  it("S83 C02: applies external rules to web tools despite config tag overrides", async () => {
+    const { ctx, call } = setup(
+      JSON.stringify({
+        tools: { web_search: "read", web_fetch: "search" },
+        rules: ["deny external secret/*", "allow external *"],
+      }),
+    );
+    await expect(
+      call("web_search", { query: "public/x" }),
+    ).resolves.toBeUndefined();
+    await expect(call("web_fetch", { url: "secret/token" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("S83 C03: derives the external target from query and url input fields", async () => {
+    const { call } = setup(
+      JSON.stringify({
+        rules: ["deny external secret/*", "allow external *"],
+      }),
+    );
+    const search = await call("web_search", { query: "secret/plan" });
+    const fetch = await call("web_fetch", { url: "secret/plan" });
+    expect(search).toEqual({
+      block: true,
+      reason: expect.stringContaining("secret/plan"),
+    });
+    expect(fetch).toEqual({
+      block: true,
+      reason: expect.stringContaining("secret/plan"),
+    });
+  });
+
+  it("S83 C04: blocks web tools by policy instead of the approval path", async () => {
+    const { ctx, call } = setup(JSON.stringify({ rules: ["deny external *"] }));
+    const result = (await call("web_search", { query: "anything" })) as {
+      reason: string;
+    };
+    expect(result.reason).toContain("external");
+    expect(result.reason).toContain("denied");
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 });

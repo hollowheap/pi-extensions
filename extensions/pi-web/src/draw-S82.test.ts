@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_REDIRECTS,
   assertSafeResolvedUrl,
+  assertSafeUrl,
   isSafeUrl,
   isUnsafeHost,
 } from "./url.js";
@@ -27,5 +28,56 @@ describe("S82: only public http(s) URLs are accepted on every hop", () => {
         { address: "127.0.0.1", family: 4 },
       ]),
     ).rejects.toThrow(/not allowed/);
+  });
+
+  it("S82 C02: reports distinct rejection reasons for unsafe URLs", () => {
+    expect(() => assertSafeUrl("not a url")).toThrow("invalid URL");
+    expect(() => assertSafeUrl("file:///etc/passwd")).toThrow(
+      "must use http or https",
+    );
+    expect(() => assertSafeUrl("https://user@example.com")).toThrow(
+      "must not include credentials",
+    );
+    expect(() => assertSafeUrl("http://127.0.0.1")).toThrow("not allowed");
+    expect(() => assertSafeUrl("https://example.com")).not.toThrow();
+  });
+
+  it("S82 C03: rejects unresolved and private DNS answers", async () => {
+    await expect(
+      assertSafeResolvedUrl("https://example.com", async () => {
+        throw new Error("ENOTFOUND");
+      }),
+    ).rejects.toThrow("could not be resolved");
+    await expect(
+      assertSafeResolvedUrl("https://example.com", async () => []),
+    ).rejects.toThrow("not allowed");
+    await expect(
+      assertSafeResolvedUrl("https://example.com", async () => [
+        { address: "8.8.8.8", family: 4 },
+      ]),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertSafeResolvedUrl("http://127.0.0.1", async () => [
+        { address: "8.8.8.8", family: 4 },
+      ]),
+    ).rejects.toThrow("not allowed");
+  });
+
+  it("S82 C04: flags private ranges, metadata hosts, and numeric encodings", () => {
+    for (const host of [
+      "192.168.1.1",
+      "100.64.0.1",
+      "172.20.0.1",
+      "metadata.google.internal",
+      "foo.localhost",
+      "0x7f000001",
+      "2130706433",
+      "fe80::1",
+      "fd00::1",
+      "::",
+    ]) {
+      expect(isUnsafeHost(host)).toBe(true);
+    }
+    expect(isUnsafeHost("example.com")).toBe(false);
   });
 });

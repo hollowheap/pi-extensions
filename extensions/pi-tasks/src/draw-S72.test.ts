@@ -43,4 +43,63 @@ describe("S72: the direct task tool requires trust and non-empty commands", () =
     expect(getText(result as never)).toContain("trusted project");
     rmSync(agentDir, { recursive: true, force: true });
   });
+
+  it("S72 C02: refuses an empty start command in a trusted project", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-tasks-draw-tool-"));
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+    });
+    const result = await tool.execute(
+      "1",
+      { action: "start", command: "   " } as never,
+      undefined,
+      undefined,
+      createCtx(agentDir, true) as never,
+    );
+    expect(getText(result as never)).toContain("requires a command");
+    rmSync(agentDir, { recursive: true, force: true });
+  });
+
+  it("S72 C03: reports an unknown task id for status instead of throwing", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-tasks-draw-tool-"));
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange: () => {},
+      onTasksChange: () => {},
+    });
+    const result = await tool.execute(
+      "1",
+      { action: "status", id: "missing" } as never,
+      undefined,
+      undefined,
+      createCtx(agentDir, true) as never,
+    );
+    expect(getText(result as never)).toContain("Task not found: missing");
+    rmSync(agentDir, { recursive: true, force: true });
+  });
+
+  it("S72 C04: publishes an empty task list through the status callbacks", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-tasks-draw-tool-"));
+    const onStatusChange = vi.fn();
+    const onTasksChange = vi.fn();
+    const tool = createTaskTool({
+      getAgentDir: () => agentDir,
+      onStatusChange,
+      onTasksChange,
+    });
+    const result = await tool.execute(
+      "1",
+      { action: "list" } as never,
+      undefined,
+      undefined,
+      createCtx(agentDir, true) as never,
+    );
+    expect(getText(result as never)).toContain("No tasks found.");
+    expect(result.details).toMatchObject({ action: "list", runningCount: 0 });
+    expect(onStatusChange).toHaveBeenCalledWith(expect.anything(), 0);
+    expect(onTasksChange).toHaveBeenCalledWith([]);
+    rmSync(agentDir, { recursive: true, force: true });
+  });
 });

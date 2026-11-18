@@ -17,4 +17,45 @@ describe("S63: pi-language-tools is a workspace extension exposing lang", () => 
     expect(pkg.dependencies.typebox).toBeUndefined();
     expect(source).toContain('name: "lang"');
   });
+
+  it("S63 C02: exposes lang only through codemode and activates it on session start", () => {
+    const toolSource = readFileSync(`${pkgRoot}src/tool.ts`, "utf8");
+    const indexSource = readFileSync(`${pkgRoot}src/index.ts`, "utf8");
+    expect(toolSource).toContain('exposure: "codemode"');
+    expect(indexSource).toContain("pi.registerTool(createLangTool(");
+    expect(indexSource).toContain('tool.name === "codemode"');
+    expect(indexSource).toContain('pi.on("session_start"');
+  });
+
+  it("S63 C03: keeps the workspace and lockfile entries consistent", () => {
+    const root = JSON.parse(readFileSync(`${repoRoot}package.json`, "utf8"));
+    const lock = JSON.parse(
+      readFileSync(`${repoRoot}package-lock.json`, "utf8"),
+    );
+    const pkg = JSON.parse(readFileSync(`${pkgRoot}package.json`, "utf8"));
+    expect(root.workspaces).toContain("extensions/*");
+    expect(lock.packages["extensions/pi-language-tools"]).toMatchObject({
+      name: "@hollowheap/pi-language-tools",
+      version: pkg.version,
+    });
+    expect(pkg.pi.extensions).toContain("./index.ts");
+  });
+
+  it("S63 C04: declares the ten documented actions in the tool schema", () => {
+    const source = readFileSync(`${pkgRoot}src/tool.ts`, "utf8");
+    for (const action of [
+      "definition",
+      "references",
+      "document_symbols",
+      "workspace_symbols",
+      "hover",
+      "signature_help",
+      "type_definition",
+      "implementation",
+      "document_highlights",
+      "diagnostics",
+    ]) {
+      expect(source).toContain(`Type.Literal("${action}")`);
+    }
+  });
 });
