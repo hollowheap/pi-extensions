@@ -95,8 +95,22 @@ function applyTuiSetting(
   return next;
 }
 
-function buildSettingItems(config: TuiConfig): SettingItem[] {
+export interface ContributedTuiSetting extends SettingItem {
+  owner?: string;
+}
+
+function buildSettingItems(
+  config: TuiConfig,
+  contributed: readonly ContributedTuiSetting[] = [],
+): SettingItem[] {
   return [
+    ...contributed.map((item) => ({
+      id: item.id,
+      label: item.label,
+      description: item.description,
+      currentValue: item.currentValue,
+      values: item.values,
+    })),
     {
       id: "borderStyle",
       label: "Border style",
@@ -223,6 +237,7 @@ export async function showTuiSettings(
   ctx: ExtensionContext,
   agentDir: string,
   onChange?: (next: TuiConfig) => void,
+  contributed: readonly ContributedTuiSetting[] = [],
 ): Promise<void> {
   if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
     return;
@@ -238,7 +253,7 @@ export async function showTuiSettings(
         };
         const buildList = () =>
           new SettingsList(
-            buildSettingItems(current),
+            buildSettingItems(current, contributed),
             12,
             settingsTheme(theme, current.colored),
             (id, value) => {

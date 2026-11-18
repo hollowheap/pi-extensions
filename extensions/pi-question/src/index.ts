@@ -108,6 +108,36 @@ function watchAbort(
   return () => signal.removeEventListener("abort", onAbort);
 }
 
+interface EditorDraftSurface {
+  getEditorComponent?: () => unknown;
+  setEditorComponent?: (factory: unknown) => void;
+  getEditorText?: () => string;
+  setEditorText?: (text: string) => void;
+}
+
+async function withRestoredPromptDraft<T>(
+  ctx: ExtensionContext,
+  run: () => Promise<T>,
+): Promise<T> {
+  const ui = ctx.ui as EditorDraftSurface | undefined;
+  const getComponent = ui?.getEditorComponent;
+  const setComponent = ui?.setEditorComponent;
+  const getText = ui?.getEditorText;
+  const setText = ui?.setEditorText;
+  const component =
+    typeof getComponent === "function" ? getComponent.call(ui) : undefined;
+  const text = typeof getText === "function" ? getText.call(ui) : undefined;
+  if (typeof setComponent === "function") setComponent.call(ui, undefined);
+  try {
+    return await run();
+  } finally {
+    if (typeof setText === "function" && text !== undefined) {
+      setText.call(ui, text);
+    }
+    if (typeof setComponent === "function") setComponent.call(ui, component);
+  }
+}
+
 function deriveDialogSignal(lockOptions: {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -196,11 +226,18 @@ async function askMulti(
               const handleInput = (data: string) => {
                 if (editing) {
                   if (matchesKey(data, Key.escape)) {
-                    finish({
-                      selected: [],
-                      writeIn: undefined,
-                      cancelled: true,
-                    });
+                    if (draft.length === 0) {
+                      finish({
+                        selected: [],
+                        writeIn: undefined,
+                        cancelled: true,
+                      });
+                    } else {
+                      editing = false;
+                      draft = "";
+                      caret = 0;
+                      refresh();
+                    }
                     return;
                   }
                   if (matchesKey(data, Key.enter)) {
@@ -233,6 +270,18 @@ async function askMulti(
                     draft = capAnswer(next.text);
                     caret = Math.min(next.caret, Array.from(draft).length);
                     refresh();
+                    return;
+                  }
+                  if (!data.startsWith("\x1b")) {
+                    const pasted = Array.from(data)
+                      .filter((c) => (c >= " " || c === "\n") && c !== "\x7f")
+                      .join("");
+                    if (pasted.length > 0) {
+                      const next = insertAtCaret(draft, caret, pasted);
+                      draft = capAnswer(next.text);
+                      caret = Math.min(next.caret, Array.from(draft).length);
+                      refresh();
+                    }
                   }
                   return;
                 }
@@ -483,6 +532,10 @@ async function askWriteIn(
                 },
                 invalidate(): void {},
                 handleInput(data: string): void {
+                  if (matchesKey(data, "escape") && draft.length > 0) {
+                    finish(draft);
+                    return;
+                  }
                   if (
                     matchesKey(data, "escape") ||
                     matchesKey(data, "ctrl+c")
@@ -578,6 +631,16 @@ async function askWriteIn(
 }
 
 export async function askQuestion(
+  question: Question,
+  ctx: ExtensionContext,
+  options?: QuestionDialogOptions,
+): Promise<QuestionAnswer | undefined> {
+  return withRestoredPromptDraft(ctx, () =>
+    askQuestionDialog(question, ctx, options),
+  );
+}
+
+async function askQuestionDialog(
   question: Question,
   ctx: ExtensionContext,
   options?: QuestionDialogOptions,
@@ -718,6 +781,51 @@ export async function askQuestions(
     } else {
       pageIndex += 1;
     }
+  }
+
+  if (
+    answers.length > 0 &&
+    ctx.mode === "tui" &&
+    typeof ctx.ui?.custom === "function"
+  ) {
+    void ctx.ui.custom<AskQuestionsResult>(
+      (_tui, _theme, _keybindings, done) => {
+        const lines = [
+          "Review",
+          "",
+          ...Array.from(
+            answers,
+            (answer, index) =>
+              `${index + 1}. ${extractAnswerText(answer) ?? "no answer"}`,
+          ),
+          "",
+          "Edit   Confirm   Cancel",
+        ];
+        return {
+          render(width: number): string[] {
+            const limit = Math.max(1, width);
+            return lines.map((line) => line.slice(0, limit));
+          },
+          invalidate: () => {},
+          handleInput(data: string): void {
+            if (matchesKey(data, Key.enter)) done(answers);
+            if (matchesKey(data, Key.escape)) {
+              const cancelled = [...answers] as AskQuestionsResult;
+              cancelled.cancelled = true;
+              done(cancelled);
+            }
+          },
+        };
+      },
+      {
+        overlay: true,
+        overlayOptions: {
+          width: "70%",
+          maxHeight: "75%",
+          margin: 1,
+        },
+      },
+    );
   }
 
   return answers;

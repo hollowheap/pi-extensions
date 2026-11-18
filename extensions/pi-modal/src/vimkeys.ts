@@ -7,14 +7,19 @@ const SEQUENCE_LABELS: Record<string, string> = {
   "\x1b[C": "move right",
   "\x1bf": "next word",
   "\x1bb": "previous word",
+  "\x1bF": "end of word",
   "\x01": "line start",
   "\x05": "line end",
   "\x1b[3~": "delete character",
   "\x1a": "undo",
   "\x1f": "undo",
+  "\x12": "redo",
 };
 
 const MODE_ACTIONS: Record<string, string> = {
+  dd: "delete line",
+  yy: "yank line",
+  p: "paste",
   i: "insert before cursor",
   a: "insert after cursor",
   I: "insert at line start",

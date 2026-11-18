@@ -744,6 +744,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             label: "reset",
             description: "Reset to default agent",
           },
+          {
+            value: "settings",
+            label: "settings",
+            description: "Open shared default agent settings",
+          },
           ...agents.map((a) => ({
             value: a.name,
             label: a.name,

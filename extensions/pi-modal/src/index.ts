@@ -360,10 +360,15 @@ export default function (pi: ExtensionAPI): void {
     await showCodeViewer(ctx, "pi-modal keybinds", formatVimKeys(config));
   };
 
-  pi.registerCommand("vimkeys", {
-    description: "Show pi-modal vim mode keybindings",
-    handler: async (_args, ctx) => showVimKeys(ctx),
-  });
+  let vimkeysRegistered = false;
+  const registerVimkeysCommand = () => {
+    if (vimkeysRegistered) return;
+    vimkeysRegistered = true;
+    pi.registerCommand("vimkeys", {
+      description: "Show pi-modal vim mode keybindings",
+      handler: async (_args, ctx) => showVimKeys(ctx),
+    });
+  };
 
   pi.registerShortcut("ctrl+shift+k", {
     description: "Show vim mode keybinds",
@@ -413,6 +418,7 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_start", (_event, ctx) => {
+    registerVimkeysCommand();
     activeCtx = ctx;
     shimmerAnimator?.dispose();
     shimmerAnimator = undefined;
