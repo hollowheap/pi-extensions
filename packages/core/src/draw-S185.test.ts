@@ -14,4 +14,27 @@ describe("S185 destructive shell safety", () => {
       checkShell("git push --force origin main", broadAllow).decision,
     ).toBe("ask");
   });
+
+  it("S185 C02: an empty command is denied with an explicit reason", () => {
+    expect(checkShell("   ", [])).toEqual({
+      decision: "deny",
+      reason: "empty command",
+    });
+  });
+
+  it("S185 C03: an explicit shell deny rule refuses a command", () => {
+    const deny = { tag: "shell", pattern: "echo", effect: "deny" } as const;
+    const verdict = checkShell("echo hello", [deny]);
+    expect(verdict.decision).toBe("deny");
+    expect(verdict.reason).toContain("denied by rule");
+  });
+
+  it("S185 C04: a destructive command after a separator still asks", () => {
+    const broadAllow = [
+      { tag: "shell", pattern: "echo", effect: "allow" },
+      { tag: "shell", pattern: "rm", effect: "allow" },
+    ] as const;
+    expect(checkShell("echo ok; rm -rf /", broadAllow).decision).toBe("ask");
+    expect(checkShell("echo ok && rm -rf /", broadAllow).decision).toBe("ask");
+  });
 });

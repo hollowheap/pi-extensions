@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluate } from "./modes.js";
 import { checkPath } from "./policy.js";
 
 describe("S184 deny precedence", () => {
@@ -12,5 +13,29 @@ describe("S184 deny precedence", () => {
 
     expect(checkPath([deny, allow], "src/a.ts", "edit", "/repo")).toBe("deny");
     expect(checkPath([allow, deny], "src/a.ts", "edit", "/repo")).toBe("deny");
+  });
+
+  it("S184 C02: with no rules a path falls back to ask", () => {
+    expect(checkPath([], "src/a.ts", "edit", "/repo")).toBe("ask");
+  });
+
+  it("S184 C03: a path outside the root is denied even with a broad allow", () => {
+    const broadAllow = { tag: "read", pattern: "**", effect: "allow" } as const;
+    expect(checkPath([broadAllow], "/etc/passwd", "read", "/repo")).toBe(
+      "deny",
+    );
+  });
+
+  it("S184 C04: a core deny rule drives the mode evaluator to deny", () => {
+    const deny = { tag: "edit", pattern: "src/**", effect: "deny" } as const;
+    expect(
+      evaluate({
+        owner: {},
+        cwd: "/repo",
+        tag: "edit",
+        target: "src/a.ts",
+        rules: [deny],
+      }),
+    ).toBe("deny");
   });
 });

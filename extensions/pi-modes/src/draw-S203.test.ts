@@ -8,6 +8,7 @@ import extension from "./index.js";
 
 interface MockCommand {
   handler: (args: string, ctx: unknown) => Promise<void>;
+  getArgumentCompletions?: (prefix: string) => unknown[];
 }
 
 function createMockPi() {
@@ -131,5 +132,35 @@ describe("S203 default mode settings", () => {
     expect(readFileSync(join(agentDir, "modes.json"), "utf8")).toBe(
       savedBefore,
     );
+  });
+
+  it("S203 C02: a settings command without a mode reports usage", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+    await pi.command("mode").handler("settings", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("usage"),
+      "error",
+    );
+  });
+
+  it("S203 C03: completions list the configured modes", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    pi.fire("session_start", createContext());
+    const values = (
+      pi.command("mode").getArgumentCompletions?.("re") ?? []
+    ).map((c) => (c as { value: string }).value);
+    expect(values).toContain("review");
+  });
+
+  it("S203 C04: switching by name updates the session mode", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+    pi.fire("session_start", ctx);
+    await pi.command("mode").handler("review", ctx);
+    expect(session(ctx.sessionManager).mode).toBe("review");
   });
 });

@@ -53,4 +53,78 @@ describe("dashboard quick-action overlay", () => {
       expect(rendered).not.toContain(label);
     }
   });
+
+  it("S207 C02: all three actions remain listed at a narrow width", async () => {
+    let component: Component | undefined;
+    const ctx = {
+      mode: "tui",
+      ui: {
+        custom: vi.fn((factory: Factory) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            theme,
+            { matches: () => false },
+            vi.fn(),
+          );
+          return Promise.resolve({ type: "close" });
+        }),
+      },
+    };
+    await showDashboardOverlay(ctx as never, {
+      loadSessions: vi.fn(async () => []),
+      initialSessions: [],
+      getStateInput: () => ({ cwd: "/project" }),
+      snapshotOwner: {},
+    });
+    const rendered = component?.render(40).join("\n") ?? "";
+    for (const label of ["Model", "Thinking", "Sessions"]) {
+      expect(rendered).toContain(label);
+    }
+  });
+
+  it("S207 C03: outside TUI mode the overlay returns a close result", async () => {
+    const custom = vi.fn();
+    const ctx = { mode: "print", ui: { custom } };
+    const result = await showDashboardOverlay(ctx as never, {
+      loadSessions: vi.fn(async () => []),
+      initialSessions: [],
+      getStateInput: () => ({ cwd: "/project" }),
+      snapshotOwner: {},
+    });
+    expect(result).toEqual({ type: "close" });
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it("S207 C04: an initial session is rendered in the overlay", async () => {
+    let component: Component | undefined;
+    const ctx = {
+      mode: "tui",
+      ui: {
+        custom: vi.fn((factory: Factory) => {
+          component = factory(
+            { requestRender: vi.fn() },
+            theme,
+            { matches: () => false },
+            vi.fn(),
+          );
+          return Promise.resolve({ type: "close" });
+        }),
+      },
+    };
+    await showDashboardOverlay(ctx as never, {
+      loadSessions: vi.fn(async () => []),
+      initialSessions: [
+        {
+          id: "s1",
+          firstMessage: "hello from session",
+          modified: new Date(),
+          messageCount: 1,
+          summary: {},
+        },
+      ] as never,
+      getStateInput: () => ({ cwd: "/project" }),
+      snapshotOwner: {},
+    });
+    expect(component?.render(90).join("\n")).toContain("hello from session");
+  });
 });

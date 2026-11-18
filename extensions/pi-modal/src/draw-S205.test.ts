@@ -134,4 +134,82 @@ describe("S205 extension-contributed TUI settings", () => {
       await pending;
     }
   });
+
+  it("S205 C02: built-in settings still render beside a contribution", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "s205-builtins-"));
+    const env = createSettingsContext();
+    const contributions = [
+      {
+        owner: "pi-modes",
+        id: "modeIndicator",
+        label: "Mode indicator",
+        description: "Show the active mode",
+        currentValue: "true",
+        values: ["true", "false"],
+      },
+    ];
+    const pending = showTuiSettings(
+      env.ctx as never,
+      dir,
+      undefined,
+      contributions,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    try {
+      const rendered = env.component()?.render(80).join("\n") ?? "";
+      expect(rendered).toContain("Border style");
+      expect(rendered).toContain("Mode indicator");
+    } finally {
+      env.component()?.handleInput("\x1b");
+      await pending;
+    }
+  });
+
+  it("S205 C03: outside TUI mode no settings dialog is opened", async () => {
+    const custom = vi.fn();
+    const ctx = { mode: "print", hasUI: true, ui: { custom, notify: vi.fn() } };
+    await showTuiSettings(
+      ctx as never,
+      mkdtempSync(join(tmpdir(), "s205-print-")),
+    );
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it("S205 C04: contributions from two owners both appear", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "s205-two-owners-"));
+    const env = createSettingsContext();
+    const contributions = [
+      {
+        owner: "pi-modes",
+        id: "modeIndicator",
+        label: "Mode indicator",
+        description: "Show the active mode",
+        currentValue: "true",
+        values: ["true", "false"],
+      },
+      {
+        owner: "pi-dashboard",
+        id: "refreshMs",
+        label: "Refresh interval",
+        description: "Dashboard refresh interval",
+        currentValue: "1000",
+        values: ["1000", "2000"],
+      },
+    ];
+    const pending = showTuiSettings(
+      env.ctx as never,
+      dir,
+      undefined,
+      contributions,
+    );
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+    try {
+      const rendered = env.component()?.render(80).join("\n") ?? "";
+      expect(rendered).toContain("Mode indicator");
+      expect(rendered).toContain("Refresh interval");
+    } finally {
+      env.component()?.handleInput("\x1b");
+      await pending;
+    }
+  });
 });

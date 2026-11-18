@@ -76,4 +76,46 @@ describe("S199 cancel teardown before reporting", () => {
       expect.anything(),
     );
   });
+
+  it("S199 C02: a running task without group identities is not torn down", async () => {
+    const dir = makeDir();
+    writeTaskMetadata(dir, {
+      id: "no-groups",
+      kind: "shell",
+      status: "running",
+      command: "sleep 60",
+      cwd: dir,
+      startedAt: Date.now(),
+    });
+
+    const result = await cancelTask(dir, "no-groups");
+
+    expect(terminateBoth).not.toHaveBeenCalled();
+    expect(result?.status).not.toBe("cancelled");
+  });
+
+  it("S199 C03: cancelling an already-finished task skips teardown", async () => {
+    const dir = makeDir();
+    writeTaskMetadata(dir, {
+      id: "done",
+      kind: "shell",
+      status: "completed",
+      command: "echo ok",
+      cwd: dir,
+      pid: 91_111,
+      startTime: 1,
+      startedAt: Date.now(),
+    });
+
+    await cancelTask(dir, "done");
+
+    expect(terminateBoth).not.toHaveBeenCalled();
+    expect(readTaskMetadata(dir, "done")?.status).toBe("completed");
+  });
+
+  it("S199 C04: cancelling an unknown id returns undefined", async () => {
+    const dir = makeDir();
+    await expect(cancelTask(dir, "missing")).resolves.toBeUndefined();
+    expect(terminateBoth).not.toHaveBeenCalled();
+  });
 });

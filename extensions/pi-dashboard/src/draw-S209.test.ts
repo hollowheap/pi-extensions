@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -27,5 +27,40 @@ describe("dashboard section settings", () => {
     } as never as DashboardSettings);
 
     expect(loadConfig(agentDir).config.sections).toEqual(wanted);
+  });
+
+  it("S209 C02: a missing settings file yields default sections", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "draw-dashboard-defaults-"));
+    dirs.push(agentDir);
+    const { config, diagnostics } = loadConfig(agentDir);
+    expect(config.sections.length).toBeGreaterThan(0);
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("S209 C03: invalid JSON falls back to defaults with a diagnostic", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "draw-dashboard-badjson-"));
+    dirs.push(agentDir);
+    writeFileSync(join(agentDir, "dashboard.json"), "{ not json");
+    const { config, diagnostics } = loadConfig(agentDir);
+    expect(config.sections.length).toBeGreaterThan(0);
+    expect(diagnostics.length).toBeGreaterThan(0);
+    expect(diagnostics[0]).toContain("not valid JSON");
+  });
+
+  it("S209 C04: section-specific options survive a save/load round trip", () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "draw-dashboard-options-"));
+    dirs.push(agentDir);
+    const sections = [
+      { type: "sessions", enabled: true, maxItems: 7, scope: "all" },
+      { type: "terminal", enabled: true, command: "date", intervalMs: 2_000 },
+    ];
+    saveDashboardSettings(agentDir, {
+      sections,
+    } as never as DashboardSettings);
+    const loaded = loadConfig(agentDir).config.sections as Array<
+      Record<string, unknown>
+    >;
+    expect(loaded[0]).toMatchObject({ maxItems: 7, scope: "all" });
+    expect(loaded[1]).toMatchObject({ command: "date", intervalMs: 2_000 });
   });
 });

@@ -84,4 +84,49 @@ describe("S198 descendant group teardown primitive", () => {
       }
     }
   });
+
+  it("S198 C02: an empty group list resolves true without work", async () => {
+    const terminateProcessGroups = (
+      processModule as unknown as Record<string, unknown>
+    ).terminateProcessGroups as (groups: unknown[]) => Promise<boolean>;
+    await expect(terminateProcessGroups([])).resolves.toBe(true);
+  });
+
+  it("S198 C03: invalid group identities report failure", async () => {
+    const terminateProcessGroups = (
+      processModule as unknown as Record<string, unknown>
+    ).terminateProcessGroups as (
+      groups: Array<{ pid: number }>,
+      opts: { graceMs: number },
+    ) => Promise<boolean>;
+    await expect(
+      terminateProcessGroups([{ pid: 0 }, { pid: -2 }], { graceMs: 20 }),
+    ).resolves.toBe(false);
+  });
+
+  it("S198 C04: one valid group is torn down through the shared primitive", async () => {
+    const terminateProcessGroups = (
+      processModule as unknown as Record<string, unknown>
+    ).terminateProcessGroups as (
+      groups: Array<{ pid: number; startTime?: number }>,
+      opts: { graceMs: number },
+    ) => Promise<boolean>;
+    const dir = makeDir();
+    const child = spawnDetachedProcess({
+      command: "sleep",
+      args: ["30"],
+      logPath: join(dir, "child.log"),
+    });
+    try {
+      await expect(
+        terminateProcessGroups(
+          [{ pid: child.pid, startTime: child.startTime }],
+          { graceMs: 50 },
+        ),
+      ).resolves.toBe(true);
+      expect(isProcessAlive(child.pid, child.startTime)).toBe(false);
+    } finally {
+      await cancelProcessGroup(child.pid, child.startTime, 50);
+    }
+  });
 });

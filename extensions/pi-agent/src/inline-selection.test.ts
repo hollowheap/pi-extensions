@@ -46,4 +46,34 @@ describe("inline agent selection and shared default settings", () => {
       ),
     ).toContain("settings");
   });
+
+  it("S193 C02: an empty prefix lists the built-in agent choices", () => {
+    const p = pi();
+    extension(p as never);
+    const completions = p
+      .getCommand("agent")
+      ?.getArgumentCompletions?.("")
+      ?.map((c) => (c as { value: string }).value);
+    expect(completions).toEqual(
+      expect.arrayContaining(["default", "reset", "settings"]),
+    );
+  });
+
+  it("S193 C03: an unmatched prefix yields no completions", () => {
+    const p = pi();
+    extension(p as never);
+    const completions = p
+      .getCommand("agent")
+      ?.getArgumentCompletions?.("zzzz-no-such-agent");
+    expect(completions).toEqual([]);
+  });
+
+  it("S193 C04: both aliases share one command definition and completion set", () => {
+    const p = pi();
+    extension(p as never);
+    expect(p.getCommand("agents")).toBe(p.getCommand("agent"));
+    expect(p.getCommand("agents")?.getArgumentCompletions?.("set")).toEqual(
+      p.getCommand("agent")?.getArgumentCompletions?.("set"),
+    );
+  });
 });

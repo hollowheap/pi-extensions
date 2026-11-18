@@ -34,4 +34,42 @@ describe("dashboard recent-session list", () => {
     expect(items.map((item) => item.id)).toEqual(["dup", "other"]);
     expect(items[0]?.modified).toEqual(newer);
   });
+
+  it("S206 C02: an empty session list yields an empty result", async () => {
+    clearSessionSummaryCache();
+    const items = await loadRecentSessions({
+      cwd: "/project",
+      listSessions: vi.fn(async () => []),
+      readFileText: vi.fn(async () => ""),
+    });
+    expect(items).toEqual([]);
+  });
+
+  it("S206 C03: a failing session listing degrades to an empty result", async () => {
+    clearSessionSummaryCache();
+    const items = await loadRecentSessions({
+      cwd: "/project",
+      listSessions: vi.fn(async () => {
+        throw new Error("listing failed");
+      }),
+      readFileText: vi.fn(async () => ""),
+    });
+    expect(items).toEqual([]);
+  });
+
+  it("S206 C04: the all-workspaces scope uses the global listing", async () => {
+    clearSessionSummaryCache();
+    const local = vi.fn(async () => [info("local", new Date("2026-01-01"))]);
+    const global = vi.fn(async () => [info("global", new Date("2026-01-02"))]);
+    const items = await loadRecentSessions({
+      cwd: "/project",
+      scope: "all",
+      listSessions: local,
+      listAllSessions: global,
+      readFileText: vi.fn(async () => ""),
+    });
+    expect(items.map((item) => item.id)).toEqual(["global"]);
+    expect(global).toHaveBeenCalled();
+    expect(local).not.toHaveBeenCalled();
+  });
 });

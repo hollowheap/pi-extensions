@@ -39,8 +39,8 @@ describe("S04: core dependency and import boundary", () => {
     const forbidden = new RegExp(
       `${["@earendil", "-works"].join("")}|${["type", "box"].join("")}`,
     );
-    const coreFiles = readdirSync(`${ROOT}packages/core/src`).filter((name) =>
-      name.endsWith(".ts"),
+    const coreFiles = readdirSync(`${ROOT}packages/core/src`).filter(
+      (name) => name.endsWith(".ts") && !name.includes(".test."),
     );
     const sources = coreFiles.map((name) =>
       readFileSync(`${ROOT}packages/core/src/${name}`, "utf8"),

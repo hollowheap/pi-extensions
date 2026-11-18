@@ -8,6 +8,7 @@ import extension from "./index.js";
 
 interface MockCommand {
   handler: (args: string, ctx: unknown) => Promise<void>;
+  getArgumentCompletions?: (prefix: string) => unknown[];
 }
 
 function createMockPi() {
@@ -79,5 +80,40 @@ describe("S200 mode naming", () => {
       edit: "ask",
       shell: "ask",
     });
+  });
+
+  it("S200 C02: completions offer manual but not the legacy aliases", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const values = (pi.command("mode").getArgumentCompletions?.("") ?? []).map(
+      (c) => (c as { value: string }).value,
+    );
+    expect(values).toContain("manual");
+    expect(values).not.toContain("ask");
+    expect(values).not.toContain("autopilot");
+  });
+
+  it("S200 C03: an unknown mode is rejected without switching the session", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+
+    await pi.command("mode").handler("turbo", ctx);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.any(String), "error");
+    expect(session(ctx.sessionManager).mode).toBe("manual");
+  });
+
+  it("S200 C04: a bare settings subcommand reports usage", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+
+    await pi.command("mode").handler("settings", ctx);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("usage"),
+      "error",
+    );
   });
 });

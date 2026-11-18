@@ -28,7 +28,7 @@ function capturedGuard() {
     getAllTools: vi.fn(() => []),
   };
   extension(pi as never);
-  return { toolCall };
+  return { toolCall, pi };
 }
 
 function baseCtx(agentDir: string, classify: unknown) {
@@ -126,5 +126,225 @@ describe("classifier guard layer", () => {
       expect.stringContaining("classifier"),
     );
     expect(ctx.ui.custom).not.toHaveBeenCalled();
+  });
+
+  it("S189 C02: a classifier allow does not block a rule-allowed call", async () => {
+    const { toolCall } = capturedGuard();
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify: vi.fn().mockResolvedValue({
+        stopReason: "stop",
+        answers: { answer: "allow" },
+      }),
+    });
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t189-c2",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect((result as { block?: boolean } | undefined)?.block).not.toBe(true);
+  });
+
+  it("S189 C03: a hard rule deny is not weakened by a classifier allow", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "g-"));
+    const { toolCall } = capturedGuard();
+    const ctx = baseCtx(dir, {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify: vi.fn().mockResolvedValue({
+        stopReason: "stop",
+        answers: { answer: "allow" },
+      }),
+    });
+    writeFileSync(
+      join(dir, "permissions.json"),
+      JSON.stringify({ rules: ["deny read **"] }),
+    );
+    (ctx as { isProjectTrusted: () => boolean }).isProjectTrusted = () => true;
+    vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t189-c3",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    vi.unstubAllEnvs();
+    expect((result as { block?: unknown } | undefined)?.block).toBe(true);
+    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(/classifier/);
+  });
+
+  it("S189 C04: a classifier block is recorded in the guard audit", async () => {
+    const { toolCall, pi } = capturedGuard();
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify: vi.fn().mockResolvedValue({
+        stopReason: "stop",
+        answers: { answer: "block" },
+      }),
+    });
+    await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t189-c4",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect(pi.appendEntry).toHaveBeenCalled();
+  });
+
+  it("S190 C02: the payload carries the tool tag and a bounded 80-char summary", async () => {
+    const { toolCall } = capturedGuard();
+    const classify = vi
+      .fn()
+      .mockResolvedValue({ stopReason: "stop", answers: { answer: "allow" } });
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify,
+    });
+    await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t190-c2",
+        toolName: "read",
+        input: { path: "a".repeat(500), secret: "hidden" },
+      },
+      ctx,
+    );
+    expect(classify).toHaveBeenCalled();
+    const payload = classify.mock.calls[0] as unknown[];
+    const state = (
+      payload[1] as { state: { tool: string; tag: string; summary: string } }
+    ).state;
+    expect(state.tool).toBe("read");
+    expect(typeof state.tag).toBe("string");
+    expect(state.summary).toHaveLength(80);
+    expect(JSON.stringify(payload)).not.toContain("hidden");
+  });
+
+  it("S190 C03: without a registry the call is not sent to a classifier", async () => {
+    const { toolCall } = capturedGuard();
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), undefined);
+    Reflect.deleteProperty(ctx as object, "modelRegistry");
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t190-c3",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect((result as { block?: boolean } | undefined)?.block).not.toBe(true);
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("classifier"),
+      "warning",
+    );
+  });
+
+  it("S190 C04: the classifier model is discovered by type and capability", async () => {
+    const { toolCall } = capturedGuard();
+    const findOfType = vi.fn(() => ({ id: "classifier/test" }));
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType,
+      classify: vi.fn().mockResolvedValue({
+        stopReason: "stop",
+        answers: { answer: "allow" },
+      }),
+    });
+    await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t190-c4",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect(findOfType).toHaveBeenCalledWith(
+      "classifier",
+      "typesafe",
+      "jev-latest",
+    );
+  });
+
+  it("S191 C02: an aborted classification emits a classifier-error event", async () => {
+    const { toolCall, pi } = capturedGuard();
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify: vi.fn().mockResolvedValue({ stopReason: "aborted" }),
+    });
+    await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t191-c2",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect(pi.events.emit).toHaveBeenCalledWith(
+      "guard:classifier-error",
+      expect.objectContaining({ tool: "read" }),
+    );
+  });
+
+  it("S191 C03: a model lookup failure notifies the user with a warning", async () => {
+    const { toolCall } = capturedGuard();
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => {
+        throw new Error("registry down");
+      }),
+      classify: vi.fn(),
+    });
+    await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t191-c3",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("classifier"),
+      "warning",
+    );
+  });
+
+  it("S191 C04: a classifier failure still leaves a rule deny in force", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "g-"));
+    const { toolCall } = capturedGuard();
+    const ctx = baseCtx(dir, {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify: vi
+        .fn()
+        .mockResolvedValue({ stopReason: "error", errorMessage: "timeout" }),
+    });
+    writeFileSync(
+      join(dir, "permissions.json"),
+      JSON.stringify({ rules: ["deny read **"] }),
+    );
+    (ctx as { isProjectTrusted: () => boolean }).isProjectTrusted = () => true;
+    vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t191-c4",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    vi.unstubAllEnvs();
+    expect((result as { block?: unknown } | undefined)?.block).toBe(true);
+    expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(/classifier/);
   });
 });

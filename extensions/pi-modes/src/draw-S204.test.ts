@@ -85,4 +85,42 @@ describe("S204 mode prompt indicator", () => {
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("mode", undefined);
     expect(ctx.ui.setStatus).not.toHaveBeenCalledWith("cwd", expect.anything());
   });
+
+  it("S204 C02: the default indicator writes only the mode status key", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+    pi.fire("session_start", ctx);
+    expect(ctx.ui.setStatus).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("mode", "manual");
+  });
+
+  it("S204 C03: the hide flag keeps the indicator hidden after a switch", async () => {
+    const base = getActiveTuiConfig();
+    setActiveTuiConfig({ ...base, modeIndicator: false } as never);
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext();
+    pi.fire("session_start", ctx);
+    await pi.command("mode").handler("plan", ctx);
+    expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("mode", undefined);
+  });
+
+  it("S204 C04: a persisted mode in a resumed session is reflected", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = {
+      ...createContext(),
+      sessionManager: {
+        getEntries: () => [
+          {
+            customType: "hollowheap.core.mode",
+            data: { mode: "plan" },
+          },
+        ],
+      },
+    };
+    pi.fire("session_start", ctx);
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("mode", "plan");
+  });
 });

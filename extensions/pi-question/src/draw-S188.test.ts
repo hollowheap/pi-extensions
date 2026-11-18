@@ -25,4 +25,50 @@ describe("S188 partial answers on cancellation", () => {
     expect(answers?.[0]).toEqual({ mode: "single", value: "Option A" });
     expect(select).toHaveBeenCalledTimes(2);
   });
+
+  it("S188 C02: an empty question list returns an empty, uncancelled result", async () => {
+    const ctx = {
+      ui: { select: vi.fn(), input: vi.fn(), custom: vi.fn() },
+      hasUI: true,
+      mode: "tui",
+    };
+    const answers = await askQuestions([], ctx as never);
+    expect(answers).toEqual([]);
+    expect(answers?.cancelled).toBeUndefined();
+  });
+
+  it("S188 C03: dismissing the first prompt stops before the second", async () => {
+    const select = vi.fn().mockResolvedValueOnce(undefined);
+    const ctx = {
+      ui: { select, input: vi.fn(), custom: vi.fn() },
+      hasUI: true,
+      mode: "tui",
+    };
+    const answers = await askQuestions(
+      [
+        { mode: "single", prompt: "First?", options: ["A"] },
+        { mode: "single", prompt: "Second?", options: ["X"] },
+      ],
+      ctx as never,
+    );
+    expect(answers?.cancelled).toBe(true);
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("S188 C04: outside TUI mode a completed flow returns answers without review", async () => {
+    const select = vi.fn().mockResolvedValue("Option A");
+    const custom = vi.fn();
+    const ctx = {
+      ui: { select, input: vi.fn(), custom },
+      hasUI: true,
+      mode: "print",
+    };
+    const answers = await askQuestions(
+      [{ mode: "single", prompt: "Pick?", options: ["Option A"] }],
+      ctx as never,
+    );
+    expect(answers?.[0]).toEqual({ mode: "single", value: "Option A" });
+    expect(answers?.cancelled).toBeUndefined();
+    expect(custom).not.toHaveBeenCalled();
+  });
 });

@@ -147,4 +147,61 @@ describe("S202 question navigation", () => {
     expect(result?.[0]).toMatchObject({ mode: "free", value: "ALPHA" });
     expect(result?.[1]).toMatchObject({ mode: "free", value: "beta" });
   });
+
+  it("S202 C02: review left/right navigation preserves both answers", async () => {
+    const flow = createFlow([
+      { prompt: "First?", mode: "free" },
+      { prompt: "Second?", mode: "free" },
+    ]);
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    await type(flow.components[0], "alpha");
+    flow.components[0]?.handleInput("\r");
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
+    await type(flow.components[1], "beta");
+    flow.components[1]?.handleInput("\r");
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
+    const review = flow.components[2];
+    if (review === undefined) throw new Error("missing review component");
+    review.handleInput("\x1b[D");
+    review.handleInput("\x1b[C");
+    review.handleInput("\r");
+
+    const result = await flow.pending;
+    expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
+    expect(result?.[1]).toMatchObject({ mode: "free", value: "beta" });
+  });
+
+  it("S202 C03: dismissal before review marks cancelled without answers", async () => {
+    const select = vi.fn().mockResolvedValue(undefined);
+    const custom = vi.fn();
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      sessionManager: {},
+      ui: { select, input: vi.fn(), custom },
+    };
+    const result = await askQuestions(
+      [{ mode: "single", prompt: "Pick?", options: ["A"] }],
+      ctx as never,
+    );
+    expect(result?.cancelled).toBe(true);
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it("S202 C04: declining the review cancels the flow", async () => {
+    const flow = createFlow([{ prompt: "Say it", mode: "free" }]);
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    await type(flow.components[0], "alpha");
+    flow.components[0]?.handleInput("\r");
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
+    const review = flow.components[1];
+    if (review === undefined) throw new Error("missing review component");
+    expect(review.render(80).join("\n")).toContain("Cancel");
+    review.handleInput("\x1b[C");
+    review.handleInput("\r");
+
+    const result = await flow.pending;
+    expect(result?.cancelled).toBe(true);
+    expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
+  });
 });

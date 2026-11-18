@@ -223,7 +223,7 @@ describe("S88: decide accepts one question and returns a structured result", () 
         },
       } as never,
     );
-    const payload = classify.mock.calls[0]?.[1] as {
+    const payload = (classify.mock.calls[0] as unknown[] | undefined)?.[1] as unknown as {
       state: { input: string };
       questions: {
         answer: { instructions: string; criteria: Record<string, string> };
