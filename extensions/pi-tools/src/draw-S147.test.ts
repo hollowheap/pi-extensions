@@ -54,7 +54,7 @@ describe("S147 no injected search tools", () => {
     };
     handlers.session_start?.({}, ctx);
     expect(commands.cd.getArgumentCompletions?.("")).not.toBeNull();
-    handlers.session_shutdown?.({});
+    handlers.session_shutdown?.({}, ctx);
     expect(commands.cd.getArgumentCompletions?.("")).toBeNull();
   });
 

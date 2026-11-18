@@ -59,7 +59,7 @@ describe("S77: provider adapters return normalized results", () => {
       search: true,
       fetch: false,
     });
-    expect(firecrawl.fetch).toBeUndefined();
+    expect((firecrawl as unknown as { fetch?: unknown }).fetch).toBeUndefined();
   });
 
   it("S77 C04: tags normalized results with the adapter provider id", async () => {

@@ -39,7 +39,7 @@ describe("S75: pi-web registers exactly web_search and web_fetch", () => {
     };
     extension(pi as never);
     expect(pi.registerCommand).toHaveBeenCalledWith("web", expect.any(Object));
-    const events = pi.on.mock.calls.map(([event]) => event);
+    const events = (pi.on.mock.calls as unknown[][]).map(([event]) => event);
     expect(events).toContain("session_start");
     expect(events).toContain("session_tree");
     expect(events).toContain("session_compact");
@@ -56,7 +56,7 @@ describe("S75: pi-web registers exactly web_search and web_fetch", () => {
       setActiveTools: vi.fn(),
     };
     extension(pi as never);
-    const start = pi.on.mock.calls.find(
+    const start = (pi.on.mock.calls as unknown[][]).find(
       ([event]) => event === "session_start",
     )?.[1] as (event: unknown, ctx: unknown) => void;
     start(

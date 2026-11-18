@@ -59,7 +59,7 @@ describe("S124 live task output and dependencies", () => {
 
   it("S124 C04: updated metadata is consumed as a live task record", async () => {
     const dir = mkdtempSync(join(tmpdir(), "s124-live-"));
-    const record = createTaskRecord(dir, {
+    createTaskRecord(dir, {
       id: "t3",
       kind: "shell",
       status: "running",

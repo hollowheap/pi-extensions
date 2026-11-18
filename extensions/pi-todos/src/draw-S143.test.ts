@@ -93,7 +93,7 @@ describe("S143 state survives compaction", () => {
     pi.handlers.session_start?.({}, ctx);
     expect(disposeFirst).toHaveBeenCalledTimes(1);
     expect(disposeSecond).not.toHaveBeenCalled();
-    pi.handlers.session_shutdown?.({});
+    pi.handlers.session_shutdown?.({}, ctx);
     expect(disposeSecond).toHaveBeenCalledTimes(1);
   });
 
