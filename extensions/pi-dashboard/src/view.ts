@@ -7,6 +7,7 @@ import {
 } from "@hollowheap/core/snapshot";
 import { roundedFrame } from "@hollowheap/tui/frame";
 import {
+  DASHBOARD_OVERLAY_ACTIONS,
   DEFAULT_DASHBOARD_ACTIONS,
   type StateRenderInput,
   renderActionsSection,
@@ -128,10 +129,11 @@ export async function showDashboardOverlay(
 
           lines.push(
             ...renderActionsSection(
-              DEFAULT_DASHBOARD_ACTIONS.filter((item) => item.key !== "d"),
+              DASHBOARD_OVERLAY_ACTIONS,
               theme,
               innerWidth,
               "left",
+              true,
             ),
           );
           lines.push("");

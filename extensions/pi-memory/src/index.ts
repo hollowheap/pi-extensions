@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import {
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -35,6 +37,7 @@ import {
   MEMORY_CLEAR_TYPE,
   MEMORY_CONSUMED_TYPE,
   MEMORY_OBSERVATION_TYPE,
+  MEMORY_WORKSPACE_TYPE,
   type MemoryLedger,
   type MemoryObservation,
   emptyMemoryLedger,
@@ -60,6 +63,18 @@ function observationId(): string {
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+export function resolveWorkspaceRoot(cwd: string): string {
+  let current = resolve(cwd);
+  while (true) {
+    if (existsSync(join(current, ".pi")) || existsSync(join(current, ".git"))) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
 }
 
 function stringHeaders(
@@ -558,6 +573,60 @@ export function createMemoryExtension(
 
     pi.registerTool(
       defineTool({
+        name: "memory_recall",
+        label: "memory_recall",
+        description:
+          "Recall durable observations with an explicit session or workspace scope. Available to codemode scripts only.",
+        exposure: "codemode",
+        parameters: Type.Object({
+          query: Type.String({ minLength: 1 }),
+          scope: Type.Optional(
+            Type.Union([Type.Literal("session"), Type.Literal("workspace")]),
+          ),
+          limit: Type.Optional(Type.Number({ minimum: 1, maximum: 20 })),
+        }),
+        async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+          const config = loadConfig();
+          if (!isMemoryActive(config)) {
+            return {
+              content: [{ type: "text", text: "memory is disabled" }],
+              details: {},
+            };
+          }
+          const scope = params.scope ?? "session";
+          const terms = params.query.toLowerCase().split(/\s+/).filter(Boolean);
+          const results = ledger.observations
+            .filter((item) => {
+              const lower = item.text.toLowerCase();
+              return terms.some((term) => lower.includes(term));
+            })
+            .slice(0, params.limit ?? 5)
+            .map((item) => ({
+              id: item.id,
+              scope,
+              text: config.redactSecrets
+                ? redactSecrets(item.text)
+                : sanitizeTerminalText(item.text),
+            }));
+          return {
+            content: [
+              {
+                type: "text",
+                text: stringifyToolJson({
+                  scope,
+                  total: results.length,
+                  results,
+                }),
+              },
+            ],
+            details: {},
+          };
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool({
         name: "memory_remember",
         label: "memory_remember",
         description:
@@ -781,6 +850,21 @@ export function createMemoryExtension(
   };
 }
 
-export default function (pi: ExtensionAPI): void {
+function memoryExtension(pi: ExtensionAPI): void {
   createMemoryExtension()(pi);
+  if (process.env.PI_ACP) return;
+  const config = loadMemoryConfig(getAgentDir());
+  pi.appendEntry(MEMORY_WORKSPACE_TYPE, {
+    workspace: resolveWorkspaceRoot(process.cwd()),
+    origin: "workspace",
+    sessionOrigin: "",
+    redacted: config.redactSecrets,
+    createdAt: Date.now(),
+  });
 }
+
+const defaultExtension = Object.assign(memoryExtension, {
+  resolveWorkspaceRoot,
+});
+
+export default defaultExtension;

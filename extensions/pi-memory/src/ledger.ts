@@ -4,6 +4,7 @@ export const MEMORY_OBSERVATION_TYPE = "hollowheap.memory.observation";
 export const MEMORY_REFLECTION_TYPE = "hollowheap.memory.reflection";
 export const MEMORY_CONSUMED_TYPE = "hollowheap.memory.consumed";
 export const MEMORY_CLEAR_TYPE = "hollowheap.memory.clear";
+export const MEMORY_WORKSPACE_TYPE = "hollowheap.memory.workspace";
 
 export interface MemoryObservation {
   id: string;

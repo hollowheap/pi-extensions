@@ -39,6 +39,12 @@ export const DEFAULT_DASHBOARD_ACTIONS: readonly DashboardActionItem[] = [
   { key: "s", label: "Settings", command: "/dashboard settings" },
 ];
 
+export const DASHBOARD_OVERLAY_ACTIONS: readonly DashboardActionItem[] = [
+  { key: "m", label: "Model", command: "/model" },
+  { key: "t", label: "Thinking", command: "/thinking" },
+  { key: "l", label: "Sessions", command: "/sessions" },
+];
+
 function clean(text: string): string {
   return sanitizeTerminalText(text, { allowSgr: false })
     .replace(/\s+/g, " ")
@@ -253,11 +259,12 @@ export function renderActionsSection(
   theme: Theme,
   width: number,
   align: "left" | "center" = "left",
+  useLabel = false,
 ): string[] {
   const lines: string[] = [theme.bold(theme.fg("accent", "Quick Actions"))];
   const entries = items.map(
     (item) =>
-      `${theme.fg("accent", `[${clean(item.key)}]`)} ${clean(item.command)}`,
+      `${theme.fg("accent", `[${clean(item.key)}]`)} ${clean(useLabel ? item.label : item.command)}`,
   );
 
   let current = "";

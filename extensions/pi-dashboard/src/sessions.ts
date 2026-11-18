@@ -130,13 +130,21 @@ export async function loadRecentSessions(
     return [];
   }
 
-  const filtered = rawList
-    .filter((info) => {
-      if (options.currentSessionId && info.id === options.currentSessionId) {
-        return false;
-      }
-      return info.messageCount > 0 || Boolean(info.name?.trim());
-    })
+  const byId = new Map<string, SessionInfo>();
+  for (const info of rawList) {
+    if (options.currentSessionId && info.id === options.currentSessionId) {
+      continue;
+    }
+    if (!(info.messageCount > 0 || Boolean(info.name?.trim()))) continue;
+    const existing = byId.get(info.id);
+    if (
+      existing === undefined ||
+      info.modified.getTime() > existing.modified.getTime()
+    ) {
+      byId.set(info.id, info);
+    }
+  }
+  const filtered = [...byId.values()]
     .sort((a, b) => b.modified.getTime() - a.modified.getTime())
     .slice(0, limit);
 

@@ -16,11 +16,13 @@ export type DashboardSection =
       ascii: string[];
       align?: "left" | "center";
       gap: number;
+      enabled?: boolean;
     }
   | {
       type: "state";
       align?: "left" | "center";
       gap: number;
+      enabled?: boolean;
     }
   | {
       type: "sessions";
@@ -28,11 +30,13 @@ export type DashboardSection =
       scope: "cwd" | "all";
       align?: "left" | "center";
       gap: number;
+      enabled?: boolean;
     }
   | {
       type: "actions";
       align?: "left" | "center";
       gap: number;
+      enabled?: boolean;
     }
   | {
       type: "terminal";
@@ -41,6 +45,25 @@ export type DashboardSection =
       intervalMs: number;
       align?: "left" | "center";
       gap: number;
+      enabled?: boolean;
+    }
+  | {
+      type: "context";
+      align?: "left" | "center";
+      gap: number;
+      enabled?: boolean;
+    }
+  | {
+      type: "skills";
+      align?: "left" | "center";
+      gap: number;
+      enabled?: boolean;
+    }
+  | {
+      type: "extensions";
+      align?: "left" | "center";
+      gap: number;
+      enabled?: boolean;
     };
 
 export interface DashboardConfig {
@@ -83,6 +106,17 @@ export function defaultConfig(): DashboardConfig {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOrderedSectionList(
+  value: unknown,
+): value is Record<string, unknown>[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (section) => isRecord(section) && typeof section.enabled === "boolean",
+    )
+  );
 }
 
 function normalizeGap(input: unknown, diagnostics: string[]): number {
@@ -307,6 +341,10 @@ export function normalizeConfig(input: unknown): {
     diagnostics.push("sections must be an array; using defaults");
     return { config, diagnostics };
   }
+  if (isOrderedSectionList(input.sections)) {
+    config.sections = input.sections as unknown as DashboardSection[];
+    return { config, diagnostics };
+  }
   const sections: DashboardSection[] = [];
   for (const entry of input.sections) {
     const section = normalizeSection(entry, diagnostics);
@@ -359,6 +397,7 @@ export interface DashboardSettings {
   showSessions?: boolean;
   showActions?: boolean;
   autoHide?: boolean;
+  sections?: DashboardSection[];
 }
 
 /** Persist dashboard header/section settings while preserving terminal sections. */
@@ -368,6 +407,10 @@ export function saveDashboardSettings(
 ): string {
   const path = join(agentDir, CONFIG_FILE_NAME);
   const res = updateJsonConfig(path, (root) => {
+    if (isOrderedSectionList(settings.sections)) {
+      root.sections = settings.sections;
+      return;
+    }
     const sections = Array.isArray(root.sections) ? root.sections : [];
     const existingHeader = sections.find(
       (section) =>

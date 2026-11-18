@@ -299,45 +299,89 @@ function terminalSection(
   };
 }
 
+function builtinSection(
+  type: "context" | "skills" | "extensions",
+  width: number,
+  align: "left" | "center" | undefined,
+  gap: number,
+  deps: DashboardDeps,
+): SectionController {
+  const heading = type[0]?.toUpperCase() + type.slice(1);
+  return {
+    lines: (renderWidth?: number, theme?: Partial<Theme>) => {
+      const resolved = resolveTheme(theme ?? deps.theme);
+      return appendGap(
+        fitLines(
+          [
+            resolved.bold(resolved.fg("accent", heading)),
+            `  ${resolved.fg("dim", "0 · empty")}`,
+          ],
+          renderWidth ?? width,
+          align ?? "left",
+        ),
+        gap,
+      );
+    },
+    refresh: () => Promise.resolve(),
+    start: () => undefined,
+    stop: () => undefined,
+  };
+}
+
 export function createDashboard(
   config: DashboardConfig,
   deps: DashboardDeps,
 ): DashboardController {
-  const sections = config.sections.map((section) => {
-    if (section.type === "header") {
-      return headerSection(
-        section.ascii,
-        config.width,
-        section.align,
-        section.gap,
-      );
-    }
-    if (section.type === "state") {
-      return stateSection(config.width, section.align, section.gap, deps);
-    }
-    if (section.type === "sessions") {
-      return sessionsSection(
-        section.maxItems,
-        section.scope,
+  const sections = config.sections
+    .filter((section) => section.enabled !== false)
+    .map((section) => {
+      if (section.type === "header") {
+        return headerSection(
+          section.ascii,
+          config.width,
+          section.align,
+          section.gap,
+        );
+      }
+      if (section.type === "state") {
+        return stateSection(config.width, section.align, section.gap, deps);
+      }
+      if (section.type === "sessions") {
+        return sessionsSection(
+          section.maxItems,
+          section.scope,
+          config.width,
+          section.align,
+          section.gap,
+          deps,
+        );
+      }
+      if (section.type === "actions") {
+        return actionsSection(config.width, section.align, section.gap, deps);
+      }
+      if (
+        section.type === "context" ||
+        section.type === "skills" ||
+        section.type === "extensions"
+      ) {
+        return builtinSection(
+          section.type,
+          config.width,
+          section.align,
+          section.gap,
+          deps,
+        );
+      }
+      return terminalSection(
+        section.command,
+        section.args,
+        section.intervalMs,
         config.width,
         section.align,
         section.gap,
         deps,
       );
-    }
-    if (section.type === "actions") {
-      return actionsSection(config.width, section.align, section.gap, deps);
-    }
-    return terminalSection(
-      section.command,
-      section.args,
-      section.intervalMs,
-      config.width,
-      section.align,
-      section.gap,
-      deps,
-    );
-  });
+    });
   return {
     lines: (renderWidth?: number, theme?: Partial<Theme>) =>
       sections.flatMap((section) => section.lines(renderWidth, theme)),
