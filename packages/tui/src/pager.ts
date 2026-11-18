@@ -1,4 +1,8 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionContext,
+  type Theme,
+  highlightCode,
+} from "@earendil-works/pi-coding-agent";
 import {
   Key,
   Markdown,
@@ -39,6 +43,7 @@ function pagerMarkdownTheme(theme: Theme, colored: boolean): MarkdownTheme {
     italic: (text) => theme.italic(text),
     strikethrough: (text) => theme.strikethrough(text),
     underline: (text) => theme.underline(text),
+    highlightCode,
   };
 }
 

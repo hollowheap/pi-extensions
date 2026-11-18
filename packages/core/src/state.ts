@@ -137,3 +137,22 @@ export function readPersistedCwd(owner: unknown): string | null | undefined {
   }
   return undefined;
 }
+
+export interface DirtyFlusher {
+  markDirty(): void;
+  flush(write: () => void): void;
+}
+
+export function createDirtyFlusher(): DirtyFlusher {
+  let dirty = false;
+  return {
+    markDirty() {
+      dirty = true;
+    },
+    flush(write) {
+      if (!dirty) return;
+      dirty = false;
+      write();
+    },
+  };
+}

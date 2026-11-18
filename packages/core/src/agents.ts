@@ -29,3 +29,12 @@ export function formatAgentRosterSection(
   const body = renderAgentRoster(agents);
   return body === "" ? "" : `<agents>\n${body}\n</agents>`;
 }
+
+export function resolveAgentName(
+  name: string,
+  agents: readonly RosterAgent[],
+): RosterAgent | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "default" || normalized === "none") return undefined;
+  return agents.find((agent) => agent.name.toLowerCase() === normalized);
+}

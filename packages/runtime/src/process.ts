@@ -250,6 +250,27 @@ export async function cancelProcessGroup(
   return terminateProcessGroup(pid, { startTime, graceMs, killWaitMs });
 }
 
+export interface TerminateProcessGroupsOptions {
+  graceMs?: number;
+  killWaitMs?: number;
+}
+
+export async function terminateProcessGroups(
+  groups: readonly { pid: number; startTime?: number }[],
+  options: TerminateProcessGroupsOptions = {},
+): Promise<boolean> {
+  let terminatedAll = true;
+  for (const group of groups) {
+    const terminated = await terminateProcessGroup(group.pid, {
+      startTime: group.startTime,
+      graceMs: options.graceMs,
+      killWaitMs: options.killWaitMs,
+    });
+    terminatedAll = terminatedAll && terminated;
+  }
+  return terminatedAll;
+}
+
 export async function isSocketConnectable(
   socketPath?: string,
   timeoutMs = 200,

@@ -57,12 +57,33 @@ export const LOADING_INDICATOR_STYLES: readonly LoadingIndicatorStyle[] = [
   "hidden",
 ];
 
-export type ThinkingVerbosityMode = "verbose" | "minimal" | "none";
+export type ThinkingVerbosityMode =
+  | "verbose"
+  | "minimal"
+  | "none"
+  | "low"
+  | "medium"
+  | "high";
 
 export const THINKING_VERBOSITY_MODES: readonly ThinkingVerbosityMode[] = [
+  "low",
+  "medium",
+  "high",
+];
+
+const THINKING_VERBOSITY_PARSE_MODES: readonly ThinkingVerbosityMode[] = [
   "verbose",
   "minimal",
   "none",
+  ...THINKING_VERBOSITY_MODES,
+];
+
+export type ToolVerbosity = "low" | "medium" | "high";
+
+export const TOOL_VERBOSITY_MODES: readonly ToolVerbosity[] = [
+  "low",
+  "medium",
+  "high",
 ];
 
 export interface CustomToolVerb {
@@ -88,6 +109,7 @@ export interface TuiConfig {
   loadingIndicator: LoadingIndicatorStyle;
   markdownRender: boolean;
   thinkingVerbosity: ThinkingVerbosityMode;
+  toolVerbosity?: ToolVerbosity;
   thinkingAnimate: boolean;
   verbPack: ToolVerbPack;
   panel: PanelConfig;
@@ -100,6 +122,7 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   loadingIndicator: "crush",
   markdownRender: true,
   thinkingVerbosity: "verbose",
+  toolVerbosity: "medium",
   thinkingAnimate: true,
   verbPack: "standard",
   panel: {
@@ -244,11 +267,21 @@ export function normalizeTuiConfig(
         : undefined;
   const thinkingVerbosity = parseEnum(
     raw.thinkingVerbosity ?? legacyThinkingVerbosity,
-    THINKING_VERBOSITY_MODES,
+    THINKING_VERBOSITY_PARSE_MODES,
     defaults.thinkingVerbosity,
     "thinkingVerbosity",
     diagnostics,
   );
+  const toolVerbosity =
+    raw.toolVerbosity === undefined
+      ? undefined
+      : parseEnum(
+          raw.toolVerbosity,
+          TOOL_VERBOSITY_MODES,
+          DEFAULT_TUI_CONFIG.toolVerbosity ?? "medium",
+          "toolVerbosity",
+          diagnostics,
+        );
   const thinkingAnimate = parseBoolean(
     raw.thinkingAnimate,
     defaults.thinkingAnimate,
@@ -341,6 +374,7 @@ export function normalizeTuiConfig(
     loadingIndicator,
     markdownRender,
     thinkingVerbosity,
+    ...(toolVerbosity === undefined ? {} : { toolVerbosity }),
     thinkingAnimate,
     verbPack,
     panel,
@@ -406,6 +440,7 @@ export function updateTuiConfig(
       loadingIndicator: updated.loadingIndicator,
       markdownRender: updated.markdownRender,
       thinkingVerbosity: updated.thinkingVerbosity,
+      toolVerbosity: updated.toolVerbosity,
       thinkingAnimate: updated.thinkingAnimate,
       verbPack: updated.verbPack,
       panel: {
