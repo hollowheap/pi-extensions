@@ -1,5 +1,5 @@
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 describe("S94 process-wide FIFO prompt queue", () => {
   it("runs blocking prompts one at a time in acquisition order", async () => {
@@ -20,5 +20,39 @@ describe("S94 process-wide FIFO prompt queue", () => {
     await expect(withPromptLock(() => withPromptLock(() => 1))).rejects.toThrow(
       /nested/,
     );
+  });
+
+  it("S94 C02: rejects an already-aborted signal before running the operation", async () => {
+    const controller = new AbortController();
+    controller.abort("stop now");
+    const operation = vi.fn();
+    await expect(
+      withPromptLock(operation, { signal: controller.signal }),
+    ).rejects.toThrow("stop now");
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("S94 C03: releases the queue when an operation throws", async () => {
+    await expect(
+      withPromptLock(() => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    await expect(withPromptLock(() => "next")).resolves.toBe("next");
+  });
+
+  it("S94 C04: an aborted waiter is removed without blocking later waiters", async () => {
+    const controller = new AbortController();
+    const first = withPromptLock(
+      () => new Promise((resolve) => setTimeout(resolve, 20)),
+    );
+    const waiting = withPromptLock(() => "never", {
+      signal: controller.signal,
+    });
+    const later = withPromptLock(() => "later");
+    controller.abort();
+    await expect(waiting).rejects.toThrow(/aborted/);
+    await first;
+    await expect(later).resolves.toBe("later");
   });
 });

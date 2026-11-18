@@ -1,9 +1,10 @@
-import { mkdtempSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProcessStore } from "@hollowheap/runtime/state";
 import { describe, expect, it } from "vitest";
 import {
+  SubagentStore,
   isInProject,
   requireTrustedProject,
   subagentDisplayName,
@@ -29,5 +30,54 @@ describe("S100 subagent state safety", () => {
     expect(subagentDisplayName({ agent: "scout", task: "find things" })).toBe(
       "@scout-1",
     );
+  });
+
+  it("S100 C02: socketPath rejects ids that could escape the state directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s100-state-"));
+    const store = new SubagentStore(dir);
+    expect(() => store.socketPath("../evil")).toThrow(/Invalid subagent id/);
+  });
+
+  it("S100 C03: unknown fields are dropped before state is persisted", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s100-state-"));
+    const store = new SubagentStore(dir);
+    store.write({
+      id: "s2",
+      status: "running",
+      startedAt: 1,
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+      apiKey: "secret",
+    } as never);
+    const raw = readFileSync(store.statePath("s2"), "utf8");
+    expect(raw).not.toContain("apiKey");
+    expect(raw).not.toContain("secret");
+  });
+
+  it("S100 C04: update merges patches and updateIf honours its predicate", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s100-state-"));
+    const store = new SubagentStore(dir);
+    store.write({
+      id: "s3",
+      status: "running",
+      startedAt: 1,
+      agent: "scout",
+      task: "find",
+      depth: 1,
+      attempt: 1,
+    });
+    expect(store.update("s3", { status: "completed" })).toMatchObject({
+      status: "completed",
+      agent: "scout",
+    });
+    const rejected = store.updateIf(
+      "s3",
+      (state) => state.status === "running",
+      { status: "failed" },
+    );
+    expect(rejected).toMatchObject({ status: "completed" });
+    expect(store.read("s3")?.status).toBe("completed");
   });
 });

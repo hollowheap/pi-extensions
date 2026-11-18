@@ -135,4 +135,52 @@ describe("S101 explicit resume", () => {
     );
     expect(JSON.stringify(notFailed)).toContain("only failed");
   });
+
+  it("S101 C02: resume is denied when the project is not trusted", async () => {
+    const tool = createSubagentTool();
+    const result = await tool.execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      { ...ctx, isProjectTrusted: () => false } as never,
+    );
+    expect(JSON.stringify(result)).toContain(
+      "resume requires a trusted project",
+    );
+    expect(mocks.startSubagent).not.toHaveBeenCalled();
+  });
+
+  it("S101 C03: resume of an unknown id is reported without starting a child", async () => {
+    mocks.attachSubagent.mockResolvedValue(undefined);
+    const result = await createSubagentTool().execute(
+      "1",
+      { action: "resume", id: "sub-9" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(JSON.stringify(result)).toContain("unknown id: sub-9");
+    expect(mocks.startSubagent).not.toHaveBeenCalled();
+  });
+
+  it("S101 C04: a successful resume notifies the owner through onSubagentsChange", async () => {
+    mocks.attachSubagent.mockResolvedValue({
+      ...running,
+      pid: 999_999_999,
+      status: "failed",
+      attempt: 1,
+      session: "/tmp/sub-1.session.jsonl",
+    });
+    const onSubagentsChange = vi.fn();
+    const tool = createSubagentTool({ onSubagentsChange });
+    await tool.execute(
+      "1",
+      { action: "resume", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(onSubagentsChange).toHaveBeenCalledTimes(1);
+  });
 });

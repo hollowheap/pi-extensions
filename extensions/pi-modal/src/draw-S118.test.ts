@@ -52,4 +52,42 @@ describe("S118 visual selection yank and cut", () => {
     expect(editor.getMode()).toBe("normal");
     expect(editor.getText()).toBe("bar baz");
   });
+
+  it("S118 C02: escape in visual mode cancels the selection and keeps the buffer", () => {
+    const editor = createEditor("foo bar baz");
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    expect(editor.getSelection()?.text).toBe("fo");
+
+    editor.handleInput("\x1b");
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getSelection()).toBeNull();
+    expect(editor.getText()).toBe("foo bar baz");
+  });
+
+  it("S118 C03: change cuts the selection and enters insert mode", () => {
+    const editor = createEditor("foo bar baz");
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    editor.handleInput("c");
+    expect(editor.getMode()).toBe("insert");
+    expect(editor.getText()).toBe(" bar baz");
+    expect(editor.getYankedText()).toBe("foo");
+  });
+
+  it("S118 C04: the selection exposes ordered start and end positions", () => {
+    const editor = createEditor("foo bar baz");
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("l");
+    editor.handleInput("l");
+    const selection = editor.getSelection();
+    expect(selection).not.toBeNull();
+    expect(selection?.text).toBe("foo");
+    expect(selection?.start).toEqual({ line: 0, col: 0 });
+    expect(selection?.end).toEqual({ line: 0, col: 2 });
+  });
 });

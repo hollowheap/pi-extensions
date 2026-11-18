@@ -30,4 +30,37 @@ describe("S119 prompt prefix and rounded corners", () => {
       bottomRight: "╯",
     });
   });
+
+  it("S119 C02: a multi-character promptChar is diagnosed and reset to the default", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s119-modal-"));
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({ promptChar: ">>" }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
+    expect(config.promptChar).toBe("❯");
+    expect(diagnostics).toContain("promptChar must be one character; using ❯");
+  });
+
+  it("S119 C03: an invalid borderStyle is diagnosed and falls back to rounded", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s119-modal-"));
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({ borderStyle: "sunken" }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
+    expect(config.borderStyle).toBe("rounded");
+    expect(config.borderStyleExplicit).not.toBe(true);
+    expect(
+      diagnostics.some((message) => message.includes("borderStyle must be")),
+    ).toBe(true);
+  });
+
+  it("S119 C04: every border style maps to glyphs and unknown styles default to rounded", () => {
+    expect(getBorderChars("double").topLeft).toBe("╔");
+    expect(getBorderChars("none").topLeft).toBe("");
+    expect(getBorderChars("mystery")).toEqual(getBorderChars("rounded"));
+  });
 });

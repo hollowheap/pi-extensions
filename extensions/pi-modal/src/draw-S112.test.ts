@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "./editor.js";
-import { loadModalConfig } from "./keymap.js";
+import { loadModalConfig, resolveEffectiveKeymaps } from "./keymap.js";
 
 function createEditor(config?: unknown) {
   const tui = {
@@ -46,5 +46,34 @@ describe("S112 vim CustomEditor modes", () => {
     expect(editor.getMode()).toBe("visual");
     editor.handleInput("\x1b");
     expect(editor.getMode()).toBe("normal");
+  });
+
+  it("S112 C02: a missing modal.json yields insert mode and the default prompt", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s112-modal-"));
+    const config = loadModalConfig(dir);
+    expect(config.initialMode).toBe("insert");
+    expect(config.promptChar).toBe("❯");
+    expect(createEditor().getMode()).toBe("insert");
+  });
+
+  it("S112 C03: an invalid initialMode is diagnosed and falls back to insert", () => {
+    const dir = mkdtempSync(join(tmpdir(), "s112-modal-"));
+    writeFileSync(
+      join(dir, "modal.json"),
+      JSON.stringify({ initialMode: "command" }),
+    );
+    const diagnostics: string[] = [];
+    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
+    expect(config.initialMode).toBe("insert");
+    expect(diagnostics.some((message) => message.includes("initialMode"))).toBe(
+      true,
+    );
+  });
+
+  it("S112 C04: user keymaps override defaults without dropping other keys", () => {
+    const editor = createEditor({ keymaps: { normal: { h: "\x1b[C" } } });
+    expect(editor.getKeymaps().normal.h).toBe("\x1b[C");
+    expect(editor.getKeymaps().normal.l).toBe("\x1b[C");
+    expect(resolveEffectiveKeymaps().normal.h).toBe("\x1b[D");
   });
 });

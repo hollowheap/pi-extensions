@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSubagentTool } from "./tool.js";
 
 describe("S96 direct subagent actions", () => {
@@ -17,5 +17,40 @@ describe("S96 direct subagent actions", () => {
     ]) {
       expect(schema).toContain(`"${action}"`);
     }
+  });
+
+  it("S96 C02: exposes direct mode and the define/delete lifecycle actions", () => {
+    const tool = createSubagentTool();
+    expect(tool.exposure).toBe("direct");
+    expect(tool.label).toBe("subagent");
+    const schema = JSON.stringify(tool.parameters);
+    expect(schema).toContain('"define"');
+    expect(schema).toContain('"delete"');
+  });
+
+  it("S96 C03: rejects an unknown action with an error result", async () => {
+    const tool = createSubagentTool();
+    const result = await tool.execute(
+      "1",
+      { action: "bogus", id: "sub-1" } as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(JSON.stringify(result)).toContain("invalid action: bogus");
+  });
+
+  it("S96 C04: the delete action delegates to the session-agent hook", async () => {
+    const deleteSessionAgent = vi.fn(() => true);
+    const tool = createSubagentTool({ deleteSessionAgent });
+    const result = await tool.execute(
+      "1",
+      { action: "delete", name: "reviewer" } as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(deleteSessionAgent).toHaveBeenCalledWith("reviewer");
+    expect(JSON.stringify(result)).toContain("deleted");
   });
 });

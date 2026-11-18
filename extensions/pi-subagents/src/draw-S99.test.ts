@@ -31,4 +31,58 @@ describe("S99 agent discovery and trust", () => {
       source: "project",
     });
   });
+
+  it("S99 C02: scope excludes the other side regardless of trust", () => {
+    const base = mkdtempSync(join(tmpdir(), "s99-agents-"));
+    const agentDir = join(base, "agent");
+    const cwd = join(base, "project");
+    writeAgent(join(agentDir, "agents"), "scout", "User scout");
+    writeAgent(join(cwd, ".pi", "agents"), "scout", "Project scout");
+
+    const userOnly = discoverAgents({
+      cwd,
+      agentDir,
+      trusted: true,
+      scope: "user",
+    });
+    expect(userOnly.agents.map((a) => a.source)).toEqual(["user"]);
+    const projectOnly = discoverAgents({
+      cwd,
+      agentDir,
+      trusted: true,
+      scope: "project",
+    });
+    expect(projectOnly.agents.map((a) => a.source)).toEqual(["project"]);
+  });
+
+  it("S99 C03: a malformed agent file is skipped without hiding valid siblings", () => {
+    const base = mkdtempSync(join(tmpdir(), "s99-agents-"));
+    const agentDir = join(base, "agent");
+    const cwd = join(base, "project");
+    writeAgent(join(agentDir, "agents"), "scout", "User scout");
+    mkdirSync(join(agentDir, "agents"), { recursive: true });
+    writeFileSync(
+      join(agentDir, "agents", "broken.md"),
+      "---\ndescription: no name\n---\nbody\n",
+    );
+
+    const result = discoverAgents({ cwd, agentDir, trusted: false });
+    expect(result.agents).toHaveLength(1);
+    expect(result.agents[0].name).toBe("scout");
+  });
+
+  it("S99 C04: project agents are found from a parent of cwd", () => {
+    const base = mkdtempSync(join(tmpdir(), "s99-agents-"));
+    const projectDir = join(base, ".pi", "agents");
+    const cwd = join(base, "deep", "nested");
+    writeAgent(projectDir, "parent", "Parent scout");
+
+    const result = discoverAgents({
+      cwd,
+      agentDir: join(base, "agent"),
+      trusted: true,
+    });
+    expect(result.projectAgentsDir).toBe(projectDir);
+    expect(result.agents.map((a) => a.description)).toEqual(["Parent scout"]);
+  });
 });

@@ -20,4 +20,51 @@ describe("S106 ACP inactivity", () => {
     expect(pi.registerCommand).not.toHaveBeenCalled();
     expect(pi.on).not.toHaveBeenCalled();
   });
+
+  it("S106 C02: without ACP the extension registers a tool, a command, and hooks", () => {
+    Reflect.deleteProperty(process.env, "PI_ACP");
+    const pi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      on: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    createSubagentsExtension()(pi as never);
+    expect(pi.registerTool).toHaveBeenCalledTimes(1);
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      "subagent",
+      expect.any(Object),
+    );
+    expect(pi.on).toHaveBeenCalled();
+  });
+
+  it("S106 C03: a truthy non-1 ACP flag also skips registration without throwing", () => {
+    vi.stubEnv("PI_ACP", "true");
+    expect(() => createSubagentsExtension()({} as never)).not.toThrow();
+  });
+
+  it("S106 C04: the command exposes its full set of action completions", () => {
+    Reflect.deleteProperty(process.env, "PI_ACP");
+    const pi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      on: vi.fn(),
+      events: { emit: vi.fn() },
+    };
+    createSubagentsExtension()(pi as never);
+    const command = pi.registerCommand.mock.calls[0][1];
+    const completions = command.getArgumentCompletions("");
+    expect(completions.map((item: { value: string }) => item.value)).toEqual(
+      expect.arrayContaining([
+        "logs",
+        "pause",
+        "resume",
+        "steer",
+        "settings",
+        "config",
+      ]),
+    );
+  });
 });

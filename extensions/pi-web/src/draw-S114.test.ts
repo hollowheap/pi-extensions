@@ -19,4 +19,29 @@ describe("S114 codemode web tools and free pricing", () => {
       ),
     ).toBe(0);
   });
+
+  it("S114 C02: known models resolve rates while unknown models do not", () => {
+    expect(resolveModelPricing("claude-3-5-sonnet")).toMatchObject({
+      input: 3,
+      output: 15,
+    });
+    expect(resolveModelPricing("no-such-model")).toBeUndefined();
+  });
+
+  it("S114 C03: invalid token counts price at zero instead of NaN", () => {
+    const rates = { input: 2, output: 4 };
+    expect(calculateDollarCost({ input: Number.NaN, output: 100 }, rates)).toBe(
+      0,
+    );
+    expect(calculateDollarCost({ input: -5, output: 100 }, rates)).toBe(0);
+  });
+
+  it("S114 C04: both tools declare their names and required parameters", () => {
+    const search = createWebSearchTool();
+    const fetch = createWebFetchTool();
+    expect(search.name).toBe("web_search");
+    expect(fetch.name).toBe("web_fetch");
+    expect(search.parameters.required).toContain("query");
+    expect(fetch.parameters.required).toContain("url");
+  });
 });
