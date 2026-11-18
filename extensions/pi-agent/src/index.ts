@@ -12,7 +12,7 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readPersistedMode, session } from "@hollowheap/core/state";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import { loadAgentConfig } from "./config.js";
+import { loadAgentConfig, saveAgentDefault } from "./config.js";
 
 export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
 
@@ -774,6 +774,24 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
         if (raw !== "") {
           const lower = raw.toLowerCase();
+          if (lower === "settings" || lower === "config") {
+            const config = loadAgentConfig({
+              agentDir: getAgentDir(),
+              cwd: ctx.cwd,
+              trusted: ctx.isProjectTrusted(),
+            });
+            for (const diagnostic of config.diagnostics) {
+              ctx.ui?.notify?.(`pi-agent: ${diagnostic}`, "warning");
+            }
+            const { showAgentSettings } = await import("./settings.js");
+            const saved = await showAgentSettings(ctx, {
+              agents,
+              currentDefault: config.default,
+              onSave: (name) => saveAgentDefault(getAgentDir(), name),
+            });
+            if (saved) ctx.ui?.notify?.("Default agent settings saved", "info");
+            return;
+          }
           if (lower === "default" || lower === "reset") {
             await applyDefault(ctx, pi, { persist: true, notify: true });
             return;

@@ -61,26 +61,90 @@ describe("S202 question navigation", () => {
     flow.components[1]?.handleInput("\r");
 
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
-    const review = flow.components[2]?.render(80).join("\n") ?? "";
-    expect(review).toContain("Review");
-    expect(review).toContain("Edit");
-    expect(review).toContain("Confirm");
-    expect(review).toContain("Cancel");
+    const review = flow.components[2];
+    if (review === undefined) throw new Error("missing review component");
+    const rendered = review.render(80).join("\n");
+    expect(rendered).toContain("Review");
+    expect(rendered).toContain("Edit");
+    expect(rendered).toContain("Confirm");
+    expect(rendered).toContain("Cancel");
 
+    review.handleInput("\r");
     const result = await flow.pending;
+    expect(result?.cancelled).not.toBe(true);
     expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
     expect(result?.[1]).toMatchObject({ mode: "free", value: "beta" });
   });
 
-  it("returns from a free-text answer to the choice list on the first Escape", async () => {
+  it("cancels only after review confirmation is declined", async () => {
     const flow = createFlow([{ prompt: "Pick or write", mode: "free" }]);
 
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
     await type(flow.components[0], "alpha");
-    flow.components[0]?.handleInput("\x1b");
+    flow.components[0]?.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
+    const review = flow.components[1];
+    if (review === undefined) throw new Error("missing review component");
+    review.handleInput("\x1b");
 
     const result = await flow.pending;
-    expect(result?.cancelled).not.toBe(true);
-    expect(flow.components.length).toBeGreaterThan(1);
+    expect(result?.cancelled).toBe(true);
+  });
+
+  it("clears the draft on the first Escape without finishing, and cancels on the second", async () => {
+    const flow = createFlow([{ prompt: "Pick or write", mode: "free" }]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    const first = flow.components[0];
+    if (first === undefined) throw new Error("missing dialog component");
+    await type(first, "alpha");
+    expect(first.render(80).join("\n")).toContain("alpha");
+
+    first.handleInput("\x1b");
+    expect(flow.components.length).toBe(1);
+    expect(first.render(80).join("\n")).not.toContain("alpha");
+
+    first.handleInput("\x1b");
+    const result = await flow.pending;
+    expect(result?.cancelled).toBe(true);
+  });
+
+  it("re-opens the selected question on Edit and confirms the edited answer", async () => {
+    const flow = createFlow([
+      { prompt: "First?", mode: "free" },
+      { prompt: "Second?", mode: "free" },
+    ]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    await type(flow.components[0], "alpha");
+    flow.components[0]?.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
+    await type(flow.components[1], "beta");
+    flow.components[1]?.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
+    const review = flow.components[2];
+    if (review === undefined) throw new Error("missing review component");
+    review.handleInput("\x1b[D");
+    review.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(3));
+    const edit = flow.components[3];
+    if (edit === undefined) throw new Error("missing edit component");
+    await type(edit, "ALPHA");
+    edit.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(4));
+    const reviewAgain = flow.components[4];
+    if (reviewAgain === undefined)
+      throw new Error("missing repeated review component");
+    expect(reviewAgain.render(80).join("\n")).toContain("ALPHA");
+    reviewAgain.handleInput("\r");
+
+    const result = await flow.pending;
+    expect(result?.[0]).toMatchObject({ mode: "free", value: "ALPHA" });
+    expect(result?.[1]).toMatchObject({ mode: "free", value: "beta" });
   });
 });

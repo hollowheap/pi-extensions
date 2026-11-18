@@ -485,7 +485,8 @@ async function askWriteIn(
                     titleLabel +
                     border(`${"─".repeat(topFill)}╮`);
 
-                  const hintText = " Enter submits • Esc cancels ";
+                  const hintText =
+                    " Enter submits • Esc clears • Esc again cancels ";
                   const hintLabel = truncateToWidth(
                     fg("muted", hintText),
                     Math.max(0, safeWidth - 3),
@@ -532,14 +533,17 @@ async function askWriteIn(
                 },
                 invalidate(): void {},
                 handleInput(data: string): void {
-                  if (matchesKey(data, "escape") && draft.length > 0) {
-                    finish(draft);
+                  if (matchesKey(data, "escape")) {
+                    if (draft.length > 0) {
+                      draft = "";
+                      caret = 0;
+                      tui.requestRender();
+                      return;
+                    }
+                    finish(undefined);
                     return;
                   }
-                  if (
-                    matchesKey(data, "escape") ||
-                    matchesKey(data, "ctrl+c")
-                  ) {
+                  if (matchesKey(data, "ctrl+c")) {
                     finish(undefined);
                     return;
                   }
@@ -707,6 +711,12 @@ export type AskQuestionsResult = (QuestionAnswer | undefined)[] & {
   cancelled?: boolean;
 };
 
+interface ReviewEditAction {
+  editIndex: number;
+}
+
+const REVIEW_ACTIONS = ["Edit", "Confirm", "Cancel"] as const;
+
 export async function askQuestions(
   questions: readonly Question[],
   ctx: ExtensionContext,
@@ -788,44 +798,128 @@ export async function askQuestions(
     ctx.mode === "tui" &&
     typeof ctx.ui?.custom === "function"
   ) {
-    void ctx.ui.custom<AskQuestionsResult>(
-      (_tui, _theme, _keybindings, done) => {
-        const lines = [
-          "Review",
-          "",
-          ...Array.from(
-            answers,
-            (answer, index) =>
-              `${index + 1}. ${extractAnswerText(answer) ?? "no answer"}`,
-          ),
-          "",
-          "Edit   Confirm   Cancel",
-        ];
-        return {
-          render(width: number): string[] {
-            const limit = Math.max(1, width);
-            return lines.map((line) => line.slice(0, limit));
-          },
-          invalidate: () => {},
-          handleInput(data: string): void {
-            if (matchesKey(data, Key.enter)) done(answers);
-            if (matchesKey(data, Key.escape)) {
-              const cancelled = [...answers] as AskQuestionsResult;
-              cancelled.cancelled = true;
-              done(cancelled);
-            }
-          },
-        };
-      },
-      {
-        overlay: true,
-        overlayOptions: {
-          width: "70%",
-          maxHeight: "75%",
-          margin: 1,
-        },
-      },
-    );
+    for (;;) {
+      let review: AskQuestionsResult | ReviewEditAction | undefined;
+      try {
+        review = await withPromptLock(
+          () =>
+            ctx.ui.custom<AskQuestionsResult | ReviewEditAction>(
+              (tui, _theme, _keybindings, done) => {
+                let questionCursor = 0;
+                let actionCursor = 1;
+                let settled = false;
+                const settle = (
+                  value: AskQuestionsResult | ReviewEditAction,
+                ) => {
+                  if (settled) return;
+                  settled = true;
+                  done(value);
+                };
+                const cancel = () => {
+                  const cancelled = [...answers] as AskQuestionsResult;
+                  cancelled.cancelled = true;
+                  settle(cancelled);
+                };
+                const answerLines = Array.from(
+                  answers,
+                  (answer, index) =>
+                    `${index + 1}. ${extractAnswerText(answer) ?? "no answer"}`,
+                );
+                return {
+                  render(width: number): string[] {
+                    const limit = Math.max(1, width);
+                    const lines = ["Review", ""];
+                    answerLines.forEach((line, index) => {
+                      lines.push(
+                        `${index === questionCursor ? ">" : " "} ${line}`,
+                      );
+                    });
+                    lines.push("");
+                    lines.push(
+                      REVIEW_ACTIONS.map(
+                        (action, index) =>
+                          `${index === actionCursor ? "[" : " "}${action}${index === actionCursor ? "]" : " "}`,
+                      ).join("   "),
+                    );
+                    return lines.map((line) => line.slice(0, limit));
+                  },
+                  invalidate: () => {},
+                  handleInput(data: string): void {
+                    if (matchesKey(data, Key.escape)) {
+                      cancel();
+                      return;
+                    }
+                    if (matchesKey(data, Key.enter)) {
+                      if (actionCursor === 0) {
+                        settle({ editIndex: questionCursor });
+                      } else if (actionCursor === 1) {
+                        settle(answers);
+                      } else {
+                        cancel();
+                      }
+                      return;
+                    }
+                    if (matchesKey(data, Key.up)) {
+                      questionCursor = Math.max(0, questionCursor - 1);
+                      tui.requestRender();
+                      return;
+                    }
+                    if (matchesKey(data, Key.down)) {
+                      questionCursor = Math.min(
+                        Math.max(0, answerLines.length - 1),
+                        questionCursor + 1,
+                      );
+                      tui.requestRender();
+                      return;
+                    }
+                    if (matchesKey(data, Key.left)) {
+                      actionCursor =
+                        (actionCursor + REVIEW_ACTIONS.length - 1) %
+                        REVIEW_ACTIONS.length;
+                      tui.requestRender();
+                      return;
+                    }
+                    if (matchesKey(data, Key.right)) {
+                      actionCursor = (actionCursor + 1) % REVIEW_ACTIONS.length;
+                      tui.requestRender();
+                    }
+                  },
+                  dispose: () => cancel(),
+                };
+              },
+              {
+                overlay: true,
+                overlayOptions: {
+                  width: "70%",
+                  maxHeight: "75%",
+                  margin: 1,
+                },
+              },
+            ),
+          lockOptions,
+        );
+      } catch (error) {
+        if (isAbortOrTimeout(error, lockOptions.signal)) {
+          answers.cancelled = true;
+          return answers;
+        }
+        throw error;
+      }
+
+      if (review === undefined) return answers;
+      if ("editIndex" in review) {
+        const question = questions[review.editIndex];
+        if (question === undefined) continue;
+        const answer = await askQuestion(question, ctx, options);
+        if (answer === undefined) {
+          answers.cancelled = true;
+          return answers;
+        }
+        answers[review.editIndex] = answer;
+        continue;
+      }
+      return review;
+    }
   }
 
   return answers;

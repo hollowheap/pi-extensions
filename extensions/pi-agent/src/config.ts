@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { updateJsonConfig } from "@hollowheap/core/config";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 
 export const AGENT_CONFIG_FILE_NAME = "agent.json";
@@ -116,4 +117,21 @@ export function loadAgentConfig(
     ...(existsSync(userConfigPath) ? { userConfigPath } : {}),
     ...(projectConfigPath !== undefined ? { projectConfigPath } : {}),
   };
+}
+
+export function saveAgentDefault(
+  agentDir: string,
+  name: string | undefined,
+): string {
+  const path = join(agentDir, AGENT_CONFIG_FILE_NAME);
+  const res = updateJsonConfig(path, (root) => {
+    if (name === undefined || name === "") {
+      Reflect.deleteProperty(root, "default");
+    } else {
+      root.default = sanitizeTerminalText(name).trim();
+    }
+    Reflect.deleteProperty(root, "defaultAgent");
+  });
+  if (!res.ok) throw new Error(res.error);
+  return res.path;
 }

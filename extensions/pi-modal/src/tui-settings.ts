@@ -97,6 +97,7 @@ function applyTuiSetting(
 
 export interface ContributedTuiSetting extends SettingItem {
   owner?: string;
+  onChange?: (value: string) => void;
 }
 
 function buildSettingItems(
@@ -257,6 +258,15 @@ export async function showTuiSettings(
             12,
             settingsTheme(theme, current.colored),
             (id, value) => {
+              const contributedSetting = contributed.find(
+                (item) => item.id === id,
+              );
+              if (contributedSetting !== undefined) {
+                contributedSetting.currentValue = value;
+                contributedSetting.onChange?.(value);
+                tui.requestRender(true);
+                return;
+              }
               const prevColored = current.colored;
               current = applyTuiSetting(current, id, value);
               setActiveTuiConfig(current);

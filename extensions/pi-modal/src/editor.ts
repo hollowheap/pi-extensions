@@ -62,6 +62,7 @@ export class ModalEditor extends CustomEditor {
   private commandBuffer = "";
   private pendingChange = false;
   private pendingInsertChord = "";
+  private pendingNormalChord = "";
   private lastBottomBorder: string | undefined;
   private modeTheme: Theme | undefined;
 
@@ -302,6 +303,43 @@ export class ModalEditor extends CustomEditor {
     super.handleInput(pending);
   }
 
+  private runNormalChord(chord: string): void {
+    const sequence = this.keymaps.normal[chord];
+    if (typeof sequence === "string") {
+      super.handleInput(sequence);
+      return;
+    }
+    if (chord === "dd") {
+      this.deleteLine();
+    } else if (chord === "yy") {
+      const cursor = this.getCursor();
+      this.copyToClipboard(this.getLines()[cursor.line] ?? "");
+    }
+  }
+
+  private deleteLine(): void {
+    const cursor = this.getCursor();
+    const lines = this.getLines();
+    this.copyToClipboard(lines[cursor.line] ?? "");
+    const next = [...lines];
+    next.splice(cursor.line, 1);
+    if (next.length === 0) next.push("");
+    this.setText(next.join("\n"));
+    this.moveCursorTo(Math.min(cursor.line, next.length - 1), 0);
+  }
+
+  private paste(): void {
+    if (this.yankedText === "") return;
+    const cursor = this.getCursor();
+    const lines = this.getLines();
+    const line = lines[cursor.line] ?? "";
+    const next = [...lines];
+    next[cursor.line] =
+      line.slice(0, cursor.col) + this.yankedText + line.slice(cursor.col);
+    this.setText(next.join("\n"));
+    this.moveCursorTo(cursor.line, cursor.col + this.yankedText.length);
+  }
+
   override handleInput(data: string): void {
     const printable = printableKey(data);
     const input = printable ?? data;
@@ -365,6 +403,7 @@ export class ModalEditor extends CustomEditor {
     // Escape key handling
     if (matchesKey(data, "escape")) {
       this.pendingChange = false;
+      this.pendingNormalChord = "";
       this.flushPendingInsertChord();
       if (this.isShowingAutocomplete()) {
         super.handleInput(data);
@@ -529,6 +568,24 @@ export class ModalEditor extends CustomEditor {
       return;
     }
 
+    const normalChordKeys = Object.keys(this.keymaps.normal).filter(
+      (key) => key.length > 1,
+    );
+    if (this.pendingNormalChord !== "") {
+      const chord = this.pendingNormalChord + input;
+      this.pendingNormalChord = "";
+      if (Object.hasOwn(this.keymaps.normal, chord)) {
+        this.runNormalChord(chord);
+        return;
+      }
+    } else if (
+      !Object.hasOwn(this.keymaps.normal, input) &&
+      normalChordKeys.some((key) => key.startsWith(input))
+    ) {
+      this.pendingNormalChord = input;
+      return;
+    }
+
     if (input in this.keymaps.normal) {
       const seq = this.keymaps.normal[input];
       if (typeof seq === "string") {
@@ -557,6 +614,8 @@ export class ModalEditor extends CustomEditor {
       } else if (input === "v") {
         this.mode = "visual";
         this.selectionAnchor = { ...this.getCursor() };
+      } else if (input === "p") {
+        this.paste();
       }
       return;
     }

@@ -892,10 +892,8 @@ describe("extension registration", () => {
     handlers.session_start?.({}, ctx);
     expect(ctx.ui.setWorkingIndicator).toHaveBeenCalledTimes(1);
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
-    expect(pi.registerCommand).toHaveBeenCalledWith(
-      "vimkeys",
-      expect.objectContaining({ handler: expect.any(Function) }),
-    );
+    const commandNames = pi.registerCommand.mock.calls.map(([name]) => name);
+    expect(commandNames).not.toContain("vimkeys");
     expect(pi.registerShortcut).toHaveBeenCalledWith(
       "ctrl+shift+k",
       expect.objectContaining({ handler: expect.any(Function) }),
@@ -1135,202 +1133,19 @@ describe("extension registration", () => {
     );
   });
 
-  it("opens the last codemode script with ctrl+shift+o", async () => {
-    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
-    const shortcuts: Record<
-      string,
-      { handler: (ctx: unknown) => Promise<void> }
-    > = {};
+  it("retires the ctrl+shift+o codemode preview shortcut", () => {
+    const shortcuts: Record<string, { description?: string }> = {};
     const pi = {
-      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
-        handlers[event] = fn;
-      }),
+      on: vi.fn(() => () => {}),
       registerCommand: vi.fn(),
-      registerShortcut: vi.fn(
-        (key: string, def: (typeof shortcuts)[string]) => {
-          shortcuts[key] = def;
-        },
-      ),
+      registerToolRenderer: vi.fn(),
+      events: { on: vi.fn(), emit: vi.fn() },
+      registerShortcut: vi.fn((key: string, def: { description?: string }) => {
+        shortcuts[key] = def;
+      }),
     };
     extension(pi as never);
-
-    let component: { render: (width: number) => string[] } | undefined;
-    const custom = vi.fn(
-      async (
-        factory: (
-          tui: unknown,
-          theme: unknown,
-          keybindings: unknown,
-          done: () => void,
-        ) => { render: (width: number) => string[] },
-      ) => {
-        component = factory(
-          { terminal: { rows: 30 }, requestRender: vi.fn() },
-          {
-            fg: (_token: string, value: string) => value,
-            bold: (value: string) => value,
-          },
-          {},
-          vi.fn(),
-        );
-      },
-    );
-    const notify = vi.fn();
-    const ctx = {
-      hasUI: true,
-      mode: "tui",
-      sessionManager: { getBranch: () => [] },
-      ui: { custom, notify },
-    };
-
-    await shortcuts["ctrl+shift+o"]?.handler(ctx);
-    expect(notify).toHaveBeenLastCalledWith(
-      "pi-modal: no codemode script yet",
-      "info",
-    );
-
-    handlers.tool_call?.(
-      {
-        toolName: "codemode",
-        input: { code: "const answer = 42;" },
-      },
-      undefined,
-    );
-    await shortcuts["ctrl+shift+o"]?.handler(ctx);
-    expect(custom).toHaveBeenCalledTimes(1);
-    const lines = component?.render(40) ?? [];
-    expect(lines[0]).toContain("╭");
-    expect(lines.at(-1)).toContain("╰");
-    expect(lines.join("\n")).toContain("const answer = 42;");
-  });
-
-  it("recovers the last codemode script from the session branch", async () => {
-    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
-    const shortcuts: Record<
-      string,
-      { handler: (ctx: unknown) => Promise<void> }
-    > = {};
-    const pi = {
-      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
-        handlers[event] = fn;
-      }),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(
-        (key: string, def: (typeof shortcuts)[string]) => {
-          shortcuts[key] = def;
-        },
-      ),
-    };
-    extension(pi as never);
-
-    let rendered: string[] = [];
-    const ctx = {
-      hasUI: true,
-      mode: "tui",
-      sessionManager: {
-        getBranch: () => [
-          {
-            type: "message",
-            message: {
-              role: "assistant",
-              content: [
-                {
-                  type: "toolCall",
-                  name: "codemode",
-                  arguments: { code: "const fromBranch = 1;" },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      ui: {
-        custom: vi.fn(
-          async (
-            factory: (
-              tui: unknown,
-              theme: unknown,
-              keybindings: unknown,
-              done: () => void,
-            ) => { render: (width: number) => string[] },
-          ) => {
-            const component = factory(
-              { terminal: { rows: 30 }, requestRender: vi.fn() },
-              {
-                fg: (_token: string, value: string) => value,
-                bold: (value: string) => value,
-              },
-              {},
-              vi.fn(),
-            );
-            rendered = component.render(40);
-          },
-        ),
-        notify: vi.fn(),
-      },
-    };
-
-    await shortcuts["ctrl+shift+o"]?.handler(ctx);
-    expect(rendered.join("\n")).toContain("const fromBranch = 1;");
-  });
-
-  it("falls back to the last tool call when no codemode script exists", async () => {
-    const handlers: Record<string, (event: unknown, ctx: unknown) => void> = {};
-    const shortcuts: Record<
-      string,
-      { handler: (ctx: unknown) => Promise<void> }
-    > = {};
-    const pi = {
-      on: vi.fn((event: string, fn: (event: unknown, ctx: unknown) => void) => {
-        handlers[event] = fn;
-      }),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(
-        (key: string, def: (typeof shortcuts)[string]) => {
-          shortcuts[key] = def;
-        },
-      ),
-    };
-    extension(pi as never);
-
-    let rendered: string[] = [];
-    const ctx = {
-      hasUI: true,
-      mode: "tui",
-      sessionManager: { getBranch: () => [] },
-      ui: {
-        custom: vi.fn(
-          async (
-            factory: (
-              tui: unknown,
-              theme: unknown,
-              keybindings: unknown,
-              done: () => void,
-            ) => { render: (width: number) => string[] },
-          ) => {
-            const component = factory(
-              { terminal: { rows: 30 }, requestRender: vi.fn() },
-              {
-                fg: (_token: string, value: string) => value,
-                bold: (value: string) => value,
-              },
-              {},
-              vi.fn(),
-            );
-            rendered = component.render(40);
-          },
-        ),
-        notify: vi.fn(),
-      },
-    };
-
-    handlers.tool_call?.(
-      { toolName: "web_search", input: { query: "lil bro" } },
-      undefined,
-    );
-    await shortcuts["ctrl+shift+o"]?.handler(ctx);
-    expect(rendered.join("\n")).toContain("Last tool call");
-    expect(rendered.join("\n")).toContain('"query": "lil bro"');
+    expect(Object.keys(shortcuts)).not.toContain("ctrl+shift+o");
   });
 
   it("keeps the full codemode script preview expanded", () => {

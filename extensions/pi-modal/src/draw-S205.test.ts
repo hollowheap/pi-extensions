@@ -80,6 +80,45 @@ describe("S205 extension-contributed TUI settings", () => {
     }
   });
 
+  it("persists a contributed setting change through its onChange handler", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "s205-modal-"));
+    const env = createSettingsContext();
+    const onChange = vi.fn();
+    const contributions = [
+      {
+        owner: "pi-modes",
+        id: "modeIndicator",
+        label: "Mode indicator",
+        description: "Show the active mode in the prompt status row",
+        currentValue: "true",
+        values: ["true", "false"],
+        onChange,
+      },
+    ];
+
+    const show = showTuiSettings as unknown as (
+      ctx: unknown,
+      agentDir: string,
+      onChange: unknown,
+      contributed: unknown,
+    ) => Promise<void>;
+    const pending = show(env.ctx, dir, undefined, contributions);
+    await vi.waitFor(() => expect(env.component()).toBeDefined());
+
+    try {
+      expect(env.component()?.render(80).join("\n")).toContain(
+        "Mode indicator",
+      );
+      env.component()?.handleInput("\r");
+      expect(onChange).toHaveBeenCalledWith("false");
+      expect(contributions[0]?.currentValue).toBe("false");
+      expect(env.component()?.render(80).join("\n")).toContain("false");
+    } finally {
+      env.component()?.handleInput("\x1b");
+      await pending;
+    }
+  });
+
   it("renders no mode indicator setting when no extension contributes one", async () => {
     const dir = mkdtempSync(join(tmpdir(), "s205-modal-"));
     const env = createSettingsContext();

@@ -5,7 +5,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -299,28 +298,6 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  const showLastCodemode = async (ctx: ExtensionContext) => {
-    if (!ctx.hasUI) return;
-    const code = lastCodemodeCode ?? lastCodemodeFromSession(ctx);
-    if (code !== undefined) {
-      await showCodeViewer(
-        ctx,
-        "Last codemode script",
-        sanitizeTerminalText(code),
-      );
-      return;
-    }
-    if (lastToolCall !== undefined) {
-      await showCodeViewer(
-        ctx,
-        `Last tool call: ${lastToolCall.name}`,
-        JSON.stringify(lastToolCall.input, null, 2),
-      );
-      return;
-    }
-    ctx.ui.notify("pi-modal: no codemode script yet", "info");
-  };
-
   pi.on("tool_call", (event, ctx) => {
     if (event.parentToolCallId === undefined) {
       lastToolCall = {
@@ -348,26 +325,11 @@ export default function (pi: ExtensionAPI): void {
     publishModalSnapshot(ctx);
   };
 
-  pi.registerShortcut("ctrl+shift+o", {
-    description: "Open the last codemode script",
-    handler: showLastCodemode,
-  });
-
   const showVimKeys = async (ctx: ExtensionContext) => {
     const config = loadModalConfig(getAgentDir(), (message) =>
       ctx.ui.notify(`pi-modal: ${message}`, "warning"),
     );
     await showCodeViewer(ctx, "pi-modal keybinds", formatVimKeys(config));
-  };
-
-  let vimkeysRegistered = false;
-  const registerVimkeysCommand = () => {
-    if (vimkeysRegistered) return;
-    vimkeysRegistered = true;
-    pi.registerCommand("vimkeys", {
-      description: "Show pi-modal vim mode keybindings",
-      handler: async (_args, ctx) => showVimKeys(ctx),
-    });
   };
 
   pi.registerShortcut("ctrl+shift+k", {
@@ -418,7 +380,6 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_start", (_event, ctx) => {
-    registerVimkeysCommand();
     activeCtx = ctx;
     shimmerAnimator?.dispose();
     shimmerAnimator = undefined;
