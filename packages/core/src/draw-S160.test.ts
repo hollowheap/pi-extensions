@@ -26,4 +26,43 @@ describe("S160 explicit workspace integration and cleanup", () => {
     expect(removeDirectory).toHaveBeenCalledOnce();
     expect(removeDirectory).toHaveBeenCalledWith(workspace.path);
   });
+
+  it("S160 C02: integration awaits an asynchronous callback before returning", async () => {
+    let finished = false;
+    const makeDirectory = vi.fn(async () => {});
+    const workspace = await allocateWorkspace(
+      "/repo",
+      "task-2",
+      { enabled: true },
+      { makeDirectory },
+    );
+
+    await integrateWorkspace(workspace, async () => {
+      await Promise.resolve();
+      finished = true;
+    });
+
+    expect(finished).toBe(true);
+  });
+
+  it("S160 C03: an integration callback rejection reaches the caller", async () => {
+    const workspace = { path: "/repo/.pi-workspaces/task-3", isolated: true };
+
+    await expect(
+      integrateWorkspace(workspace, async () => {
+        throw new Error("integration failed");
+      }),
+    ).rejects.toThrow("integration failed");
+  });
+
+  it("S160 C04: cleanup ignores a shared workspace even with a remover supplied", async () => {
+    const removeDirectory = vi.fn(async () => {});
+
+    await cleanupWorkspace(
+      { path: "/repo", isolated: false },
+      { removeDirectory },
+    );
+
+    expect(removeDirectory).not.toHaveBeenCalled();
+  });
 });

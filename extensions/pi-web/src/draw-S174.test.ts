@@ -11,4 +11,29 @@ describe("S174 linear-time HTML conversion", () => {
     expect(output).toBe(hostile);
     expect(duration).toBeLessThan(1_000);
   });
+
+  it("S174 C02: well-formed headings and anchors convert to markdown", () => {
+    const output = htmlToMarkdown(
+      '<h1>Title</h1><p>Hello <a href="https://example.com">link</a></p>',
+    );
+
+    expect(output).toContain("# Title");
+    expect(output).toContain("[link](https://example.com)");
+  });
+
+  it("S174 C03: script and style bodies are removed from the output", () => {
+    const output = htmlToMarkdown(
+      "<style>.secret{color:red}</style><p>visible</p><script>alert(1)</script>",
+    );
+
+    expect(output).toBe("visible");
+    expect(output).not.toContain("secret");
+    expect(output).not.toContain("alert");
+  });
+
+  it("S174 C04: numeric and named entities are decoded into text", () => {
+    const output = htmlToMarkdown("Tom &amp; Jerry &#x1F600; &lt;done&gt;");
+
+    expect(output).toBe("Tom & Jerry 😀 <done>");
+  });
 });

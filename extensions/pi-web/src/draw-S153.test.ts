@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assertSafeResolvedUrl } from "./url.js";
 
 describe("S153 resolved URL safety", () => {
@@ -8,5 +8,35 @@ describe("S153 resolved URL safety", () => {
     await expect(
       assertSafeResolvedUrl("https://localtest.me", resolver),
     ).rejects.toThrow(/not allowed/);
+  });
+
+  it("S153 C02: a resolver failure is reported as an unresolved target", async () => {
+    const resolver = vi.fn(async () => {
+      throw new Error("ENOTFOUND");
+    });
+
+    await expect(
+      assertSafeResolvedUrl("https://example.com", resolver),
+    ).rejects.toThrow(/could not be resolved/);
+    expect(resolver).toHaveBeenCalledWith("example.com");
+  });
+
+  it("S153 C03: a hostname with no DNS answers is rejected", async () => {
+    const resolver = async () => [];
+
+    await expect(
+      assertSafeResolvedUrl("https://example.com", resolver),
+    ).rejects.toThrow(/not allowed/);
+  });
+
+  it("S153 C04: a public IP literal is accepted without consulting DNS", async () => {
+    const resolver = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 },
+    ]);
+
+    await expect(
+      assertSafeResolvedUrl("https://93.184.216.34", resolver),
+    ).resolves.toBeUndefined();
+    expect(resolver).not.toHaveBeenCalled();
   });
 });

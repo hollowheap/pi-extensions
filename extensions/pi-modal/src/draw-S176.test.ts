@@ -34,4 +34,40 @@ describe("S176 grapheme-aware visual yank", () => {
     expect(editor.getYankedText()).toBe("👍🏽");
     expect(editor.getMode()).toBe("normal");
   });
+
+  it("S176 C02: visual x deletes the whole grapheme from the buffer", () => {
+    const editor = createEditor("👍🏽 world");
+
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("x");
+
+    expect(editor.getText()).toBe(" world");
+    expect(editor.getYankedText()).toBe("👍🏽");
+  });
+
+  it("S176 C03: Esc clears a visual selection without mutating the buffer", () => {
+    const editor = createEditor("👍🏽 world");
+
+    editor.handleInput("0");
+    editor.handleInput("v");
+    expect(editor.getSelectionAnchor()).not.toBeNull();
+
+    editor.handleInput("\x1b");
+
+    expect(editor.getMode()).toBe("normal");
+    expect(editor.getSelectionAnchor()).toBeNull();
+    expect(editor.getText()).toBe("👍🏽 world");
+  });
+
+  it("S176 C04: visual c deletes the grapheme and enters insert mode", () => {
+    const editor = createEditor("👍🏽 world");
+
+    editor.handleInput("0");
+    editor.handleInput("v");
+    editor.handleInput("c");
+
+    expect(editor.getText()).toBe(" world");
+    expect(editor.getMode()).toBe("insert");
+  });
 });

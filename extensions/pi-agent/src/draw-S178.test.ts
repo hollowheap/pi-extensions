@@ -91,6 +91,18 @@ function createMockContext() {
   };
 }
 
+function setupAgents() {
+  testDir = mkdtempSync(join(tmpdir(), "s178-agent-"));
+  process.env.PI_CODING_AGENT_DIR = testDir;
+  const agentsDir = join(testDir, "agents");
+  mkdirSync(agentsDir, { recursive: true });
+  writeFileSync(
+    join(agentsDir, "scout.md"),
+    "---\nname: scout\ndescription: Recon\ntools: read,grep\n---\nScout instructions\n",
+  );
+  return createMockPi();
+}
+
 describe("S178 default tool restore", () => {
   it("restores the host default tool set when switching back to the default agent", async () => {
     testDir = mkdtempSync(join(tmpdir(), "s178-agent-"));
@@ -116,5 +128,47 @@ describe("S178 default tool restore", () => {
       "bash",
       "grep",
     ]);
+  });
+
+  it("S178 C02: an unknown agent name notifies an error without changing tools", async () => {
+    const pi = setupAgents();
+    createAgentExtension()(pi as never);
+    const ctx = createMockContext();
+
+    await pi.getCommand("agent").handler("does-not-exist", ctx);
+
+    const notified = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock;
+    expect(
+      notified.calls.some((call) => String(call[0]).includes("Unknown agent")),
+    ).toBe(true);
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("S178 C03: switching to a configured agent activates only its allowed tools", async () => {
+    const pi = setupAgents();
+    createAgentExtension()(pi as never);
+    const ctx = createMockContext();
+
+    await pi.getCommand("agent").handler("scout", ctx);
+
+    expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "grep"]);
+  });
+
+  it("S178 C04: a headless no-argument command lists available agents", async () => {
+    const pi = setupAgents();
+    createAgentExtension()(pi as never);
+    const ctx = createMockContext();
+    ctx.mode = "cli";
+    ctx.hasUI = false;
+
+    await pi.getCommand("agent").handler("", ctx);
+
+    const notified = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock;
+    expect(
+      notified.calls.some((call) =>
+        String(call[0]).includes("Available agents: default, scout"),
+      ),
+    ).toBe(true);
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
   });
 });
