@@ -222,7 +222,7 @@ function isProtectedTarget(rawTarget: string): boolean {
     return true;
   }
   if (!stripped.startsWith("/")) return false;
-  const [head] = stripped.slice(1).split("/");
+  const [head] = stripped.replace(/^\/+/, "").split("/");
   return head !== undefined && SYSTEM_TARGETS.has(head);
 }
 

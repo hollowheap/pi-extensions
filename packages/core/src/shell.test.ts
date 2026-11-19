@@ -234,6 +234,7 @@ describe("checkShell", () => {
       "rm -rf /usr",
       "rm -rf /var/log",
       "rm -rf /lib64",
+      "rm -rf //etc",
       "timeout 5 rm -rf /etc",
       "rm -rf '/etc'",
     ]) {
