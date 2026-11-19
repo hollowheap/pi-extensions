@@ -33,7 +33,10 @@ export function parseColorSpec(value: string | number): Color | undefined {
       ? indexedColor(value)
       : undefined;
   }
-  const named = NAMED_COLORS[value.toLowerCase()];
+  const lower = value.toLowerCase();
+  const named = Object.hasOwn(NAMED_COLORS, lower)
+    ? NAMED_COLORS[lower]
+    : undefined;
   if (named !== undefined) return indexedColor(named);
   if (/^\d{1,3}$/.test(value)) {
     const index = Number(value);

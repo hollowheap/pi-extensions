@@ -1,14 +1,20 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  type EditorComponent,
+  Key,
+  type TUI,
+  matchesKey,
+} from "@earendil-works/pi-tui";
 import {
   type SessionSnapshot,
   getSessionSnapshot,
   subscribeSessionSnapshot,
 } from "@hollowheap/core/snapshot";
-import { roundedFrame } from "@hollowheap/tui/frame";
+import { canOverlay, showDialog } from "@hollowheap/pi-ui/host";
+import { boxFrame } from "@hollowheap/tui/frame";
 import {
   DASHBOARD_OVERLAY_ACTIONS,
-  DEFAULT_DASHBOARD_ACTIONS,
   type StateRenderInput,
   renderActionsSection,
   renderSessionsSection,
@@ -19,8 +25,7 @@ import type { DashboardSessionItem } from "./sessions.js";
 export type DashboardViewResult =
   | { type: "close" }
   | { type: "resume"; session: DashboardSessionItem }
-  | { type: "command"; command: string }
-  | { type: "settings" };
+  | { type: "command"; command: string };
 
 export interface DashboardOverlayOptions {
   loadSessions: (scope: "cwd" | "all") => Promise<DashboardSessionItem[]>;
@@ -35,12 +40,30 @@ export async function showDashboardOverlay(
   ctx: ExtensionContext,
   options: DashboardOverlayOptions,
 ): Promise<DashboardViewResult> {
-  if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+  if (!canOverlay(ctx)) {
     return { type: "close" };
   }
 
-  return await ctx.ui.custom<DashboardViewResult>(
+  let editor:
+    | Pick<EditorComponent, "onSubmit" | "getText" | "setText">
+    | undefined;
+  const result = await showDialog<DashboardViewResult>(
+    ctx,
     (tui, theme: Theme, keybindings, done) => {
+      const focused = (
+        tui as TUI & { getFocusedComponent?: () => Component | null }
+      ).getFocusedComponent?.();
+      if (
+        focused &&
+        "onSubmit" in focused &&
+        typeof focused.onSubmit === "function" &&
+        "getText" in focused &&
+        typeof focused.getText === "function" &&
+        "setText" in focused &&
+        typeof focused.setText === "function"
+      ) {
+        editor = focused as EditorComponent;
+      }
       const maxItems = Math.max(1, Math.min(20, options.maxItems ?? 8));
       const maxKey = Math.min(maxItems, 9);
       let scope: "cwd" | "all" = options.initialScope ?? "cwd";
@@ -140,11 +163,11 @@ export async function showDashboardOverlay(
           lines.push(
             theme.fg(
               "dim",
-              `Enter/1-${maxKey} resume · Tab scope · r refresh · s settings · q/Esc close`,
+              `Enter/1-${maxKey} resume · Tab scope · r refresh · q/Esc close`,
             ),
           );
 
-          return roundedFrame(lines, width, theme, "Dashboard");
+          return boxFrame(lines, width, theme, "Dashboard");
         },
 
         handleInput(data: string): void {
@@ -184,18 +207,14 @@ export async function showDashboardOverlay(
             tui.requestRender();
             return;
           }
-          if (data === "s") {
-            finish({ type: "settings" });
-            return;
-          }
           if (/^[1-9]$/.test(data) && Number(data) <= maxKey) {
             const idx = Number(data) - 1;
             const picked = sessions[idx];
             if (picked) finish({ type: "resume", session: picked });
             return;
           }
-          const matched = DEFAULT_DASHBOARD_ACTIONS.find(
-            (item) => item.key === data && item.key !== "d" && item.key !== "s",
+          const matched = DASHBOARD_OVERLAY_ACTIONS.find(
+            (item) => item.key === data,
           );
           if (matched) {
             finish({ type: "command", command: matched.command });
@@ -214,4 +233,12 @@ export async function showDashboardOverlay(
       overlayOptions: { width: "80%", maxHeight: "85%", margin: 1 },
     },
   );
+  if (result.type === "command" && editor?.onSubmit) {
+    // Pi's editor submit handler opens the built-in command dialogs.
+    const draft = editor.getText();
+    const submission = editor.onSubmit(result.command);
+    if (editor.getText() !== draft) editor.setText(draft);
+    await submission;
+  }
+  return result;
 }

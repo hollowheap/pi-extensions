@@ -24,12 +24,12 @@ export function definitionToAgent(
     definition.model !== undefined
       ? splitModelThinking(definition.model)
       : undefined;
+  const { effort, ...fields } = definition;
+  const thinking = modelRef?.thinking ?? fields.thinking ?? effort;
   return {
-    ...definition,
+    ...fields,
     ...(modelRef ? { model: modelRef.model } : {}),
-    ...(modelRef?.thinking !== undefined
-      ? { thinking: modelRef.thinking }
-      : {}),
+    ...(thinking === undefined ? {} : { thinking }),
     source: "session",
   };
 }

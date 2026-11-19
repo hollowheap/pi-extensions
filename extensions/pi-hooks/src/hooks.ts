@@ -1,12 +1,15 @@
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
+import { errorMessage } from "@hollowheap/core/format";
 import { runCapture } from "@hollowheap/runtime/exec";
 import {
   type HookEntry,
   type HookSandboxConfig,
+  isRelativeCommandPath,
+  parseCondition,
   resolveHookSandboxOptions,
-} from "./config.js";
+} from "./settings.js";
 
-export type { HookEntry, HookSandboxConfig } from "./config.js";
+export type { HookEntry, HookSandboxConfig } from "./settings.js";
 
 export interface HookPayload {
   event: "pre_tool" | "post_tool";
@@ -39,52 +42,53 @@ export interface SessionHookResult {
   error?: string;
 }
 
+function readInputField(
+  input: Record<string, unknown> | undefined,
+  key: string,
+): unknown {
+  return input !== undefined && Object.hasOwn(input, key)
+    ? input[key]
+    : undefined;
+}
+
 export function evaluateCondition(
   entry: HookEntry,
-  payload: HookPayload,
+  payload: HookInput,
 ): boolean {
-  if (!entry.condition) return true;
-  const raw = entry.condition.trim();
-  if (raw === "") return true;
+  const raw = entry.condition?.trim();
+  if (!raw) return true;
+  if (payload.event === "session_start") return false;
 
-  // matches(var, 'pattern')
-  const matchesMatch = raw.match(
-    /^matches\(\s*([a-zA-Z0-9_]+)\s*,\s*['"](.*)['"]\s*\)$/i,
-  );
-  if (matchesMatch) {
-    const varName = matchesMatch[1].toLowerCase();
-    const pattern = matchesMatch[2];
-    const regex = new RegExp(pattern);
-    const target =
-      varName === "toolname" || varName === "tool"
-        ? payload.toolName
-        : String(
-            payload.input?.[varName] ??
-              (varName === "path" ? payload.input?.command : "") ??
-              "",
-          );
-    return regex.test(target);
+  const parsed = parseCondition(raw);
+  switch (parsed.kind) {
+    case "always":
+      return true;
+    case "matches": {
+      const target =
+        parsed.varName === "toolname" || parsed.varName === "tool"
+          ? payload.toolName
+          : String(
+              readInputField(payload.input, parsed.varName) ??
+                (parsed.varName === "path"
+                  ? readInputField(payload.input, "command")
+                  : "") ??
+                "",
+            );
+      return parsed.regex.test(target);
+    }
+    case "tool": {
+      const matches = payload.toolName.toLowerCase() === parsed.value;
+      return parsed.op === "==" ? matches : !matches;
+    }
+    case "pathContains": {
+      const target = String(
+        readInputField(payload.input, "path") ??
+          readInputField(payload.input, "command") ??
+          "",
+      );
+      return target.toLowerCase().includes(parsed.value);
+    }
   }
-
-  // Simple: "tool == 'name'" or "tool != 'name'"
-  const toolMatch = raw.match(/^(?:tool|toolname)\s*==\s*['"](.+)['"]$/i);
-  if (toolMatch) {
-    return payload.toolName.toLowerCase() === toolMatch[1].toLowerCase();
-  }
-
-  const toolNotMatch = raw.match(/^(?:tool|toolname)\s*!=\s*['"](.+)['"]$/i);
-  if (toolNotMatch) {
-    return payload.toolName.toLowerCase() !== toolNotMatch[1].toLowerCase();
-  }
-
-  // "path contains 'str'"
-  const pathContains = raw.match(/^path\s+contains\s+['"](.+)['"]$/i);
-  if (pathContains) {
-    const target = String(payload.input?.path ?? payload.input?.command ?? "");
-    return target.toLowerCase().includes(pathContains[1].toLowerCase());
-  }
-
-  throw new Error(`invalid hook condition: "${entry.condition}"`);
 }
 
 export function matchesTool(entry: HookEntry, toolName: string): boolean {
@@ -141,27 +145,21 @@ export function interpretPreHook(result: {
   return { block: true, reason: "hook returned an unknown decision" };
 }
 
-async function run(
+function run(
   entry: HookEntry,
   payload: HookInput,
   defaultSandbox?: boolean | HookSandboxConfig,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   let command = entry.command;
-  const isRelative =
-    !isAbsolute(command) &&
-    (command.includes("/") ||
-      command.includes("\\") ||
-      command === "." ||
-      command === "..");
-  if (isRelative) {
+  if (isRelativeCommandPath(command)) {
     if (entry.configDir !== undefined) {
       command = resolve(entry.configDir, command);
     } else {
-      return {
+      return Promise.resolve({
         code: 1,
         stdout: "",
         stderr: `cannot execute relative command "${command}" without declaring config directory`,
-      };
+      });
     }
   }
   const sandbox = resolveHookSandboxOptions(entry.sandbox ?? defaultSandbox);
@@ -182,7 +180,7 @@ export async function runPreHook(
   } catch (error) {
     return {
       block: true,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: errorMessage(error),
     };
   }
 }
@@ -207,7 +205,7 @@ export async function runPostHook(
     }
     return { output };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorMessage(error) };
   }
 }
 
@@ -226,6 +224,6 @@ export async function runSessionHook(
     }
     return {};
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorMessage(error) };
   }
 }

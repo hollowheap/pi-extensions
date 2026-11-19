@@ -32,12 +32,14 @@ project-file state.
   - Todos list up to ten items, open todos first, with status icons (`•` open, `✓` completed with strikethrough). Completed rows cannot crowd out open work. When more remain, it adds a `+N more (/todos)` line.
   - Running background tasks (from `pi-tasks`) and active subagents (from `pi-subagents`) appear in dedicated sub-sections separated by divider borders (`├─ ... ─┤`).
   - The widget clears when all sections are empty.
-- `/todos` shows the full list; `/todos search <query>` filters it. TUI opens a
-  closeable list (Esc, Enter, q, or Ctrl+C); RPC uses a notification.
-- `/todo complete <id|all>`, `/todo edit <id> <text>`, `/todo delete [id]`, and
-  `/todo priority <id> <high|medium|low>` manage the list. Priorities sort the
-  widget and list.
-- `/panel toggle` or `^x p` collapses and expands the sticky panel.
+- `/todos` shows the full list and `/todos search <query>` filters it. In TUI
+  mode, close the list with Esc, Enter, q, or Ctrl+C. RPC uses a notification.
+- `/todos complete <id|all>`, `/todos edit <id> <text>`, `/todos delete [id]`,
+  and `/todos priority <id> <high|medium|low>` manage the list. Priorities sort
+  the widget and list. `/todo` is an alias for all these commands.
+- `/widget toggle` or Alt+W then P collapses and expands the sticky widgets.
+  On macOS, use Option+W then P. Pi lists the shortcut under Extensions in
+  `/hotkeys`.
 
 ## Mode behavior
 

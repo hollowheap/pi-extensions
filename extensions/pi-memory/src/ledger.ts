@@ -1,10 +1,16 @@
+import { randomUUID } from "node:crypto";
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
+import { isRecord } from "@hollowheap/core/records";
 
 export const MEMORY_OBSERVATION_TYPE = "hollowheap.memory.observation";
 export const MEMORY_REFLECTION_TYPE = "hollowheap.memory.reflection";
 export const MEMORY_CONSUMED_TYPE = "hollowheap.memory.consumed";
 export const MEMORY_CLEAR_TYPE = "hollowheap.memory.clear";
 export const MEMORY_WORKSPACE_TYPE = "hollowheap.memory.workspace";
+
+export function observationId(): string {
+  return randomUUID().replaceAll("-", "").slice(0, 12);
+}
 
 export interface MemoryObservation {
   id: string;
@@ -36,10 +42,6 @@ export function emptyMemoryLedger(): MemoryLedger {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== ""
     ? value.replace(/\s+/g, " ").trim()
@@ -54,10 +56,10 @@ function readStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function readTimestamp(value: unknown): number {
+function readTimestamp(value: unknown, fallback?: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
-    : Date.now();
+    : (fallback ?? Date.now());
 }
 
 function readRelevance(value: unknown): number {
@@ -65,7 +67,10 @@ function readRelevance(value: unknown): number {
   return Math.min(5, Math.max(1, Math.trunc(value)));
 }
 
-function parseObservation(data: unknown): MemoryObservation | undefined {
+export function parseObservation(
+  data: unknown,
+  fallbackCreatedAt?: number,
+): MemoryObservation | undefined {
   if (!isRecord(data)) return undefined;
   const id = readString(data.id);
   const text = readString(data.text);
@@ -74,7 +79,7 @@ function parseObservation(data: unknown): MemoryObservation | undefined {
     id,
     text,
     relevance: readRelevance(data.relevance),
-    createdAt: readTimestamp(data.createdAt),
+    createdAt: readTimestamp(data.createdAt, fallbackCreatedAt),
     sourceEntryIds: readStringArray(data.sourceEntryIds),
     coversUpToId: readString(data.coversUpToId),
   };
@@ -183,6 +188,21 @@ export function pendingMessageEntries(
   );
 }
 
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function appendBudgetedLine(
+  lines: string[],
+  used: number,
+  budget: number,
+  line: string,
+): number | undefined {
+  if (used + line.length > budget) return undefined;
+  lines.push(line);
+  return used + line.length + 1;
+}
+
 export function renderMemory(
   ledger: MemoryLedger,
   options: { maxTokens: number },
@@ -192,34 +212,37 @@ export function renderMemory(
   let used = 0;
   let hasItem = false;
 
-  const append = (line: string): boolean => {
-    if (used + line.length > budget) return false;
-    lines.push(line);
-    used += line.length + 1;
-    return true;
-  };
-
   if (ledger.reflections.length > 0) {
-    append("Reflections:");
+    used = appendBudgetedLine(lines, used, budget, "Reflections:") ?? used;
     for (const reflection of ledger.reflections) {
-      if (!append(`- ${reflection.text.replace(/\s+/g, " ")}`)) break;
+      const next = appendBudgetedLine(
+        lines,
+        used,
+        budget,
+        `- ${reflection.text.replace(/\s+/g, " ")}`,
+      );
+      if (next === undefined) break;
+      used = next;
       hasItem = true;
     }
   }
 
   if (ledger.observations.length > 0) {
-    append("Observations:");
+    const headerUsed = appendBudgetedLine(lines, used, budget, "Observations:");
+    if (headerUsed !== undefined) used = headerUsed;
     const observations = [...ledger.observations].sort(
       (left, right) =>
         right.relevance - left.relevance || right.createdAt - left.createdAt,
     );
     for (const observation of observations) {
-      if (
-        !append(
-          `- [${observation.relevance}] ${observation.text.replace(/\s+/g, " ")}`,
-        )
-      )
-        break;
+      const next = appendBudgetedLine(
+        lines,
+        used,
+        budget,
+        `- [${observation.relevance}] ${observation.text.replace(/\s+/g, " ")}`,
+      );
+      if (next === undefined) break;
+      used = next;
       hasItem = true;
     }
   }

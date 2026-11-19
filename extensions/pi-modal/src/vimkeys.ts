@@ -33,8 +33,12 @@ const MODE_ACTIONS: Record<string, string> = {
 };
 
 function actionLabel(key: string, sequence: string | null): string {
-  if (sequence === null) return MODE_ACTIONS[key] ?? "mode action";
-  return SEQUENCE_LABELS[sequence] ?? `send ${JSON.stringify(sequence)}`;
+  if (sequence === null) {
+    return Object.hasOwn(MODE_ACTIONS, key) ? MODE_ACTIONS[key] : "mode action";
+  }
+  return Object.hasOwn(SEQUENCE_LABELS, sequence)
+    ? SEQUENCE_LABELS[sequence]
+    : `send ${JSON.stringify(sequence)}`;
 }
 
 function mapLines(

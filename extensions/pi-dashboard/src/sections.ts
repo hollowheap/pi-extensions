@@ -42,7 +42,7 @@ export const DEFAULT_DASHBOARD_ACTIONS: readonly DashboardActionItem[] = [
 export const DASHBOARD_OVERLAY_ACTIONS: readonly DashboardActionItem[] = [
   { key: "m", label: "Model", command: "/model" },
   { key: "t", label: "Thinking", command: "/thinking" },
-  { key: "l", label: "Sessions", command: "/sessions" },
+  { key: "l", label: "Sessions", command: "/resume" },
 ];
 
 function clean(text: string): string {

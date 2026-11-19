@@ -7,7 +7,7 @@ import {
   registerMode,
   replaceConfigModes,
 } from "@hollowheap/core/modes";
-import { loadSubagentsConfig } from "./src/config.js";
+import { loadSubagentsConfig } from "./src/settings.js";
 import { SubagentStore } from "./src/state.js";
 import { acquireWriteLock } from "./src/write-lock.js";
 

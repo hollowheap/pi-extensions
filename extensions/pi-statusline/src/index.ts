@@ -5,41 +5,68 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { buildAlertPayload, deliverAlert } from "@hollowheap/core/alerts";
+import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import { messageCost } from "@hollowheap/core/pricing";
-import { effectiveCwd } from "@hollowheap/core/state";
-import { alertAgentCompletion } from "./alerts.js";
+import { isRecord } from "@hollowheap/core/records";
+import { effectiveCwd, readBranchEntries } from "@hollowheap/core/state";
 import {
-  BUILTINS,
+  type StatuslineComponentSpec,
+  type StatuslineContext,
+  clearStatuslineEventValues,
+  createScriptStatuslineProvider,
+  getStatuslineProvider,
+  registerStatuslineProvider,
+  setStatuslineEventValue,
+  statuslineEventValues,
+} from "@hollowheap/core/statusline";
+import { extractLatestUsage } from "@hollowheap/core/usage";
+import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import {
   type GitDiffState,
   type TokenTotals,
-  clockIntervalMs,
   createGitDiffState,
   defaultGitRunner,
   findGitRoot,
 } from "./components.js";
+import { renderStatusline } from "./render.js";
 import {
   type StatuslineConfig,
   defaultConfig,
   loadConfig,
   saveOptions,
-} from "./config.js";
-import { renderStatusline } from "./render.js";
+  showStatuslineSettings,
+} from "./settings.js";
 
 const DEFAULT_CLICK_ACTIONS: Record<string, string> = {
   mode: "/mode",
   model: "/model",
   usage: "/usage",
+  "usage-pct": "/usage",
   agent: "/agent",
   tasks: "/task",
   subagents: "/subagent",
 };
 
-function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
+type Branch = ReturnType<ExtensionContext["sessionManager"]["getBranch"]>;
+
+function budgetPercent(branch: Branch): number | undefined {
+  const usage = extractLatestUsage(branch);
+  if (usage.budgetCap === undefined) return undefined;
+  let spent = usage.totalCost;
+  for (const subagent of usage.subagents ?? []) {
+    if (subagent.available) spent += subagent.cost;
+  }
+  const percent = Math.round((spent / usage.budgetCap) * 100);
+  return Number.isFinite(percent) ? percent : undefined;
+}
+
+function sumTokens(branch: Branch, model: unknown): TokenTotals {
   const totals: TokenTotals = { input: 0, output: 0, cost: 0 };
   let customUsageCost: number | undefined;
 
-  for (const entry of ctx.sessionManager.getBranch()) {
+  for (const entry of branch) {
     if (
       entry.type === "custom" &&
       (entry as { customType?: string }).customType === "hollowheap.usage"
@@ -57,7 +84,7 @@ function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
     if (message.role !== "assistant") continue;
     totals.input += message.usage?.input ?? 0;
     totals.output += message.usage?.output ?? 0;
-    totals.cost += messageCost(message as never, model ?? ctx.model);
+    totals.cost += messageCost(message as never, model);
   }
 
   if (
@@ -71,27 +98,46 @@ function sumTokens(ctx: ExtensionContext, model?: unknown): TokenTotals {
   return totals;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export default function (pi: ExtensionAPI) {
   let config: StatuslineConfig = defaultConfig();
   let busy = false;
+  let showsBudgetPercent = false;
   let currentModel: unknown;
   let repoRoot: string | null | undefined;
   let diffState: GitDiffState = createGitDiffState(defaultGitRunner, () => {});
   let requestRender: (() => void) | undefined;
   let cleanupFooter: (() => void) | undefined;
   let owner: ExtensionContext["sessionManager"] | undefined;
-  const values = new Map<string, string>();
+  let currentGitBranch: string | null = null;
+  let branchTotalsCache:
+    | {
+        sessionManager: ExtensionContext["sessionManager"];
+        length: number;
+        lastEntry: unknown;
+        model: unknown;
+        showsBudgetPercent: boolean;
+        tokens: TokenTotals;
+        budgetPercent: number | undefined;
+      }
+    | undefined;
   const reportedDiagnosticTypes = new Set<string>();
+
+  registerStatuslineProvider(
+    createScriptStatuslineProvider((command, args, options) =>
+      pi.exec(command, [...args], options),
+    ),
+  );
+
   pi.events.on("statusline:values", (data) => {
     if (!isRecord(data)) return;
     const { name, text } = data;
     if (typeof name !== "string" || typeof text !== "string") return;
-    if (values.get(name) === text) return;
-    values.set(name, text);
+    if (
+      statuslineEventValues().get(name) === text &&
+      !(showsBudgetPercent && name === "usage")
+    )
+      return;
+    setStatuslineEventValue(name, text);
     requestRender?.();
   });
 
@@ -99,16 +145,90 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   });
 
-  function neededNames(): string[] {
-    const names = new Set<string>();
-    for (const specs of Object.values(config.sections)) {
-      for (const spec of specs) {
-        if (!(spec.type in BUILTINS) && config.extensions.includes(spec.type)) {
-          names.add(spec.type);
-        }
+  function configuredSpecs(): StatuslineComponentSpec[] {
+    const seen = new Set<string>();
+    const specs: StatuslineComponentSpec[] = [];
+    for (const section of Object.values(config.sections)) {
+      for (const spec of section) {
+        const key = JSON.stringify(spec);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        specs.push(spec);
       }
     }
+    return specs;
+  }
+
+  function legacyNames(): string[] {
+    const names = new Set<string>();
+    for (const spec of configuredSpecs()) {
+      if (getStatuslineProvider(spec.type) === undefined) names.add(spec.type);
+    }
     return [...names];
+  }
+
+  function minimumIntervalMs(): number | undefined {
+    let interval: number | undefined;
+    for (const spec of configuredSpecs()) {
+      const next = getStatuslineProvider(spec.type)?.intervalMs?.(spec);
+      if (next === undefined) continue;
+      interval = interval === undefined ? next : Math.min(interval, next);
+    }
+    return interval;
+  }
+
+  function contextFor(ctx: ExtensionContext): StatuslineContext {
+    const branch = (readBranchEntries(ctx.sessionManager) ?? []) as Branch;
+    const model = currentModel ?? ctx.model;
+    const lastEntry = branch.length > 0 ? branch[branch.length - 1] : undefined;
+    if (
+      branchTotalsCache === undefined ||
+      branchTotalsCache.sessionManager !== ctx.sessionManager ||
+      branchTotalsCache.length !== branch.length ||
+      branchTotalsCache.lastEntry !== lastEntry ||
+      branchTotalsCache.model !== model ||
+      branchTotalsCache.showsBudgetPercent !== showsBudgetPercent
+    ) {
+      branchTotalsCache = {
+        sessionManager: ctx.sessionManager,
+        length: branch.length,
+        lastEntry,
+        model,
+        showsBudgetPercent,
+        tokens: sumTokens(branch, model),
+        budgetPercent: showsBudgetPercent ? budgetPercent(branch) : undefined,
+      };
+    }
+    return {
+      cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
+      homeDir: homedir(),
+      repoRoot,
+      modelId: (currentModel as { id?: string })?.id ?? ctx.model?.id,
+      branch: currentGitBranch,
+      tokens: branchTotalsCache.tokens,
+      contextPercent: ctx.getContextUsage()?.percent ?? null,
+      budgetPercent: branchTotalsCache.budgetPercent,
+      busy,
+      thinkingLevel: ctx.thinkingLevel,
+      now: new Date(),
+      gitDiff: diffState.get(ctx.cwd),
+    };
+  }
+
+  async function refreshProviders(ctx: ExtensionContext): Promise<void> {
+    const snapshot = contextFor(ctx);
+    await Promise.all(
+      configuredSpecs().map(async (spec) => {
+        const refresh = getStatuslineProvider(spec.type)?.refresh;
+        if (refresh === undefined) return;
+        try {
+          await refresh(spec, snapshot);
+        } catch {
+          return;
+        }
+      }),
+    );
+    if (ctx.sessionManager === owner) requestRender?.();
   }
 
   async function refreshRepoRoot(ctx: ExtensionContext): Promise<void> {
@@ -144,55 +264,49 @@ export default function (pi: ExtensionAPI) {
     repoRoot = findGitRoot(effectiveCwd(ctx.cwd, ctx.sessionManager)) ?? null;
     if (ctx.mode !== "tui") return;
     void refreshRepoRoot(ctx);
-    ctx.ui.setFooter((tui, theme, footerData) => {
+    hostUi(ctx).setFooter((tui, theme, footerData) => {
       requestRender = () => tui.requestRender();
+      currentGitBranch = footerData.getGitBranch();
       diffState = createGitDiffState(defaultGitRunner, () => requestRender?.());
       const branchUnsubscribe = footerData.onBranchChange(() => {
         diffState.refresh(ctx.cwd);
         tui.requestRender();
       });
-      const clockMs = clockIntervalMs(config.sections);
-      const clockTimer =
-        clockMs === undefined
+      const intervalMs = minimumIntervalMs();
+      const renderTimer =
+        intervalMs === undefined
           ? undefined
-          : setInterval(() => tui.requestRender(), clockMs);
+          : setInterval(() => {
+              void refreshProviders(ctx);
+              tui.requestRender();
+            }, intervalMs);
       diffState.refresh(ctx.cwd);
-      pi.events.emit("statusline:request", { names: neededNames() });
+      pi.events.emit("statusline:request", { names: legacyNames() });
+      void refreshProviders(ctx);
       let disposed = false;
       const cleanup = () => {
         if (disposed) return;
         disposed = true;
         branchUnsubscribe();
-        if (clockTimer !== undefined) clearInterval(clockTimer);
+        if (renderTimer !== undefined) clearInterval(renderTimer);
       };
       cleanupFooter = cleanup;
       return {
         dispose: cleanup,
         invalidate() {},
         render(width: number): string[] {
+          currentGitBranch = footerData.getGitBranch();
           const line = renderStatusline(
             width,
             config,
-            {
-              cwd: effectiveCwd(ctx.cwd, ctx.sessionManager),
-              homeDir: homedir(),
-              repoRoot,
-              modelId: (currentModel as { id?: string })?.id ?? ctx.model?.id,
-              branch: footerData.getGitBranch(),
-              tokens: sumTokens(ctx, currentModel),
-              contextPercent: ctx.getContextUsage()?.percent ?? null,
-              busy,
-              thinkingLevel: ctx.thinkingLevel,
-              now: new Date(),
-              gitDiff: diffState.get(ctx.cwd),
-            },
+            contextFor(ctx),
             theme,
-            values,
+            statuslineEventValues(),
             (message) => {
               const type = /component "([^"]+)"/.exec(message)?.[1] ?? message;
               if (reportedDiagnosticTypes.has(type)) return;
               reportedDiagnosticTypes.add(type);
-              ctx.ui.notify(`pi-statusline: ${message}`, "warning");
+              notify(ctx, `pi-statusline: ${message}`, "warning");
             },
           );
           return line === "" ? [] : [line];
@@ -203,13 +317,17 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", (_event, ctx) => {
+    clearStatuslineEventValues();
     const loaded = loadConfig(getAgentDir());
     config = loaded.config;
-    values.clear();
+    showsBudgetPercent = Object.values(config.sections).some((specs) =>
+      specs.some((spec) => spec.type === "usage-pct"),
+    );
     busy = false;
     currentModel = ctx.model;
     if (loaded.diagnostics.length > 0) {
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-statusline: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
         "warning",
       );
@@ -225,8 +343,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     if (ctx.sessionManager !== owner) return;
     owner = undefined;
+    branchTotalsCache = undefined;
     disposeFooter();
-    ctx.ui.setFooter(undefined);
+    clearStatuslineEventValues();
+    hostUi(ctx).setFooter(undefined);
   });
 
   pi.on("agent_start", (_event, ctx) => {
@@ -237,7 +357,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_settled", (_event, ctx) => {
     if (ctx.sessionManager !== owner) return;
-    if (busy) alertAgentCompletion();
+    if (busy) {
+      void deliverAlert(
+        buildAlertPayload("completion", undefined, "settled"),
+      ).catch(() => {
+        // Notification failures do not interrupt footer updates.
+      });
+    }
     busy = false;
     requestRender?.();
   });
@@ -246,6 +372,7 @@ export default function (pi: ExtensionAPI) {
     if (ctx.sessionManager !== owner) return;
     diffState.refresh(ctx.cwd);
     void refreshRepoRoot(ctx);
+    void refreshProviders(ctx);
     requestRender?.();
   });
 
@@ -253,6 +380,7 @@ export default function (pi: ExtensionAPI) {
     if (ctx.sessionManager !== owner) return;
     diffState.refresh(ctx.cwd);
     void refreshRepoRoot(ctx);
+    void refreshProviders(ctx);
     requestRender?.();
   });
 
@@ -279,41 +407,33 @@ export default function (pi: ExtensionAPI) {
       const trailingSpace = /\s$/.test(prefix);
       const parts = trimmedStart.split(/\s+/).filter(Boolean);
       if (parts.length === 0 || (parts.length === 1 && !trailingSpace)) {
-        const query = (parts[0] ?? "").toLowerCase();
-        return STATUSLINE_SUBCOMMANDS.filter((cmd) =>
-          cmd.startsWith(query),
-        ).map((cmd) => ({ value: cmd, label: cmd }));
+        return prefixCompletions(parts[0] ?? "", STATUSLINE_SUBCOMMANDS);
       }
       if (
         parts[0] === "working" &&
         (parts.length === 1 || (parts.length === 2 && !trailingSpace))
       ) {
-        const query = (parts[1] ?? "").toLowerCase();
-        return WORKING_PRESETS.filter((preset) => preset.startsWith(query)).map(
-          (preset) => ({ value: preset, label: preset }),
-        );
+        return prefixCompletions(parts[1] ?? "", WORKING_PRESETS);
       }
       if (
         parts[0] === "click" &&
         (parts.length === 1 || (parts.length === 2 && !trailingSpace))
       ) {
-        const query = (parts[1] ?? "").toLowerCase();
         const segments = new Set([
           ...Object.keys(DEFAULT_CLICK_ACTIONS),
           ...Object.keys(config.clickActions ?? {}),
         ]);
-        return [...segments]
-          .filter((segment) => segment.toLowerCase().startsWith(query))
-          .map((segment) => ({ value: segment, label: segment }));
+        return prefixCompletions(parts[1] ?? "", segments);
       }
       return null;
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts[0] === "working") {
-        if (typeof ctx.ui.setWorkingIndicator !== "function") {
+        if (typeof hostUi(ctx).setWorkingIndicator !== "function") {
           if (ctx.hasUI) {
-            ctx.ui.notify(
+            notify(
+              ctx,
               "Working indicator customization is unavailable.",
               "info",
             );
@@ -321,46 +441,48 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const preset = parts[1] ?? "default";
-        if (preset === "default") ctx.ui.setWorkingIndicator();
+        if (preset === "default") hostUi(ctx).setWorkingIndicator();
         else if (preset === "pulse")
-          ctx.ui.setWorkingIndicator({ frames: ["●", "○"], intervalMs: 400 });
+          hostUi(ctx).setWorkingIndicator({
+            frames: ["●", "○"],
+            intervalMs: 400,
+          });
         else if (preset === "compact")
-          ctx.ui.setWorkingIndicator({
+          hostUi(ctx).setWorkingIndicator({
             frames: ["⠋", "⠙", "⠹", "⠸"],
             intervalMs: 100,
           });
         else if (preset === "hidden")
-          ctx.ui.setWorkingIndicator({ frames: [] });
+          hostUi(ctx).setWorkingIndicator({ frames: [] });
         else {
           if (ctx.hasUI) {
-            ctx.ui.notify(
+            notify(
+              ctx,
               "Usage: /statusline working default|pulse|compact|hidden",
               "error",
             );
           }
           return;
         }
-        if (ctx.hasUI) ctx.ui.notify(`Working indicator: ${preset}`, "info");
+        if (ctx.hasUI) notify(ctx, `Working indicator: ${preset}`, "info");
         return;
       }
       if (parts[0] === "thinking") {
-        if (typeof ctx.ui.setHiddenThinkingLabel !== "function") {
+        if (typeof hostUi(ctx).setHiddenThinkingLabel !== "function") {
           if (ctx.hasUI) {
-            ctx.ui.notify(
-              "Thinking label customization is unavailable.",
-              "info",
-            );
+            notify(ctx, "Thinking label customization is unavailable.", "info");
           }
           return;
         }
         const label = parts.slice(1).join(" ").trim();
         if (label === "" || label === "default") {
-          ctx.ui.setHiddenThinkingLabel();
-          if (ctx.hasUI) ctx.ui.notify("Thinking label: default", "info");
+          hostUi(ctx).setHiddenThinkingLabel();
+          if (ctx.hasUI) notify(ctx, "Thinking label: default", "info");
         } else {
-          ctx.ui.setHiddenThinkingLabel(sanitizeTerminalText(label));
+          hostUi(ctx).setHiddenThinkingLabel(sanitizeTerminalText(label));
           if (ctx.hasUI)
-            ctx.ui.notify(
+            notify(
+              ctx,
               `Thinking label: ${sanitizeTerminalText(label)}`,
               "info",
             );
@@ -368,23 +490,24 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (parts[0] === "settings" || parts[0] === "config") {
-        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+        if (!canOverlay(ctx)) {
           if (ctx.hasUI)
-            ctx.ui.notify(
+            notify(
+              ctx,
               "Statusline settings require TUI mode; edit statusline.json instead.",
               "info",
             );
           return;
         }
-        const { showStatuslineSettings } = await import("./settings.js");
         await showStatuslineSettings(ctx, config, (next) => {
           config = next;
           try {
             saveOptions(getAgentDir(), next.options);
           } catch (error) {
             if (ctx.hasUI) {
-              ctx.ui.notify(
-                `pi-statusline: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+              notify(
+                ctx,
+                `pi-statusline: failed to save settings: ${errorMessage(error)}`,
                 "error",
               );
             }
@@ -396,16 +519,21 @@ export default function (pi: ExtensionAPI) {
       if (parts[0] === "click" && parts[1]) {
         const segment = parts[1];
         const action =
-          config.clickActions?.[segment] ?? DEFAULT_CLICK_ACTIONS[segment];
+          (config.clickActions && Object.hasOwn(config.clickActions, segment)
+            ? config.clickActions[segment]
+            : undefined) ??
+          (Object.hasOwn(DEFAULT_CLICK_ACTIONS, segment)
+            ? DEFAULT_CLICK_ACTIONS[segment]
+            : undefined);
         if (action) {
           if (action.startsWith("/")) {
             pi.sendUserMessage(action, { expandPromptTemplates: true });
-            if (ctx.hasUI) ctx.ui.notify(`Running: ${action}`, "info");
+            if (ctx.hasUI) notify(ctx, `Running: ${action}`, "info");
             return;
           }
           const [command, ...actionArgs] = action.trim().split(/\s+/);
           if (!command) return;
-          if (ctx.hasUI) ctx.ui.notify(`Running: ${action}`, "info");
+          if (ctx.hasUI) notify(ctx, `Running: ${action}`, "info");
           try {
             const result = await pi.exec(command, actionArgs);
             if (!ctx.hasUI) return;
@@ -414,30 +542,28 @@ export default function (pi: ExtensionAPI) {
               { allowSgr: true },
             );
             if (output) {
-              ctx.ui.notify(output, result.code === 0 ? "info" : "error");
+              notify(ctx, output, result.code === 0 ? "info" : "error");
             }
             if (result.code !== 0) {
-              ctx.ui.notify(
+              notify(
+                ctx,
                 `pi-statusline: action exited with code ${result.code}`,
                 "error",
               );
             }
           } catch (error) {
             if (ctx.hasUI) {
-              ctx.ui.notify(
-                `pi-statusline: ${error instanceof Error ? error.message : String(error)}`,
-                "error",
-              );
+              notify(ctx, `pi-statusline: ${errorMessage(error)}`, "error");
             }
           }
         } else {
-          if (ctx.hasUI)
-            ctx.ui.notify(`No click action for ${segment}`, "info");
+          if (ctx.hasUI) notify(ctx, `No click action for ${segment}`, "info");
         }
         return;
       }
       if (ctx.hasUI) {
-        ctx.ui.notify(
+        notify(
+          ctx,
           "Usage: /statusline click <segment> | /statusline settings|config",
           "info",
         );

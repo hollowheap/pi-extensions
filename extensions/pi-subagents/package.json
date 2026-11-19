@@ -15,6 +15,7 @@
   "dependencies": {
     "@hollowheap/core": "^0.3.0",
     "@hollowheap/runtime": "^0.3.0",
+    "@hollowheap/pi-ui": "^0.1.0",
     "@hollowheap/tui": "^0.3.0",
     "@hollowheap/policy": "^0.3.0"
   },

@@ -14,20 +14,19 @@ import {
   formatAgentRosterSection,
 } from "@hollowheap/core/agents";
 import { isPermissionError } from "@hollowheap/core/config";
-import { truncateText } from "@hollowheap/core/format";
+import {
+  errorMessage,
+  toolErrorResult,
+  toolTextResult,
+  truncateText,
+} from "@hollowheap/core/format";
 import { resolveModeName } from "@hollowheap/core/modes";
-import { session } from "@hollowheap/core/state";
+import { appendSessionEntry, session } from "@hollowheap/core/state";
+import { notify } from "@hollowheap/pi-ui/host";
 import { isProcessAlive } from "@hollowheap/runtime/process";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
-import {
-  type SubagentHarnessTransport,
-  type SubagentsConfig,
-  loadSubagentsConfig,
-  resolveSubagentSandboxOptions,
-  resolveSubagentWaitTimeoutMs,
-} from "./config.js";
 import type { SessionAgentDefinition } from "./definitions.js";
 import {
   abortSubagent,
@@ -39,6 +38,13 @@ import {
   startSubagent,
   waitSubagent,
 } from "./runner.js";
+import {
+  type SubagentHarnessTransport,
+  type SubagentsConfig,
+  loadSubagentsConfig,
+  resolveSubagentSandboxOptions,
+  resolveSubagentWaitTimeoutMs,
+} from "./settings.js";
 import type { SubagentState } from "./state.js";
 import { isInProject, subagentDisplayName } from "./state.js";
 import { resolveSubagentModel } from "./swap.js";
@@ -121,7 +127,7 @@ function piChildSpec(
     sessionPath,
   ];
   if (agent.model !== undefined) args.push("--model", agent.model);
-  const thinking = agent.thinking ?? agent.effort;
+  const thinking = agent.thinking;
   if (thinking !== undefined) args.push("--thinking", thinking);
   if (agent.tools !== undefined) args.push("--tools", agent.tools.join(","));
   return {
@@ -142,7 +148,9 @@ function childSpec(
   if (agent.harness === undefined || agent.harness === "pi") {
     return piChildSpec(agent, sessionPath, rosterSection);
   }
-  const harness = config.harnesses[agent.harness];
+  const harness = Object.hasOwn(config.harnesses, agent.harness)
+    ? config.harnesses[agent.harness]
+    : undefined;
   if (harness === undefined) {
     throw new Error(`unknown harness "${agent.harness}"`);
   }
@@ -174,26 +182,17 @@ function childSpec(
 }
 
 function errorResult(message: string) {
-  return {
-    content: [
-      { type: "text" as const, text: `subagent unavailable: ${message}` },
-    ],
-    details: { error: message },
-  };
+  return toolErrorResult("subagent unavailable", message);
 }
 
 function loadToolSubagentsConfig(
   agentDir: string,
-  ctx: {
-    hasUI?: boolean;
-    ui?: {
-      notify?: (msg: string, level?: "info" | "warning" | "error") => void;
-    };
-  },
+  ctx: Parameters<typeof notify>[0] & { hasUI?: boolean },
 ): SubagentsConfig {
   return loadSubagentsConfig(agentDir, (message) => {
     if (ctx.hasUI) {
-      ctx.ui?.notify?.(
+      notify(
+        ctx,
         `pi-subagents: ${message}`,
         isPermissionError(message) ? "error" : "warning",
       );
@@ -202,10 +201,7 @@ function loadToolSubagentsConfig(
 }
 
 function textResult(details: Record<string, unknown>) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(details) }],
-    details,
-  };
+  return toolTextResult(JSON.stringify(details), details);
 }
 
 function summary(state: SubagentState): Record<string, unknown> {
@@ -645,7 +641,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             effectiveAgent,
             discovery,
             sessionAgents,
-            (message) => ctx.ui?.notify?.(message, "warning"),
+            (message) => notify(ctx, message, "warning"),
           );
           const spec = childSpec(
             effectiveAgent,
@@ -712,12 +708,17 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             throw error;
           }
           subagentWorkspaceTracker.track(state.id, workspace);
-          options.pi?.appendEntry?.(SUBAGENT_RUN_TYPE, {
-            id: state.id,
-            agent: state.agent,
-            task: state.task,
-            startedAt: state.startedAt,
-          });
+          appendSessionEntry(
+            options.pi,
+            ctx.sessionManager,
+            SUBAGENT_RUN_TYPE,
+            {
+              id: state.id,
+              agent: state.agent,
+              task: state.task,
+              startedAt: state.startedAt,
+            },
+          );
           options.onSubagentsChange?.();
           if (spec.inputMode === "jsonl") {
             try {
@@ -879,7 +880,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             effectiveAgent,
             discovery,
             sessionAgents,
-            (message) => ctx.ui?.notify?.(message, "warning"),
+            (message) => notify(ctx, message, "warning"),
           );
           const spec = childSpec(
             effectiveAgent,
@@ -963,12 +964,12 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         }
         return errorResult(`invalid action: ${String(action)}`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         if (
           ctx.hasUI &&
           (isPermissionError(error) || isOsPermissionError(error))
         ) {
-          ctx.ui.notify(`pi-subagents: ${message}`, "error");
+          notify(ctx, `pi-subagents: ${message}`, "error");
         }
         return errorResult(message);
       }

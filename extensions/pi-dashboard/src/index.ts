@@ -6,18 +6,14 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { isPermissionError } from "@hollowheap/core/config";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import {
   getSessionSnapshot,
   subscribeSessionSnapshot,
 } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
-import {
-  type DashboardConfig,
-  type DashboardSettings,
-  loadConfig,
-  saveDashboardSettings,
-} from "./config.js";
+import { hostUi, notify } from "@hollowheap/pi-ui/host";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
 import {
@@ -28,7 +24,13 @@ import {
   renderStateSection,
 } from "./sections.js";
 import { type DashboardSessionItem, loadRecentSessions } from "./sessions.js";
-import { showDashboardSettings } from "./settings.js";
+import {
+  type DashboardConfig,
+  type DashboardSettings,
+  loadConfig,
+  saveDashboardSettings,
+  showDashboardSettings,
+} from "./settings.js";
 import { showDashboardOverlay } from "./view.js";
 
 const IDENTITY_THEME = {
@@ -251,11 +253,7 @@ function terminalSection(
       if (controller.signal.aborted || stopped) {
         aborted = true;
       } else {
-        lines = [
-          sanitizeTerminalText(
-            error instanceof Error ? error.message : String(error),
-          ),
-        ];
+        lines = [sanitizeTerminalText(errorMessage(error))];
         if (!warned) {
           warned = true;
           deps.notify(lines[0]);
@@ -449,7 +447,7 @@ export default function (pi: ExtensionAPI) {
     active?.stop();
     active = undefined;
     // Empty component suppresses builtInHeader without leaving startup lines in chat.
-    ctx.ui.setHeader(() => ({
+    hostUi(ctx).setHeader(() => ({
       dispose() {},
       invalidate() {},
       render: () => [],
@@ -472,13 +470,13 @@ export default function (pi: ExtensionAPI) {
           effectiveCwd(ctx.cwd, ctx.sessionManager),
           signal,
         ),
-      notify: (message) => ctx.ui.notify(message, "warning"),
+      notify: (message) => notify(ctx, message, "warning"),
       snapshotOwner: ctx.sessionManager,
       getStateInput: () => makeStateInput(ctx),
       loadSessions: (scope, maxItems) => loadForCtx(ctx, scope, maxItems),
     });
     active = controller;
-    ctx.ui.setHeader((tui, theme) => {
+    hostUi(ctx).setHeader((tui, theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
       return {
@@ -496,7 +494,8 @@ export default function (pi: ExtensionAPI) {
       const hasPerm = loaded.diagnostics.some((diagnostic) =>
         isPermissionError(diagnostic),
       );
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
         hasPerm ? "error" : "warning",
       );
@@ -510,8 +509,9 @@ export default function (pi: ExtensionAPI) {
         if (ctx.mode === "tui") install(ctx, next.config);
       } catch (error) {
         if (ctx.hasUI) {
-          ctx.ui.notify(
-            `pi-dashboard: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
+          notify(
+            ctx,
+            `pi-dashboard: failed to save settings: ${errorMessage(error)}`,
             "error",
           );
         }
@@ -539,12 +539,8 @@ export default function (pi: ExtensionAPI) {
       getStateInput: () => makeStateInput(ctx),
       snapshotOwner: ctx.sessionManager,
     });
-    if (result.type === "settings") {
-      await openSettings(ctx);
-    } else if (result.type === "resume") {
+    if (result.type === "resume") {
       await ctx.switchSession(result.session.path);
-    } else if (result.type === "command") {
-      pi.sendUserMessage(result.command, { expandPromptTemplates: true });
     }
   };
 
@@ -555,7 +551,8 @@ export default function (pi: ExtensionAPI) {
       const hasPerm = loaded.diagnostics.some((diagnostic) =>
         isPermissionError(diagnostic),
       );
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-dashboard: ${loaded.diagnostics.slice(0, 3).join("; ")}`,
         hasPerm ? "error" : "warning",
       );
@@ -582,14 +579,9 @@ export default function (pi: ExtensionAPI) {
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length > 1) return null;
-      const query = (parts[0] ?? "").toLowerCase();
-      return ["settings", "config"]
-        .filter((action) => action.startsWith(query))
-        .map((action) => ({
-          value: action,
-          label: action,
-          description: "open dashboard settings",
-        }));
+      return prefixCompletions(parts[0] ?? "", ["settings", "config"]).map(
+        (item) => ({ ...item, description: "open dashboard settings" }),
+      );
     },
     handler: async (args, ctx) => {
       if (ctx.mode !== "tui") return;
@@ -606,6 +598,6 @@ export default function (pi: ExtensionAPI) {
     active?.stop();
     active = undefined;
     hidden = false;
-    ctx.ui.setHeader(undefined);
+    hostUi(ctx).setHeader(undefined);
   });
 }

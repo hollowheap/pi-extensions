@@ -45,6 +45,13 @@ Create `<agentDir>/subagents.json`:
 
 Invalid values diagnose and fall back. The file is optional.
 
+## Read-only transcripts
+
+Run `/subagent view <id>` to see a child's transcript across the terminal.
+Bare `/subagent` opens the picker. Alt+Left/Up or Alt+H/K selects the previous
+child, and Alt+Right/Down or Alt+L/J selects the next. Escape returns to the
+parent prompt. `/subagent logs <id>` opens the log pager.
+
 ## Agents
 
 User agents live in `<agentDir>/agents/*.md`. Project agents live in the nearest `<project>/.pi/agents/*.md` and load only when the project is trusted. Project agents override user agents by name.
@@ -56,8 +63,7 @@ name: scout
 description: Fast codebase recon
 tools: read, grep, find, ls
 agents: researcher, worker, code-reviewer
-model: provider/model-id
-thinking: medium
+model: provider/model-id:medium
 harness: claude
 ---
 
@@ -76,7 +82,7 @@ Available subagents. Spawn one with the `subagent` tool using
 </agents>
 ```
 
-Names resolve against user, project (when trusted), and session agents; unknown names are skipped with a warning. Children do not load `pi-agent`, so this appended section is the only way they see the roster. `model` and `thinking` are optional; omitted values inherit Pi’s defaults. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
+Names resolve against user, project (when trusted), and session agents; unknown names are skipped with a warning. Children do not load `pi-agent`, so this appended section is the only way they see the roster. Use an optional `<model>:<effort>` suffix to set thinking effort. When omitted, the `thinking` key can set it or the child inherits Pi’s default. The `effort` frontmatter key is ignored. `harness` selects a named entry from `subagents.json`; omitted or `pi` uses the built-in Pi RPC child. Pi children run built-in tools plus headless `@hollowheap/policy` and the child write-lock extension.
 
 ### Session definitions
 

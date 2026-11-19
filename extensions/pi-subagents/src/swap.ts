@@ -1,3 +1,5 @@
+import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { hostUi } from "@hollowheap/pi-ui/host";
 import type { AgentConfig } from "./agents.js";
 
 export interface ModelInfo {
@@ -118,7 +120,7 @@ export async function resolveSubagentModel(
     return requestedModel;
   }
 
-  const selectFn = deps.select ?? ctx.ui?.select?.bind(ctx.ui);
+  const selectFn = deps.select ?? hostUi(ctx)?.select?.bind(hostUi(ctx));
   const hasUI = ctx.hasUI !== false && typeof selectFn === "function";
 
   const options =
@@ -126,7 +128,7 @@ export async function resolveSubagentModel(
 
   if (hasUI && selectFn && options.length > 0) {
     const choice = await selectFn(
-      `Subagent "${agent.name}" requests model "${requestedModel}" which is unavailable. Select replacement:`,
+      `Subagent "${sanitizeTerminalText(agent.name)}" requests model "${sanitizeTerminalText(requestedModel)}" which is unavailable. Select replacement:`,
       options,
     );
     if (choice) {

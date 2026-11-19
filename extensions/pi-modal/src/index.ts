@@ -1,46 +1,51 @@
 import { existsSync } from "node:fs";
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
+import { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
+import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
+import { showCodeViewer } from "@hollowheap/pi-ui/viewer";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import {
+  bindHostOutputPadding,
   getActiveTuiConfig,
   loadAndActivateTuiConfig,
 } from "@hollowheap/tui/state";
 import {
   SHIMMER_BASE_INTERVAL_MS,
+  type ThinkingShimmerAnimator,
   createThinkingShimmerAnimator,
-  formatOneLineThinkingText,
+  formatThinkingMarkdown,
+  installThinkingVisibility,
   renderThinkingShimmerFrame,
   stripMarkdownInline,
 } from "@hollowheap/tui/thinking";
-import type { ThinkingShimmerAnimator } from "@hollowheap/tui/thinking";
-import { showCodeViewer } from "@hollowheap/tui/viewer";
+import {
+  codemodePreview,
+  withToolOutputDisplay,
+} from "@hollowheap/tui/tool-output";
 import { ModalEditor } from "./editor.js";
-import { loadModalConfig } from "./keymap.js";
-import { normalizeAgentMarkdown } from "./markdown-normalize.js";
-import { wrapToolRenderer } from "./panel.js";
+import { loadModalConfig } from "./settings.js";
+
+import { panelRenderConfig, wrapToolRenderer } from "./panel.js";
+import { formatTuiStatus, showTuiSettings } from "./settings.js";
+import { installSkillPanel } from "./skill-panel.js";
 import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
-import { formatTuiStatus, showTuiSettings } from "./tui-settings.js";
 import { formatVimKeys } from "./vimkeys.js";
 
 export { ModalEditor } from "./editor.js";
 export * from "./keymap.js";
-export * from "./markdown-normalize.js";
+export { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 export * from "./skills.js";
 export * from "./panel.js";
-export * from "./tui-settings.js";
-
-const THINKING_PREFIXES = {
-  standard: "Thinking: ",
-  terse: "think: ",
-  playful: "Pondering: ",
-} as const;
+export * from "./settings.js";
 
 const LOADER_INDICATOR_PATCH = Symbol.for(
   "@hollowheap/pi-modal/loader-indicator-patch",
@@ -75,10 +80,22 @@ function installLoaderIndicatorPatch(): void {
 
 function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   let code: string | undefined;
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type !== "message") continue;
-    const message = entry.message;
-    if (message.role !== "assistant") continue;
+  for (const entry of readBranchEntries(ctx.sessionManager) ?? []) {
+    const typed = entry as {
+      type?: unknown;
+      message?: {
+        role?: unknown;
+        content?: Array<{
+          type?: unknown;
+          name?: unknown;
+          arguments?: { code?: unknown };
+        }>;
+      };
+    };
+    if (typed.type !== "message") continue;
+    const message = typed.message;
+    if (message?.role !== "assistant" || !Array.isArray(message.content))
+      continue;
     for (const block of message.content) {
       if (block.type !== "toolCall" || block.name !== "codemode") continue;
       const value = block.arguments?.code;
@@ -88,38 +105,15 @@ function lastCodemodeFromSession(ctx: ExtensionContext): string | undefined {
   return code;
 }
 
-export const MODAL_EXPAND_TYPE = "hollowheap.modal.expand";
-
-function readPersistedExpanded(ctx: ExtensionContext): boolean | undefined {
-  const getBranch = (ctx.sessionManager as { getBranch?: () => unknown[] })
-    ?.getBranch;
-  if (typeof getBranch !== "function") return undefined;
-  let expanded: boolean | undefined;
-  for (const raw of getBranch.call(ctx.sessionManager)) {
-    const entry = raw as {
-      type?: unknown;
-      customType?: unknown;
-      data?: { expanded?: unknown };
-    };
-    if (
-      entry?.type === "custom" &&
-      entry.customType === MODAL_EXPAND_TYPE &&
-      typeof entry.data?.expanded === "boolean"
-    ) {
-      expanded = entry.data.expanded;
-    }
-  }
-  return expanded;
-}
-
 export default function (pi: ExtensionAPI): void {
   installLoaderIndicatorPatch();
   let lastCodemodeCode: string | undefined;
   let lastToolCall:
     | { name: string; input: Record<string, unknown> }
     | undefined;
-  let persistedExpand: boolean | undefined;
   let activeCtx: ExtensionContext | undefined;
+  installSkillPanel(() => activeCtx && hostUi(activeCtx)?.theme);
+  let releasePadding: (() => void) | undefined;
   let activeEditor: ModalEditor | undefined;
   let activeTui:
     | {
@@ -129,98 +123,97 @@ export default function (pi: ExtensionAPI): void {
   let shimmerAnimator: ThinkingShimmerAnimator | undefined;
 
   const applyWorkingIndicator = (ctx: ExtensionContext | undefined): void => {
-    if (!ctx?.hasUI || typeof ctx.ui?.setWorkingIndicator !== "function") {
+    if (!ctx?.hasUI || typeof hostUi(ctx)?.setWorkingIndicator !== "function") {
       return;
     }
     const cfg = getActiveTuiConfig();
-    loaderIndicatorTheme = ctx.ui.theme;
-    ctx.ui.setWorkingIndicator(
-      createWorkingIndicator(cfg.loadingIndicator, ctx.ui.theme, cfg.colored),
+    loaderIndicatorTheme = hostUi(ctx).theme;
+    hostUi(ctx).setWorkingIndicator(
+      createWorkingIndicator(
+        cfg.loadingIndicator,
+        hostUi(ctx).theme,
+        cfg.colored,
+      ),
     );
   };
 
   const publishModalSnapshot = (ctx: ExtensionContext | undefined): void => {
     if (!ctx?.sessionManager) return;
     const toolsExpanded =
-      typeof ctx.ui?.getToolsExpanded === "function"
-        ? ctx.ui.getToolsExpanded()
-        : persistedExpand;
+      typeof hostUi(ctx)?.getToolsExpanded === "function"
+        ? hostUi(ctx).getToolsExpanded()
+        : undefined;
     updateSessionSnapshot(ctx.sessionManager, "modal", {
       ...(toolsExpanded !== undefined ? { toolsExpanded } : {}),
       ...(lastToolCall ? { lastTool: lastToolCall.name } : {}),
       hasLastCodemode: Boolean(
-        lastCodemodeCode ??
-          (typeof (ctx.sessionManager as { getBranch?: unknown })?.getBranch ===
-          "function"
-            ? lastCodemodeFromSession(ctx)
-            : undefined),
+        lastCodemodeCode ?? lastCodemodeFromSession(ctx),
       ),
       updatedAt: Date.now(),
     });
   };
 
   pi.registerToolRenderer?.((toolName, next) => {
-    const base = next();
+    const renderer = next();
+    const base = toolName === "codemode" ? codemodePreview(renderer) : renderer;
     if (getActiveTuiConfig().panel.enabled) {
-      return wrapToolRenderer(
+      const panel = wrapToolRenderer(
         toolName,
         base,
-        () => {
-          const active = getActiveTuiConfig();
-          return {
-            ...active.panel,
-            verbPack: active.verbPack,
-            toolVerbosity: active.toolVerbosity,
-            surface:
-              active.panel.surface && active.panel.surface !== "transparent"
-                ? active.panel.surface
-                : active.overlaySurface,
-          };
-        },
+        () => panelRenderConfig(getActiveTuiConfig()),
         { requestRender: () => activeTui?.requestRender?.() },
       );
+      return withToolOutputDisplay(toolName, panel, true);
     }
     const renderCall = base?.renderCall;
-    if (toolName !== "codemode" || renderCall === undefined) return base;
-    return {
-      ...base,
-      renderCall(args, theme, context) {
-        return renderCall(args, theme, { ...context, expanded: true });
-      },
-    };
+    return withToolOutputDisplay(
+      toolName,
+      toolName === "codemode" && renderCall
+        ? {
+            ...base,
+            renderCall: (args, theme, context) =>
+              renderCall(args, theme, { ...context, expanded: true }),
+          }
+        : base,
+    );
   });
 
-  pi.registerMarkdownTransformer?.((markdown, context) => {
+  const transformMarkdown: Parameters<
+    ExtensionAPI["registerMarkdownTransformer"]
+  >[0] = (markdown, context) => {
     const cfg = getActiveTuiConfig();
     if (context.messageType === "assistant-thinking") {
-      if (cfg.thinkingVerbosity === "none") return "";
-      if (cfg.thinkingVerbosity === "low") {
-        return THINKING_PREFIXES[cfg.verbPack].trimEnd();
-      }
+      const line = formatThinkingMarkdown(
+        markdown,
+        context.availableWidth,
+        cfg,
+      );
+      const oneLine =
+        cfg.thinkingVerbosity === "medium" ||
+        cfg.thinkingVerbosity === "minimal";
       if (
-        cfg.thinkingVerbosity === "high" ||
-        cfg.thinkingVerbosity === "verbose"
+        oneLine &&
+        context.isStreaming &&
+        cfg.thinkingAnimate &&
+        cfg.colored
       ) {
-        return markdown;
-      }
-      const line = formatOneLineThinkingText(markdown, context.availableWidth, {
-        pick: "first",
-        prefix: THINKING_PREFIXES[cfg.verbPack],
-      });
-      if (context.isStreaming && cfg.thinkingAnimate && cfg.colored) {
         const stripped = stripMarkdownInline(line);
         if (typeof activeTui?.requestRender === "function") {
           shimmerAnimator ??= createThinkingShimmerAnimator({
             requestRender: (force) => activeTui?.requestRender?.(force),
           });
-          return shimmerAnimator.frame(stripped, activeCtx?.ui?.theme, true);
+          return shimmerAnimator.frame(
+            stripped,
+            hostUi(activeCtx)?.theme,
+            true,
+          );
         }
         shimmerAnimator?.dispose();
         shimmerAnimator = undefined;
         return renderThinkingShimmerFrame(
           stripped,
           Math.floor(Date.now() / SHIMMER_BASE_INTERVAL_MS),
-          activeCtx?.ui?.theme,
+          hostUi(activeCtx)?.theme,
           true,
         );
       }
@@ -229,24 +222,25 @@ export default function (pi: ExtensionAPI): void {
       return line;
     }
     return cfg.markdownRender ? normalizeAgentMarkdown(markdown) : markdown;
-  });
+  };
+  if (typeof pi.registerMarkdownTransformer === "function") {
+    installThinkingVisibility(transformMarkdown);
+    pi.registerMarkdownTransformer(transformMarkdown);
+  }
 
   const TUI_SUBCOMMANDS = ["settings", "config", "status"] as const;
-  const createTuiCommand = () => ({
+  pi.registerCommand("ui", {
     description:
-      "Inspect or configure TUI border, colors, spinner, markdown, thinking, and panel settings",
-    getArgumentCompletions: (prefix: string) => {
-      const lower = prefix.trim().toLowerCase();
-      return TUI_SUBCOMMANDS.filter((sub) => sub.startsWith(lower)).map(
-        (sub) => ({ value: sub, label: sub }),
-      );
-    },
+      "Inspect or configure UI appearance, output, and tool settings",
+    getArgumentCompletions: (prefix: string) =>
+      prefixCompletions(prefix.trim(), TUI_SUBCOMMANDS),
     handler: async (args: string, ctx: ExtensionContext) => {
       activeCtx = ctx;
       const sub = args.trim().toLowerCase();
       if (sub === "status") {
         if (ctx.hasUI) {
-          ctx.ui.notify(
+          notify(
+            ctx,
             `pi-modal TUI: ${formatTuiStatus(getActiveTuiConfig())}`,
             "info",
           );
@@ -254,9 +248,10 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
       if (sub === "" || sub === "settings" || sub === "config") {
-        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
+        if (!canOverlay(ctx)) {
           if (ctx.hasUI) {
-            ctx.ui.notify(
+            notify(
+              ctx,
               `pi-modal TUI: ${formatTuiStatus(getActiveTuiConfig())} (interactive settings require TUI mode)`,
               "info",
             );
@@ -264,6 +259,8 @@ export default function (pi: ExtensionAPI): void {
           return;
         }
         await showTuiSettings(ctx, getAgentDir(), (next) => {
+          shimmerAnimator?.dispose();
+          shimmerAnimator = undefined;
           applyWorkingIndicator(ctx);
           activeEditor?.clearExplicitUiOverrides();
           activeTui?.requestRender?.(true);
@@ -274,39 +271,10 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
       if (ctx.hasUI) {
-        ctx.ui.notify("Usage: /tui [settings|config|status]", "error");
+        notify(ctx, "Usage: /ui [settings|config|status]", "error");
       }
     },
   });
-  pi.registerCommand("tui", createTuiCommand());
-  pi.registerCommand("ui", createTuiCommand());
-
-  pi.registerCommand("expand", {
-    description:
-      "Expand or collapse tool output, including codemode scripts and nested calls",
-    handler: async (args, ctx) => {
-      const mode = args.trim().toLowerCase();
-      let nextExpanded: boolean;
-      if (mode === "" || mode === "toggle") {
-        nextExpanded = !ctx.ui.getToolsExpanded();
-      } else if (mode === "on" || mode === "expand") {
-        nextExpanded = true;
-      } else if (mode === "off" || mode === "collapse") {
-        nextExpanded = false;
-      } else {
-        ctx.ui.notify("Usage: /expand [on|off|toggle]", "error");
-        return;
-      }
-      ctx.ui.setToolsExpanded(nextExpanded);
-      persistedExpand = nextExpanded;
-      pi.appendEntry?.(MODAL_EXPAND_TYPE, { expanded: nextExpanded });
-      publishModalSnapshot(ctx);
-      ctx.ui.notify(
-        `pi-modal: tool output ${ctx.ui.getToolsExpanded() ? "expanded" : "collapsed"}`,
-      );
-    },
-  });
-
   pi.on("tool_call", (event, ctx) => {
     if (event.parentToolCallId === undefined) {
       lastToolCall = {
@@ -324,19 +292,12 @@ export default function (pi: ExtensionAPI): void {
   const syncFromBranch = (ctx: ExtensionContext) => {
     lastCodemodeCode = undefined;
     lastToolCall = undefined;
-    persistedExpand = readPersistedExpanded(ctx);
-    if (
-      persistedExpand !== undefined &&
-      typeof ctx.ui?.setToolsExpanded === "function"
-    ) {
-      ctx.ui.setToolsExpanded(persistedExpand);
-    }
     publishModalSnapshot(ctx);
   };
 
   const showVimKeys = async (ctx: ExtensionContext) => {
     const config = loadModalConfig(getAgentDir(), (message) =>
-      ctx.ui.notify(`pi-modal: ${message}`, "warning"),
+      notify(ctx, `pi-modal: ${message}`, "warning"),
     );
     await showCodeViewer(ctx, "pi-modal keybinds", formatVimKeys(config));
   };
@@ -355,9 +316,9 @@ export default function (pi: ExtensionAPI): void {
     if (ctx.hasUI) applyWorkingIndicator(ctx);
     // Reinstall the modal editor after branch navigation; the host may have
     // disposed the previous editor component when the session was replaced.
-    if (ctx.hasUI && typeof ctx.ui.setEditorComponent === "function") {
+    if (ctx.hasUI && typeof hostUi(ctx).setEditorComponent === "function") {
       const config = loadModalConfig(getAgentDir(), (message) =>
-        ctx.ui.notify(`pi-modal: ${message}`, "warning"),
+        notify(ctx, `pi-modal: ${message}`, "warning"),
       );
       if (config.enabled !== false) {
         const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
@@ -365,7 +326,7 @@ export default function (pi: ExtensionAPI): void {
           config.borderStyleExplicit && !hasTuiConfigFile
             ? config
             : { ...config, borderStyle: undefined };
-        ctx.ui.setEditorComponent((tui, theme, kb) => {
+        hostUi(ctx).setEditorComponent((tui, theme, kb) => {
           activeTui = tui as unknown as typeof activeTui;
           activeEditor = new ModalEditor(
             tui,
@@ -373,7 +334,7 @@ export default function (pi: ExtensionAPI): void {
             kb,
             editorConfig,
             undefined,
-            ctx.ui.theme,
+            hostUi(ctx).theme,
           );
           return activeEditor;
         });
@@ -382,27 +343,42 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_compact", (_event, ctx) => {
-    if (persistedExpand !== undefined) {
-      pi.appendEntry(MODAL_EXPAND_TYPE, { expanded: persistedExpand });
-    }
     publishModalSnapshot(ctx);
+  });
+
+  pi.on("session_shutdown", () => {
+    releasePadding?.();
+    releasePadding = undefined;
+    shimmerAnimator?.dispose();
+    shimmerAnimator = undefined;
   });
 
   pi.on("session_start", (_event, ctx) => {
     activeCtx = ctx;
+    releasePadding?.();
+    releasePadding =
+      ctx.mode === "tui"
+        ? bindHostOutputPadding(() =>
+            pi.getSettings?.()?.outputPad === 0 ? 0 : 1,
+          )
+        : undefined;
     shimmerAnimator?.dispose();
     shimmerAnimator = undefined;
     syncFromBranch(ctx);
     loadAndActivateTuiConfig(getAgentDir(), (msg) =>
-      ctx.ui?.notify?.(`pi-modal: ${msg}`, "warning"),
+      notify(ctx, `pi-modal: ${msg}`, "warning"),
     );
     if (ctx.hasUI) applyWorkingIndicator(ctx);
-    if (ctx.hasUI && typeof ctx.ui.addAutocompleteProvider === "function") {
+    if (
+      ctx.hasUI &&
+      typeof hostUi(ctx).addAutocompleteProvider === "function"
+    ) {
       registerSkillAutocomplete(pi, ctx);
     }
-    if (!ctx.hasUI || typeof ctx.ui.setEditorComponent !== "function") return;
+    if (!ctx.hasUI || typeof hostUi(ctx).setEditorComponent !== "function")
+      return;
     const config = loadModalConfig(getAgentDir(), (message) =>
-      ctx.ui.notify(`pi-modal: ${message}`, "warning"),
+      notify(ctx, `pi-modal: ${message}`, "warning"),
     );
     if (config.enabled === false) return;
     const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
@@ -410,7 +386,7 @@ export default function (pi: ExtensionAPI): void {
       config.borderStyleExplicit && !hasTuiConfigFile
         ? config
         : { ...config, borderStyle: undefined };
-    ctx.ui.setEditorComponent((tui, theme, kb) => {
+    hostUi(ctx).setEditorComponent((tui, theme, kb) => {
       activeTui = tui as unknown as typeof activeTui;
       activeEditor = new ModalEditor(
         tui,
@@ -418,7 +394,7 @@ export default function (pi: ExtensionAPI): void {
         kb,
         editorConfig,
         undefined,
-        ctx.ui.theme,
+        hostUi(ctx).theme,
       );
       return activeEditor;
     });

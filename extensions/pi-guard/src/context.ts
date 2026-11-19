@@ -39,96 +39,116 @@ function stringifyContent(content: unknown): string {
   return result;
 }
 
+interface CharTotals {
+  thinking: number;
+  agentOutput: number;
+  userInput: number;
+  toolOutput: number;
+  toolInput: number;
+  systemPrompt: number;
+  skills: number;
+}
+
+function accumulateAssistantContent(
+  content: unknown,
+  totals: CharTotals,
+): void {
+  if (typeof content === "string") {
+    totals.agentOutput += content.length;
+    return;
+  }
+  if (!Array.isArray(content)) return;
+  for (const part of content) {
+    if (part === null || typeof part !== "object") continue;
+    const block = part as {
+      type?: unknown;
+      text?: unknown;
+      thinking?: unknown;
+      name?: unknown;
+      arguments?: unknown;
+    };
+    if (block.type === "thinking" && typeof block.thinking === "string") {
+      totals.thinking += block.thinking.length;
+    } else if (block.type === "text" && typeof block.text === "string") {
+      totals.agentOutput += block.text.length;
+    } else if (block.type === "toolCall") {
+      const nameLen = typeof block.name === "string" ? block.name.length : 0;
+      const argsLen =
+        typeof block.arguments === "string"
+          ? block.arguments.length
+          : JSON.stringify(block.arguments ?? {}).length;
+      totals.toolInput += nameLen + argsLen;
+    }
+  }
+}
+
+function accumulateSystemMessage(
+  msg: { content?: unknown; sections?: Record<string, string> },
+  totals: CharTotals,
+): void {
+  if (msg.sections && typeof msg.sections === "object") {
+    for (const [key, val] of Object.entries(msg.sections)) {
+      if (typeof val !== "string") continue;
+      if (key.toLowerCase().includes("skill")) {
+        totals.skills += val.length;
+      } else {
+        totals.systemPrompt += val.length;
+      }
+    }
+  }
+  if (typeof msg.content === "string") {
+    totals.systemPrompt += msg.content.length;
+  }
+}
+
+function accumulateMessageEntry(entry: unknown, totals: CharTotals): void {
+  if (entry === null || typeof entry !== "object") return;
+  const typed = entry as { type?: unknown; message?: unknown };
+  if (typed.type !== "message" && !typed.message) return;
+
+  const msg = (typed.message ?? typed) as {
+    role?: unknown;
+    content?: unknown;
+    sections?: Record<string, string>;
+  };
+  const role = String(msg.role ?? "");
+
+  if (role === "user") {
+    totals.userInput += stringifyContent(msg.content).length;
+  } else if (role === "assistant") {
+    accumulateAssistantContent(msg.content, totals);
+  } else if (role === "toolResult" || role === "tool") {
+    totals.toolOutput += stringifyContent(msg.content).length;
+  } else if (role === "system") {
+    accumulateSystemMessage(msg, totals);
+  }
+}
+
 export function calculateContextBreakdown(
   entries: readonly unknown[],
   options: ContextBreakdownOptions = {},
 ): ContextBreakdown {
-  let thinkingChars = 0;
-  let agentOutputChars = 0;
-  let userInputChars = 0;
-  let toolOutputChars = 0;
-  let toolInputChars = 0;
-  let systemPromptChars = options.systemPrompt?.length ?? 0;
-  let skillsChars = options.skillsPrompt?.length ?? 0;
+  const totals: CharTotals = {
+    thinking: 0,
+    agentOutput: 0,
+    userInput: 0,
+    toolOutput: 0,
+    toolInput: 0,
+    systemPrompt: options.systemPrompt?.length ?? 0,
+    skills: options.skillsPrompt?.length ?? 0,
+  };
 
   for (const entry of entries) {
-    if (entry === null || typeof entry !== "object") continue;
-    const typed = entry as { type?: unknown; message?: unknown };
-
-    if (typed.type === "message" || typed.message) {
-      const msg = (typed.message ?? typed) as {
-        role?: unknown;
-        content?: unknown;
-      };
-      const role = String(msg.role ?? "");
-
-      if (role === "user") {
-        userInputChars += stringifyContent(msg.content).length;
-      } else if (role === "assistant") {
-        if (Array.isArray(msg.content)) {
-          for (const part of msg.content) {
-            if (part === null || typeof part !== "object") continue;
-            const block = part as {
-              type?: unknown;
-              text?: unknown;
-              thinking?: unknown;
-              name?: unknown;
-              arguments?: unknown;
-            };
-            if (
-              block.type === "thinking" &&
-              typeof block.thinking === "string"
-            ) {
-              thinkingChars += block.thinking.length;
-            } else if (
-              block.type === "text" &&
-              typeof block.text === "string"
-            ) {
-              agentOutputChars += block.text.length;
-            } else if (block.type === "toolCall") {
-              const nameLen =
-                typeof block.name === "string" ? block.name.length : 0;
-              const argsLen =
-                typeof block.arguments === "string"
-                  ? block.arguments.length
-                  : JSON.stringify(block.arguments ?? {}).length;
-              toolInputChars += nameLen + argsLen;
-            }
-          }
-        } else if (typeof msg.content === "string") {
-          agentOutputChars += msg.content.length;
-        }
-      } else if (role === "toolResult" || role === "tool") {
-        toolOutputChars += stringifyContent(msg.content).length;
-      } else if (role === "system") {
-        const sys = msg as {
-          content?: unknown;
-          sections?: Record<string, string>;
-        };
-        if (sys.sections && typeof sys.sections === "object") {
-          for (const [key, val] of Object.entries(sys.sections)) {
-            if (typeof val !== "string") continue;
-            if (key.toLowerCase().includes("skill")) {
-              skillsChars += val.length;
-            } else {
-              systemPromptChars += val.length;
-            }
-          }
-        }
-        if (typeof sys.content === "string") {
-          systemPromptChars += sys.content.length;
-        }
-      }
-    }
+    accumulateMessageEntry(entry, totals);
   }
 
-  const thinking = charsToTokens(thinkingChars);
-  const agentOutput = charsToTokens(agentOutputChars);
-  const userInput = charsToTokens(userInputChars);
-  const toolOutput = charsToTokens(toolOutputChars);
-  const toolInput = charsToTokens(toolInputChars);
-  const systemPrompt = charsToTokens(systemPromptChars);
-  const skills = charsToTokens(skillsChars);
+  const thinking = charsToTokens(totals.thinking);
+  const agentOutput = charsToTokens(totals.agentOutput);
+  const userInput = charsToTokens(totals.userInput);
+  const toolOutput = charsToTokens(totals.toolOutput);
+  const toolInput = charsToTokens(totals.toolInput);
+  const systemPrompt = charsToTokens(totals.systemPrompt);
+  const skills = charsToTokens(totals.skills);
   const total =
     thinking +
     agentOutput +

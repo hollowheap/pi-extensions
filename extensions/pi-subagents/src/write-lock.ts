@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { abortableDelay } from "@hollowheap/runtime/abort";
 import { isProcessAlive, readProcStartTime } from "@hollowheap/runtime/process";
 
 export interface WriteLockOptions {
@@ -73,24 +74,6 @@ function missingOwnerExpired(agentDir: string): boolean {
   }
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 export async function acquireWriteLock(
   agentDir: string,
   options: WriteLockOptions = {},
@@ -143,7 +126,7 @@ export async function acquireWriteLock(
     if (Date.now() >= deadline) {
       throw new Error("timed out waiting for the write lock");
     }
-    await sleep(pollMs, options.signal);
+    await abortableDelay(pollMs, options.signal);
   }
 }
 

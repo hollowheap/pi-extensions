@@ -1,27 +1,22 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { loadDecideConfig } from "./config.js";
+import { readBranchEntries } from "@hollowheap/core/state";
+import { notify } from "@hollowheap/pi-ui/host";
 import {
   createDecideTool,
   persistDecideStats,
   restoreDecideStats,
 } from "./decide.js";
+import { loadDecideConfig } from "./settings.js";
 
 function restoreStats(ctx: ExtensionContext): void {
-  const sessionManager = ctx.sessionManager as
-    | { getBranch?: () => unknown[]; getEntries?: () => unknown[] }
-    | undefined;
+  const sessionManager = ctx.sessionManager;
   if (typeof sessionManager !== "object" || sessionManager === null) return;
-  const entries =
-    typeof sessionManager.getBranch === "function"
-      ? sessionManager.getBranch()
-      : typeof sessionManager.getEntries === "function"
-        ? sessionManager.getEntries()
-        : undefined;
+  const entries = readBranchEntries(sessionManager);
   if (!entries) return;
   restoreDecideStats(sessionManager, entries);
 }
@@ -37,10 +32,7 @@ export default function (pi: ExtensionAPI): void {
     if (reported || diagnostics.length === 0) return;
     reported = true;
     for (const message of diagnostics) {
-      ctx.ui?.notify?.(
-        `pi-decide: ${sanitizeTerminalText(message)}`,
-        "warning",
-      );
+      notify(ctx, `pi-decide: ${sanitizeTerminalText(message)}`, "warning");
     }
   });
   pi.on("session_tree", (_event, ctx) => {

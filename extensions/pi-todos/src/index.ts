@@ -3,32 +3,44 @@ import {
   type ExtensionContext,
   defineTool,
 } from "@earendil-works/pi-coding-agent";
-import { Key, Text, matchesKey } from "@earendil-works/pi-tui";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText, toolTextResult } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { isRecord } from "@hollowheap/core/records";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import { roundedFrame } from "@hollowheap/tui/frame";
+import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
+import { createStatuslinePublisher } from "@hollowheap/core/statusline";
+import {
+  canOverlay,
+  hostUi,
+  infoPopupText,
+  notify,
+  showInfoPopup,
+} from "@hollowheap/pi-ui/host";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import {
+  type WidgetSubagentStateItem as SubagentStateItem,
+  formatSubagentWidget,
+  formatTaskWidget,
+  formatTodoWidget,
+  mountWidgetProviders,
+  registerWidgetProvider,
+  toggleWidgets as toggleRegisteredWidgets,
+} from "@hollowheap/tui/widget";
 import { Type } from "typebox";
 import {
-  type FormatTodoWidgetOptions,
-  type SubagentStateItem,
   type TaskStateItem,
   type Todo,
   type TodoState,
   applyTodoCommand,
   emptyTodoState,
-  formatSubagentWidget,
-  formatTaskWidget,
   formatTodoConfirmation,
   formatTodoList,
-  formatTodoWidget,
 } from "./todos.js";
 
 const TODOS_TYPE = "hollowheap.todos";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const WIDGET_PREFIX = Key.alt("w");
+const WIDGET_TARGETS = ["todos", "tasks", "subagents", "all"] as const;
 
 // The lock has no exported state accessor; the process-global is the only signal that another prompt owns input.
 function isPromptLockHeld(): boolean {
@@ -208,73 +220,42 @@ export function createTodoTool(
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const current = getState();
       if (params.action === "list") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoList(current.todos),
-            },
-          ],
-          details: { todos: current.todos },
-        };
+        return toolTextResult(formatTodoList(current.todos), {
+          todos: current.todos,
+        });
       }
 
       if (params.action === "create") {
         const texts = params.tasks ?? (params.text ? [params.text] : []);
         if (texts.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: No tasks provided to create.",
-              },
-            ],
-            details: { todos: current.todos },
-          };
+          return toolTextResult("Error: No tasks provided to create.", {
+            todos: current.todos,
+          });
         }
         const result = applyTodoCommand(current, { type: "create", texts });
         setState(result.state, ctx, result.changed);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoList(result.state.todos),
-            },
-          ],
-          details: { todos: result.state.todos, created: texts },
-        };
+        return toolTextResult(formatTodoList(result.state.todos), {
+          todos: result.state.todos,
+          created: texts,
+        });
       }
 
       if (params.action === "complete") {
         const ids = params.ids ?? (params.id !== undefined ? [params.id] : []);
         if (ids.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: No task IDs provided to complete.",
-              },
-            ],
-            details: { todos: current.todos },
-          };
+          return toolTextResult("Error: No task IDs provided to complete.", {
+            todos: current.todos,
+          });
         }
         const result = applyTodoCommand(current, { type: "complete", ids });
         setState(result.state, ctx, result.changed);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoConfirmation(
-                result.state.todos,
-                result.unknownIds,
-              ),
-            },
-          ],
-          details: {
+        return toolTextResult(
+          formatTodoConfirmation(result.state.todos, result.unknownIds),
+          {
             todos: result.state.todos,
             unknownIds: result.unknownIds,
           },
-        };
+        );
       }
 
       if (params.action === "delete") {
@@ -282,28 +263,19 @@ export function createTodoTool(
           params.ids ?? (params.id !== undefined ? [params.id] : undefined);
         const result = applyTodoCommand(current, { type: "delete", ids });
         setState(result.state, ctx, result.changed);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoList(result.state.todos),
-            },
-          ],
-          details: { todos: result.state.todos },
-        };
+        return toolTextResult(formatTodoList(result.state.todos), {
+          todos: result.state.todos,
+        });
       }
 
       if (params.action === "edit") {
         if (params.id === undefined || !params.text) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: Both id and text are required for edit.",
-              },
-            ],
-            details: { todos: current.todos },
-          };
+          return toolTextResult(
+            "Error: Both id and text are required for edit.",
+            {
+              todos: current.todos,
+            },
+          );
         }
         const result = applyTodoCommand(current, {
           type: "edit",
@@ -311,34 +283,21 @@ export function createTodoTool(
           text: params.text,
         });
         setState(result.state, ctx, result.changed);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoConfirmation(
-                result.state.todos,
-                result.unknownIds,
-              ),
-            },
-          ],
-          details: {
+        return toolTextResult(
+          formatTodoConfirmation(result.state.todos, result.unknownIds),
+          {
             todos: result.state.todos,
             unknownIds: result.unknownIds,
           },
-        };
+        );
       }
 
       if (params.action === "priority") {
         if (params.id === undefined || !params.priority) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: Both id and priority are required for priority action.",
-              },
-            ],
-            details: { todos: current.todos },
-          };
+          return toolTextResult(
+            "Error: Both id and priority are required for priority action.",
+            { todos: current.todos },
+          );
         }
         const result = applyTodoCommand(current, {
           type: "priority",
@@ -346,27 +305,18 @@ export function createTodoTool(
           priority: params.priority,
         });
         setState(result.state, ctx, result.changed);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatTodoConfirmation(
-                result.state.todos,
-                result.unknownIds,
-              ),
-            },
-          ],
-          details: {
+        return toolTextResult(
+          formatTodoConfirmation(result.state.todos, result.unknownIds),
+          {
             todos: result.state.todos,
             unknownIds: result.unknownIds,
           },
-        };
+        );
       }
 
-      return {
-        content: [{ type: "text" as const, text: "Error: Unknown action." }],
-        details: { todos: current.todos },
-      };
+      return toolTextResult("Error: Unknown action.", {
+        todos: current.todos,
+      });
     },
   });
 }
@@ -376,24 +326,47 @@ export default function (pi: ExtensionAPI) {
   let subagents: SubagentStateItem[] = [];
   let tasks: TaskStateItem[] = [];
   let lastCtx: ExtensionContext | undefined;
-  let panelCollapsed = false;
   let lastOpenCount = 0;
+
+  registerWidgetProvider({
+    name: "todos",
+    label: "Todos",
+    render(width, theme) {
+      const strikethrough =
+        typeof theme?.strikethrough === "function"
+          ? (text: string) => theme.strikethrough(text)
+          : undefined;
+      return formatTodoWidget(state.todos, [], [], {
+        width: width >= 80 ? width : 0,
+        strikethrough,
+      });
+    },
+  });
+  registerWidgetProvider({
+    name: "subagents",
+    label: "Subagents",
+    render: (width) =>
+      formatSubagentWidget(subagents, {
+        width: width >= 80 ? width : 0,
+      }),
+  });
+  registerWidgetProvider({
+    name: "tasks",
+    label: "Tasks",
+    render: (width) =>
+      formatTaskWidget(tasks, { width: width >= 80 ? width : 0 }),
+  });
+
+  const statusline = createStatuslinePublisher(pi.events, "todos", () =>
+    lastOpenCount > 0
+      ? `${lastOpenCount} todo${lastOpenCount === 1 ? "" : "s"}`
+      : "",
+  );
 
   const publishStatusline = (open: number) => {
     lastOpenCount = open;
-    pi.events?.emit?.("statusline:values", {
-      name: "todos",
-      text: open > 0 ? `${open} todo${open === 1 ? "" : "s"}` : "",
-    });
+    statusline.publish();
   };
-
-  pi.events?.on?.("statusline:request", (data: unknown) => {
-    if (typeof data === "object" && data !== null) {
-      const names = (data as { names?: unknown }).names;
-      if (Array.isArray(names) && !names.includes("todos")) return;
-    }
-    publishStatusline(lastOpenCount);
-  });
 
   const publishState = (ctx?: ExtensionContext) => {
     const total = state.todos.length;
@@ -424,45 +397,8 @@ export default function (pi: ExtensionAPI) {
 
   const updateUI = (ctx: ExtensionContext) => {
     lastCtx = ctx;
-    if (!ctx.hasUI || typeof ctx.ui.setWidget !== "function") return;
-    const strikethrough =
-      typeof ctx.ui.theme?.strikethrough === "function"
-        ? (text: string) => ctx.ui.theme.strikethrough(text)
-        : undefined;
-    const options = strikethrough
-      ? { strikethrough, collapsed: panelCollapsed }
-      : { collapsed: panelCollapsed };
-    const theme = ctx.ui.theme;
-    const mount = (
-      name: string,
-      label: string,
-      format: (opts: FormatTodoWidgetOptions) => string[] | undefined,
-    ) => {
-      if (format(options) === undefined) {
-        ctx.ui.setWidget(name, undefined);
-        return;
-      }
-      ctx.ui.setWidget(name, () => ({
-        render: (width: number) => {
-          const lines =
-            format({ ...options, width: width >= 80 ? width : 0 }) ?? [];
-          return roundedFrame(
-            lines,
-            width,
-            theme,
-            `${label} · Ctrl+X then P to hide`,
-          );
-        },
-        invalidate: () => {},
-      }));
-    };
-    mount("todos", "Todos", (opts) =>
-      formatTodoWidget(state.todos, [], [], opts),
-    );
-    mount("subagents", "Subagents", (opts) =>
-      formatSubagentWidget(subagents, opts),
-    );
-    mount("tasks", "Tasks", (opts) => formatTaskWidget(tasks, opts));
+    if (!ctx.hasUI || typeof hostUi(ctx).setWidget !== "function") return;
+    mountWidgetProviders(ctx);
   };
 
   pi.registerTool(
@@ -471,11 +407,16 @@ export default function (pi: ExtensionAPI) {
       (next, context, changed = true) => {
         state = next;
         if (!changed) return;
-        pi.appendEntry(TODOS_TYPE, {
-          todos: state.todos,
-          nextId: state.nextId,
-          updatedAt: Date.now(),
-        });
+        appendSessionEntry(
+          pi,
+          (context ?? lastCtx)?.sessionManager,
+          TODOS_TYPE,
+          {
+            todos: state.todos,
+            nextId: state.nextId,
+            updatedAt: Date.now(),
+          },
+        );
         const currentCtx = context ?? lastCtx;
         if (currentCtx) updateUI(currentCtx);
         publishState(currentCtx);
@@ -499,61 +440,56 @@ export default function (pi: ExtensionAPI) {
 
   const restore = (ctx: ExtensionContext) => {
     state = emptyTodoState();
-    try {
-      const entries =
-        typeof ctx.sessionManager?.getBranch === "function"
-          ? ctx.sessionManager.getBranch()
-          : typeof ctx.sessionManager?.getEntries === "function"
-            ? ctx.sessionManager.getEntries()
-            : [];
-      for (const entry of entries) {
-        if (entry.type !== "custom" || entry.customType !== TODOS_TYPE)
-          continue;
-        const restored = readState(entry.data);
-        if (restored) state = restored;
-      }
-    } catch {
-      // A broken branch should not prevent the session from starting.
+    const entries = readBranchEntries(ctx.sessionManager) ?? [];
+    for (const entry of entries) {
+      if (
+        (entry as { type?: unknown }).type !== "custom" ||
+        entry.customType !== TODOS_TYPE
+      )
+        continue;
+      const restored = readState(entry.data);
+      if (restored) state = restored;
     }
     updateUI(ctx);
     publishState(ctx);
   };
 
-  // Prefixed keybinding: Ctrl+X then p toggles panel collapse
-  let chordPending = false;
   let chordTimer: ReturnType<typeof setTimeout> | undefined;
   let disposeTerminalInput: (() => void) | undefined;
   const resetChord = () => {
-    chordPending = false;
     if (chordTimer !== undefined) {
       clearTimeout(chordTimer);
       chordTimer = undefined;
     }
   };
 
+  pi.registerShortcut?.(WIDGET_PREFIX, {
+    description: "Then P to toggle sticky widgets",
+    handler: () => {
+      resetChord();
+      if (!disposeTerminalInput || isPromptLockHeld()) return;
+      chordTimer = setTimeout(resetChord, 1500);
+    },
+  });
+
   const setupTerminalInput = (ctx: ExtensionContext) => {
     disposeTerminalInput?.();
     disposeTerminalInput = undefined;
     resetChord();
-    if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
-    disposeTerminalInput = ctx.ui.onTerminalInput((data: string) => {
+    if (!ctx.hasUI || typeof hostUi(ctx).onTerminalInput !== "function") return;
+    disposeTerminalInput = hostUi(ctx).onTerminalInput((data: string) => {
       if (isPromptLockHeld()) {
         resetChord();
         return { consume: false };
       }
-      if (chordPending) {
+      if (chordTimer !== undefined) {
         resetChord();
-        if (data === "p" || data === "P") {
-          panelCollapsed = !panelCollapsed;
+        if (matchesKey(data, "p") || matchesKey(data, Key.shift("p"))) {
+          toggleRegisteredWidgets();
           if (lastCtx?.hasUI) updateUI(lastCtx);
           return { consume: true };
         }
         return { consume: false };
-      }
-      if (data === "\x18") {
-        chordPending = true;
-        chordTimer = setTimeout(resetChord, 1500);
-        return { consume: true };
       }
       return { consume: false };
     });
@@ -584,122 +520,90 @@ export default function (pi: ExtensionAPI) {
     disposeTerminalInput?.();
     disposeTerminalInput = undefined;
     resetChord();
-    pi.events?.emit?.("statusline:values", { name: "todos", text: "" });
+    lastOpenCount = 0;
+    statusline.publish("");
   });
 
-  pi.on("session_compact", () => {
+  pi.on("session_compact", (_event, ctx) => {
     if (state.todos.length > 0 || state.nextId > 1) {
-      pi.appendEntry(TODOS_TYPE, {
-        todos: state.todos,
-        nextId: state.nextId,
-        updatedAt: Date.now(),
-      });
+      appendSessionEntry(
+        pi,
+        ctx?.sessionManager ?? lastCtx?.sessionManager,
+        TODOS_TYPE,
+        {
+          todos: state.todos,
+          nextId: state.nextId,
+          updatedAt: Date.now(),
+        },
+      );
     }
   });
 
-  pi.registerCommand("todos", {
-    description: "Show all todos on the current branch; /todos search <query>",
-    handler: async (args, ctx) => {
+  const showTodos = async (todos: readonly Todo[], ctx: ExtensionContext) => {
+    if (!ctx.hasUI) return;
+    const text = formatTodoList(todos);
+
+    if (canOverlay(ctx)) {
+      resetChord();
+      await withPromptLock(() =>
+        showInfoPopup(ctx, {
+          title: "Todos",
+          render: infoPopupText([
+            text,
+            "",
+            "Esc, Enter, q, or Ctrl+C to close",
+          ]),
+          closeKeys: ["q"],
+        }),
+      );
+      return;
+    }
+
+    notify(ctx, text, "info");
+  };
+
+  const todoCommand = {
+    description: "View, search, and manage todos on the current branch",
+    handler: async (args: string, ctx: ExtensionContext) => {
       const trimmed = args.trim();
-      let displayTodos = state.todos;
-      if (trimmed.toLowerCase().startsWith("search ")) {
-        const query = trimmed.slice(7).trim().toLowerCase();
-        displayTodos = state.todos.filter((todo) =>
-          todo.text.toLowerCase().includes(query),
-        );
-      }
-      const text = formatTodoList(displayTodos);
+      if (trimmed === "") return showTodos(state.todos, ctx);
 
-      if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
-        resetChord();
-        await withPromptLock(() =>
-          ctx.ui.custom<void>(
-            (_tui, theme, _keybindings, done) => {
-              let closed = false;
-              const close = (): void => {
-                if (closed) return;
-                closed = true;
-                done(undefined);
-              };
-              return {
-                render: (width) => {
-                  const innerWidth = Math.max(1, width - 4);
-                  const lines = new Text(
-                    [text, "", "Esc, Enter, q, or Ctrl+C to close"].join("\n"),
-                    0,
-                    0,
-                  ).render(innerWidth);
-                  return roundedFrame(lines, width, theme, "Todos");
-                },
-                invalidate: () => {},
-                handleInput: (data) => {
-                  if (
-                    matchesKey(data, Key.escape) ||
-                    matchesKey(data, Key.enter) ||
-                    matchesKey(data, Key.ctrl("c")) ||
-                    data === "q"
-                  ) {
-                    close();
-                  }
-                },
-                dispose: close,
-              };
-            },
-            {
-              overlay: true,
-              overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
-            },
-          ),
-        );
-        return;
-      }
-
-      if (ctx.hasUI) ctx.ui.notify(text, "info");
-    },
-  });
-
-  pi.registerCommand("todo", {
-    description: "Manage todos: /todo complete <id>, /todo delete [id]",
-    handler: async (args, ctx) => {
-      const parts = args.trim().split(/\s+/).filter(Boolean);
-      if (parts.length === 0) {
-        if (ctx.hasUI) {
-          ctx.ui.notify(
-            "Usage: /todo complete <id> | /todo delete [id]",
-            "info",
-          );
-        }
-        return;
-      }
-
+      const parts = trimmed.split(/\s+/);
       const subcommand = parts[0];
+      if (subcommand?.toLowerCase() === "search") {
+        const query = trimmed.slice(subcommand.length).trim().toLowerCase();
+        return showTodos(
+          state.todos.filter((todo) => todo.text.toLowerCase().includes(query)),
+          ctx,
+        );
+      }
 
       if (subcommand === "complete") {
         if (parts[1]?.toLowerCase() === "all") {
           const ids = state.todos.filter((t) => !t.done).map((t) => t.id);
           if (ids.length === 0) {
-            if (ctx.hasUI) ctx.ui.notify("No open todos to complete", "info");
+            if (ctx.hasUI) notify(ctx, "No open todos to complete", "info");
             return;
           }
           const result = applyTodoCommand(state, { type: "complete", ids });
           state = result.state;
           updateUI(ctx);
           if (result.changed) {
-            pi.appendEntry(TODOS_TYPE, {
+            appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
               todos: state.todos,
               nextId: state.nextId,
               updatedAt: Date.now(),
             });
           }
           publishState(ctx);
-          if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+          if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
           return;
         }
 
         const idStr = parts[1];
         const id = Number(idStr);
         if (!idStr || !Number.isSafeInteger(id) || id < 1) {
-          if (ctx.hasUI) ctx.ui.notify("Invalid ID", "error");
+          if (ctx.hasUI) notify(ctx, "Invalid ID", "error");
           return;
         }
 
@@ -707,14 +611,14 @@ export default function (pi: ExtensionAPI) {
         state = result.state;
         updateUI(ctx);
         if (result.changed) {
-          pi.appendEntry(TODOS_TYPE, {
+          appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
             todos: state.todos,
             nextId: state.nextId,
             updatedAt: Date.now(),
           });
         }
         publishState(ctx);
-        if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+        if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
         return;
       }
 
@@ -728,14 +632,13 @@ export default function (pi: ExtensionAPI) {
           id < 1 ||
           newText.length === 0
         ) {
-          if (ctx.hasUI)
-            ctx.ui.notify("Usage: /todo edit <id> <text>", "error");
+          if (ctx.hasUI) notify(ctx, "Usage: /todos edit <id> <text>", "error");
           return;
         }
 
         const exists = state.todos.some((t) => t.id === id);
         if (!exists) {
-          if (ctx.hasUI) ctx.ui.notify(`Unknown ID: ${id}`, "error");
+          if (ctx.hasUI) notify(ctx, `Unknown ID: ${id}`, "error");
           return;
         }
 
@@ -746,13 +649,13 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, {
+        appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
           todos: state.todos,
           nextId: state.nextId,
           updatedAt: Date.now(),
         });
         publishState(ctx);
-        if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+        if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
         return;
       }
 
@@ -762,7 +665,7 @@ export default function (pi: ExtensionAPI) {
           const hasCompleted = state.todos.some((todo) => todo.done);
           if (!hasCompleted) {
             if (ctx.hasUI) {
-              ctx.ui.notify("No completed todos to delete", "info");
+              notify(ctx, "No completed todos to delete", "info");
             }
             return;
           }
@@ -771,26 +674,26 @@ export default function (pi: ExtensionAPI) {
             nextId: state.nextId,
           };
           updateUI(ctx);
-          pi.appendEntry(TODOS_TYPE, {
+          appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
             todos: state.todos,
             nextId: state.nextId,
             updatedAt: Date.now(),
           });
           publishState(ctx);
-          if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+          if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
           return;
         }
 
         const idStr = parts[1];
         const id = Number(idStr);
         if (!idStr || !Number.isSafeInteger(id) || id < 1) {
-          if (ctx.hasUI) ctx.ui.notify("Invalid ID", "error");
+          if (ctx.hasUI) notify(ctx, "Invalid ID", "error");
           return;
         }
 
         const exists = state.todos.some((todo) => todo.id === id);
         if (!exists) {
-          if (ctx.hasUI) ctx.ui.notify(`Unknown ID: ${id}`, "error");
+          if (ctx.hasUI) notify(ctx, `Unknown ID: ${id}`, "error");
           return;
         }
 
@@ -799,13 +702,13 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, {
+        appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
           todos: state.todos,
           nextId: state.nextId,
           updatedAt: Date.now(),
         });
         publishState(ctx);
-        if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+        if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
         return;
       }
 
@@ -820,8 +723,9 @@ export default function (pi: ExtensionAPI) {
           (level !== "high" && level !== "medium" && level !== "low")
         ) {
           if (ctx.hasUI) {
-            ctx.ui.notify(
-              "Usage: /todo priority <id> <high|medium|low>",
+            notify(
+              ctx,
+              "Usage: /todos priority <id> <high|medium|low>",
               "error",
             );
           }
@@ -830,7 +734,7 @@ export default function (pi: ExtensionAPI) {
 
         const exists = state.todos.some((t) => t.id === id);
         if (!exists) {
-          if (ctx.hasUI) ctx.ui.notify(`Unknown ID: ${id}`, "error");
+          if (ctx.hasUI) notify(ctx, `Unknown ID: ${id}`, "error");
           return;
         }
 
@@ -843,48 +747,50 @@ export default function (pi: ExtensionAPI) {
           nextId: state.nextId,
         };
         updateUI(ctx);
-        pi.appendEntry(TODOS_TYPE, {
+        appendSessionEntry(pi, ctx.sessionManager, TODOS_TYPE, {
           todos: state.todos,
           nextId: state.nextId,
           updatedAt: Date.now(),
         });
         publishState(ctx);
-        if (ctx.hasUI) ctx.ui.notify(formatTodoList(state.todos), "info");
+        if (ctx.hasUI) notify(ctx, formatTodoList(state.todos), "info");
         return;
       }
 
       if (ctx.hasUI) {
-        ctx.ui.notify(
-          "Usage: /todo complete <id> | /todo delete [id] | /todo edit <id> <text> | /todo priority <id> <level>",
+        notify(
+          ctx,
+          "Usage: /todos [search <query> | complete <id|all> | edit <id> <text> | delete [id] | priority <id> <high|medium|low>]",
           "info",
         );
       }
     },
+  };
+  pi.registerCommand("todos", todoCommand);
+  pi.registerCommand("todo", {
+    ...todoCommand,
+    description: "Alias for /todos",
   });
 
-  const widgetTargets = ["todos", "tasks", "subagents", "all"] as const;
   pi.registerCommand("widget", {
     description:
       "Toggle sticky widgets: /widget toggle [todos|tasks|subagents|all]",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length <= 1) {
-        const query = (parts[0] ?? "").toLowerCase();
-        return ["toggle"]
-          .filter((value) => value.startsWith(query))
-          .map((value) => ({ value, label: value }));
+        return prefixCompletions(parts[0] ?? "", ["toggle"]);
       }
       if (parts[0]?.toLowerCase() !== "toggle" || parts.length > 2) return null;
-      const query = (parts[1] ?? "").toLowerCase();
-      return widgetTargets
-        .filter((value) => value.startsWith(query))
-        .map((value) => ({ value, label: value }));
+      return prefixCompletions(parts[1] ?? "", WIDGET_TARGETS).map(
+        ({ value, label }) => ({ value: `toggle ${value}`, label }),
+      );
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       if (parts[0] !== "toggle") {
         if (ctx.hasUI) {
-          ctx.ui.notify(
+          notify(
+            ctx,
             "Usage: /widget toggle [todos|tasks|subagents|all]",
             "info",
           );
@@ -894,21 +800,29 @@ export default function (pi: ExtensionAPI) {
       const target = parts[1];
       if (
         target !== undefined &&
-        !widgetTargets.some((value) => value === target)
+        !WIDGET_TARGETS.some((value) => value === target)
       ) {
         if (ctx.hasUI) {
-          ctx.ui.notify(
+          notify(
+            ctx,
             `Unsupported widget target: ${sanitizeTerminalText(target)}. Use todos, tasks, subagents, or all.`,
             "error",
           );
         }
         return;
       }
-      panelCollapsed = !panelCollapsed;
+      const collapsed = toggleRegisteredWidgets(
+        target as (typeof WIDGET_TARGETS)[number] | undefined,
+      );
       if (ctx.hasUI) {
         updateUI(ctx);
-        ctx.ui.notify(
-          panelCollapsed ? "Widget collapsed" : "Widget expanded",
+        const subject =
+          target === undefined || target === "all"
+            ? "Widget"
+            : `${target[0]?.toUpperCase()}${target.slice(1)} widget`;
+        notify(
+          ctx,
+          collapsed ? `${subject} collapsed` : `${subject} expanded`,
           "info",
         );
       }

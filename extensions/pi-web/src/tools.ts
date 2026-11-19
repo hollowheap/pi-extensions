@@ -10,15 +10,20 @@ import {
   Container,
   Image,
   Markdown,
-  type MarkdownTheme,
   Text,
   getCapabilities,
   hyperlink,
 } from "@earendil-works/pi-tui";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import {
+  errorMessage,
+  sanitizeTerminalText,
+  toolErrorResult,
+  toolTextResult,
+} from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { appendSessionEntry } from "@hollowheap/core/state";
+import { markdownTheme } from "@hollowheap/tui/markdown";
 import { Type } from "typebox";
-import { loadWebConfig } from "./config.js";
 import {
   type MediaPreview,
   fetchMediaPreview,
@@ -40,6 +45,7 @@ import type {
   ProviderId,
   SearchRequest,
 } from "./providers/types.js";
+import { loadWebConfig } from "./settings.js";
 import { isSafeUrl } from "./url.js";
 
 export const SEARCH_DEFAULT_RESULTS = 5;
@@ -105,25 +111,6 @@ export function rememberWebLinks(
       return true;
     })
     .slice(0, 20);
-}
-
-function markdownTheme(theme: Theme): MarkdownTheme {
-  return {
-    heading: (text) => theme.fg("accent", theme.bold(text)),
-    link: (text) => theme.fg("accent", text),
-    linkUrl: (text) => theme.fg("dim", text),
-    code: (text) => theme.fg("toolOutput", text),
-    codeBlock: (text) => theme.fg("toolOutput", text),
-    codeBlockBorder: (text) => theme.fg("border", text),
-    quote: (text) => theme.fg("muted", text),
-    quoteBorder: (text) => theme.fg("border", text),
-    hr: (text) => theme.fg("border", text),
-    listBullet: (text) => theme.fg("accent", text),
-    bold: (text) => theme.bold(text),
-    italic: (text) => theme.italic(text),
-    strikethrough: (text) => theme.strikethrough(text),
-    underline: (text) => theme.underline(text),
-  };
 }
 
 function isHttpUrl(value: string): boolean {
@@ -312,15 +299,7 @@ function firstText(result: { content?: readonly unknown[] }): string {
 }
 
 function errorResult(tool: string, message: string) {
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: `${tool} unavailable: ${sanitizeTerminalText(message)}`,
-      },
-    ],
-    details: { error: message },
-  };
+  return toolErrorResult(`${tool} unavailable`, message);
 }
 
 function isDataUrl(url: string): boolean {
@@ -456,7 +435,7 @@ export function createWebSearchTool(
         state.searchCount += 1;
         state.updatedAt = Date.now();
         const piApi = deps.pi ?? pi;
-        piApi?.appendEntry?.(WEB_HISTORY_TYPE, {
+        appendSessionEntry(piApi, owner, WEB_HISTORY_TYPE, {
           urls: state.urls,
           searchCount: state.searchCount,
           fetchCount: state.fetchCount,
@@ -475,19 +454,13 @@ export function createWebSearchTool(
           capped,
           safeResults.length > limit,
         );
-        return {
-          content: [{ type: "text" as const, text }],
-          details: {
-            query,
-            results: capped,
-            truncated: safeResults.length > limit,
-          },
-        };
+        return toolTextResult(text, {
+          query,
+          results: capped,
+          truncated: safeResults.length > limit,
+        });
       } catch (error) {
-        return errorResult(
-          "web_search",
-          error instanceof Error ? error.message : String(error),
-        );
+        return errorResult("web_search", errorMessage(error));
       }
     },
   });
@@ -509,7 +482,8 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
         context?.lastComponent instanceof Text
           ? context.lastComponent
           : new Text("", 0, 0);
-      const url = typeof args?.url === "string" ? args.url : "";
+      const url =
+        typeof args?.url === "string" ? sanitizeTerminalText(args.url) : "";
       let line = `${theme.fg("toolTitle", theme.bold("web_fetch"))} ${theme.fg("accent", url)}`;
       if (args?.max_chars !== undefined) {
         line += ` ${theme.fg("muted", `(max ${args.max_chars} chars)`)}`;
@@ -549,12 +523,20 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
       }
 
       const content = sanitizeTerminalText(details?.content ?? textOutput);
-      const url = details?.finalUrl || details?.url || "web page";
+      const safeDetailsUrl =
+        details?.url !== undefined
+          ? sanitizeTerminalText(details.url)
+          : undefined;
+      const safeFinalUrl =
+        details?.finalUrl !== undefined
+          ? sanitizeTerminalText(details.finalUrl)
+          : undefined;
+      const url = safeFinalUrl || safeDetailsUrl || "web page";
       if (options.expanded) {
         const markdown = new Markdown(
           `**Fetched** ${markdownUrl(url)}\n\n${formatFetchMarkdown(
-            details?.url ?? url,
-            details?.finalUrl ?? url,
+            safeDetailsUrl ?? url,
+            safeFinalUrl ?? url,
             content,
             details?.links ?? [],
             details?.truncated ?? false,
@@ -601,13 +583,9 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
       const header = `${theme.fg("success", "✓")} ${theme.fg("toolTitle", "Fetched")} ${theme.fg("accent", linkedUrl(url))} ${theme.fg("muted", `(${content.length} chars)`)}`;
       const resLines: string[] = [header];
 
-      if (
-        details?.finalUrl &&
-        details.url &&
-        details.finalUrl !== details.url
-      ) {
+      if (safeFinalUrl && safeDetailsUrl && safeFinalUrl !== safeDetailsUrl) {
         resLines.push(
-          theme.fg("dim", `  ↳ Redirected from ${linkedUrl(details.url)}`),
+          theme.fg("dim", `  ↳ Redirected from ${linkedUrl(safeDetailsUrl)}`),
         );
       }
 
@@ -659,7 +637,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
         state.fetchCount += 1;
         state.updatedAt = Date.now();
         const piApi = deps.pi ?? pi;
-        piApi?.appendEntry?.(WEB_HISTORY_TYPE, {
+        appendSessionEntry(piApi, owner, WEB_HISTORY_TYPE, {
           urls: state.urls,
           searchCount: state.searchCount,
           fetchCount: state.fetchCount,
@@ -708,35 +686,36 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
           isTruncated,
           media,
         );
+        const details = {
+          url: result.url,
+          finalUrl: result.finalUrl,
+          contentType: result.contentType,
+          content,
+          links,
+          media,
+          truncated: isTruncated,
+          ...(result.image === undefined ? {} : { image: result.image }),
+        };
+        if (result.image === undefined) {
+          return toolTextResult(text, details);
+        }
         const contentBlocks: Array<
           | { type: "text"; text: string }
           | { type: "image"; data: string; mimeType: string }
-        > = [{ type: "text", text }];
-        if (result.image !== undefined) {
-          contentBlocks.push({
+        > = [
+          { type: "text", text },
+          {
             type: "image",
             data: result.image.data,
             mimeType: result.image.mimeType,
-          });
-        }
+          },
+        ];
         return {
           content: contentBlocks,
-          details: {
-            url: result.url,
-            finalUrl: result.finalUrl,
-            contentType: result.contentType,
-            content,
-            links,
-            media,
-            truncated: isTruncated,
-            ...(result.image === undefined ? {} : { image: result.image }),
-          },
+          details,
         };
       } catch (error) {
-        return errorResult(
-          "web_fetch",
-          error instanceof Error ? error.message : String(error),
-        );
+        return errorResult("web_fetch", errorMessage(error));
       }
     },
   });

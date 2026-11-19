@@ -1,29 +1,16 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { displayPath, sanitizeTerminalText } from "@hollowheap/core/format";
+import { isWithinWorkspace, resolveScopedPath } from "@hollowheap/core/scope";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd, readPersistedCwd, setCwd } from "@hollowheap/core/state";
+import { hostUi, notify } from "@hollowheap/pi-ui/host";
+import { registerCodemodeTools } from "./codemode.js";
 import { isPathDenied } from "./permissions.js";
-
-function isWithinRoot(root: string, path: string): boolean {
-  const rel = relative(resolve(root), resolve(path));
-  return (
-    rel === "" ||
-    (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`))
-  );
-}
 
 function completeCd(prefix: string, ctx: ExtensionContext) {
   const root = ctx.cwd;
@@ -44,18 +31,19 @@ function completeCd(prefix: string, ctx: ExtensionContext) {
     .filter((entry) => entry.isDirectory() && entry.name.startsWith(start))
     .filter((entry) => {
       const abs = join(absDir, entry.name);
-      return isWithinRoot(root, abs) && !isPathDenied(ctx, abs, root);
+      return isWithinWorkspace(root, abs) && !isPathDenied(ctx, abs, root);
     })
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => {
       const abs = join(absDir, entry.name);
-      const rel = relative(base, abs).split(sep).join("/");
+      const rel = displayPath(base, abs);
       return { value: `${rel}/`, label: `${entry.name}/` };
     });
 }
 
 export default function (pi: ExtensionAPI) {
   let completionCtx: ExtensionContext | undefined;
+  const cancelCompaction = registerCodemodeTools(pi);
 
   const restoreCwd = (ctx: ExtensionContext): void => {
     completionCtx = ctx;
@@ -67,7 +55,7 @@ export default function (pi: ExtensionAPI) {
       } catch {
         isDir = false;
       }
-      const within = isWithinRoot(ctx.cwd, restored);
+      const within = isWithinWorkspace(ctx.cwd, restored);
       const denied = isPathDenied(ctx, restored, ctx.cwd);
       if (isDir && within && !denied) {
         setCwd(ctx.sessionManager, restored);
@@ -76,27 +64,31 @@ export default function (pi: ExtensionAPI) {
           effective: restored,
           updatedAt: Date.now(),
         });
-        const rel = relative(ctx.cwd, restored);
-        ctx.ui?.setStatus?.("cwd", rel === "" ? "." : rel.split(sep).join("/"));
+        const rel = displayPath(ctx.cwd, restored);
+        hostUi(ctx)?.setStatus?.("cwd", rel === "" ? "." : rel);
         return;
       }
     }
     setCwd(ctx.sessionManager, undefined, { persist: true });
-    ctx.ui?.setStatus?.("cwd", undefined);
+    hostUi(ctx)?.setStatus?.("cwd", undefined);
   };
 
   pi.on("session_start", (_event, ctx) => {
+    cancelCompaction(ctx);
     restoreCwd(ctx);
   });
   pi.on("session_tree", (_event, ctx) => {
+    cancelCompaction(ctx);
     restoreCwd(ctx);
   });
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", (_event, ctx) => {
+    cancelCompaction(ctx);
     completionCtx = undefined;
   });
   pi.on("session_compact", (_event, ctx) => {
     const currentCtx = ctx ?? completionCtx;
     if (!currentCtx?.sessionManager) return;
+    cancelCompaction(currentCtx);
     const currentCwd = effectiveCwd(currentCtx.cwd, currentCtx.sessionManager);
     if (currentCwd !== currentCtx.cwd) {
       setCwd(currentCtx.sessionManager, currentCwd, { persist: true });
@@ -117,13 +109,14 @@ export default function (pi: ExtensionAPI) {
       const raw = args.trim();
       if (raw === "") {
         setCwd(ctx.sessionManager, undefined, { persist: true });
-        ctx.ui.setStatus("cwd", undefined);
-        ctx.ui.notify(
+        hostUi(ctx).setStatus("cwd", undefined);
+        notify(
+          ctx,
           `pi-tools: working directory ${sanitizeTerminalText(ctx.cwd)}`,
         );
         return;
       }
-      const abs = resolve(effectiveCwd(ctx.cwd, ctx.sessionManager), raw);
+      const abs = resolveScopedPath(ctx.cwd, raw, ctx.sessionManager);
       let isDir = false;
       try {
         isDir = statSync(abs).isDirectory();
@@ -131,22 +124,25 @@ export default function (pi: ExtensionAPI) {
         isDir = false;
       }
       if (!isDir) {
-        ctx.ui.notify(
+        notify(
+          ctx,
           `pi-tools: not a directory: ${sanitizeTerminalText(raw)}`,
           "error",
         );
         return;
       }
-      const rel = relative(ctx.cwd, abs);
-      if (!isWithinRoot(ctx.cwd, abs)) {
-        ctx.ui.notify(
+      const rel = displayPath(ctx.cwd, abs);
+      if (!isWithinWorkspace(ctx.cwd, abs)) {
+        notify(
+          ctx,
           `pi-tools: outside project root: ${sanitizeTerminalText(raw)}`,
           "error",
         );
         return;
       }
       if (isPathDenied(ctx, abs, ctx.cwd)) {
-        ctx.ui.notify(
+        notify(
+          ctx,
           `pi-tools: directory denied by rules: ${sanitizeTerminalText(raw)}`,
           "error",
         );
@@ -158,8 +154,8 @@ export default function (pi: ExtensionAPI) {
         effective: abs,
         updatedAt: Date.now(),
       });
-      ctx.ui.setStatus("cwd", rel === "" ? "." : rel.split(sep).join("/"));
-      ctx.ui.notify(`pi-tools: working directory ${sanitizeTerminalText(abs)}`);
+      hostUi(ctx).setStatus("cwd", rel === "" ? "." : rel);
+      notify(ctx, `pi-tools: working directory ${sanitizeTerminalText(abs)}`);
     },
   });
 }

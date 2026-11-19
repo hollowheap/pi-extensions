@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { errorMessage } from "@hollowheap/core/format";
 import { extractHtml } from "./extract.js";
 import { MAX_PDF_BYTES, extractPdfText } from "./pdf.js";
 import { createExaAdapter } from "./providers/exa.js";
@@ -221,7 +222,7 @@ export async function rawFetch(
           finalUrl,
           provider: "raw",
           contentType: mediaType,
-          content: `PDF text extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+          content: `PDF text extraction failed: ${errorMessage(error)}`,
           links: [],
           media: [],
           truncated: false,

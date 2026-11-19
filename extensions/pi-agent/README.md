@@ -15,6 +15,9 @@ pi -e ./extensions/pi-agent
 - `/agent default` (or `reset`) — restores the default agent profile.
 - **Auto-Forking**: When switching agents in an active conversation, automatically forks the session tree at the current node, labels the fork point (`agent: <name>`), and renames the session to `[<name>] <title>`. An unnamed session uses its first user message, falling back to the agent name instead of `session`.
 - **Popup Notification**: In TUI mode, displays a modal popup overlay detailing active mode, model, thinking effort, tool loadout, skills, and forked branch name.
+
+Set an agent's effort in its model reference, for example
+`model: provider/model:high`. A separate `effort` frontmatter key is ignored.
 - **Terminal Title**: Sets the tab title to `Pi — <agent>` while an agent is active and restores `Pi` for the default agent.
 - **Skill Filtering**: Strictly filters active skills (`event.systemPromptOptions.skills`) when declared in frontmatter (`skills: author-pr, review`), while preserving all workspace skills if omitted.
 - **Agent Roster**: A frontmatter `agents:` field (comma-separated string or YAML list, e.g. `agents: scout, researcher, worker, code-reviewer`) publishes a short `<agents>` section to the active agent's system prompt. It lists each resolved agent's name and description and shows how to spawn it: `{ action: "start", agent: "<name>", task: "<task>" }` via the `subagent` tool. Unknown names are skipped with a warning. The section is context, not instructions — `sections.agent` is never touched, and an existing non-empty `sections.agents` wins.

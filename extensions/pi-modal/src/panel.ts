@@ -1,9 +1,11 @@
+import { contentText } from "@earendil-works/pi-ai";
 import type {
   AgentToolResult,
   Theme,
   ToolRenderResultOptions,
   ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
+import { toolOutputDisplay } from "@hollowheap/tui/tool-output";
 
 type ToolRenderContext = Parameters<
   NonNullable<ToolRenderers["renderCall"]>
@@ -15,7 +17,6 @@ import {
   foregroundAnsi,
   indexedColor,
   truncateToWidth,
-  visibleWidth,
 } from "@earendil-works/pi-tui";
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
@@ -27,10 +28,12 @@ import type {
   PanelRenderMode,
   ToolVerbPack,
   ToolVerbosity,
+  TuiConfig,
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/tui/state";
-import { paintSurfaceLine } from "@hollowheap/tui/surface";
+import { paintSurfaceLine, stripBackgroundSgr } from "@hollowheap/tui/surface";
+export { stripBackgroundSgr } from "@hollowheap/tui/surface";
 
 const FALLBACK_SPINNER_FRAMES = [
   "⠋",
@@ -100,15 +103,17 @@ export type PanelRenderConfig = PanelConfig & {
   toolVerbosity?: ToolVerbosity;
 };
 
-function resolveToolResultExpansion(
-  verbosity: ToolVerbosity | undefined,
-  hostExpanded: boolean,
-  isCodemode: boolean,
-): { expanded: boolean; hideOutput: boolean } {
-  if (verbosity === "low") return { expanded: false, hideOutput: true };
-  if (verbosity === "medium") return { expanded: false, hideOutput: false };
-  if (verbosity === "high") return { expanded: true, hideOutput: false };
-  return { expanded: isCodemode || hostExpanded, hideOutput: false };
+export function panelRenderConfig(config: TuiConfig): PanelRenderConfig {
+  const { panel, overlaySurface, toolVerbosity, verbPack } = config;
+  return {
+    ...panel,
+    verbPack,
+    toolVerbosity,
+    surface:
+      panel.style === undefined && panel.surface === "transparent"
+        ? overlaySurface
+        : (panel.surface ?? overlaySurface),
+  };
 }
 
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
@@ -341,49 +346,21 @@ function paintState(
   return fg(theme, STATE_FALLBACK_TOKEN[token], value, colored);
 }
 
-const ESC = String.fromCharCode(27);
-const SGR_PATTERN = new RegExp(`${ESC}\\[([0-9;]*)m`, "g");
-
-/** Drop inherited background colors so only the panel state color remains. */
-export function stripBackgroundSgr(text: string): string {
-  return text.replace(SGR_PATTERN, (match, params: string) => {
-    if (params === "") return match;
-    const parts = params.split(";");
-    const kept: string[] = [];
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index] ?? "";
-      const code = Number.parseInt(part === "" ? "0" : part, 10);
-      if (code === 48) {
-        const mode = parts[index + 1];
-        if (mode === "5") {
-          index += 2;
-        } else if (mode === "2") {
-          index += 4;
-        }
-        continue;
-      }
-      if (code === 49) continue;
-      if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) continue;
-      kept.push(part);
-    }
-    return kept.length === 0 ? "" : `\x1b[${kept.join(";")}m`;
-  });
-}
-
-function getInnerWidth(
+export function getPanelInnerWidth(
   width: number,
   borderStyle: BorderStyle,
   accentStripe: boolean,
+  outputPad: number,
 ): number {
   const safeWidth = Math.max(4, width);
   const bordered = borderStyle !== "none" && safeWidth >= 6;
-  if (bordered) {
-    return Math.max(1, safeWidth - (accentStripe ? 5 : 4));
-  }
-  return Math.max(1, safeWidth - (accentStripe ? 2 : 0));
+  return Math.max(
+    1,
+    safeWidth - (bordered ? 2 : 0) - (accentStripe ? 1 : 0) - 2 * outputPad,
+  );
 }
 
-function framePanelLines(
+export function framePanelLines(
   lines: readonly string[],
   width: number,
   theme: Theme | undefined,
@@ -391,6 +368,7 @@ function framePanelLines(
     mode?: PanelRenderMode;
     borderStyle: BorderStyle;
     accentStripe: boolean;
+    outputPad: number;
     stateToken: PanelStateToken;
     includeTop: boolean;
     includeBottom: boolean;
@@ -407,34 +385,36 @@ function framePanelLines(
   const paint = (value: string) =>
     paintState(theme, options.stateToken, colored, value);
   const stripe = options.accentStripe ? paint("▎") : "";
-  const content = lines.map(stripBackgroundSgr);
-  const innerWidth = getInnerWidth(
+  const surface =
+    options.mode === "background" &&
+    (!options.surface || options.surface === "transparent")
+      ? "surface"
+      : (options.surface ?? "transparent");
+  const content =
+    surface === "transparent"
+      ? lines.map((line) => stripBackgroundSgr(line))
+      : lines;
+  const inset = " ".repeat(options.outputPad);
+  const innerWidth = getPanelInnerWidth(
     safeWidth,
     options.mode === "background" ? "none" : options.borderStyle,
     options.accentStripe,
+    options.outputPad,
   );
+  const fitLine = (line: string): string => {
+    const safeLine =
+      line.includes("\x1b[") && !line.endsWith("\x1b[0m")
+        ? `${line}\x1b[0m`
+        : line;
+    return truncateToWidth(safeLine, innerWidth, "", bordered);
+  };
 
   if (!bordered) {
-    const surface =
-      options.mode === "background"
-        ? options.surface && options.surface !== "transparent"
-          ? options.surface
-          : "surface"
-        : options.surface;
     return content.map((line) => {
-      const fitted =
-        visibleWidth(line) > innerWidth
-          ? truncateToWidth(line, innerWidth, "")
-          : line;
-      const resetTail =
-        fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m")
-          ? "\x1b[0m"
-          : "";
-      const body =
-        surface !== undefined && surface !== "transparent"
-          ? paintSurfaceLine(fitted, innerWidth, theme, surface, colored)
-          : fitted;
-      return `${stripe}${stripe.length > 0 ? " " : ""}${body}${resetTail}`;
+      const row = `${stripe}${inset}${fitLine(line)}${inset}`;
+      return surface === "transparent"
+        ? row
+        : paintSurfaceLine(row, safeWidth, theme, surface, colored);
     });
   }
 
@@ -450,33 +430,11 @@ function framePanelLines(
     );
   }
 
-  const leftEdge =
-    borderPaint(chars.vertical) + (options.accentStripe ? `${stripe} ` : " ");
-  const rightEdge = ` ${borderPaint(chars.vertical)}`;
+  const leftEdge = borderPaint(chars.vertical) + stripe + inset;
+  const rightEdge = inset + borderPaint(chars.vertical);
 
-  const surface = options.surface ?? "transparent";
   for (const line of content) {
-    const fitted =
-      visibleWidth(line) > innerWidth
-        ? truncateToWidth(line, innerWidth, "")
-        : line;
-    const pad = Math.max(0, innerWidth - visibleWidth(fitted));
-    const resetTail =
-      fitted.includes("\x1b[") && !fitted.endsWith("\x1b[0m") ? "\x1b[0m" : "";
-    if (surface !== "transparent") {
-      const inner = paintSurfaceLine(
-        fitted,
-        innerWidth,
-        theme,
-        surface,
-        colored,
-      );
-      out.push(`${leftEdge}${inner}${resetTail}${rightEdge}`);
-    } else {
-      out.push(
-        `${leftEdge}${fitted}${resetTail}${" ".repeat(pad)}${rightEdge}`,
-      );
-    }
+    out.push(`${leftEdge}${fitLine(line)}${rightEdge}`);
   }
 
   if (options.includeBottom) {
@@ -487,23 +445,16 @@ function framePanelLines(
     );
   }
 
-  return out;
+  return surface === "transparent"
+    ? out
+    : out.map((row) =>
+        paintSurfaceLine(row, safeWidth, theme, surface, colored),
+      );
 }
 
 function extractResultText(result: AgentToolResult<unknown>): string {
   if (!Array.isArray(result.content)) return "";
-  const parts: string[] = [];
-  for (const block of result.content) {
-    if (
-      typeof block === "object" &&
-      block !== null &&
-      block.type === "text" &&
-      typeof (block as { text?: unknown }).text === "string"
-    ) {
-      parts.push((block as { text: string }).text);
-    }
-  }
-  return parts.join("\n");
+  return contentText(result.content);
 }
 
 function renderFallbackResultLines(
@@ -640,6 +591,7 @@ export function wrapToolRenderer(
 
       const innerCallContext: ToolRenderContext = {
         ...effectiveContext,
+        outputPad: 0,
         lastComponent: context.lastComponent
           ? panelState.innerCallComponent
           : undefined,
@@ -705,10 +657,11 @@ export function wrapToolRenderer(
             : isError
               ? "toolErrorBg"
               : "toolSuccessBg";
-          const innerWidth = getInnerWidth(
+          const innerWidth = getPanelInnerWidth(
             width,
             cfg.borderStyle,
             cfg.accentStripe,
+            context.outputPad === 0 ? 0 : 1,
           );
 
           let callLines: string[] = [];
@@ -726,10 +679,15 @@ export function wrapToolRenderer(
           panelState.hasCallLines = callLines.length > 0;
 
           const verb = resolveToolVerb(toolName, cfg);
-          const verbLabel = settled ? verb.settled : verb.active;
+          const argumentsOnly = cfg.toolVerbosity === "low";
+          const verbLabel = argumentsOnly
+            ? toolName
+            : settled
+              ? verb.settled
+              : verb.active;
           const headerParts: string[] = [];
 
-          if (!settled && cfg.reuseSpinner) {
+          if (!argumentsOnly && !settled && cfg.reuseSpinner) {
             // Freeze the top-line spinner on tall executing boxes so timer invalidations
             // only touch bottom lines instead of triggering above-viewport full redraws.
             const freezeSpinner =
@@ -756,7 +714,7 @@ export function wrapToolRenderer(
             headerParts.push(fg(theme, "muted", summary, ui.colored));
           }
 
-          if (settled && cfg.outcomeBadges) {
+          if (!argumentsOnly && settled && cfg.outcomeBadges) {
             const badge = isError
               ? fg(theme, "error", "✗", ui.colored)
               : fg(theme, "success", "✓", ui.colored);
@@ -767,7 +725,7 @@ export function wrapToolRenderer(
             }
           }
 
-          const headerLine = `${headerParts.join(" ")} ${fg(theme, "muted", "(ctrl+o to expand/collapse)")}`;
+          const headerLine = headerParts.join(" ");
 
           let hasResultLines = false;
           if (panelState.resultCalled && panelState.renderResultLines) {
@@ -784,6 +742,7 @@ export function wrapToolRenderer(
               mode: cfg.mode,
               borderStyle: cfg.borderStyle,
               accentStripe: cfg.accentStripe,
+              outputPad: context.outputPad === 0 ? 0 : 1,
               stateToken,
               includeTop: true,
               includeBottom: !hasResultLines,
@@ -808,17 +767,17 @@ export function wrapToolRenderer(
       context,
     ): Component & { dispose?: () => void } {
       const config = getConfig();
-      const { expanded, hideOutput } = resolveToolResultExpansion(
+      const { expanded, hideOutput } = toolOutputDisplay(
         config.toolVerbosity,
         options.expanded,
-        toolName === "codemode",
+        toolName,
       );
       const effectiveOptions: ToolRenderResultOptions = {
         ...options,
         expanded,
       };
       const effectiveContext = { ...context, expanded };
-      if (!config.enabled && base?.renderResult) {
+      if (!hideOutput && !config.enabled && base?.renderResult) {
         return base.renderResult(
           result,
           effectiveOptions,
@@ -837,12 +796,13 @@ export function wrapToolRenderer(
 
       const innerResultContext: ToolRenderContext = {
         ...effectiveContext,
+        outputPad: 0,
         lastComponent: context.lastComponent
           ? panelState.innerResultComponent
           : undefined,
       };
       let innerResult: Component | undefined;
-      if (base?.renderResult) {
+      if (!hideOutput && base?.renderResult) {
         try {
           innerResult = base.renderResult(
             result,
@@ -896,10 +856,11 @@ export function wrapToolRenderer(
             return panelState.cachedResultRender.lines;
           }
 
-          const innerWidth = getInnerWidth(
+          const innerWidth = getPanelInnerWidth(
             width,
             cfg.borderStyle,
             cfg.accentStripe,
+            context.outputPad === 0 ? 0 : 1,
           );
           const lines =
             panelState.cachedResult?.width === width
@@ -927,6 +888,7 @@ export function wrapToolRenderer(
             mode: cfg.mode,
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
+            outputPad: context.outputPad === 0 ? 0 : 1,
             stateToken,
             includeTop: !panelState.hasCall,
             includeBottom: true,

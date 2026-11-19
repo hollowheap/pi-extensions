@@ -1,6 +1,6 @@
 # pi-guard
 
-Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns approval prompts and the `mode-guard` statusline value; mode switching lives in `pi-modes` (`/mode`, `alt+m`). Verdicts come from `@hollowheap/core`; the ACP extension and headless children enforce the same rules, modes, and persisted `guard.json` decisions and trusted roots. Temporary `/grant`s and audit counters are session-local to the TUI.
+Checks tool calls against tagged allow/ask/deny rules and the active mode. Anything that resolves to `ask` prompts the user; `deny` blocks the call. Owns approval prompts, the `mode-guard` statusline value, and mode switching with `/mode` and Alt+M. Verdicts come from `@hollowheap/core`; the ACP extension and headless children enforce the same rules, modes, and persisted `guard.json` decisions and trusted roots. Temporary `/grant`s and audit counters are session-local to the TUI.
 
 ## Try it
 
@@ -87,7 +87,10 @@ Chains split on newlines, `&`, `&&`, `||`, `;`, and `|`; every part is analysed 
 
 ## Modes
 
-Mode switching lives in `pi-modes` (`/mode`, `alt+m`). `pi-guard` enforces
+`/mode` opens the picker. `/mode <name>` switches directly.
+`/mode settings default <name>` sets the default for new sessions. Alt+M
+cycles Manual, Edit, Plan, and Auto. `modes.json` supports custom layers.
+`pi-guard` enforces
 the active layer and publishes the statusline badge. Built-ins are `manual`
 (default), `edit`, `plan`, and `auto`; the legacy names `ask` and `autopilot`
 resolve to `manual` and `auto`. `<agentDir>/modes.json` adds custom layers:

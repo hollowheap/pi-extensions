@@ -1,21 +1,16 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { splitModelThinking } from "@hollowheap/core/model-ref";
+import {
+  type AgentFile,
+  type AgentFileOptions,
+  type AgentFileScope,
+  discoverAgentFiles,
+} from "@hollowheap/core/agent-files";
 
-export type AgentScope = "user" | "project" | "both";
+export type AgentScope = AgentFileScope;
+export type DiscoverAgentsOptions = AgentFileOptions;
 
-export interface AgentConfig {
-  name: string;
-  description: string;
-  tools?: string[];
-  agents?: string[];
-  model?: string;
-  thinking?: string;
-  mode?: string;
-  effort?: string;
-  harness?: string;
-  systemPrompt: string;
+export interface AgentConfig
+  extends Omit<AgentFile, "source" | "filePath" | "skills"> {
   source: "user" | "project" | "session";
   filePath?: string;
 }
@@ -25,142 +20,15 @@ export interface AgentDiscoveryResult {
   projectAgentsDir?: string;
 }
 
-export interface DiscoverAgentsOptions {
-  cwd: string;
-  agentDir: string;
-  trusted: boolean;
-  scope?: AgentScope;
-}
-
-type AgentFrontmatter = {
-  name?: unknown;
-  description?: unknown;
-  tools?: unknown;
-  agents?: unknown;
-  model?: unknown;
-  thinking?: unknown;
-  mode?: unknown;
-  effort?: unknown;
-  harness?: unknown;
-};
-
-function parseList(value: unknown): string[] | undefined {
-  const values = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
-  const items = values
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : undefined;
-}
-
-function loadDirectory(dir: string, source: "user" | "project"): AgentConfig[] {
-  if (!existsSync(dir)) return [];
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const agents: AgentConfig[] = [];
-  for (const name of entries.sort()) {
-    if (!name.endsWith(".md")) continue;
-    const filePath = join(dir, name);
-    try {
-      if (!statSync(filePath).isFile()) continue;
-      const content = readFileSync(filePath, "utf8");
-      const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(content);
-      if (
-        typeof frontmatter.name !== "string" ||
-        frontmatter.name.trim() === "" ||
-        typeof frontmatter.description !== "string" ||
-        frontmatter.description.trim() === ""
-      ) {
-        continue;
-      }
-      const tools = parseList(frontmatter.tools);
-      const agentRoster = parseList(frontmatter.agents);
-      const modelRef =
-        typeof frontmatter.model === "string" && frontmatter.model.trim() !== ""
-          ? splitModelThinking(frontmatter.model)
-          : undefined;
-      const thinking =
-        modelRef?.thinking ??
-        (typeof frontmatter.thinking === "string" &&
-        frontmatter.thinking.trim() !== ""
-          ? frontmatter.thinking.trim()
-          : undefined);
-      agents.push({
-        name: frontmatter.name.trim(),
-        description: frontmatter.description.trim(),
-        ...(tools ? { tools } : {}),
-        ...(agentRoster ? { agents: agentRoster } : {}),
-        ...(modelRef ? { model: modelRef.model } : {}),
-        ...(thinking !== undefined ? { thinking } : {}),
-        ...(typeof frontmatter.mode === "string" &&
-        frontmatter.mode.trim() !== ""
-          ? { mode: frontmatter.mode.trim() }
-          : {}),
-        ...(typeof frontmatter.effort === "string" &&
-        frontmatter.effort.trim() !== ""
-          ? { effort: frontmatter.effort.trim() }
-          : {}),
-        ...(typeof frontmatter.harness === "string" &&
-        frontmatter.harness.trim() !== ""
-          ? { harness: frontmatter.harness.trim() }
-          : {}),
-        systemPrompt: body.trim(),
-        source,
-        filePath,
-      });
-    } catch {
-      // One malformed agent must not hide the rest.
-    }
-  }
-  return agents;
-}
-
-function findProjectAgentsDir(cwd: string): string | undefined {
-  let current = resolve(cwd);
-  while (true) {
-    const candidate = join(current, ".pi", "agents");
-    try {
-      if (statSync(candidate).isDirectory()) return candidate;
-    } catch {
-      // Ignore inaccessible candidates and keep walking up.
-    }
-    const parent = resolve(current, "..");
-    if (parent === current) return undefined;
-    current = parent;
-  }
-}
-
 export function discoverAgents(
   options: DiscoverAgentsOptions,
 ): AgentDiscoveryResult {
-  const scope = options.scope ?? "both";
-  const projectAgentsDir = findProjectAgentsDir(options.cwd);
-  const agents = new Map<string, AgentConfig>();
-
-  if (scope !== "project") {
-    for (const agent of loadDirectory(
-      join(options.agentDir, "agents"),
-      "user",
-    )) {
-      agents.set(agent.name, agent);
-    }
-  }
-  if (scope !== "user" && options.trusted && projectAgentsDir !== undefined) {
-    for (const agent of loadDirectory(projectAgentsDir, "project")) {
-      agents.set(agent.name, agent);
-    }
-  }
-
+  const { agents, projectAgentsDir } = discoverAgentFiles(
+    options,
+    parseFrontmatter,
+  );
   return {
-    agents: [...agents.values()],
-    ...(projectAgentsDir !== undefined ? { projectAgentsDir } : {}),
+    agents: agents.map(({ skills, ...agent }) => agent),
+    ...(projectAgentsDir === undefined ? {} : { projectAgentsDir }),
   };
 }

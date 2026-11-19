@@ -1,0 +1,1509 @@
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { session, setCwd, withPromptLock } from "@hollowheap/core";
+import { enterMode, registerMode } from "@hollowheap/core/modes";
+import { getSessionSnapshot } from "@hollowheap/core/snapshot";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { resetActiveTuiConfig } from "@hollowheap/tui/state";
+
+vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
+});
+import { afterEach, describe, expect, it, vi } from "vitest";
+import extension, { AUDIT_TYPE, formatModeBadge } from "../src/index.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+
+const testAgentState = vi.hoisted(() => ({
+  agentDir: "/nonexistent-pi-agent-dir-for-tests",
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getAgentDir: () => testAgentState.agentDir,
+}));
+
+const guardTempDirs: string[] = [];
+
+function makeGuardTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guard-test-"));
+  guardTempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  testAgentState.agentDir = "/nonexistent-pi-agent-dir-for-tests";
+  resetActiveTuiConfig();
+  for (const dir of guardTempDirs.splice(0)) {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // ignore cleanup error
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function createMockPi() {
+  return {
+    on: vi.fn(
+      (_event: string, _fn: (event: never, ctx: never) => unknown) => () => {},
+    ),
+    registerTool: vi.fn(),
+    registerCommand: vi.fn(),
+    registerShortcut: vi.fn(),
+    events: {
+      on: vi.fn((_channel: string, _fn: (data: unknown) => void) => () => {}),
+      emit: vi.fn((_channel: string, _data: unknown) => {}),
+    },
+  };
+}
+
+type Handler = (event: never, ctx: never) => unknown;
+
+function toolCallHandler(pi: ReturnType<typeof createMockPi>): Handler {
+  const calls = pi.on.mock.calls.filter(([event]) => event === "tool_call");
+  expect(calls).toHaveLength(1);
+  return calls[0][1] as Handler;
+}
+
+function createContext(cwd: string, approved = true) {
+  return {
+    cwd,
+    sessionManager: {},
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => approved) },
+  };
+}
+
+function setupProject(
+  rulesFile: string,
+  approved = true,
+): {
+  ctx: ReturnType<typeof createContext>;
+  call: (toolName: string, input: unknown) => Promise<unknown>;
+  pi: ReturnType<typeof createMockPi>;
+} {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  const pi = createMockPi();
+  extension(pi as never);
+  const handler = toolCallHandler(pi);
+  const ctx = createContext(dir, approved);
+  return {
+    ctx,
+    pi,
+    call: (toolName: string, input: unknown) =>
+      handler(
+        {
+          type: "tool_call",
+          toolCallId: "1",
+          toolName,
+          input,
+        } as never,
+        ctx as never,
+      ) as Promise<unknown>,
+  };
+}
+
+function commandHandler(
+  pi: ReturnType<typeof createMockPi>,
+  name: string,
+): (args: string, ctx: unknown) => Promise<void> {
+  const call = pi.registerCommand.mock.calls.find(([n]) => n === name);
+  expect(call).toBeDefined();
+  return call?.[1].handler as (args: string, ctx: unknown) => Promise<void>;
+}
+
+const EXAMPLE_RULES = JSON.stringify({
+  rules: [
+    "deny edit src/*",
+    "allow edit artifacts/specs/*.md",
+    "allow edit artifacts/plan/*.md",
+  ],
+});
+
+describe("pi-guard extension", () => {
+  it("forwards the context abort signal to host confirm and select dialogs", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const controller = new AbortController();
+    (ctx as Record<string, unknown>).signal = controller.signal;
+
+    await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi", {
+      signal: controller.signal,
+    });
+
+    const durationSelect = vi.fn(async () => "5m");
+    (ctx.ui as Record<string, unknown>).select = durationSelect;
+    await commandHandler(pi, "grant")("foo", ctx);
+    expect(durationSelect).toHaveBeenCalledWith(
+      "Grant duration",
+      ["5m", "15m", "1h"],
+      { signal: controller.signal },
+    );
+
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-signal-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "x");
+    const targetSelect = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = targetSelect;
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(targetSelect).toHaveBeenCalledWith(
+      expect.stringContaining("out-of-workspace"),
+      expect.any(Array),
+      { signal: controller.signal },
+    );
+  });
+
+  it("denies custom tools tagged write after an out-of-workspace allow in plan mode", async () => {
+    const { mode, hook, ctx } = setupMode(
+      JSON.stringify({
+        tools: { custom_writer: "write" },
+        rules: ["allow write *"],
+      }),
+    );
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-plan-write-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "x");
+    (ctx.ui as Record<string, unknown>).select = vi.fn(
+      async () => "Allow (this session)",
+    );
+
+    await mode("plan");
+    await expect(
+      hook("custom_writer", { path: externalFile }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("registers lifecycle hooks and the mode command", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    expect(pi.registerTool).not.toHaveBeenCalled();
+    const events = pi.on.mock.calls.map(([event]) => event).sort();
+    expect(events).toEqual([
+      "session_compact",
+      "session_shutdown",
+      "session_start",
+      "session_tree",
+      "tool_call",
+      "tool_result",
+    ]);
+    const commands = pi.registerCommand.mock.calls.map(([name]) => name);
+    expect(commands).toEqual(["grant", "context", "guard", "mode"]);
+    expect(pi.registerShortcut).toHaveBeenCalledWith(
+      "alt+m",
+      expect.any(Object),
+    );
+  });
+
+  it("keeps grant state isolated between extension instances", async () => {
+    const first = createMockPi();
+    const second = createMockPi();
+    extension(first as never);
+    extension(second as never);
+    const firstCtx = createContext(process.cwd());
+    const secondCtx = createContext(process.cwd());
+
+    await commandHandler(first, "grant")("src/x.ts 5m", firstCtx);
+    await commandHandler(second, "grant")("list", secondCtx);
+
+    expect(secondCtx.ui.notify).toHaveBeenCalledWith(
+      "No active grants",
+      "info",
+    );
+  });
+
+  it("grants temporary permission and lists active grants", async () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const ctx = createContext(process.cwd());
+    const grant = commandHandler(pi, "grant");
+    const listGrants = commandHandler(pi, "grant");
+
+    await grant("src/x.ts 5m", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Granted src/x.ts for 5m",
+      "info",
+    );
+
+    await listGrants("list", ctx);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("src/x.ts (expires in 300s)"),
+      "info",
+    );
+  });
+
+  it("offers recent targets through the TUI grant picker", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    await call("write", { path: "src/x.ts" });
+
+    let picker:
+      | { handleInput(data: string): void; render(width: number): string[] }
+      | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keybindings: unknown,
+          done: (value: string | undefined) => void,
+        ) => {
+          handleInput(data: string): void;
+          render(width: number): string[];
+        },
+      ) =>
+        new Promise((resolve) => {
+          picker = factory(
+            { requestRender: vi.fn() },
+            {
+              fg: (_token: string, text: string) => text,
+              bold: (text: string) => text,
+            },
+            {},
+            resolve,
+          );
+        }),
+    );
+    const uiCtx = {
+      ...ctx,
+      mode: "tui",
+      ui: {
+        ...ctx.ui,
+        custom,
+        select: vi.fn(async () => "5m"),
+      },
+    };
+    const grant = commandHandler(pi, "grant");
+
+    const pending = grant("", uiCtx);
+    await vi.waitFor(() => expect(picker).toBeDefined());
+    picker?.handleInput("\r");
+    await vi.waitFor(() => expect(custom).toHaveBeenCalledTimes(2));
+    picker?.handleInput("\r");
+    await pending;
+
+    expect(uiCtx.ui.notify).toHaveBeenLastCalledWith(
+      "Granted src/x.ts for 5m",
+      "info",
+    );
+  });
+
+  it("completes recent grant targets and durations", async () => {
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    handlers.session_start(undefined as never, ctx as never);
+    await call("write", { path: "src/x.ts" });
+    const grant = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "grant",
+    )?.[1] as {
+      getArgumentCompletions: (prefix: string) => Array<{ value: string }>;
+    };
+
+    expect(
+      grant.getArgumentCompletions("").map((item) => item.value),
+    ).toContain("src/x.ts");
+    expect(
+      grant.getArgumentCompletions("src/x.ts ").map((item) => item.value),
+    ).toEqual(["30s", "5m", "15m", "1h"]);
+  });
+
+  it("accepts multi-token shell targets and rejects invalid durations", async () => {
+    const { ctx, call, pi } = setupProject(
+      JSON.stringify({ rules: ["deny shell git status"] }),
+    );
+    const grant = commandHandler(pi, "grant");
+
+    await grant("git status 5m", ctx);
+    await expect(
+      call("bash", { command: "git status" }),
+    ).resolves.toBeUndefined();
+
+    await grant("src/x.ts 5x", ctx);
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+      "Invalid duration. Use e.g. 5m, 1h, 30s",
+      "error",
+    );
+  });
+
+  it("blocks and reports unexpected tool-call check failures", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    ctx.isProjectTrusted = () => {
+      throw new Error("trust exploded");
+    };
+
+    await expect(call("write", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("tool call check failed"),
+    });
+  });
+
+  it("blocks src writes but allows spec and plan writes", async () => {
+    const { call } = setupProject(EXAMPLE_RULES);
+    await expect(call("write", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    await expect(
+      call("write", { path: "artifacts/specs/a.md" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("write", { path: "artifacts/plan/a.md" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("gates edit as an edit", async () => {
+    const { call } = setupProject(EXAMPLE_RULES);
+    await expect(call("edit", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    await expect(
+      call("edit", { path: "artifacts/specs/a.md" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("blocks escapes outside the project root", async () => {
+    const { call } = setupProject(EXAMPLE_RULES);
+    await expect(call("write", { path: "../evil.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("checks find, grep, fd, rg, and ls as search", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: ["deny search secret/*", "allow search src/*"],
+      }),
+    );
+    await expect(call("find", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("grep", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(call("fd", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("rg", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(call("ls", { path: "src/sub" })).resolves.toBeUndefined();
+    await expect(call("rg", { path: "secret/x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("targets web, lang, and decide calls with their own arguments", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["ask read *", "ask external *"] }),
+    );
+
+    await expect(
+      call("web_fetch", { url: "https://example.com/x" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow web_fetch?",
+      "https://example.com/x",
+      { signal: undefined },
+    );
+
+    await expect(
+      call("web_search", { query: "lil bro" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow web_search?",
+      "lil bro",
+      {
+        signal: undefined,
+      },
+    );
+
+    await expect(
+      call("lang", { action: "definition", path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow lang?", "src/x.ts", {
+      signal: undefined,
+    });
+
+    await expect(call("decide", { input: "x" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow decide?", "decide", {
+      signal: undefined,
+    });
+  });
+
+  it("allows search without matching rules", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("find", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("asks for unknown tools", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(
+      call("mcp__docs", { path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow mcp__docs?",
+      "src/x.ts",
+      {
+        signal: undefined,
+      },
+    );
+  });
+
+  it("uses configured tags for unknown tools", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        tools: { mcp__docs__search: "search" },
+        rules: ["allow search *"],
+      }),
+    );
+    await expect(
+      call("mcp__docs__search", { path: "." }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not let configured tags override built-in tools", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        tools: { read: "search" },
+        rules: ["deny read *", "allow search *"],
+      }),
+      false,
+    );
+    await expect(call("read", { path: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("tags web_search as external", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: ["deny external secret/*", "allow external *"],
+      }),
+    );
+    await expect(
+      call("web_search", { query: "src/x" }),
+    ).resolves.toBeUndefined();
+    await expect(call("web_search", { query: "secret/x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("tags web_fetch as external", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: [
+          { effect: "deny", tag: "external", pattern: "secret/*" },
+          { effect: "allow", tag: "external", pattern: "src/*" },
+        ],
+      }),
+    );
+    await expect(
+      call("web_fetch", { url: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    await expect(call("web_fetch", { url: "secret/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not let configured tags override web tool built-ins", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        tools: { web_search: "read", web_fetch: "search" },
+        rules: ["deny external *"],
+      }),
+      false,
+    );
+    await expect(call("web_search", { query: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+    await expect(call("web_fetch", { url: "x" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("asks for bash without allow rules", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", "echo hi", {
+      signal: undefined,
+    });
+    expect(withPromptLock).toHaveBeenCalled();
+  });
+
+  it("passes full command without 500-character truncation to confirm dialog", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const longCommand = `echo ${"x".repeat(600)}`;
+    await expect(
+      call("bash", { command: longCommand }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow bash?", longCommand, {
+      signal: undefined,
+    });
+  });
+
+  it("runs allowlisted bash without asking", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["allow shell echo"] }),
+    );
+    await expect(call("bash", { command: "echo hi" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("gates powershell with the same allowlist", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({ rules: ["allow shell Get-ChildItem"] }),
+    );
+    await expect(
+      call("powershell", { command: "Get-ChildItem ." }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("powershell", { command: "Remove-Item ./x" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow powershell?",
+      "Remove-Item ./x",
+      { signal: undefined },
+    );
+  });
+
+  it("gates task start and cancel as shell and allows list/status/wait without asking", async () => {
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: ["allow shell npm", "deny shell rm"],
+      }),
+    );
+    await expect(call("task", { action: "list" })).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "status", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "wait", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      call("task", { action: "start", command: "npm test" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("task", { action: "cancel", id: "task-1" }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      call("task", { action: "start", command: "rm -rf build" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+
+    await expect(
+      call("task", { action: "start", command: "cargo build" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build", {
+      signal: undefined,
+    });
+  });
+
+  it("treats subagent definition and inspection actions as passthrough and gates delete/cancel/start", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(
+      call("subagent", {
+        action: "define",
+        name: "reviewer",
+        systemPrompt: "Review changes.",
+      }),
+    ).resolves.toBeUndefined();
+    await expect(call("subagent", { action: "list" })).resolves.toBeUndefined();
+    await expect(
+      call("subagent", { action: "status", id: "sub-1" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("subagent", { action: "delete", name: "reviewer" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("pi-guard"),
+    });
+    await expect(
+      call("subagent", { action: "cancel", id: "sub-1" }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      call("subagent", {
+        action: "start",
+        agent: "scout",
+        task: "Analyze auth",
+      }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow subagent?",
+      "subagent scout",
+      { signal: undefined },
+    );
+  });
+
+  it("cuts bash output over 4000 characters", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const entry = pi.on.mock.calls.find(([event]) => event === "tool_result");
+    if (entry === undefined) throw new Error("missing tool_result hook");
+    const handler = entry[1];
+    const text = `${"x".repeat(2500)}${"y".repeat(2500)}`;
+    const result = handler(
+      {
+        type: "tool_result",
+        toolCallId: "1",
+        toolName: "bash",
+        input: {},
+        content: [{ type: "text", text }],
+        isError: false,
+      } as never,
+      {} as never,
+    ) as { content: [{ text: string }] };
+    expect(result.content[0].text).toContain("cut 1000 characters");
+    expect(result.content[0].text.startsWith("x".repeat(100))).toBe(true);
+    expect(result.content[0].text.endsWith("y".repeat(100))).toBe(true);
+    expect(result.content[0].text.length).toBeLessThan(5000);
+  });
+
+  it("leaves short bash output and other tools alone", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    const entry = pi.on.mock.calls.find(([event]) => event === "tool_result");
+    if (entry === undefined) throw new Error("missing tool_result hook");
+    const handler = entry[1];
+    expect(
+      handler(
+        {
+          type: "tool_result",
+          toolCallId: "1",
+          toolName: "bash",
+          input: {},
+          content: [{ type: "text", text: "ok" }],
+          isError: false,
+        } as never,
+        {} as never,
+      ),
+    ).toBeUndefined();
+    expect(
+      handler(
+        {
+          type: "tool_result",
+          toolCallId: "1",
+          toolName: "write",
+          input: {},
+          content: [{ type: "text", text: "x".repeat(5000) }],
+          isError: false,
+        } as never,
+        {} as never,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("blocks when approval is declined", async () => {
+    const { call } = setupProject(EXAMPLE_RULES, false);
+    await expect(call("write", { path: "docs/a.md" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("not approved"),
+    });
+  });
+
+  it("blocks approval prompts without UI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(join(dir, ".pi", "permissions.json"), EXAMPLE_RULES);
+    const pi = createMockPi();
+    extension(pi as never);
+    const handler = toolCallHandler(pi);
+    const ctx = {
+      cwd: dir,
+      sessionManager: {},
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: { notify: vi.fn(), confirm: vi.fn() },
+    };
+    const result = await handler(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "write",
+        input: { path: "docs/a.md" },
+      } as never,
+      ctx as never,
+    );
+    expect(result).toEqual({
+      block: true,
+      reason: expect.stringContaining("needs approval"),
+    });
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("allows reads covered by read rules", async () => {
+    const { call } = setupProject(
+      JSON.stringify({
+        rules: [
+          { effect: "deny", tag: "read", pattern: "secret/*" },
+          { effect: "allow", tag: "read", pattern: "src/*" },
+        ],
+      }),
+    );
+    await expect(call("read", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(call("read", { path: "secret/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("asks when a write omits the path", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    await expect(call("write", {})).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", ".", {
+      signal: undefined,
+    });
+  });
+
+  it("asks when the rules file is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    const pi = createMockPi();
+    extension(pi as never);
+    const handler = toolCallHandler(pi);
+    const ctx = createContext(dir);
+    const result = await handler(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "write",
+        input: { path: "src/x.ts" },
+      } as never,
+      ctx as never,
+    );
+    expect(result).toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
+  });
+
+  it("warns and asks when the rules file is invalid JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-guard-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(join(dir, ".pi", "permissions.json"), "{oops");
+    const pi = createMockPi();
+    extension(pi as never);
+    const handler = toolCallHandler(pi);
+    const ctx = createContext(dir);
+    const result = await handler(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "write",
+        input: { path: "src/x.ts" },
+      } as never,
+      ctx as never,
+    );
+    expect(result).toBeUndefined();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("not valid JSON"),
+      "warning",
+    );
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
+  });
+
+  it("prompts again for edit or write when out-of-workspace read was approved", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-test-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+
+    await expect(
+      call("edit", { path: externalFile, oldText: "hello", newText: "world" }),
+    ).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("honours a session allow on repeated out-of-workspace reads", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-allow-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes a cached ask decision without reopening the path selector", async () => {
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-ask-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const selectMock = vi.fn(async () => "Ask (this session)");
+    const confirmMock = ctx.ui.confirm as ReturnType<typeof vi.fn>;
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("honours an out-of-workspace grant instead of prompting", async () => {
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-grant-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+
+    const { ctx, call, pi } = setupProject(EXAMPLE_RULES);
+    const selectMock = vi.fn(async () => "Deny (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await commandHandler(pi, "grant")(`${externalFile} 5m`, ctx);
+    await expect(call("read", { path: externalFile })).resolves.toBeUndefined();
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      `Granted ${externalFile} for 5m`,
+      "info",
+    );
+  });
+
+  it("does not let a grant bypass plan mode or a persisted deny", async () => {
+    const plan = setupProject(EXAMPLE_RULES);
+    enterMode(plan.ctx.sessionManager, "plan");
+    await commandHandler(plan.pi, "grant")("notes.md 5m", plan.ctx);
+    await expect(
+      plan.call("write", { path: "notes.md", content: "x" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-grant-deny-"));
+    const externalFile = join(extDir, "file.txt");
+    writeFileSync(externalFile, "hello");
+    testAgentState.agentDir = makeGuardTempDir();
+    writeFileSync(
+      join(testAgentState.agentDir, "guard.json"),
+      JSON.stringify({
+        trustedRoots: [],
+        decisions: { [externalFile]: "deny" },
+      }),
+    );
+    const denied = setupProject(EXAMPLE_RULES);
+    await commandHandler(denied.pi, "grant")(`${externalFile} 5m`, denied.ctx);
+    await expect(denied.call("read", { path: externalFile })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("allows reading global skills under the agent directory", async () => {
+    const agentDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+    const skillDir = join(agentDir, "skills", "demo");
+    mkdirSync(skillDir, { recursive: true });
+    const skillFile = join(skillDir, "SKILL.md");
+    writeFileSync(skillFile, "# Demo skill");
+
+    const { ctx, call } = setupProject(EXAMPLE_RULES);
+    const selectMock = vi.fn(async () => "Deny");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: skillFile })).resolves.toBeUndefined();
+    await expect(
+      call("find", { path: join(agentDir, "skills") }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks out-of-workspace child path when denied by project rules even if parent is trusted", async () => {
+    const extDir = mkdtempSync(join(tmpdir(), "pi-ext-deny-"));
+    const secretFile = join(extDir, "secret.txt");
+    writeFileSync(secretFile, "secret");
+
+    const { ctx, call } = setupProject(
+      JSON.stringify({
+        rules: [`deny edit ${secretFile}`, "allow edit *"],
+      }),
+    );
+    const selectMock = vi.fn(async () => "Allow (this session)");
+    (ctx.ui as Record<string, unknown>).select = selectMock;
+
+    await expect(call("read", { path: extDir })).resolves.toBeUndefined();
+    expect(selectMock).toHaveBeenCalledTimes(1);
+
+    await expect(
+      call("edit", { path: secretFile, oldText: "secret", newText: "exposed" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+});
+
+describe("cwd override", () => {
+  it("rewrites relative paths under the core override", async () => {
+    const { ctx, hook } = setupMode(
+      JSON.stringify({ rules: ["allow edit *"] }),
+    );
+    setCwd(ctx.sessionManager, join(ctx.cwd, "sub"));
+    const input = { path: "x.ts" };
+    await expect(hook("write", input)).resolves.toBeUndefined();
+    expect(input.path).toBe(join(ctx.cwd, "sub", "x.ts"));
+  });
+});
+
+function setupMode(rulesFile: string) {
+  const dir = mkdtempSync(join(tmpdir(), "pi-mode-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "permissions.json"), rulesFile);
+  for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+  registerMode({
+    name: "auto",
+    defaults: {
+      read: "allow",
+      search: "allow",
+      edit: "allow",
+      shell: "allow",
+      external: "allow",
+    },
+  });
+  const pi = createMockPi();
+  extension(pi as never);
+  const ctx = createContext(dir);
+  const handlers = Object.fromEntries(
+    pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
+  return {
+    dir,
+    ctx,
+    mode: async (args: string) => {
+      enterMode(ctx.sessionManager, args);
+    },
+    hook: (toolName: string, input: Record<string, unknown>) =>
+      handlers.tool_call(
+        { type: "tool_call", toolCallId: "1", toolName, input } as never,
+        ctx as never,
+      ) as Promise<unknown>,
+  };
+}
+
+describe("approval modes", () => {
+  it("rejects unknown modes", async () => {
+    const { ctx } = setupMode('{"rules":[]}');
+    const result = enterMode(ctx.sessionManager, "turbo");
+    expect(result.diagnostic).toContain("unknown mode");
+    expect(session(ctx.sessionManager).mode).toBe("manual");
+  });
+
+  it("skips approval for untagged tools in auto mode", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("auto");
+    await expect(
+      hook("mcp__docs", { path: "src/x.ts" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("allows plan writes and denies other writes in plan mode", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("plan");
+    expect(session(ctx.sessionManager).mode).toBe("plan");
+    await expect(
+      hook("write", { path: "artifacts/plan.md" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith(
+      "Allow write?",
+      "artifacts/plan.md",
+      { signal: undefined },
+    );
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("denied"),
+    });
+  });
+
+  it("keeps explicit deny rules ahead of plan-path overrides", async () => {
+    const { hook, mode } = setupMode(
+      JSON.stringify({ rules: ["deny edit *"] }),
+    );
+    await mode("plan");
+    await expect(hook("write", { path: "artifacts/plan.md" })).resolves.toEqual(
+      {
+        block: true,
+        reason: expect.stringContaining("denied"),
+      },
+    );
+    await mode("ask");
+    await expect(hook("write", { path: "artifacts/plan.md" })).resolves.toEqual(
+      {
+        block: true,
+        reason: expect.stringContaining("denied"),
+      },
+    );
+  });
+
+  it("waits for approval before writes in ask", async () => {
+    const { ctx, hook } = setupMode('{"rules":[]}');
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow write?", "src/x.ts", {
+      signal: undefined,
+    });
+  });
+
+  it("runs writes and allowlisted bash silently in edit", async () => {
+    const { ctx, mode, hook } = setupMode(
+      JSON.stringify({ rules: ["allow edit *", "allow shell cargo"] }),
+    );
+    await mode("edit");
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    await expect(
+      hook("bash", { command: "cargo test" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("allows plan writes in edit mode", async () => {
+    const { ctx, mode, hook } = setupMode(
+      JSON.stringify({ rules: ["allow edit *"] }),
+    );
+    await mode("edit");
+    await expect(
+      hook("write", { path: "artifacts/plan.md" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("maps the legacy autopilot name to auto", async () => {
+    const { ctx, mode, hook } = setupMode('{"rules":[]}');
+    await mode("autopilot");
+    expect(session(ctx.sessionManager).mode).toBe("auto");
+    await expect(hook("write", { path: "src/x.ts" })).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
+});
+
+function setupProvider() {
+  const pi = createMockPi();
+  extension(pi as never);
+  const ctx = createContext("/tmp/pi-prov");
+  const handlers = Object.fromEntries(
+    pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+  );
+  const commands = Object.fromEntries(
+    pi.registerCommand.mock.calls.map(([name, def]) => [name, def]),
+  );
+  const requestEntry = pi.events.on.mock.calls.find(
+    ([channel]) => channel === "statusline:request",
+  );
+  expect(requestEntry).toBeDefined();
+  if (requestEntry === undefined) {
+    throw new Error("missing statusline:request subscription");
+  }
+  return {
+    pi,
+    ctx,
+    handlers,
+    commands,
+    request: requestEntry[1] as () => void,
+  };
+}
+
+describe("statusline values", () => {
+  it("publishes the mode value on session start", () => {
+    const { pi, ctx, handlers } = setupProvider();
+    handlers.session_start(undefined as never, ctx as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "MANUAL",
+    });
+    expect(pi.events.emit).not.toHaveBeenCalledWith(
+      "statusline:values",
+      expect.objectContaining({ name: "budgets" }),
+    );
+  });
+
+  it("republishes current values on statusline request", () => {
+    const { pi, ctx, handlers, request } = setupProvider();
+    handlers.session_start(undefined as never, ctx as never);
+    const calls = pi.events.emit.mock.calls.length;
+    request();
+    expect(pi.events.emit.mock.calls.length).toBeGreaterThan(calls);
+    expect(pi.events.emit).toHaveBeenLastCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "MANUAL",
+    });
+  });
+
+  it("publishes the new mode after a switch", async () => {
+    const { pi, ctx, handlers, request } = setupProvider();
+    handlers.session_start(undefined as never, ctx as never);
+    await commandHandler(pi, "mode")("plan", ctx);
+    request();
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "PLAN",
+    });
+  });
+
+  it("clears statusline on session_shutdown and still answers statusline:request on next session_start", () => {
+    const listeners = new Map<string, Set<(data: unknown) => void>>();
+    const pi = createMockPi();
+    pi.events.on.mockImplementation(
+      (channel: string, fn: (data: unknown) => void) => {
+        let set = listeners.get(channel);
+        if (!set) {
+          set = new Set();
+          listeners.set(channel, set);
+        }
+        set.add(fn);
+        return () => {
+          set?.delete(fn);
+        };
+      },
+    );
+    pi.events.emit.mockImplementation((channel: string, data: unknown) => {
+      for (const fn of listeners.get(channel) ?? []) {
+        fn(data);
+      }
+    });
+
+    extension(pi as never);
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+
+    const ctx1 = createContext("/tmp/pi-prov-1");
+    handlers.session_start(undefined as never, ctx1 as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "MANUAL",
+    });
+
+    pi.events.emit.mockClear();
+    handlers.session_shutdown(undefined as never, ctx1 as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "",
+    });
+
+    const ctx2 = createContext("/tmp/pi-prov-2");
+    pi.events.emit.mockClear();
+    handlers.session_start(undefined as never, ctx2 as never);
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "MANUAL",
+    });
+
+    pi.events.emit.mockClear();
+    pi.events.emit("statusline:request", { names: ["mode-guard"] });
+    expect(pi.events.emit).toHaveBeenCalledWith("statusline:values", {
+      name: "mode-guard",
+      text: "MANUAL",
+    });
+  });
+});
+it("persists and restores audit counters, publishing guard snapshot", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guard-audit-"));
+  mkdirSync(join(dir, ".pi"), { recursive: true });
+  writeFileSync(
+    join(dir, ".pi", "permissions.json"),
+    JSON.stringify({ rules: ["deny edit secret.txt", "allow read *"] }),
+  );
+
+  const branch: Array<{ type: string; customType?: string; data?: unknown }> =
+    [];
+  const sessionManager = {
+    getBranch: vi.fn(() => branch),
+    appendCustomEntry: vi.fn((type: string, data: unknown) => {
+      branch.push({ type: "custom", customType: type, data });
+    }),
+  };
+
+  const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
+    {};
+  const mockPi = {
+    on: vi.fn(
+      (event: string, fn: (event: unknown, ctx: unknown) => unknown) => {
+        handlers[event] = fn;
+        return () => {};
+      },
+    ),
+    registerTool: vi.fn(),
+    registerCommand: vi.fn(),
+    registerShortcut: vi.fn(),
+    appendEntry: vi.fn((type: string, data: unknown) => {
+      branch.push({ type: "custom", customType: type, data });
+    }),
+    events: {
+      on: vi.fn(),
+      emit: vi.fn(),
+    },
+  };
+
+  extension(mockPi as never);
+
+  const ctx = {
+    cwd: dir,
+    sessionManager,
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+  };
+
+  // session_start restores 0 counters
+  handlers.session_start({}, ctx);
+  let snap = getSessionSnapshot(sessionManager).guard;
+  expect(snap).toBeDefined();
+  expect(snap?.trusted).toBe(true);
+  expect(snap?.decisionCount).toBe(0);
+  expect(snap?.deniedCount).toBe(0);
+  expect(snap?.approvedTagsCount).toBe(0);
+
+  // Call tool that gets denied by rule: deniedCount increments & persists
+  const toolCallHandler = handlers.tool_call;
+  const res = await toolCallHandler(
+    { toolName: "edit", input: { path: "secret.txt" } },
+    ctx,
+  );
+  expect(res).toEqual({
+    block: true,
+    reason: expect.stringContaining("denied"),
+  });
+
+  snap = getSessionSnapshot(sessionManager).guard;
+  expect(snap?.deniedCount).toBe(1);
+  expect(branch.some((e) => e.customType === AUDIT_TYPE)).toBe(true);
+
+  // Compacting re-appends audit if non-zero
+  mockPi.appendEntry.mockClear();
+  handlers.session_compact({}, ctx);
+  expect(mockPi.appendEntry).toHaveBeenCalledWith(
+    AUDIT_TYPE,
+    expect.objectContaining({
+      deniedCount: 1,
+      decisionCount: 0,
+      approvedTagsCount: 0,
+    }),
+  );
+
+  // Simulate new session restoring from branch
+  const newSessionManager = {
+    getBranch: vi.fn(() => [...branch]),
+    appendCustomEntry: vi.fn(),
+  };
+  const newCtx = {
+    cwd: dir,
+    sessionManager: newSessionManager,
+    hasUI: true,
+    isProjectTrusted: () => true,
+    ui: { notify: vi.fn(), confirm: vi.fn(async () => true) },
+  };
+
+  handlers.session_start({}, newCtx);
+  const newSnap = getSessionSnapshot(newSessionManager).guard;
+  expect(newSnap?.deniedCount).toBe(1);
+});
+
+describe("/guard settings|config|status", () => {
+  it("publishes the uppercase mode-guard statusline badge", () => {
+    expect(formatModeBadge("manual")).toBe("MANUAL");
+    expect(formatModeBadge("edit")).toBe("EDIT");
+    expect(formatModeBadge("plan")).toBe("PLAN");
+    expect(formatModeBadge("auto")).toBe("AUTO");
+  });
+
+  it("registers /guard completions and /guard status notifies summary", async () => {
+    const dir = makeGuardTempDir();
+    testAgentState.agentDir = dir;
+    const pi = createMockPi();
+    extension(pi as never);
+
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      getArgumentCompletions: (
+        prefix: string,
+      ) => Array<{ value: string; label: string }> | null;
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+    expect(
+      guardCmd.getArgumentCompletions("")?.map((item) => item.value),
+    ).toEqual(["settings", "config", "status"]);
+    expect(
+      guardCmd.getArgumentCompletions("con")?.map((item) => item.value),
+    ).toEqual(["config"]);
+
+    const ctx = createContext(dir);
+    await guardCmd.handler("status", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("mode=manual · trustedRoots=1"),
+      "info",
+    );
+  });
+
+  it("opens /guard settings and /guard config in TUI mode and persists trustedRoots", async () => {
+    const agentDir = makeGuardTempDir();
+    const workspaceDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+
+    const pi = createMockPi();
+    extension(pi as never);
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          render(width: number): string[];
+          handleInput(data: string): void;
+        },
+      ) => {
+        const comp = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_t: string, s: string) => s,
+            bg: (_t: string, s: string) => s,
+            bold: (s: string) => s,
+          },
+          {},
+          () => {},
+        );
+        const rendered = comp.render(80).join("\n");
+        expect(rendered).toContain("Guard settings");
+        expect(rendered).toContain("Trust current workspace");
+        // Toggle "Trust current workspace" to "trusted"
+        comp.handleInput("\r");
+        comp.handleInput("\x1b");
+      },
+    );
+
+    const ctx = {
+      ...createContext(workspaceDir),
+      mode: "tui",
+      ui: {
+        ...createContext(workspaceDir).ui,
+        custom,
+      },
+    };
+    await guardCmd.handler("config", ctx);
+    expect(custom).toHaveBeenCalledTimes(1);
+
+    const saved = JSON.parse(
+      readFileSync(join(agentDir, "guard.json"), "utf8"),
+    ) as { trustedRoots: unknown[] };
+    expect(saved.trustedRoots).toHaveLength(2);
+    expect(JSON.stringify(saved.trustedRoots)).toContain(workspaceDir);
+  });
+
+  it("warns on EACCES read and notifies error on EACCES write in /guard settings", async () => {
+    if (process.getuid?.() === 0) return;
+
+    const agentDir = makeGuardTempDir();
+    const workspaceDir = makeGuardTempDir();
+    testAgentState.agentDir = agentDir;
+    const guardPath = join(agentDir, "guard.json");
+    writeFileSync(guardPath, JSON.stringify({ trustedRoots: [] }));
+    chmodSync(guardPath, 0o000);
+
+    const pi = createMockPi();
+    extension(pi as never);
+    const guardCmd = pi.registerCommand.mock.calls.find(
+      ([name]) => name === "guard",
+    )?.[1] as {
+      handler: (args: string, ctx: unknown) => Promise<void>;
+    };
+
+    const statusCtx = createContext(workspaceDir);
+    await guardCmd.handler("status", statusCtx);
+    expect(statusCtx.ui.notify).toHaveBeenCalledWith(
+      expect.stringMatching(/permission|EACCES/i),
+      "warning",
+    );
+
+    chmodSync(guardPath, 0o400);
+    chmodSync(agentDir, 0o500);
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          kb: unknown,
+          done: () => void,
+        ) => {
+          handleInput(data: string): void;
+        },
+      ) => {
+        const comp = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_t: string, s: string) => s,
+            bg: (_t: string, s: string) => s,
+            bold: (s: string) => s,
+          },
+          {},
+          () => {},
+        );
+        comp.handleInput("\r");
+        comp.handleInput("\x1b");
+      },
+    );
+    const settingsCtx = {
+      ...createContext(workspaceDir),
+      mode: "tui",
+      ui: {
+        ...createContext(workspaceDir).ui,
+        custom,
+      },
+    };
+    try {
+      await guardCmd.handler("settings", settingsCtx);
+      expect(settingsCtx.ui.notify).toHaveBeenCalledWith(
+        expect.stringMatching(/permission|EACCES/i),
+        "error",
+      );
+    } finally {
+      chmodSync(agentDir, 0o700);
+      chmodSync(guardPath, 0o600);
+    }
+  });
+});

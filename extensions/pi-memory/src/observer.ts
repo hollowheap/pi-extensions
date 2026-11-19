@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import {
+  type Api,
+  type Model,
+  type Usage,
+  contentText,
+} from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { redactSecrets } from "./redact.js";
 
@@ -188,12 +193,7 @@ export async function observeConversation(
     throw new Error(errorMessage || stopReason);
   }
 
-  const text = response.content
-    .filter(
-      (item): item is { type: "text"; text: string } => item.type === "text",
-    )
-    .map((item) => item.text)
-    .join("\n");
+  const text = contentText(response.content);
   const observations = parseObservationResponse(
     text,
     options.existing,

@@ -1,30 +1,37 @@
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type ExtensionContext,
-  type Theme,
   defineTool,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, type MarkdownTheme, Text } from "@earendil-works/pi-tui";
+import { Markdown, Text } from "@earendil-works/pi-tui";
 import { loadPermissions } from "@hollowheap/core/config";
-import { displayPath } from "@hollowheap/core/format";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import {
+  type ToolTextResult,
+  displayPath,
+  errorMessage,
+  sanitizeTerminalText,
+  toolTextResult,
+} from "@hollowheap/core/format";
 import { checkPath } from "@hollowheap/core/policy";
+import { isRecord } from "@hollowheap/core/records";
+import { resolveScopedPath } from "@hollowheap/core/scope";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
+import { notify } from "@hollowheap/pi-ui/host";
 import { clampMaxResults } from "@hollowheap/runtime/exec";
+import { markdownTheme } from "@hollowheap/tui/markdown";
 import { Type } from "typebox";
+import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
 import {
   type LanguageToolsConfig,
   findServer,
   loadLanguageToolsConfig,
   missingCommandHint,
   noServerHint,
-} from "./config.js";
-import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
+} from "./settings.js";
 
 const LSP_LOADED_KEY = Symbol.for("@hollowheap/pi-language-tools/lsp-loaded");
 const MAX_FIELD_CHARS = 4_000;
@@ -184,10 +191,6 @@ const SYMBOL_KINDS: readonly string[] = [
   "operator",
   "typeparameter",
 ];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function positionOf(value: unknown): LspPosition | undefined {
   if (!isRecord(value)) return undefined;
@@ -616,25 +619,6 @@ function inputPosition(
   return { line: line - 1, character: column - 1 };
 }
 
-function markdownTheme(theme: Theme): MarkdownTheme {
-  return {
-    heading: (text) => theme.fg("accent", theme.bold(text)),
-    link: (text) => theme.fg("accent", text),
-    linkUrl: (text) => theme.fg("dim", text),
-    code: (text) => theme.fg("toolOutput", text),
-    codeBlock: (text) => theme.fg("toolOutput", text),
-    codeBlockBorder: (text) => theme.fg("border", text),
-    quote: (text) => theme.fg("muted", text),
-    quoteBorder: (text) => theme.fg("border", text),
-    hr: (text) => theme.fg("border", text),
-    listBullet: (text) => theme.fg("accent", text),
-    bold: (text) => theme.bold(text),
-    italic: (text) => theme.italic(text),
-    strikethrough: (text) => theme.strikethrough(text),
-    underline: (text) => theme.underline(text),
-  };
-}
-
 function resultText(result: { content?: readonly unknown[] }): string {
   const item = result.content?.[0] as
     | { type?: string; text?: string }
@@ -645,15 +629,12 @@ function resultText(result: { content?: readonly unknown[] }): string {
 function textResult(
   text: string,
   details: LangDetails,
-): {
-  content: { type: "text"; text: string }[];
-  details: LangDetails;
-} {
+): ToolTextResult<LangDetails> {
   const bounded = boundText(text, MAX_OUTPUT_CHARS, MAX_OUTPUT_BYTES);
-  return {
-    content: [{ type: "text", text: sanitizeTerminalText(bounded.text) }],
-    details: { ...details, truncated: details.truncated || bounded.truncated },
-  };
+  return toolTextResult(sanitizeTerminalText(bounded.text), {
+    ...details,
+    truncated: details.truncated || bounded.truncated,
+  });
 }
 
 function emptyResult(
@@ -674,7 +655,7 @@ function defaultLoadRules(ctx: ExtensionContext): Rule[] {
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
     onDiagnostic: (message) =>
-      ctx.ui.notify(`pi-language-tools: ${message}`, "warning"),
+      notify(ctx, `pi-language-tools: ${message}`, "warning"),
   });
 }
 
@@ -771,7 +752,7 @@ export function createLangTool(overrides: Partial<LangToolDeps> = {}) {
       const suffix = lines.length > 8 ? "\n... (expand to see more)" : "";
       return new Text(`${preview}${suffix}`, 0, 0);
     },
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       return executeLang(params as LangParams, ctx, deps);
     },
   });
@@ -806,7 +787,7 @@ async function executeLang(
   }
 
   const effective = effectiveCwd(ctx.cwd, ctx.sessionManager);
-  const absolute = resolve(effective, params.path);
+  const absolute = resolveScopedPath(ctx.cwd, params.path, ctx.sessionManager);
   const display = displayPath(effective, absolute);
   const pathDetails = { ...details, path: display };
   const rules = deps.loadRules(ctx);
@@ -841,13 +822,10 @@ async function executeLang(
   let config: LanguageToolsConfig;
   try {
     config = deps.loadConfig(deps.getAgentDir(), (message) =>
-      ctx.ui?.notify?.(`pi-language-tools: ${message}`, "warning"),
+      notify(ctx, `pi-language-tools: ${message}`, "warning"),
     );
   } catch (error) {
-    return textResult(
-      `lang: ${error instanceof Error ? error.message : String(error)}`,
-      pathDetails,
-    );
+    return textResult(`lang: ${errorMessage(error)}`, pathDetails);
   }
   const match = findServer(config, absolute);
   if (match === undefined) {
@@ -1029,7 +1007,7 @@ async function executeLang(
       await publishLspSnapshot(ctx);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     if (/\bENOENT\b/.test(message)) {
       return textResult(missingCommandHint(server, config.path), pathDetails);
     }

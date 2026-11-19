@@ -1,10 +1,11 @@
-import { basename, dirname } from "node:path";
 import {
   type Workspace,
   type WorkspaceOperations,
+  WorkspaceTracker,
   allocateWorkspace,
   cleanupWorkspace,
   integrateWorkspace,
+  isWorkspacePath,
 } from "@hollowheap/core/workspace";
 
 export interface TaskWorkspaceOptions {
@@ -45,41 +46,13 @@ export interface TaskWorkspaceState {
   cwd?: string;
 }
 
-const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+export const isTaskWorkspacePath = isWorkspacePath;
 
-export function isTaskWorkspacePath(
-  path: string | undefined,
-  id: string,
-): boolean {
-  if (typeof path !== "string" || path === "") return false;
-  return basename(path) === id && basename(dirname(path)) === ".pi-workspaces";
-}
-
-export class TaskWorkspaceTracker {
-  private readonly workspaces = new Map<string, Workspace>();
-
+export class TaskWorkspaceTracker extends WorkspaceTracker<TaskWorkspaceState> {
   constructor(
-    private readonly cleanup: (
-      workspace: Workspace,
-    ) => Promise<void> = cleanupTaskWorkspace,
-  ) {}
-
-  track(id: string, workspace: Workspace): void {
-    if (workspace.isolated) this.workspaces.set(id, workspace);
-  }
-
-  async cleanupTerminal(tasks: readonly TaskWorkspaceState[]): Promise<void> {
-    for (const task of tasks) {
-      if (!TERMINAL.has(task.status)) continue;
-      const workspace = this.workspaces.get(task.id);
-      if (workspace === undefined) continue;
-      this.workspaces.delete(task.id);
-      try {
-        await this.cleanup(workspace);
-      } catch {
-        // A failed cleanup must not affect task state.
-      }
-    }
+    cleanup: (workspace: Workspace) => Promise<void> = cleanupTaskWorkspace,
+  ) {
+    super({ cleanup });
   }
 }
 
@@ -87,10 +60,7 @@ export function rehydrateTaskWorkspaces(
   tracker: TaskWorkspaceTracker,
   tasks: readonly TaskWorkspaceState[],
 ): void {
-  for (const task of tasks) {
-    if (!isTaskWorkspacePath(task.cwd, task.id)) continue;
-    tracker.track(task.id, { path: task.cwd as string, isolated: true });
-  }
+  tracker.rehydrate(tasks);
 }
 
 export const taskWorkspaceTracker = new TaskWorkspaceTracker();

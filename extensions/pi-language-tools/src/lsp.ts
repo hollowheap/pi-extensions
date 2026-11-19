@@ -2,6 +2,8 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
+import { errorMessage } from "@hollowheap/core/format";
+import { isRecord } from "@hollowheap/core/records";
 const LSP_LOADED_KEY = Symbol.for("@hollowheap/pi-language-tools/lsp-loaded");
 (globalThis as unknown as Record<symbol, boolean>)[LSP_LOADED_KEY] = true;
 
@@ -45,10 +47,6 @@ interface OpenDocument {
   text: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function resolveTimeout(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) {
     return DEFAULT_TIMEOUT_MS;
@@ -62,10 +60,6 @@ function encodeMessage(message: unknown): Buffer {
     Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, "ascii"),
     body,
   ]);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export class LspClient {

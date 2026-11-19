@@ -1,14 +1,9 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import type { WidgetTodo } from "@hollowheap/tui/widget";
 
 export type TodoPriority = "high" | "medium" | "low";
 
-export interface Todo {
-  id: number;
-  text: string;
-  done: boolean;
-  priority?: TodoPriority;
-}
+export type Todo = WidgetTodo;
 
 export interface TodoState {
   todos: Todo[];
@@ -132,8 +127,14 @@ const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 function byId(todos: readonly Todo[]): Todo[] {
   return [...todos].sort((left, right) => {
-    const lp = PRIORITY_ORDER[left.priority ?? "medium"] ?? 1;
-    const rp = PRIORITY_ORDER[right.priority ?? "medium"] ?? 1;
+    const leftKey = left.priority ?? "medium";
+    const rightKey = right.priority ?? "medium";
+    const lp = Object.hasOwn(PRIORITY_ORDER, leftKey)
+      ? PRIORITY_ORDER[leftKey]
+      : 1;
+    const rp = Object.hasOwn(PRIORITY_ORDER, rightKey)
+      ? PRIORITY_ORDER[rightKey]
+      : 1;
     if (lp !== rp) return lp - rp;
     return left.id - right.id;
   });
@@ -149,152 +150,16 @@ export function formatTodoList(todos: readonly Todo[]): string {
     .join("\n");
 }
 
-export interface SubagentStateItem {
-  id: string;
-  agent?: string;
-  task?: string;
-  state: "running" | "blocked" | "complete" | string;
-  startedAt?: number;
-  activeTool?: string;
-  activeToolStartedAt?: number;
-}
-
-export interface TaskStateItem {
-  id: string;
-  command?: string;
-  status: "running" | string;
-}
-
-const WIDGET_LIMIT = 10;
-
-export interface FormatTodoWidgetOptions {
-  strikethrough?: (text: string) => string;
-  borderColor?: (text: string) => string;
-  width?: number;
-  now?: number;
-  collapsed?: boolean;
-}
-
-function stateIcon(state: string): string {
-  switch (state) {
-    case "running":
-      return "●";
-    case "blocked":
-      return "⏸";
-    case "complete":
-      return "✓";
-    default:
-      return state;
-  }
-}
-
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatToolDuration(ms: number): string {
-  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m${seconds > 0 ? `${seconds}s` : ""}`;
-}
-
-function fitWidth(lines: string[], width: number | undefined): string[] {
-  if (width === undefined || width <= 0) return lines;
-  return lines.map((line) =>
-    visibleWidth(line) > width ? truncateToWidth(line, width, "") : line,
-  );
-}
-
-export function formatSubagentWidget(
-  subagents: readonly SubagentStateItem[],
-  options: FormatTodoWidgetOptions = {},
-): string[] | undefined {
-  if (options.collapsed || subagents.length === 0) return undefined;
-  const now = options.now ?? Date.now();
-  const lines = [`Subagents (${subagents.length} active)`];
-  for (const sub of subagents) {
-    const id = sanitizeTerminalText(sub.id);
-    if (sub.startedAt !== undefined) {
-      const task = sub.task
-        ? sanitizeTerminalText(sub.task).replace(/\s+/g, " ").trim()
-        : "";
-      const taskText = task.length > 25 ? `${task.slice(0, 24)}…` : task;
-      const taskPart = task === "" ? "" : ` (${taskText})`;
-      const toolPart = sub.activeTool
-        ? ` · ${sanitizeTerminalText(sub.activeTool)}${
-            sub.activeToolStartedAt !== undefined
-              ? ` ${formatToolDuration(now - sub.activeToolStartedAt)}`
-              : ""
-          }`
-        : "";
-      lines.push(
-        `@${id} ${formatElapsed(now - sub.startedAt)}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
-      );
-    } else {
-      const agent = sub.agent ? ` (${sanitizeTerminalText(sub.agent)})` : "";
-      lines.push(`@${id} ${stateIcon(sub.state)}${agent}`);
-    }
-  }
-  return fitWidth(lines, options.width);
-}
-
-export function formatTaskWidget(
-  tasks: readonly TaskStateItem[],
-  options: FormatTodoWidgetOptions = {},
-): string[] | undefined {
-  if (options.collapsed) return undefined;
-  const running = tasks.filter((task) => task.status === "running");
-  if (running.length === 0) return undefined;
-  const lines = [`Tasks (${running.length} running)`];
-  for (const task of running) {
-    const command = task.command
-      ? ` (${sanitizeTerminalText(task.command)})`
-      : "";
-    lines.push(`${sanitizeTerminalText(task.id)} ●${command}`);
-  }
-  return fitWidth(lines, options.width);
-}
-
-export function formatTodoWidget(
-  todos: readonly Todo[],
-  _subagents: readonly SubagentStateItem[] = [],
-  _tasks: readonly TaskStateItem[] = [],
-  options: FormatTodoWidgetOptions = {},
-): string[] | undefined {
-  if (options.collapsed || todos.length === 0) return undefined;
-
-  const sorted = byId(todos);
-  const open = sorted.filter((todo) => !todo.done);
-  const done = sorted.filter((todo) => todo.done);
-  const header =
-    open.length === 0
-      ? `Todos (${done.length} ✓)`
-      : done.length > 0
-        ? `Todos (${open.length} open, ${done.length} ✓)`
-        : `Todos (${open.length} open)`;
-
-  const strikethrough =
-    options.strikethrough ?? ((text: string) => `\x1b[9m${text}\x1b[29m`);
-  const lines = [header];
-  for (const todo of [...open, ...done].slice(0, WIDGET_LIMIT)) {
-    const safeText = sanitizeTerminalText(todo.text);
-    lines.push(
-      todo.done
-        ? `✓ ${todo.id} ${strikethrough(safeText)}`
-        : `• ${todo.id} ${safeText}`,
-    );
-  }
-  if (sorted.length > WIDGET_LIMIT) {
-    lines.push(`+${sorted.length - WIDGET_LIMIT} more (/todos)`);
-  }
-
-  return fitWidth(lines, options.width);
-}
+export type {
+  WidgetFormatOptions as FormatTodoWidgetOptions,
+  WidgetSubagentStateItem as SubagentStateItem,
+  WidgetTaskStateItem as TaskStateItem,
+} from "@hollowheap/tui/widget";
+export {
+  formatSubagentWidget,
+  formatTaskWidget,
+  formatTodoWidget,
+} from "@hollowheap/tui/widget";
 
 export function formatTodoConfirmation(
   todos: readonly Todo[],

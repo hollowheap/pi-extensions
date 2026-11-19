@@ -6,16 +6,24 @@ import type {
   ClassifierResult,
   Usage,
 } from "@earendil-works/pi-ai";
-import type {
-  ExtensionAPI,
-  ExtensionContext as PiExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionContext as PiExtensionContext,
+  defineTool,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { defineTool } from "@earendil-works/pi-coding-agent";
-import { stringifyToolJson } from "@hollowheap/core/format";
+import {
+  errorMessage,
+  sanitizeTerminalText,
+  stringifyToolJson,
+  toolErrorResult,
+  toolTextResult,
+} from "@hollowheap/core/format";
 import { messageCost } from "@hollowheap/core/pricing";
+import { isRecord } from "@hollowheap/core/records";
 import { getSessionCache } from "@hollowheap/core/session-cache";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { appendSessionEntry } from "@hollowheap/core/state";
 import {
   USAGE_ENTRY_TYPE,
   getSessionUsage,
@@ -25,7 +33,7 @@ import {
   setSessionUsage,
 } from "@hollowheap/core/usage";
 import { Type } from "typebox";
-import { loadDecideConfig } from "./config.js";
+import { loadDecideConfig } from "./settings.js";
 
 export type DecideKind = "choice" | "score" | "bool";
 
@@ -54,10 +62,6 @@ function stableStringify(value: unknown): string {
     return `{${entries.join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isProbability(value: unknown): value is number {
@@ -126,11 +130,7 @@ function recordBilledClassifierUsage(
     persistUsage(sessionManager, next);
   }
   if (pi) {
-    try {
-      pi.appendEntry(USAGE_ENTRY_TYPE, next);
-    } catch {
-      // Optional if pi session is not open
-    }
+    appendSessionEntry(pi, undefined, USAGE_ENTRY_TYPE, next);
     pi.events?.emit?.("usage:refresh", undefined);
   }
 }
@@ -172,16 +172,15 @@ export function persistDecideStats(
   if (!force && (persistedStatsCount.get(owner) ?? 0) >= stats.totalCount) {
     return;
   }
-  try {
-    pi?.appendEntry?.(DECIDE_STATS_TYPE, {
+  if (
+    appendSessionEntry(pi, owner, DECIDE_STATS_TYPE, {
       totalCount: stats.totalCount,
       cacheHits: stats.cacheHits,
       ...(stats.lastKind ? { lastKind: stats.lastKind } : {}),
       updatedAt: Date.now(),
-    });
+    })
+  ) {
     persistedStatsCount.set(owner, stats.totalCount);
-  } catch {
-    // Ignore when session persistence is unavailable.
   }
 }
 
@@ -300,9 +299,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       };
       signal.addEventListener("abort", onAbort, { once: true });
       entry.promise.then(finish, (error) =>
-        finish(
-          errorResult(error instanceof Error ? error.message : String(error)),
-        ),
+        finish(errorResult(errorMessage(error))),
       );
     });
   }
@@ -337,7 +334,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
         Type.String({ minLength: 1, description: "Meaning of false" }),
       ),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    execute(_toolCallId, params, signal, _onUpdate, ctx) {
       return executeDecide(params as DecideParams, ctx, signal);
     },
   });
@@ -394,8 +391,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       }
       const details = { ...cached.details, usage: ZERO_USAGE };
       return {
-        content: [{ type: "text", text: stringifyToolJson(details) }],
-        details,
+        ...toolTextResult(stringifyToolJson(details), details),
         usage: ZERO_USAGE,
       };
     }
@@ -413,8 +409,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
       }
       const details = { ...result.details, usage: ZERO_USAGE };
       return {
-        content: [{ type: "text", text: stringifyToolJson(details) }],
-        details,
+        ...toolTextResult(stringifyToolJson(details), details),
         usage: ZERO_USAGE,
       };
     }
@@ -435,9 +430,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
           requestSignal,
         );
       } catch (error) {
-        return errorResult(
-          error instanceof Error ? error.message : String(error),
-        );
+        return errorResult(errorMessage(error));
       }
       if (result.usage !== undefined) {
         recordBilledClassifierUsage(
@@ -470,8 +463,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
         return errorResult(output);
       }
       return {
-        content: [{ type: "text" as const, text: stringifyToolJson(output) }],
-        details: output,
+        ...toolTextResult(stringifyToolJson(output), output),
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       };
     })();
@@ -585,7 +577,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
     if (answer.type === "choice") {
       const labels = new Set((params.labels ?? []).map((label) => label.label));
       if (!labels.has(answer.choice)) {
-        return `decide returned unknown choice "${answer.choice}"`;
+        return `decide returned unknown choice "${sanitizeTerminalText(answer.choice)}"`;
       }
       if (!isRecord(answer.probabilities)) {
         return "decide returned invalid probabilities";
@@ -648,10 +640,7 @@ export function createDecideTool(pi?: ExtensionAPI) {
   }
 
   function errorResult(message: string): DecideToolResult {
-    return {
-      content: [{ type: "text", text: `decide unavailable: ${message}` }],
-      details: { error: message },
-    };
+    return toolErrorResult("decide unavailable", message);
   }
 }
 

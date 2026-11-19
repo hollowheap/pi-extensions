@@ -1,8 +1,11 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { errorMessage } from "@hollowheap/core/format";
+import { getStatuslineProvider } from "@hollowheap/core/statusline";
 import { styleComponent, styleText } from "./colors.js";
-import { BUILTINS, type ComponentContext } from "./components.js";
-import type { ResolvedSeparator, StatuslineConfig } from "./config.js";
+import "./components.js";
+import type { ComponentContext } from "./components.js";
+import type { ResolvedSeparator, StatuslineConfig } from "./settings.js";
 
 const EMPTY_VALUES: ReadonlyMap<string, string> = new Map();
 
@@ -36,18 +39,16 @@ export function renderStatusline(
     const parts: string[] = [];
     for (const spec of config.sections[key]) {
       try {
-        if (Object.hasOwn(BUILTINS, spec.type)) {
-          const builtin = BUILTINS[spec.type];
-          const text = builtin(spec, ctx);
-          if (text !== "") parts.push(styleComponent(text, spec, theme));
-        } else if (config.extensions.includes(spec.type)) {
-          const text = extensions.get(spec.type) ?? "";
-          if (text !== "") parts.push(styleComponent(text, spec, theme));
-        }
+        const provider = getStatuslineProvider(spec.type);
+        const text =
+          provider === undefined
+            ? (extensions.get(spec.type) ?? "")
+            : provider.render(spec, ctx);
+        if (text !== "") parts.push(styleComponent(text, spec, theme));
       } catch (error) {
         if (!reportedTypes.has(spec.type)) {
           reportedTypes.add(spec.type);
-          const detail = error instanceof Error ? error.message : String(error);
+          const detail = errorMessage(error);
           onDiagnostic?.(
             `component "${spec.type}" failed to render: ${detail}`,
           );

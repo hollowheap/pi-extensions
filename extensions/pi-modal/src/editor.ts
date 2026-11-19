@@ -14,6 +14,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { errorMessage } from "@hollowheap/core/format";
 
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
 import { getActiveTuiConfig } from "@hollowheap/tui/state";
@@ -64,6 +65,7 @@ export class ModalEditor extends CustomEditor {
   private pendingInsertChord = "";
   private pendingNormalChord = "";
   private lastBottomBorder: string | undefined;
+  private fullRenderWidth: number | undefined;
   private modeTheme: Theme | undefined;
 
   constructor(
@@ -195,8 +197,7 @@ export class ModalEditor extends CustomEditor {
       }
       this.clipboardError = undefined;
     } catch (error) {
-      this.clipboardError =
-        error instanceof Error ? error.message : String(error);
+      this.clipboardError = errorMessage(error);
     }
   }
 
@@ -476,7 +477,9 @@ export class ModalEditor extends CustomEditor {
         return;
       }
 
-      const visualSeq = this.keymaps.visual[input];
+      const visualSeq = Object.hasOwn(this.keymaps.visual, input)
+        ? this.keymaps.visual[input]
+        : undefined;
       if (typeof visualSeq === "string" && visualSeq.length > 0) {
         super.handleInput(visualSeq);
         return;
@@ -586,7 +589,7 @@ export class ModalEditor extends CustomEditor {
       return;
     }
 
-    if (input in this.keymaps.normal) {
+    if (Object.hasOwn(this.keymaps.normal, input)) {
       const seq = this.keymaps.normal[input];
       if (typeof seq === "string") {
         super.handleInput(seq);
@@ -697,7 +700,7 @@ export class ModalEditor extends CustomEditor {
     return this.explicitBorderStyle ?? getActiveTuiConfig().borderStyle;
   }
 
-  /** Clear constructor overrides so live `/tui` settings take effect immediately. */
+  /** Clear constructor overrides so live `/ui` settings take effect immediately. */
   clearExplicitUiOverrides(): void {
     this.explicitBorderStyle = undefined;
     this.lastBottomBorder = "";
@@ -708,15 +711,16 @@ export class ModalEditor extends CustomEditor {
     width: number,
     hiddenLineCount: number,
   ): string {
+    const targetWidth = this.fullRenderWidth ?? width;
     const borderStyle = this.getEffectiveBorderStyle();
     const colored = getActiveTuiConfig().colored;
-    if (borderStyle === "none" || width < 2) {
-      const raw = super.renderTopBorder(width, hiddenLineCount);
+    if (borderStyle === "none" || targetWidth < 2) {
+      const raw = super.renderTopBorder(targetWidth, hiddenLineCount);
       return (colored ? raw : stripTerminalSequences(raw)).replaceAll("─", " ");
     }
     const paint = this.borderPaint();
     const borderChars = getBorderChars(borderStyle);
-    const innerWidth = width - 2;
+    const innerWidth = targetWidth - 2;
     const inner =
       innerWidth > 0
         ? paint(
@@ -732,21 +736,22 @@ export class ModalEditor extends CustomEditor {
     width: number,
     hiddenLineCount: number,
   ): string {
+    const targetWidth = this.fullRenderWidth ?? width;
     const borderStyle = this.getEffectiveBorderStyle();
     const isBash = this.getText().trimStart().startsWith("!");
     const badge = formatEditorModeBadge(this.mode, isBash);
     const label = ` ${badge} `;
-    if (borderStyle === "none" || width < 2) {
+    if (borderStyle === "none" || targetWidth < 2) {
       const base = stripTerminalSequences(
-        super.renderBottomBorder(width, hiddenLineCount),
+        super.renderBottomBorder(targetWidth, hiddenLineCount),
       ).replaceAll("─", " ");
-      const line = fitRightLabel(base, width, label);
+      const line = fitRightLabel(base, targetWidth, label);
       this.lastBottomBorder = line;
       return line;
     }
     const paint = this.borderPaint();
     const borderChars = getBorderChars(borderStyle);
-    const innerWidth = width - 2;
+    const innerWidth = targetWidth - 2;
     const inner =
       innerWidth > 0
         ? paint(
@@ -764,23 +769,36 @@ export class ModalEditor extends CustomEditor {
   }
 
   override render(width: number): string[] {
-    const lines = super.render(width);
-    if (lines.length === 0) return lines;
-
     const borderStyle = this.getEffectiveBorderStyle();
     const paint = this.borderPaint();
     const promptPrefix = `${this.promptChar} `;
     const promptWidth = visibleWidth(promptPrefix);
     const borderEnabled = borderStyle !== "none" && width >= promptWidth + 2;
     const borderChars = borderEnabled ? getBorderChars(borderStyle) : null;
+    const contentWidth = borderEnabled
+      ? Math.max(1, width - promptWidth - 1)
+      : Math.max(1, width - promptWidth);
+    const paddingX = Math.min(
+      this.getPaddingX(),
+      Math.max(0, Math.floor((width - 1) / 2)),
+    );
+    const hostWidth = Math.max(
+      1,
+      contentWidth + paddingX * 2 + (paddingX === 0 ? 1 : 0),
+    );
+    let lines: string[] = [];
+    this.fullRenderWidth = width;
+    try {
+      lines = super.render(hostWidth);
+    } finally {
+      this.fullRenderWidth = undefined;
+    }
+    if (lines.length === 0) return lines;
+
     const bottomIndex = this.lastBottomBorder
       ? lines.lastIndexOf(this.lastBottomBorder)
       : -1;
     if (bottomIndex < 2) return lines;
-
-    const contentWidth = borderEnabled
-      ? Math.max(1, width - promptWidth - 1)
-      : Math.max(1, width - promptWidth);
     const firstContentIdx = 1;
     const lastContentIdx = bottomIndex - 1;
     const indent = " ".repeat(promptWidth);

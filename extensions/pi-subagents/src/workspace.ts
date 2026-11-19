@@ -1,6 +1,7 @@
 import {
   type Workspace,
   type WorkspaceOperations,
+  WorkspaceTracker,
   allocateWorkspace,
   cleanupWorkspace,
   integrateWorkspace,
@@ -43,37 +44,11 @@ export interface SubagentWorkspaceState {
   status: string;
 }
 
-const TERMINAL = new Set(["completed", "failed", "cancelled"]);
-
-export class SubagentWorkspaceTracker {
-  private readonly workspaces = new Map<string, Workspace>();
-
+export class SubagentWorkspaceTracker extends WorkspaceTracker<SubagentWorkspaceState> {
   constructor(
-    private readonly cleanup: (
-      workspace: Workspace,
-    ) => Promise<void> = cleanupSubagentWorkspace,
-  ) {}
-
-  track(id: string, workspace: Workspace): void {
-    if (workspace.isolated) this.workspaces.set(id, workspace);
-  }
-
-  async cleanupTerminal(
-    states: readonly SubagentWorkspaceState[],
-    onCleaned?: (id: string) => void,
-  ): Promise<void> {
-    for (const state of states) {
-      if (!TERMINAL.has(state.status)) continue;
-      const workspace = this.workspaces.get(state.id);
-      if (workspace === undefined) continue;
-      this.workspaces.delete(state.id);
-      try {
-        await this.cleanup(workspace);
-        onCleaned?.(state.id);
-      } catch {
-        // A failed cleanup must not affect subagent state.
-      }
-    }
+    cleanup: (workspace: Workspace) => Promise<void> = cleanupSubagentWorkspace,
+  ) {
+    super({ cleanup });
   }
 }
 

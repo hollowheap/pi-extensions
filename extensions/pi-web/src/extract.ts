@@ -21,7 +21,10 @@ export function decodeEntities(value: string): string {
     /&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/g,
     (whole, entity: string) => {
       if (entity[0] !== "#") {
-        return NAMED_ENTITIES[entity.toLowerCase()] ?? whole;
+        const lower = entity.toLowerCase();
+        return Object.hasOwn(NAMED_ENTITIES, lower)
+          ? NAMED_ENTITIES[lower]
+          : whole;
       }
       const hex = entity[1]?.toLowerCase() === "x";
       const code = hex
@@ -122,7 +125,7 @@ function mimeFromUrl(url: string): string | undefined {
     wav: "audio/wav",
     pdf: "application/pdf",
   };
-  return mime[ext];
+  return Object.hasOwn(mime, ext) ? mime[ext] : undefined;
 }
 
 function mediaKind(

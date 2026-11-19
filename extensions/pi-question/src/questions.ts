@@ -41,34 +41,14 @@ export function evaluateCondition(
   answers: readonly (QuestionAnswer | undefined)[],
 ): boolean {
   if (!condition) return true;
-  // Simple: "answer1 == 'value'" or "answer1 != 'value'"
-  const match = condition.match(/^answer(\d+)\s*==\s*['"](.+)['"]$/);
-  if (match) {
-    const idx = Number(match[1]) - 1;
-    const answer = answers[idx];
-    if (!answer) return false;
-    const value =
-      answer.mode === "single"
-        ? answer.value
-        : answer.mode === "multi"
-          ? answer.selected.join(",")
-          : answer.value;
-    return value === match[2];
-  }
-  const notMatch = condition.match(/^answer(\d+)\s*!=\s*['"](.+)['"]$/);
-  if (notMatch) {
-    const idx = Number(notMatch[1]) - 1;
-    const answer = answers[idx];
-    if (!answer) return false;
-    const value =
-      answer.mode === "single"
-        ? answer.value
-        : answer.mode === "multi"
-          ? answer.selected.join(",")
-          : answer.value;
-    return value !== notMatch[2];
-  }
-  return false;
+  const match = /^answer(\d+)\s*(==|!=)\s*['"](.+)['"]$/.exec(condition);
+  if (!match) return false;
+  const [, index, operator, expected] = match;
+  const answer = answers[Number(index) - 1];
+  if (!answer) return false;
+  const value =
+    answer.mode === "multi" ? answer.selected.join(",") : answer.value;
+  return operator === "==" ? value === expected : value !== expected;
 }
 
 export function formatAnswers(

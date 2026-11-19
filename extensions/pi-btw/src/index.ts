@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import {
+  type AssistantMessage,
+  type Message,
+  contentText,
+} from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { showMarkdownPager } from "@hollowheap/tui/pager";
+import { hostUi, inputDialog, notify } from "@hollowheap/pi-ui/host";
+import { showMarkdownPager } from "@hollowheap/pi-ui/pager";
 
 const MAX_RESPONSE_TOKENS = 1200;
 const MAX_PROMPT_CHARS = 4000;
@@ -33,13 +38,7 @@ export function buildBtwMessages(
 }
 
 export function responseText(response: AssistantMessage): string {
-  return response.content
-    .filter(
-      (item): item is { type: "text"; text: string } => item.type === "text",
-    )
-    .map((item) => item.text)
-    .join("\n")
-    .trim();
+  return contentText(response.content).trim();
 }
 
 function isAbortError(error: unknown): boolean {
@@ -54,7 +53,7 @@ async function answer(
 ): Promise<void> {
   const model = ctx.model;
   if (model === undefined) {
-    ctx.ui.notify("pi-btw: no active model", "warning");
+    notify(ctx, "pi-btw: no active model", "warning");
     return;
   }
 
@@ -80,7 +79,7 @@ async function answer(
 
   const text = responseText(response);
   if (text === "") {
-    ctx.ui.notify("pi-btw: model returned no text", "warning");
+    notify(ctx, "pi-btw: model returned no text", "warning");
     return;
   }
 
@@ -97,21 +96,26 @@ export default function (pi: ExtensionAPI): void {
     description: "Ask a one-shot side question using the current context",
     handler: async (args, ctx) => {
       let question = args.trim();
-      if (question === "" && ctx.hasUI && typeof ctx.ui.input === "function") {
+      if (
+        question === "" &&
+        ctx.hasUI &&
+        typeof hostUi(ctx).input === "function"
+      ) {
         question =
           (
             await withPromptLock(
-              () => ctx.ui.input("Ask a side question", "Question"),
+              () => inputDialog(ctx, "Ask a side question", "Question"),
               { signal: ctx.signal },
             )
           )?.trim() ?? "";
       }
       if (question === "") {
-        if (ctx.hasUI) ctx.ui.notify("Usage: /btw <question>", "info");
+        if (ctx.hasUI) notify(ctx, "Usage: /btw <question>", "info");
         return;
       }
       if (question.length > MAX_PROMPT_CHARS) {
-        ctx.ui.notify(
+        notify(
+          ctx,
           `pi-btw: question exceeds ${MAX_PROMPT_CHARS} characters`,
           "warning",
         );
@@ -121,27 +125,30 @@ export default function (pi: ExtensionAPI): void {
       const controller = new AbortController();
       const onHostAbort = () => controller.abort();
       ctx.signal?.addEventListener("abort", onHostAbort, { once: true });
-      const disposeTerminalInput = ctx.ui.onTerminalInput?.((data: string) => {
-        if (data === "\x1b" || data === "\x03") {
-          controller.abort();
-          return { consume: true };
-        }
-        return undefined;
-      });
+      const disposeTerminalInput = hostUi(ctx).onTerminalInput?.(
+        (data: string) => {
+          if (data === "\x1b" || data === "\x03") {
+            controller.abort();
+            return { consume: true };
+          }
+          return undefined;
+        },
+      );
 
-      ctx.ui.setStatus?.("btw", "thinking");
+      hostUi(ctx).setStatus?.("btw", "thinking");
       try {
         await answer(ctx, question, controller.signal);
       } catch (error) {
         if (controller.signal.aborted || isAbortError(error)) return;
-        ctx.ui.notify(
-          `pi-btw: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
+        notify(
+          ctx,
+          `pi-btw: ${sanitizeTerminalText(errorMessage(error))}`,
           "error",
         );
       } finally {
         disposeTerminalInput?.();
         ctx.signal?.removeEventListener("abort", onHostAbort);
-        ctx.ui.setStatus?.("btw", undefined);
+        hostUi(ctx).setStatus?.("btw", undefined);
       }
     },
   });

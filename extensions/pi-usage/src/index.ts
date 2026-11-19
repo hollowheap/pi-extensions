@@ -4,6 +4,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { formatDollarCost, messageCost } from "@hollowheap/core/pricing";
+import { createStatuslinePublisher } from "@hollowheap/core/statusline";
 import {
   type CumulativeUsage,
   type SubagentUsage,
@@ -15,6 +16,7 @@ import {
   setSessionBudgetCap,
   setSessionUsage,
 } from "@hollowheap/core/usage";
+import { notify } from "@hollowheap/pi-ui/host";
 import {
   combineUsage,
   mergeSubagentUsage,
@@ -190,24 +192,17 @@ export default function (pi: ExtensionAPI) {
     usage.budgetCap === undefined
       ? ""
       : `${formatDollarCost(usage.totalCost)}/${formatDollarCost(usage.budgetCap)}`;
+  const statusline = createStatuslinePublisher(pi.events, "usage", () =>
+    statusOwner !== undefined ? statusText(combined(statusOwner)) : "",
+  );
   const publishStatus = (usage: CumulativeUsage): void => {
-    pi.events?.emit?.("statusline:values", {
-      name: "usage",
-      text: statusText(usage),
-    });
+    statusline.publish(statusText(usage));
   };
   const publishCurrent = (): void => {
     if (statusOwner !== undefined) {
       publishStatus(combined(statusOwner));
     }
   };
-
-  pi.events?.on?.("statusline:request", (data: unknown) => {
-    if (typeof data !== "object" || data === null) return;
-    const names = (data as { names?: unknown }).names;
-    if (!Array.isArray(names) || !names.includes("usage")) return;
-    publishCurrent();
-  });
 
   pi.events?.on?.("subagents:state", (data: unknown) => {
     if (!Array.isArray(data)) return;
@@ -283,7 +278,7 @@ export default function (pi: ExtensionAPI) {
     warningNotified = false;
     if (statusOwner === ctx.sessionManager) {
       statusOwner = undefined;
-      pi.events?.emit?.("statusline:values", { name: "usage", text: "" });
+      statusline.publish("");
     }
   });
 
@@ -341,7 +336,8 @@ export default function (pi: ExtensionAPI) {
       !warningNotified &&
       after.budgetCap !== undefined
     ) {
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-usage: budget warning (${after.totalCost.toFixed(2)} / ${after.budgetCap.toFixed(2)})`,
         "warning",
       );
@@ -353,7 +349,8 @@ export default function (pi: ExtensionAPI) {
     refreshSubagents(ctx.sessionManager);
     const usage = combined(ctx.sessionManager);
     if (usage.budgetCap !== undefined && usage.totalCost >= usage.budgetCap) {
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-usage: budget cap reached (${usage.totalCost.toFixed(2)} / ${usage.budgetCap.toFixed(2)}); raise it with /usage cap`,
         "error",
       );
@@ -366,7 +363,8 @@ export default function (pi: ExtensionAPI) {
       usage.budgetWarning === true &&
       !warningNotified
     ) {
-      ctx.ui.notify(
+      notify(
+        ctx,
         `pi-usage: budget warning (${usage.totalCost.toFixed(2)} / ${usage.budgetCap.toFixed(2)})`,
         "warning",
       );
@@ -388,7 +386,7 @@ export default function (pi: ExtensionAPI) {
             usage.budgetCap === undefined
               ? "pi-usage: no budget cap set"
               : `pi-usage: budget cap $${usage.budgetCap.toFixed(2)} (used $${usage.totalCost.toFixed(2)})`;
-          if (ctx.hasUI) ctx.ui.notify(text);
+          if (ctx.hasUI) notify(ctx, text);
           else console.log(text);
           return;
         }
@@ -398,7 +396,7 @@ export default function (pi: ExtensionAPI) {
             persist: true,
           });
           publishCurrent();
-          if (ctx.hasUI) ctx.ui.notify("pi-usage: budget cap cleared");
+          if (ctx.hasUI) notify(ctx, "pi-usage: budget cap cleared");
           return;
         }
         const amountText = value.startsWith("$")
@@ -407,7 +405,8 @@ export default function (pi: ExtensionAPI) {
         const amount = Number.parseFloat(amountText);
         if (!Number.isFinite(amount) || amount <= 0) {
           if (ctx.hasUI)
-            ctx.ui.notify(
+            notify(
+              ctx,
               `pi-usage: cap must be a positive dollar amount, e.g. /usage ${sub} $5`,
               "error",
             );
@@ -419,7 +418,8 @@ export default function (pi: ExtensionAPI) {
         });
         publishCurrent();
         if (ctx.hasUI) {
-          ctx.ui.notify(
+          notify(
+            ctx,
             `pi-usage: budget cap $${amount.toFixed(2)}${next.budgetWarning ? " (warning threshold reached)" : ""}`,
             next.budgetWarning ? "warning" : "info",
           );
@@ -431,7 +431,7 @@ export default function (pi: ExtensionAPI) {
       const usage = combined(ctx.sessionManager);
       const report = formatUsageReport(usage, subagents);
       if (ctx.hasUI) {
-        ctx.ui.notify(report);
+        notify(ctx, report);
       } else {
         console.log(report);
       }

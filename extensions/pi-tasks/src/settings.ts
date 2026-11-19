@@ -1,43 +1,73 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
+import { join } from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRecord } from "@hollowheap/core/records";
+import {
+  type SandboxConfig,
+  isSandboxEnabled,
+  isSandboxOffline,
+  parseSandboxConfig,
+  resolveSandboxOptions,
+  saveSandboxConfig,
+} from "@hollowheap/core/sandbox-config";
+import { showSandboxSettings } from "@hollowheap/pi-ui/sandbox-settings";
+
+import { readJsonObject } from "@hollowheap/core/config";
 import {
   type BwrapProbeResult,
   probeBwrapAvailability,
 } from "@hollowheap/runtime/sandbox";
-import { getFrameInnerWidth, roundedFrame } from "@hollowheap/tui/frame";
-import {
-  type TasksConfig,
-  type TasksSettings,
-  isSandboxEnabled,
-  isSandboxOffline,
-} from "./config.js";
 
-const TOGGLES = ["off", "on"];
+export const CONFIG_FILE_NAME = "tasks.json";
 
-function themeFor(theme: Theme): SettingsListTheme {
-  return {
-    label: (text, selected) =>
-      selected ? theme.fg("accent", text) : theme.fg("text", text),
-    value: (text, selected) =>
-      selected ? theme.fg("accent", text) : theme.fg("muted", text),
-    description: (text) => theme.fg("muted", text),
-    cursor: theme.fg("accent", "› "),
-    hint: (text) => theme.fg("dim", text),
+export type TasksSandboxConfig = SandboxConfig;
+
+export interface TasksConfig {
+  readonly sandbox?: boolean | TasksSandboxConfig;
+  readonly path: string;
+  readonly diagnostics: readonly string[];
+}
+
+export interface TasksSettings {
+  sandboxEnabled: boolean;
+  sandboxOffline?: boolean;
+  maskPaths?: readonly string[];
+}
+
+export { isSandboxEnabled, isSandboxOffline };
+export const resolveTasksSandboxOptions = resolveSandboxOptions;
+
+export function loadTasksConfig(
+  agentDir: string,
+  onDiagnostic?: (message: string) => void,
+): TasksConfig {
+  const path = join(agentDir, CONFIG_FILE_NAME);
+  const diagnostics: string[] = [];
+  const parsed = readJsonObject(path, diagnostics);
+
+  const sandbox = isRecord(parsed)
+    ? parseSandboxConfig(parsed.sandbox, diagnostics)
+    : undefined;
+
+  const config: TasksConfig = {
+    ...(sandbox !== undefined ? { sandbox } : {}),
+    path,
+    diagnostics: Object.freeze(diagnostics),
   };
+  if (onDiagnostic !== undefined) {
+    for (const message of config.diagnostics) onDiagnostic(message);
+  }
+  return config;
 }
 
-export function formatBwrapProbeStatus(probe: BwrapProbeResult): string {
-  if (probe.available) {
-    return `available (${probe.path})`;
-  }
-  if (probe.reason === "permission") {
-    return `OS permission error (${probe.path ?? "bwrap"} — check permissions)`;
-  }
-  if (probe.reason === "unsupported") {
-    return "unsupported (Linux user namespaces required)";
-  }
-  return "missing ('bwrap' not found on PATH)";
+/** Persist sandbox settings in tasks.json while preserving unrelated keys. */
+export function saveTasksSettings(
+  agentDir: string,
+  settings: TasksSettings,
+): string {
+  return saveSandboxConfig(join(agentDir, CONFIG_FILE_NAME), settings);
 }
+
+export { formatBwrapProbeStatus } from "@hollowheap/pi-ui/sandbox-settings";
 
 export async function showTasksSettings(
   ctx: ExtensionContext,
@@ -45,79 +75,17 @@ export async function showTasksSettings(
   onSave: (settings: TasksSettings) => void,
   probeBwrap: () => BwrapProbeResult = () => probeBwrapAvailability(),
 ): Promise<void> {
-  if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") return;
-
-  const probe = probeBwrap();
-  const statusText = formatBwrapProbeStatus(probe);
-
-  await ctx.ui.custom<void>(
-    (tui, theme, _keybindings, done) => {
-      let sandboxEnabled = isSandboxEnabled(config.sandbox);
-      let sandboxOffline = isSandboxOffline(config.sandbox);
-
-      const list = new SettingsList(
-        [
-          {
-            id: "sandbox-enabled",
-            label: "Sandbox tasks (bwrap)",
-            description: `Isolate background shell tasks in Bubblewrap (${statusText})`,
-            currentValue: sandboxEnabled ? "on" : "off",
-            values: TOGGLES,
-          },
-          {
-            id: "sandbox-offline",
-            label: "Sandbox offline",
-            description:
-              "Disable network access inside the sandbox (--unshare-net)",
-            currentValue: sandboxOffline ? "on" : "off",
-            values: TOGGLES,
-          },
-        ],
-        8,
-        themeFor(theme),
-        (id, value) => {
-          if (id === "sandbox-enabled") {
-            sandboxEnabled = value === "on";
-          } else if (id === "sandbox-offline") {
-            sandboxOffline = value === "on";
-          }
-          onSave({
-            sandboxEnabled,
-            sandboxOffline,
-          });
-          tui.requestRender();
-        },
-        () => done(),
-        { enableSearch: true },
-      );
-
-      const statusTone = probe.available
-        ? "success"
-        : probe.reason === "permission"
-          ? "error"
-          : "warning";
-
-      return {
-        render(width: number): string[] {
-          const innerWidth = getFrameInnerWidth(width);
-          const statusLine = theme.fg(
-            statusTone,
-            `Bubblewrap (bwrap): ${statusText}`,
-          );
-          const lines = [statusLine, "", ...list.render(innerWidth)];
-          return roundedFrame(lines, width, theme, "Tasks settings");
-        },
-        handleInput(data: string): void {
-          list.handleInput(data);
-        },
-        invalidate(): void {
-          list.invalidate();
-        },
-      };
-    },
-    {
-      overlay: true,
-      overlayOptions: { width: "70%", maxHeight: "70%", margin: 1 },
-    },
-  );
+  await showSandboxSettings({
+    ctx,
+    title: "Tasks settings",
+    label: "Sandbox tasks (bwrap)",
+    enabledDescription: (statusText) =>
+      `Isolate background shell tasks in Bubblewrap (${statusText})`,
+    offlineDescription:
+      "Disable network access inside the sandbox (--unshare-net)",
+    enabled: isSandboxEnabled(config.sandbox),
+    offline: isSandboxOffline(config.sandbox),
+    probeBwrap,
+    onSave,
+  });
 }

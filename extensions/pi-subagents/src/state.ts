@@ -1,7 +1,8 @@
 import { join } from "node:path";
+import { isSameWorkspace } from "@hollowheap/core/scope";
 import type { ProcessState } from "@hollowheap/runtime";
 import { LockedProcessStore } from "@hollowheap/runtime/store";
-import type { SubagentHarnessTransport } from "./config.js";
+import type { SubagentHarnessTransport } from "./settings.js";
 
 export const SUBAGENTS_DIR = "subagents";
 
@@ -43,7 +44,7 @@ export function isInProject(
   state: Pick<SubagentState, "project">,
   project: string | undefined,
 ): boolean {
-  return project !== undefined && state.project === project;
+  return isSameWorkspace(state.project, project);
 }
 
 export function requireTrustedProject(trusted: boolean): void {

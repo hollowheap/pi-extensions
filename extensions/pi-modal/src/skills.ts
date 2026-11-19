@@ -10,6 +10,8 @@ import type {
   AutocompleteProvider,
   AutocompleteSuggestions,
 } from "@earendil-works/pi-tui";
+import { hostUi } from "@hollowheap/pi-ui/host";
+import { applyTokenCompletion } from "@hollowheap/tui/autocomplete";
 
 export interface SkillCommandLike {
   name: string;
@@ -28,12 +30,9 @@ type WrappedMarker = { [SKILL_AUTOCOMPLETE_WRAPPED]?: boolean };
 const wrappedProviders = new WeakSet<object>();
 const registeredUIContexts = new WeakSet<object>();
 
-export function stripFrontmatter(content: string): string {
-  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/);
-  if (match) {
-    return match[1].trim();
-  }
-  return content.trim();
+function stripFrontmatter(content: string): string {
+  const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/.exec(content);
+  return match ? match[1] : content;
 }
 
 export function formatSkillBlock(
@@ -145,25 +144,13 @@ export function createSkillAutocompleteProvider(
 
     applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
       if (prefix.startsWith("$") || item.value.startsWith("$")) {
-        const currentLine = lines[cursorLine] ?? "";
-        const prefixStart = Math.max(0, cursorCol - prefix.length);
-        const charAtCursor = currentLine[cursorCol];
-        const hasTrailingWhitespace =
-          charAtCursor !== undefined && /\s/.test(charAtCursor);
-        const insertText = hasTrailingWhitespace
-          ? item.value
-          : `${item.value} `;
-        const newLine =
-          currentLine.slice(0, prefixStart) +
-          insertText +
-          currentLine.slice(cursorCol);
-        const newLines = [...lines];
-        newLines[cursorLine] = newLine;
-        return {
-          lines: newLines,
+        return applyTokenCompletion(
+          lines,
           cursorLine,
-          cursorCol: prefixStart + insertText.length,
-        };
+          cursorCol,
+          item.value,
+          prefix,
+        );
       }
       return base.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
     },
@@ -200,9 +187,9 @@ export function registerSkillAutocomplete(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): void {
-  if (registeredUIContexts.has(ctx.ui)) return;
-  registeredUIContexts.add(ctx.ui);
-  ctx.ui.addAutocompleteProvider?.((base) =>
+  if (registeredUIContexts.has(hostUi(ctx))) return;
+  registeredUIContexts.add(hostUi(ctx));
+  hostUi(ctx).addAutocompleteProvider?.((base) =>
     createSkillAutocompleteProvider(base, pi),
   );
 }
@@ -256,7 +243,7 @@ export function handleSkillInput(
           name: actualName,
           filePath,
           baseDir: cmd.sourceInfo?.baseDir ?? dirname(filePath),
-          body: stripFrontmatter(raw),
+          body: stripFrontmatter(raw).trim(),
         };
       } catch {
         loaded = undefined;

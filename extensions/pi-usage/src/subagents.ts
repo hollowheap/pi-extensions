@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { messageCost } from "@hollowheap/core/pricing";
+import { isRecord } from "@hollowheap/core/records";
 import type { CumulativeUsage, ModelUsage } from "./index.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -28,10 +29,6 @@ interface UsageTokens {
   cost: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -57,7 +54,7 @@ function emptySubagent(
     cacheWriteTokens: 0,
     totalTokens: 0,
     cost: 0,
-    byModel: {},
+    byModel: Object.create(null) as Record<string, ModelUsage>,
   };
 }
 
@@ -87,7 +84,9 @@ function addModelUsage(
   model: string,
   usage: UsageTokens,
 ): void {
-  const previous = byModel[model] ?? {
+  const previous = (Object.hasOwn(byModel, model)
+    ? byModel[model]
+    : undefined) ?? {
     model,
     inputTokens: 0,
     outputTokens: 0,
@@ -119,7 +118,7 @@ function readCustomUsage(data: unknown):
   ) {
     return undefined;
   }
-  const byModel: Record<string, ModelUsage> = {};
+  const byModel = Object.create(null) as Record<string, ModelUsage>;
   if (isRecord(data.byModel)) {
     for (const [key, raw] of Object.entries(data.byModel)) {
       if (!isRecord(raw)) continue;
@@ -172,27 +171,26 @@ function readChildUsage(
   } catch {
     return undefined;
   }
-  const entries: unknown[] = [];
-  for (const line of raw.split("\n")) {
-    if (line.trim() === "") continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // A partial final JSONL line is ignored.
-    }
-  }
 
   let latestCustom:
     | { tokens: UsageTokens; byModel: Record<string, ModelUsage> }
     | undefined;
-  const byModel: Record<string, ModelUsage> = {};
+  const byModel = Object.create(null) as Record<string, ModelUsage>;
   let input = 0;
   let output = 0;
   let cacheRead = 0;
   let cacheWrite = 0;
   let cost = 0;
 
-  for (const entry of entries) {
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.startsWith("{")) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
     if (!isRecord(entry)) continue;
     if (entry.customType === "hollowheap.usage") {
       const custom = readCustomUsage(entry.data);
@@ -255,8 +253,8 @@ function readChildUsage(
 }
 
 function readByModel(value: unknown): Record<string, ModelUsage> {
-  if (!isRecord(value)) return {};
-  const byModel: Record<string, ModelUsage> = {};
+  const byModel = Object.create(null) as Record<string, ModelUsage>;
+  if (!isRecord(value)) return byModel;
   for (const [key, raw] of Object.entries(value)) {
     if (!isRecord(raw)) continue;
     byModel[key] = {
@@ -376,7 +374,10 @@ export function combineUsage(
 ): CumulativeUsage {
   const combined: CumulativeUsage = {
     ...parent,
-    byModel: { ...parent.byModel },
+    byModel: Object.assign(
+      Object.create(null) as Record<string, ModelUsage>,
+      parent.byModel,
+    ),
   };
   for (const row of subagents) {
     if (!row.available) continue;
@@ -402,7 +403,9 @@ export function combineUsage(
             ]
           : [];
     for (const model of models) {
-      const previous = combined.byModel[model.model];
+      const previous = Object.hasOwn(combined.byModel, model.model)
+        ? combined.byModel[model.model]
+        : undefined;
       combined.byModel[model.model] = previous
         ? {
             ...model,

@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { abortableDelay } from "@hollowheap/runtime/abort";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
   cancelProcessGroup,
@@ -24,7 +25,7 @@ import {
   type SubagentHarnessTransport,
   loadSubagentsConfig,
   resolveSubagentSandboxOptions,
-} from "./config.js";
+} from "./settings.js";
 import { runnerRequest, waitForRunner } from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
 
@@ -83,24 +84,6 @@ function writeConfig(path: string, config: RunnerConfig): void {
     // Best-effort.
   }
   renameSync(tmp, path);
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 export async function startSubagent(
@@ -382,7 +365,10 @@ export async function waitSubagent(
     if (reconciled.status !== "running" && reconciled.status !== "starting")
       return reconciled;
     if (signal?.aborted || Date.now() >= deadline) return state;
-    await sleep(Math.min(50, Math.max(5, deadline - Date.now())), signal);
+    await abortableDelay(
+      Math.min(50, Math.max(5, deadline - Date.now())),
+      signal,
+    );
   }
 }
 

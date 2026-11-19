@@ -6,18 +6,20 @@ import {
 import { isPermissionError, loadPermissions } from "@hollowheap/core/config";
 import {
   displayTarget,
+  errorMessage,
   sanitizeTerminalText,
+  toolErrorResult,
+  toolTextResult,
   truncateText,
 } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
-import { effectiveCwd } from "@hollowheap/core/state";
+import { appendSessionEntry, effectiveCwd } from "@hollowheap/core/state";
+import { confirmDialog, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
 import { taskAlertTracker } from "./alerts.js";
-import { loadTasksConfig, resolveTasksSandboxOptions } from "./config.js";
-import { generateTaskId } from "./registry.js";
-import { type TaskRecord, taskLogPath } from "./registry.js";
+import { type TaskRecord, generateTaskId, taskLogPath } from "./registry.js";
 import {
   cancelTask,
   reconcileAllTasks,
@@ -25,6 +27,7 @@ import {
   spawnShellTask,
   waitForTask,
 } from "./runner.js";
+import { loadTasksConfig, resolveTasksSandboxOptions } from "./settings.js";
 import {
   allocateTaskWorkspace,
   cleanupTaskWorkspace,
@@ -58,13 +61,6 @@ interface TaskToolDetails {
   id?: string;
   status?: string;
   runningCount: number;
-}
-
-function textResult(text: string, details: TaskToolDetails) {
-  return {
-    content: [{ type: "text" as const, text }],
-    details,
-  };
 }
 
 function countRunning(tasks: readonly TaskRecord[]): number {
@@ -220,7 +216,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
         action !== "cancel"
       ) {
         const runningCount = refreshRunningCount();
-        return textResult(
+        return toolTextResult<TaskToolDetails>(
           `Invalid task action: ${String(action)}. Expected start, list, status, wait, or cancel.`,
           { action: String(action), runningCount },
         );
@@ -229,7 +225,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
       if (action === "start") {
         if (!ctx.isProjectTrusted()) {
           const runningCount = refreshRunningCount();
-          return textResult(
+          return toolTextResult<TaskToolDetails>(
             "task start requires a trusted project; durable background tasks survive the session.",
             { action, runningCount },
           );
@@ -238,10 +234,13 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           typeof params.command === "string" ? params.command.trim() : "";
         if (command === "") {
           const runningCount = refreshRunningCount();
-          return textResult("task start requires a command.", {
-            action,
-            runningCount,
-          });
+          return toolTextResult<TaskToolDetails>(
+            "task start requires a command.",
+            {
+              action,
+              runningCount,
+            },
+          );
         }
 
         const rules = loadPermissions({
@@ -249,7 +248,8 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           workspaceRoot: ctx.cwd,
           trusted: ctx.isProjectTrusted(),
           onDiagnostic: (message) =>
-            ctx.ui.notify(
+            notify(
+              ctx,
               `pi-tasks: ${sanitizeTerminalText(message)}`,
               "warning",
             ),
@@ -263,7 +263,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
         });
         if (verdict === "deny") {
           const runningCount = refreshRunningCount();
-          return textResult(
+          return toolTextResult<TaskToolDetails>(
             `pi-tasks: shell access to ${displayTarget(command)} is denied`,
             { action, runningCount },
           );
@@ -272,20 +272,21 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           (getSessionSnapshot(ctx.sessionManager).guard?.activeGrantCount ??
             0) > 0;
         if (verdict === "ask" && !guardGrantActive) {
-          if (!ctx.hasUI || typeof ctx.ui.confirm !== "function") {
+          if (!ctx.hasUI || typeof hostUi(ctx).confirm !== "function") {
             const runningCount = refreshRunningCount();
-            return textResult(
+            return toolTextResult<TaskToolDetails>(
               `pi-tasks: shell access to ${displayTarget(command)} needs approval (no UI)`,
               { action, runningCount },
             );
           }
-          const approved = await ctx.ui.confirm(
+          const approved = await confirmDialog(
+            ctx,
             "Allow task?",
             sanitizeTerminalText(command),
           );
           if (!approved) {
             const runningCount = refreshRunningCount();
-            return textResult(
+            return toolTextResult<TaskToolDetails>(
               `pi-tasks: shell access to ${displayTarget(command)} was not approved`,
               { action, runningCount },
             );
@@ -301,19 +302,25 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           for (const dep of deps) {
             if (!taskMap.has(dep)) {
               const runningCount = refreshRunningCount();
-              return textResult(`Dependency not found: ${dep}`, {
-                action,
-                runningCount,
-              });
+              return toolTextResult<TaskToolDetails>(
+                `Dependency not found: ${dep}`,
+                {
+                  action,
+                  runningCount,
+                },
+              );
             }
           }
           const cycle = findDependencyCycle(deps, taskMap);
           if (cycle) {
             const runningCount = refreshRunningCount();
-            return textResult(`Dependency cycle: ${cycle.join(" -> ")}`, {
-              action,
-              runningCount,
-            });
+            return toolTextResult<TaskToolDetails>(
+              `Dependency cycle: ${cycle.join(" -> ")}`,
+              {
+                action,
+                runningCount,
+              },
+            );
           }
           // Check if any dep is still running
           const pendingDeps = deps.filter((dep) => {
@@ -322,7 +329,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           });
           if (pendingDeps.length > 0) {
             const runningCount = refreshRunningCount();
-            return textResult(
+            return toolTextResult<TaskToolDetails>(
               `Waiting for dependencies: ${pendingDeps.join(", ")}`,
               { action, runningCount },
             );
@@ -334,7 +341,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           });
           if (failedDeps.length > 0) {
             const runningCount = refreshRunningCount();
-            return textResult(
+            return toolTextResult<TaskToolDetails>(
               `Dependencies failed or cancelled: ${failedDeps.join(", ")}`,
               {
                 action,
@@ -346,7 +353,8 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
 
         const tasksConfig = loadTasksConfig(agentDir, (message) => {
           if (ctx.hasUI) {
-            ctx.ui.notify(
+            notify(
+              ctx,
               `pi-tasks: ${message}`,
               isPermissionError(message) ? "error" : "warning",
             );
@@ -373,23 +381,23 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
           });
         } catch (error) {
           await cleanupTaskWorkspace(workspace).catch(() => {});
-          const message =
-            error instanceof Error ? error.message : String(error);
+          const message = errorMessage(error);
           if (
             ctx.hasUI &&
             (isPermissionError(error) || isOsPermissionError(error))
           ) {
-            ctx.ui.notify(`pi-tasks: ${message}`, "error");
+            notify(ctx, `pi-tasks: ${message}`, "error");
           }
           const runningCount = refreshRunningCount();
-          return textResult(`pi-tasks: failed to start task: ${message}`, {
-            action,
-            runningCount,
-          });
+          return toolErrorResult<TaskToolDetails>(
+            "pi-tasks: failed to start task",
+            error,
+            { action, runningCount },
+          );
         }
         taskWorkspaceTracker.track(record.id, workspace);
         taskAlertTracker.seed(record);
-        piApi?.appendEntry?.(TASK_RUN_TYPE, {
+        appendSessionEntry(piApi, ctx.sessionManager, TASK_RUN_TYPE, {
           id: record.id,
           command: record.command,
           cwd: record.cwd,
@@ -397,7 +405,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
         });
         const runningCount = refreshRunningCount();
         const log = taskLogPath(agentDir, record.id);
-        return textResult(
+        return toolTextResult<TaskToolDetails>(
           `Started task ${record.id} (pid: ${record.pid ?? "unknown"})\nlog: ${log}`,
           {
             action,
@@ -421,7 +429,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
               status: task.status,
             })),
         );
-        return textResult(formatTaskList(all), {
+        return toolTextResult<TaskToolDetails>(formatTaskList(all), {
           action,
           runningCount,
         });
@@ -430,29 +438,35 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
       const id = typeof params.id === "string" ? params.id.trim() : "";
       if (id === "") {
         const runningCount = refreshRunningCount();
-        return textResult(`task ${action} requires an id.`, {
-          action,
-          runningCount,
-        });
+        return toolTextResult<TaskToolDetails>(
+          `task ${action} requires an id.`,
+          {
+            action,
+            runningCount,
+          },
+        );
       }
 
       if (action === "status") {
         const record = reconcileTask(agentDir, id);
         const runningCount = refreshRunningCount();
         if (!record) {
-          return textResult(`Task not found: ${id}`, {
+          return toolTextResult<TaskToolDetails>(`Task not found: ${id}`, {
             action,
             id,
             runningCount,
           });
         }
         const out = await record.output();
-        return textResult(formatTaskDetail(agentDir, record, out), {
-          action,
-          id: record.id,
-          status: record.status,
-          runningCount,
-        });
+        return toolTextResult<TaskToolDetails>(
+          formatTaskDetail(agentDir, record, out),
+          {
+            action,
+            id: record.id,
+            status: record.status,
+            runningCount,
+          },
+        );
       }
 
       if (action === "wait") {
@@ -462,7 +476,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
             ? params.timeoutMs
             : 30_000;
         const { withCancellableProgress } = await import(
-          "@hollowheap/tui/progress"
+          "@hollowheap/pi-ui/progress"
         );
         const waited = await withCancellableProgress(
           ctx,
@@ -473,7 +487,7 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
         const runningCount = refreshRunningCount();
         if (waited.status === "cancelled") {
           const current = reconcileTask(agentDir, id);
-          return textResult(
+          return toolTextResult<TaskToolDetails>(
             `Stopped waiting for task ${id}; it is still ${current?.status ?? "unknown"}.`,
             {
               action,
@@ -485,37 +499,43 @@ export function createTaskTool(deps: TaskToolDeps, pi?: ExtensionAPI) {
         }
         const record = waited.value;
         if (!record) {
-          return textResult(`Task not found: ${id}`, {
+          return toolTextResult<TaskToolDetails>(`Task not found: ${id}`, {
             action,
             id,
             runningCount,
           });
         }
         const out = await record.output();
-        return textResult(formatTaskDetail(agentDir, record, out), {
-          action,
-          id: record.id,
-          status: record.status,
-          runningCount,
-        });
+        return toolTextResult<TaskToolDetails>(
+          formatTaskDetail(agentDir, record, out),
+          {
+            action,
+            id: record.id,
+            status: record.status,
+            runningCount,
+          },
+        );
       }
 
       const record = await cancelTask(agentDir, id);
       const runningCount = refreshRunningCount();
       if (!record) {
-        return textResult(`Task not found: ${id}`, {
+        return toolTextResult<TaskToolDetails>(`Task not found: ${id}`, {
           action,
           id,
           runningCount,
         });
       }
       const out = await record.output();
-      return textResult(formatTaskDetail(agentDir, record, out), {
-        action,
-        id: record.id,
-        status: record.status,
-        runningCount,
-      });
+      return toolTextResult<TaskToolDetails>(
+        formatTaskDetail(agentDir, record, out),
+        {
+          action,
+          id: record.id,
+          status: record.status,
+          runningCount,
+        },
+      );
     },
   });
 }

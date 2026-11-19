@@ -3,14 +3,9 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { loadPermissions, loadToolTags } from "@hollowheap/core/config";
-import { type PathTag, checkPath } from "@hollowheap/core/policy";
+import { type PathTag, checkPath, isPathTag } from "@hollowheap/core/policy";
 import type { Rule, Tag } from "@hollowheap/core/types";
-
-const PATH_TAGS: readonly PathTag[] = ["edit", "read", "search"];
-
-function isPathTag(tag: Tag): tag is PathTag {
-  return PATH_TAGS.includes(tag as PathTag);
-}
+import { notify } from "@hollowheap/pi-ui/host";
 
 function contextOptions(ctx: ExtensionContext) {
   return {
@@ -18,7 +13,7 @@ function contextOptions(ctx: ExtensionContext) {
     workspaceRoot: ctx.cwd,
     trusted: ctx.isProjectTrusted(),
     onDiagnostic: (message: string) =>
-      ctx.ui.notify(`pi-tools: ${message}`, "warning"),
+      notify(ctx, `pi-tools: ${message}`, "warning"),
   };
 }
 
@@ -44,7 +39,9 @@ export function isPathDenied(
 ): boolean {
   const { rules, toolTags } = loadContextPolicy(ctx);
   const tags = new Set<PathTag>([
-    ...PATH_TAGS,
+    "edit",
+    "read",
+    "search",
     ...Object.values(toolTags).filter(isPathTag),
   ]);
   for (const tag of tags) {

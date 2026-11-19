@@ -1,17 +1,16 @@
 import { readFileSync } from "node:fs";
+import { abortableDelay } from "@hollowheap/runtime/abort";
+import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
   cancelProcessGroup,
   isProcessAlive,
   terminateProcessGroups,
 } from "@hollowheap/runtime/process";
-export { readProcStartTime } from "@hollowheap/runtime/process";
-import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
   type SandboxOptions,
   wrapSandboxCommand,
 } from "@hollowheap/runtime/sandbox";
 import { LockedProcessStore } from "@hollowheap/runtime/store";
-import { loadTasksConfig, resolveTasksSandboxOptions } from "./config.js";
 import {
   type TaskMetadata,
   type TaskRecord,
@@ -22,6 +21,9 @@ import {
   taskMetaPath,
   toTaskRecord,
 } from "./registry.js";
+import { loadTasksConfig, resolveTasksSandboxOptions } from "./settings.js";
+
+export { readProcStartTime } from "@hollowheap/runtime/process";
 
 const SHIM_SCRIPT = readFileSync(
   new URL("./shim.cjs", import.meta.url),
@@ -141,24 +143,6 @@ export async function spawnShellTask(
   return toTaskRecord(opts.agentDir, current);
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 export async function waitForTask(
   agentDir: string,
   id: string,
@@ -174,7 +158,7 @@ export async function waitForTask(
     if (current.status !== "running") return current;
     if (signal?.aborted || Date.now() >= deadline) return current;
     const remaining = deadline - Date.now();
-    await sleep(Math.min(40, Math.max(5, remaining)), signal);
+    await abortableDelay(Math.min(40, Math.max(5, remaining)), signal);
   }
 }
 

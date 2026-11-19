@@ -7,14 +7,14 @@ export function fitLines(
   align: "left" | "center" = "left",
 ): string[] {
   return lines.map((line) => {
+    if (align === "left") {
+      return truncateToWidth(line, width, "...", true);
+    }
     const truncated = truncateToWidth(line, width);
     const gap = width - visibleWidth(truncated);
     if (gap <= 0) return truncated;
-    if (align === "center") {
-      const left = Math.floor(gap / 2);
-      return " ".repeat(left) + truncated + " ".repeat(gap - left);
-    }
-    return truncated + " ".repeat(gap);
+    const left = Math.floor(gap / 2);
+    return " ".repeat(left) + truncated + " ".repeat(gap - left);
   });
 }
 

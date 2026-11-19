@@ -1,7 +1,10 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import { loadLanguageToolsConfig } from "./config.js";
+import { notify } from "@hollowheap/pi-ui/host";
+import { loadLanguageToolsConfig } from "./settings.js";
 import { createLangTool, isLspLoaded, setLspLoaded } from "./tool.js";
 
 export default function (pi: ExtensionAPI) {
@@ -31,7 +34,7 @@ export default function (pi: ExtensionAPI) {
     if (!reported && diagnostics.length > 0) {
       reported = true;
       for (const message of diagnostics) {
-        ctx.ui.notify(`pi-language-tools: ${message}`, "warning");
+        notify(ctx, `pi-language-tools: ${message}`, "warning");
       }
     }
     const active = pi.getActiveTools();

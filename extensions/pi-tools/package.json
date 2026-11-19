@@ -2,7 +2,7 @@
   "name": "@hollowheap/pi-tools",
   "version": "0.3.0",
   "type": "module",
-  "description": "Workspace working-directory command for the Pi coding agent",
+  "description": "Workspace directory control and codemode tools for the Pi coding agent",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -13,10 +13,14 @@
     "extensions": ["./index.ts"]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.3.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/pi-ui": "^0.1.0",
+    "@hollowheap/tui": "^0.3.0"
   },
   "publishConfig": {
     "access": "public"

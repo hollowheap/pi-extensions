@@ -27,3 +27,5 @@ earlier answer matches. The UI always appends a `Write-in answer` row.
 - **Cancellation:** dismissing any dialog cancels the whole set and sends no follow-up.
 - **Pages and branching:** pages are answered in ascending order with Next/Back navigation; conditions evaluate against prior answers by source question number.
 - **One call per set:** all questions from one tool call are answered sequentially, then the formatted answers are returned.
+In the terminal, Shift+Left/Right or Shift+H/L switches focus between an
+open question and the main prompt. Both drafts stay in place.

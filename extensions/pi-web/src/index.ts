@@ -3,9 +3,18 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { isPermissionError } from "@hollowheap/core/config";
+import { errorMessage } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
-import { type WebSettings, loadWebConfig, saveWebSettings } from "./config.js";
+import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
+import { hostUi, notify } from "@hollowheap/pi-ui/host";
+import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import {
+  type WebSettings,
+  loadWebConfig,
+  saveWebSettings,
+  showWebSettings,
+} from "./settings.js";
 import {
   WEB_HISTORY_TYPE,
   createWebFetchTool,
@@ -23,12 +32,7 @@ export default function (pi: ExtensionAPI): void {
   const restoreWebSession = (ctx?: ExtensionContext) => {
     if (!ctx) return;
     lastCtx = ctx;
-    const entries =
-      (typeof ctx.sessionManager?.getBranch === "function"
-        ? ctx.sessionManager.getBranch()
-        : typeof ctx.sessionManager?.getEntries === "function"
-          ? ctx.sessionManager.getEntries()
-          : []) ?? [];
+    const entries = readBranchEntries(ctx.sessionManager) ?? [];
     let lastData:
       | {
           urls?: string[];
@@ -103,7 +107,7 @@ export default function (pi: ExtensionAPI): void {
       state.searchCount > 0 ||
       state.fetchCount > 0
     ) {
-      pi.appendEntry(WEB_HISTORY_TYPE, {
+      appendSessionEntry(pi, owner, WEB_HISTORY_TYPE, {
         urls: state.urls,
         searchCount: state.searchCount,
         fetchCount: state.fetchCount,
@@ -117,9 +121,11 @@ export default function (pi: ExtensionAPI): void {
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
-        return ["settings", "config", "insert"]
-          .filter((action) => action.startsWith((parts[0] ?? "").toLowerCase()))
-          .map((action) => ({ value: action, label: action }));
+        return prefixCompletions(parts[0] ?? "", [
+          "settings",
+          "config",
+          "insert",
+        ]);
       }
       if (parts[0] !== "insert" || parts.length > 2) return null;
       const query = (parts[1] ?? "").toLowerCase();
@@ -142,7 +148,7 @@ export default function (pi: ExtensionAPI): void {
         const links = getLastWebLinks(ctx?.sessionManager);
         if (links.length === 0) {
           if (ctx.hasUI) {
-            ctx.ui.notify("No recent web results to insert.", "info");
+            notify(ctx, "No recent web results to insert.", "info");
           }
           return;
         }
@@ -150,7 +156,8 @@ export default function (pi: ExtensionAPI): void {
           parts[1] === undefined ? undefined : Number.parseInt(parts[1], 10);
         if (index === undefined) {
           if (ctx.hasUI) {
-            ctx.ui.notify(
+            notify(
+              ctx,
               links.map((url, i) => `${i + 1}. ${url}`).join("\n"),
               "info",
             );
@@ -160,19 +167,19 @@ export default function (pi: ExtensionAPI): void {
         const url = links[index - 1];
         if (!Number.isInteger(index) || url === undefined) {
           if (ctx.hasUI) {
-            ctx.ui.notify(`Usage: /web insert <1-${links.length}>`, "error");
+            notify(ctx, `Usage: /web insert <1-${links.length}>`, "error");
           }
           return;
         }
-        if (typeof ctx.ui.pasteToEditor !== "function") {
+        if (typeof hostUi(ctx).pasteToEditor !== "function") {
           if (ctx.hasUI) {
-            ctx.ui.notify("Editor insertion is unavailable.", "error");
+            notify(ctx, "Editor insertion is unavailable.", "error");
           }
           return;
         }
-        ctx.ui.pasteToEditor(url);
+        hostUi(ctx).pasteToEditor(url);
         if (ctx.hasUI) {
-          ctx.ui.notify(`Inserted ${url}`, "info");
+          notify(ctx, `Inserted ${url}`, "info");
         }
         return;
       }
@@ -182,7 +189,8 @@ export default function (pi: ExtensionAPI): void {
         subcommand !== "config"
       ) {
         if (ctx.hasUI) {
-          ctx.ui.notify(
+          notify(
+            ctx,
             "Usage: /web [settings|config] or /web insert <n>",
             "info",
           );
@@ -190,41 +198,32 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
       const config = loadWebConfig(getAgentDir());
-      if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
-        if (ctx.hasUI) {
-          for (const diagnostic of config.diagnostics) {
-            ctx.ui.notify(
-              `pi-web: ${diagnostic}`,
-              isPermissionError(diagnostic) ? "error" : "warning",
-            );
-          }
-          ctx.ui.notify(
-            `Web settings require TUI mode; edit ${config.path}`,
-            "info",
-          );
-        }
-        return;
-      }
-      for (const diagnostic of config.diagnostics) {
-        ctx.ui.notify(
-          `pi-web: ${diagnostic}`,
-          isPermissionError(diagnostic) ? "error" : "warning",
-        );
-      }
-      let saved = false;
-      const { showWebSettings } = await import("./settings.js");
-      await showWebSettings(ctx, config, (settings: WebSettings) => {
-        try {
-          saveWebSettings(getAgentDir(), settings);
-          saved = true;
-        } catch (error) {
-          ctx.ui.notify(
-            `pi-web: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
-            "error",
-          );
-        }
+      await runSettingsCommand(ctx, {
+        prefix: "pi-web",
+        title: "Web settings",
+        configPath: config.path,
+        diagnostics: config.diagnostics,
+        savedMessage: "Web settings saved",
+        open: async () => {
+          let saved = false;
+          await showWebSettings(ctx, config, (settings: WebSettings) => {
+            try {
+              saveWebSettings(getAgentDir(), settings);
+              saved = true;
+            } catch (error) {
+              saved = false;
+              if (ctx.hasUI) {
+                notify(
+                  ctx,
+                  `pi-web: failed to save settings: ${errorMessage(error)}`,
+                  "error",
+                );
+              }
+            }
+          });
+          return saved;
+        },
       });
-      if (saved) ctx.ui.notify("Web settings saved", "info");
     },
   });
 }

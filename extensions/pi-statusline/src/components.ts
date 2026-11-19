@@ -1,34 +1,18 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import type { ComponentSpec } from "./config.js";
+import { basename, join } from "node:path";
+import { findAncestorMatch, isWithinWorkspace } from "@hollowheap/core/scope";
+import {
+  type StatuslineContext,
+  type StatuslineGitDiffSummary,
+  type StatuslineTokenTotals,
+  registerStatuslineProvider,
+} from "@hollowheap/core/statusline";
+import type { ComponentSpec } from "./settings.js";
 
-export interface GitDiffSummary {
-  added: number;
-  modified: number;
-  removed: number;
-  untracked: number;
-}
-
-export interface TokenTotals {
-  input: number;
-  output: number;
-  cost: number;
-}
-
-export interface ComponentContext {
-  cwd: string;
-  homeDir: string;
-  repoRoot?: string | null;
-  modelId: string | undefined;
-  branch: string | null;
-  tokens: TokenTotals;
-  contextPercent: number | null;
-  busy: boolean;
-  now: Date;
-  gitDiff: GitDiffSummary | undefined;
-  thinkingLevel?: string | undefined;
-}
+export type GitDiffSummary = StatuslineGitDiffSummary;
+export type TokenTotals = StatuslineTokenTotals;
+export type ComponentContext = StatuslineContext;
 
 export type ComponentFn = (
   spec: ComponentSpec,
@@ -102,33 +86,20 @@ const mode: ComponentFn = (spec, ctx) => {
 
 export function findGitRoot(startDir: string): string | undefined {
   try {
-    let dir = resolve(startDir);
-    while (true) {
-      if (existsSync(join(dir, ".git"))) {
-        return dir;
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
+    return findAncestorMatch(startDir, (dir) =>
+      existsSync(join(dir, ".git")) ? dir : undefined,
+    );
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 const cwd: ComponentFn = (spec, ctx) => {
   const depth = optNumber(spec, "depth");
   const root =
     ctx.repoRoot === null ? undefined : (ctx.repoRoot ?? findGitRoot(ctx.cwd));
-  if (root !== undefined) {
-    const inside =
-      ctx.cwd === root ||
-      (ctx.cwd.startsWith(root) &&
-        (ctx.cwd[root.length] === "/" || ctx.cwd[root.length] === "\\"));
-    if (inside) {
-      return basename(root);
-    }
+  if (root !== undefined && isWithinWorkspace(root, ctx.cwd)) {
+    return basename(root);
   }
   return shortenPath(
     ctx.cwd,
@@ -202,7 +173,9 @@ const modelEffort: ComponentFn = (spec, ctx) => {
     xhigh: "XH",
     max: "MAX",
   };
-  const effortShort = EFFORT_SHORT[effort] ?? effort;
+  const effortShort = Object.hasOwn(EFFORT_SHORT, effort)
+    ? EFFORT_SHORT[effort]
+    : effort;
   if (!effortShort) return modelText;
   return `${modelText} · ${effortShort}`;
 };
@@ -233,6 +206,8 @@ const thinking: ComponentFn = (_spec, ctx) => ctx.thinkingLevel ?? "";
 const text: ComponentFn = (spec) => optString(spec, "text", "");
 
 export const BUILTINS: Record<string, ComponentFn> = {
+  "usage-pct": (_spec, ctx) =>
+    ctx.budgetPercent === undefined ? "" : `${ctx.budgetPercent}%`,
   mode,
   cwd,
   git_branch: gitBranch,
@@ -267,6 +242,17 @@ export function clockIntervalMs(
     }
   }
   return interval;
+}
+
+for (const [name, render] of Object.entries(BUILTINS)) {
+  registerStatuslineProvider({
+    name,
+    render,
+    intervalMs:
+      name === "clock"
+        ? (spec) => clockIntervalMs({ a: [spec as ComponentSpec] })
+        : undefined,
+  });
 }
 
 export function parseGitPorcelain(porcelain: string): GitDiffSummary {

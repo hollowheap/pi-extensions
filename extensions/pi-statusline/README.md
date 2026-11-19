@@ -20,7 +20,6 @@ Create `<agentDir>/statusline.json` (`~/.pi/agent/statusline.json`). Missing fil
     "componentSeparator": " ",
     "sectionSeparator": "  "
   },
-  "extensions": ["mode-guard", "usage"],
   "sections": {
     "a": [{ "type": "mode-guard" }],
     "b": [{ "type": "git_branch" }, { "type": "cwd" }],
@@ -81,6 +80,7 @@ Every component also accepts `fg`, `bg`, and `bold` with the same values as sepa
 | `tokens` | session `↑input ↓output` | `showInput`, `showOutput` |
 | `cost` | session spend | `decimals` (default `3`), `prefix` (default `"$"`) |
 | `context` | context window usage percent | — |
+| `usage-pct` | Share of the session dollar cap spent, including available subagent costs | — |
 | `clock` | current time | `format` (`YYYY MM DD HH mm ss`, default `"HH:mm"`), `intervalMs` |
 | `thinking` | current thinking level, blank when unknown | — |
 | `text` | static string | `text` |
@@ -120,7 +120,7 @@ Map a segment name to a command in `statusline.json`:
 
 Use `/statusline click <segment>` to run the mapped command. Actions beginning with `/` are sent as Pi slash commands; other actions are split into an executable and arguments and run without a shell. Output and failures are shown as notifications.
 
-Defaults: `mode` → `/mode`, `model` → `/model`, `usage` → `/usage`. Configure `clickActions` to override them.
+Defaults: `mode` → `/mode`, `model` → `/model`, and both `usage` and `usage-pct` → `/usage`. Configure `clickActions` to override them.
 
 Mouse input is owned by Pi's main-screen renderer, so this package exposes click actions through the `/statusline click` command rather than raw footer mouse events.
 
@@ -136,21 +136,58 @@ Mouse input is owned by Pi's main-screen renderer, so this package exposes click
 
 ## Extension layer
 
-Other extensions can contribute named components without this package importing them. A section references one by `type`, and the top-level `extensions` array enables it — names missing from the array render nothing:
+Other extensions contribute named components by registering a provider. A section references the provider by `type`; no allowlist or `pi-statusline` code change is needed:
 
 ```json
 {
-  "extensions": ["mode-guard"],
   "sections": {
     "a": [{ "type": "mode-guard", "fg": "green", "bold": true }]
   }
 }
 ```
 
-The protocol runs over pi's shared event bus, so neither side imports the other:
+```ts
+import { registerStatuslineProvider } from "@hollowheap/core/statusline";
 
-- Providers emit `pi.events.emit("statusline:values", { name, text })` whenever a value changes (and once with the current snapshot on `session_start`).
-- This package emits `pi.events.emit("statusline:request", { names })` whenever it (re)installs the footer; providers answer by re-emitting their current values.
-- Payloads are `{ name: string, text: string }`; unknown shapes are ignored. Updates re-render the footer.
+const dispose = registerStatuslineProvider({
+  name: "my-component",
+  render: (spec, ctx) => ctx.busy ? "BUSY" : "READY",
+});
+```
+
+`render(spec, ctx)` must return plain text. `pi-statusline` owns styling, pill caps, truncation, and placement. Providers may also implement `refresh(spec, ctx)` for cached async values and `intervalMs(spec)` to request a refresh cadence. The disposer removes the registration.
+
+The legacy event bus remains supported for existing providers:
+
+- Providers emit `pi.events.emit("statusline:values", { name, text })` whenever a value changes.
+- This package emits `pi.events.emit("statusline:request", { names })` when it installs the footer; providers answer by re-emitting current values.
+- The first value for a name registers a compatibility provider automatically.
 
 `pi-guard` provides `mode-guard` (current policy mode, uppercased) and `pi-usage` provides `usage` (`$0.05/$5.00`, empty without a cap).
+
+## Script components
+
+The built-in `script` provider runs a configured command without a shell and renders its first output line:
+
+```json
+{
+  "sections": {
+    "b": [
+      {
+        "type": "script",
+        "command": "git rev-parse --short HEAD",
+        "intervalMs": 5000,
+        "timeoutMs": 1000,
+        "maxChars": 40
+      }
+    ]
+  }
+}
+```
+
+`args` may add an array of arguments; `cwd` overrides the session working directory. Failures and empty output hide the component. Values are cached and refreshed on footer install, turns, tool completion, and `intervalMs`.
+
+Use `{ "type": "usage-pct" }` in a section for a whole-number percentage,
+such as `42%`. The component reads the active branch's persisted
+`pi-usage` data, shows spend above the cap, and stays hidden when the
+branch has no cap.

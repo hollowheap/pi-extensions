@@ -3,22 +3,26 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { isPermissionError } from "@hollowheap/core/config";
-import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
+import { createStatuslinePublisher } from "@hollowheap/core/statusline";
+import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
+import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
+import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import { taskAlertTracker } from "./alerts.js";
+import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
+import { reconcileAllTasks } from "./runner.js";
 import {
   type TasksSettings,
   loadTasksConfig,
   saveTasksSettings,
-} from "./config.js";
-import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
-import { reconcileAllTasks } from "./runner.js";
+  showTasksSettings,
+} from "./settings.js";
 import { createTaskTool } from "./task-tool.js";
 import { rehydrateTaskWorkspaces, taskWorkspaceTracker } from "./workspace.js";
 
 export * from "@hollowheap/runtime/lifecycle";
-export * from "./config.js";
+export * from "./settings.js";
 export * from "./registry.js";
 export * from "./runner.js";
 export * from "@hollowheap/runtime/store";
@@ -31,7 +35,7 @@ export * from "./workspace.js";
 
 function updateTasksStatus(ctx: ExtensionContext, runningCount: number): void {
   if (!ctx.hasUI) return;
-  ctx.ui.setStatus(
+  hostUi(ctx).setStatus(
     "tasks",
     runningCount > 0 ? `${runningCount} running` : undefined,
   );
@@ -41,7 +45,7 @@ async function openTaskLog(ctx: ExtensionContext, id: string): Promise<void> {
   const log = sanitizeTerminalText(readTaskLog(getAgentDir(), id));
   const safeId = sanitizeTerminalText(id);
   const text = log.trim() === "" ? "(no output)" : log;
-  const { showMarkdownPager } = await import("@hollowheap/tui/pager");
+  const { showMarkdownPager } = await import("@hollowheap/pi-ui/pager");
   await showMarkdownPager(ctx, {
     title: `Task ${safeId}`,
     markdown: `~~~~text\n${text}\n~~~~`,
@@ -78,11 +82,11 @@ function taskPickerItems(tasks: readonly TaskRecord[]) {
 async function pickTask(ctx: ExtensionContext): Promise<string | undefined> {
   const tasks = reconcileAllTasks(getAgentDir());
   if (tasks.length === 0) {
-    if (ctx.hasUI) ctx.ui.notify("No tasks found.", "info");
+    if (ctx.hasUI) notify(ctx, "No tasks found.", "info");
     return undefined;
   }
-  if (ctx.mode === "tui" && typeof ctx.ui.custom === "function") {
-    const { showFuzzyPicker } = await import("@hollowheap/tui/picker");
+  if (canOverlay(ctx)) {
+    const { showFuzzyPicker } = await import("@hollowheap/pi-ui/picker");
     return showFuzzyPicker(ctx, {
       title: "Select a task",
       items: taskPickerItems(tasks),
@@ -90,7 +94,8 @@ async function pickTask(ctx: ExtensionContext): Promise<string | undefined> {
     });
   }
   if (ctx.hasUI) {
-    ctx.ui.notify(
+    notify(
+      ctx,
       tasks.map((task) => `${task.id} [${task.status}]`).join("\n"),
       "info",
     );
@@ -130,31 +135,23 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
-  const publishStatusline = (runningCount: number, ctx?: ExtensionContext) => {
-    lastRunningCount = runningCount;
-    if (ctx) lastContext = ctx;
-    pi.events?.emit?.("statusline:values", {
-      name: "tasks",
-      text: runningCount > 0 ? `${runningCount} running` : "",
-    });
-    const effectiveCtx = ctx ?? lastContext;
-    if (effectiveCtx?.sessionManager) {
+  const statusline = createStatuslinePublisher(pi.events, "tasks", () => {
+    if (lastContext?.sessionManager) {
       try {
         const all = reconcileAllTasks(getAgentDir());
-        syncTasksSnapshot(effectiveCtx.sessionManager, all);
+        syncTasksSnapshot(lastContext.sessionManager, all);
       } catch {
         // Snapshot sync must not break statusline
       }
     }
-  };
-
-  pi.events?.on?.("statusline:request", (data: unknown) => {
-    if (typeof data === "object" && data !== null) {
-      const names = (data as { names?: unknown }).names;
-      if (Array.isArray(names) && !names.includes("tasks")) return;
-    }
-    publishStatusline(lastRunningCount);
+    return lastRunningCount > 0 ? `${lastRunningCount} running` : "";
   });
+
+  const publishStatusline = (runningCount: number, ctx?: ExtensionContext) => {
+    lastRunningCount = runningCount;
+    if (ctx) lastContext = ctx;
+    statusline.publish();
+  };
 
   const emitTasksState = (agentDir: string) => {
     const all = reconcileAllTasks(agentDir);
@@ -220,31 +217,26 @@ export default function (pi: ExtensionAPI) {
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
-        const actions = [
-          { value: "logs", label: "logs", description: "show task log" },
-          {
-            value: "settings",
-            label: "settings",
-            description: "configure task sandbox settings",
-          },
-          {
-            value: "config",
-            label: "config",
-            description: "configure task sandbox settings",
-          },
-        ];
-        const query = (parts[0] ?? "").toLowerCase();
-        return actions.filter((action) => action.value.startsWith(query));
+        return prefixCompletions(
+          parts[0] ?? "",
+          [
+            ["logs", "show task log"],
+            ["settings", "configure task sandbox settings"],
+            ["config", "configure task sandbox settings"],
+          ] as const,
+          ([value, description]) => ({ value, label: value, description }),
+        );
       }
       if (parts[0] !== "logs") return null;
-      const query = (parts[1] ?? "").toLowerCase();
-      return reconcileAllTasks(getAgentDir())
-        .filter((task) => task.id.toLowerCase().startsWith(query))
-        .map((task) => ({
+      return prefixCompletions(
+        parts[1] ?? "",
+        reconcileAllTasks(getAgentDir()),
+        (task) => ({
           value: task.id,
           label: task.id,
-          description: `${task.status}${task.command ? ` — ${task.command}` : ""}`,
-        }));
+          description: `${task.status}${task.command ? ` — ${sanitizeTerminalText(task.command)}` : ""}`,
+        }),
+      );
     },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
@@ -252,41 +244,32 @@ export default function (pi: ExtensionAPI) {
       if (subcommand === "settings" || subcommand === "config") {
         const agentDir = getAgentDir();
         const config = loadTasksConfig(agentDir);
-        if (ctx.mode !== "tui" || typeof ctx.ui.custom !== "function") {
-          if (ctx.hasUI) {
-            for (const diagnostic of config.diagnostics) {
-              ctx.ui.notify(
-                `pi-tasks: ${diagnostic}`,
-                isPermissionError(diagnostic) ? "error" : "warning",
-              );
-            }
-            ctx.ui.notify(
-              `Task settings require TUI mode; edit ${config.path}`,
-              "info",
-            );
-          }
-          return;
-        }
-        for (const diagnostic of config.diagnostics) {
-          ctx.ui.notify(
-            `pi-tasks: ${diagnostic}`,
-            isPermissionError(diagnostic) ? "error" : "warning",
-          );
-        }
-        let saved = false;
-        const { showTasksSettings } = await import("./settings.js");
-        await showTasksSettings(ctx, config, (settings: TasksSettings) => {
-          try {
-            saveTasksSettings(agentDir, settings);
-            saved = true;
-          } catch (error) {
-            ctx.ui.notify(
-              `pi-tasks: failed to save settings: ${error instanceof Error ? error.message : String(error)}`,
-              "error",
-            );
-          }
+        await runSettingsCommand(ctx, {
+          prefix: "pi-tasks",
+          title: "Task settings",
+          configPath: config.path,
+          diagnostics: config.diagnostics,
+          savedMessage: "Tasks settings saved",
+          open: async () => {
+            let saved = false;
+            await showTasksSettings(ctx, config, (settings: TasksSettings) => {
+              try {
+                saveTasksSettings(agentDir, settings);
+                saved = true;
+              } catch (error) {
+                saved = false;
+                if (ctx.hasUI) {
+                  notify(
+                    ctx,
+                    `pi-tasks: failed to save settings: ${errorMessage(error)}`,
+                    "error",
+                  );
+                }
+              }
+            });
+            return saved;
+          },
         });
-        if (saved) ctx.ui.notify("Tasks settings saved", "info");
         return;
       }
       if (parts.length === 0 || (subcommand === "logs" && !parts[1])) {
@@ -299,10 +282,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (ctx.hasUI) {
-        ctx.ui.notify(
-          "Usage: /task [logs] [id] | /task settings|config",
-          "info",
-        );
+        notify(ctx, "Usage: /task [logs] [id] | /task settings|config", "info");
       }
     },
   });
@@ -321,8 +301,9 @@ export default function (pi: ExtensionAPI) {
       publishStatusline(runningCount, ctx);
     } catch (error) {
       if (ctx.hasUI) {
-        ctx.ui.notify(
-          `pi-tasks: failed to restore task state: ${error instanceof Error ? error.message : String(error)}`,
+        notify(
+          ctx,
+          `pi-tasks: failed to restore task state: ${errorMessage(error)}`,
           "warning",
         );
       }
@@ -332,6 +313,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", () => {
     stopAlertTicker();
+    lastRunningCount = 0;
+    lastContext = undefined;
+    statusline.publish("");
     // Durable shell tasks intentionally survive session shutdown.
   });
 }
