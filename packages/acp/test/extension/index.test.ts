@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerMode, session } from "@hollowheap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import extension from "../../src/extension/index.js";
 import {
   RequestTracker,
   attachWireHandler,
   sendWireRequest,
-} from "../socket.js";
-import extension from "./index.js";
+} from "../../src/socket.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

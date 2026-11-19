@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const EXT = `${ROOT}packages/acp/src/extension/`;
 
-describe("S16: ACP extension consumes core instead of local policy code", () => {
+describe("ACP extension consumes core instead of local policy code", () => {
   it("imports core verdicts and ships no local rules, loader, bash, modes or exec module", () => {
     const entry = readFileSync(`${EXT}index.ts`, "utf8");
     expect(entry).toContain("@hollowheap/core/modes");
@@ -32,8 +32,8 @@ describe("S16: ACP extension consumes core instead of local policy code", () => 
   });
 });
 
-describe("S16: core subpath imports, no local policy modules and delegation", () => {
-  it("S16 C02: every core import in the extension uses a subpath", () => {
+describe("core subpath imports, no local policy modules and delegation", () => {
+  it("every core import in the extension uses a subpath", () => {
     const files = readdirSync(EXT).filter(
       (name) => name.endsWith(".ts") && !name.includes(".test."),
     );
@@ -50,7 +50,7 @@ describe("S16: core subpath imports, no local policy modules and delegation", ()
     expect(imports).toBeGreaterThan(0);
   });
 
-  it("S16 C03: no extension file imports a local policy or shell module", () => {
+  it("no extension file imports a local policy or shell module", () => {
     const localPolicy = /from\s+["']\.\/(rules|loader|bash|modes|exec)\.js["']/;
     for (const file of readdirSync(EXT).filter((name) =>
       name.endsWith(".ts"),
@@ -59,7 +59,7 @@ describe("S16: core subpath imports, no local policy modules and delegation", ()
     }
   });
 
-  it("S16 C04: the extension permissions module delegates to core config and trust", () => {
+  it("the extension permissions module delegates to core config and trust", () => {
     const source = readFileSync(`${EXT}permissions.ts`, "utf8");
     expect(source).toContain('from "@hollowheap/core/config"');
     expect(source).toContain("loadPermissions as loadCorePermissions");

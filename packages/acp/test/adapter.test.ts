@@ -1,16 +1,28 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { type Socket, createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { Adapter, type SpawnPi, type SpawnPiOptions } from "./adapter.js";
-import type { ModelDescriptorInfo, PiRpc } from "./pi-rpc.js";
-import { loadStore } from "./sessions.js";
+import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  Adapter,
+  type SpawnPi,
+  type SpawnPiOptions,
+  resolveConfiguredModel,
+} from "../src/adapter.js";
+import type { ModelDescriptorInfo, PiRpc } from "../src/pi-rpc.js";
+import { loadStore } from "../src/sessions.js";
 import {
   RequestTracker,
   attachWireHandler,
   sendWireRequest,
-} from "./socket.js";
+} from "../src/socket.js";
 
 const FAKE_MODES = [
   { name: "plan" },
@@ -149,10 +161,24 @@ function setup(
 }
 
 const live: { shutdown: () => void | Promise<void> }[] = [];
+const originalPiModel = process.env.PI_MODEL;
+const originalAcpModel = process.env.PI_ACP_MODEL;
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) Reflect.deleteProperty(process.env, name);
+  else process.env[name] = value;
+}
+
+beforeEach(() => {
+  Reflect.deleteProperty(process.env, "PI_MODEL");
+  Reflect.deleteProperty(process.env, "PI_ACP_MODEL");
+});
 
 afterEach(async () => {
   await Promise.all(live.splice(0).map((entry) => entry.shutdown()));
   for (const sock of peerSockets.splice(0)) sock.destroy();
+  restoreEnv("PI_MODEL", originalPiModel);
+  restoreEnv("PI_ACP_MODEL", originalAcpModel);
 });
 
 describe("adapter sessions", () => {
@@ -833,7 +859,7 @@ describe("prompt turns", () => {
     await tick();
     adapter.piEvent("pi-1", { type: "agent_settled", aborted: false });
     await expect(pending).resolves.toEqual({ stopReason: "end_turn" });
-    const { loadStore } = await import("./sessions.js");
+    const { loadStore } = await import("../src/sessions.js");
     expect(loadStore(storePath)[0].title).toBe("do the thing please");
     await expect(
       adapter.handle("session/prompt", {
@@ -1038,5 +1064,39 @@ describe("session/load replay", () => {
         status: "in_progress",
       },
     ]);
+  });
+});
+
+describe("resolveConfiguredModel project trust", () => {
+  it("ignores untrusted project agent files and bare cwd/agents", () => {
+    const prevAgentDir = process.env.PI_AGENT_DIR;
+    const root = mkdtempSync(join(tmpdir(), "pi-acp-model-trust-"));
+    const agentHome = join(root, "agent-home");
+    const project = join(root, "project");
+    mkdirSync(join(agentHome, "agents"), { recursive: true });
+    mkdirSync(join(project, ".pi", "agents"), { recursive: true });
+    mkdirSync(join(project, "agents"), { recursive: true });
+    writeFileSync(
+      join(project, ".pi", "agents", "ask.md"),
+      "---\nmodel: anthropic/untrusted-pi\n---\n",
+    );
+    writeFileSync(
+      join(project, "agents", "ask.md"),
+      "---\nmodel: anthropic/bare-agents\n---\n",
+    );
+    process.env.PI_AGENT_DIR = agentHome;
+
+    try {
+      expect(resolveConfiguredModel(project)).toBeUndefined();
+
+      new ProjectTrustStore(agentHome).set(project, true);
+      expect(resolveConfiguredModel(project)).toBe("anthropic/untrusted-pi");
+
+      rmSync(join(project, ".pi", "agents", "ask.md"));
+      expect(resolveConfiguredModel(project)).toBeUndefined();
+    } finally {
+      restoreEnv("PI_AGENT_DIR", prevAgentDir);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

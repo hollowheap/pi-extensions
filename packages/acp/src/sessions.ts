@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { errorMessage } from "@hollowheap/core/format";
 
 export interface SessionRecord {
   sessionId: string;
@@ -30,7 +31,7 @@ export function loadStore(path: string): SessionRecord[] {
     parsed = JSON.parse(raw);
   } catch (error) {
     process.stderr.write(
-      `[pi-acp] failed to parse ${path}: ${error instanceof Error ? error.message : String(error)}\n`,
+      `[pi-acp] failed to parse ${path}: ${errorMessage(error)}\n`,
     );
     return [];
   }

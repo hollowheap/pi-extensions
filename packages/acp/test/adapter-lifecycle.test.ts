@@ -3,8 +3,8 @@ import { type Socket, createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { Adapter, type SpawnPi, type SpawnPiOptions } from "./adapter.js";
-import { RequestTracker, attachWireHandler } from "./socket.js";
+import { Adapter, type SpawnPi, type SpawnPiOptions } from "../src/adapter.js";
+import { RequestTracker, attachWireHandler } from "../src/socket.js";
 
 const peers: Socket[] = [];
 const live: Adapter[] = [];
@@ -76,7 +76,7 @@ afterEach(async () => {
   for (const peer of peers.splice(0)) peer.destroy();
 });
 
-describe("S18: adapter lifecycle and prompt dispatch", () => {
+describe("adapter lifecycle and prompt dispatch", () => {
   it("tears down prior sessions and rejects pending work on close", async () => {
     const reloaded = setup();
     await reloaded.adapter.handle("session/new", { cwd: "/repo" });
@@ -113,8 +113,8 @@ describe("S18: adapter lifecycle and prompt dispatch", () => {
   });
 });
 
-describe("S18: initialize boundary, load failures and capability propagation", () => {
-  it("S18 C02: initialize advertises the agent and a relative cwd is rejected", async () => {
+describe("initialize boundary, load failures and capability propagation", () => {
+  it("initialize advertises the agent and a relative cwd is rejected", async () => {
     const { adapter } = setup();
     const info = await adapter.handle("initialize", {
       protocolVersion: 1,
@@ -129,7 +129,7 @@ describe("S18: initialize boundary, load failures and capability propagation", (
     ).rejects.toMatchObject({ code: -32602 });
   });
 
-  it("S18 C03: loading an unknown session or a mismatched cwd is rejected", async () => {
+  it("loading an unknown session or a mismatched cwd is rejected", async () => {
     const { adapter } = setup();
     await expect(
       adapter.handle("session/load", { sessionId: "missing", cwd: "/repo" }),
@@ -147,7 +147,7 @@ describe("S18: initialize boundary, load failures and capability propagation", (
     ).rejects.toMatchObject({ code: -32602 });
   });
 
-  it("S18 C04: initialize capabilities reach the spawned pi options", async () => {
+  it("initialize capabilities reach the spawned pi options", async () => {
     const { adapter, spawns } = setup();
     const caps = {
       fs: { readTextFile: true, writeTextFile: true },

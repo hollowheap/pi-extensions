@@ -5,8 +5,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadPermissions, loadToolTags } from "@hollowheap/core/config";
+import { errorMessage } from "@hollowheap/core/format";
 import { displayTarget } from "@hollowheap/core/format";
 import { evaluate, registerMode } from "@hollowheap/core/modes";
+import { resolveScopedPath } from "@hollowheap/core/scope";
 import { loadGuardTrust } from "@hollowheap/core/trust";
 import { BUILTIN_MODE_LAYERS } from "./modes.js";
 import {
@@ -41,10 +43,10 @@ function tagsFor(ctx: ExtensionContext) {
   });
 }
 
-async function handleToolCall(
+function handleToolCall(
   event: ToolCallEvent,
   ctx: ExtensionContext,
-): Promise<{ block: true; reason: string } | undefined> {
+): { block: true; reason: string } | undefined {
   if (isPassthroughTaskCall(event.toolName, event.input)) {
     return undefined;
   }
@@ -64,10 +66,14 @@ async function handleToolCall(
     };
   }
 
-  const target =
+  const rawTarget =
     tag === "shell"
       ? readCommandArg(event.input)
       : (readToolTarget(event.toolName, event.input) ?? ".");
+  const target =
+    tag !== "shell" && tag !== "external"
+      ? resolveScopedPath(ctx.cwd, rawTarget, ctx.sessionManager)
+      : rawTarget;
 
   const trust = loadGuardTrust(getAgentDir(), notifyDiagnostic(ctx));
   const verdict = evaluate({
@@ -99,15 +105,15 @@ export default function (pi: ExtensionAPI): void {
   for (const layer of BUILTIN_MODE_LAYERS) {
     registerMode(layer);
   }
-  pi.on("tool_call", async (event, ctx) => {
+  pi.on("tool_call", (event, ctx) => {
     try {
-      return await handleToolCall(event, ctx);
+      return Promise.resolve(handleToolCall(event, ctx));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
+      const message = errorMessage(error);
+      return Promise.resolve({
         block: true,
         reason: `pi-policy: tool call check failed: ${message}`,
-      };
+      });
     }
   });
 }

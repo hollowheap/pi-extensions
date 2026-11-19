@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectSocket, readCaps } from "./client.js";
+import { connectSocket, readCaps } from "../../src/extension/client.js";
 
 describe("extension client config", () => {
   it("reads caps from the environment", () => {

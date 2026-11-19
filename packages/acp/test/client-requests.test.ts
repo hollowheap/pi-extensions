@@ -11,7 +11,7 @@ import {
   requestPermission,
   withTimeout,
   writeClientFile,
-} from "./client-requests.js";
+} from "../src/client-requests.js";
 
 function scriptedClient(
   handler: (method: string, params: unknown) => unknown,

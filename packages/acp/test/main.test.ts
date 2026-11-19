@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { attachStdioShutdown, finishShutdown } from "./main.js";
+import { attachStdioShutdown, finishShutdown } from "../src/main.js";
 
 describe("stdio lifecycle", () => {
   it("shuts down once when stdin reaches EOF", () => {

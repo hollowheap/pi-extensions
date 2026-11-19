@@ -2,11 +2,11 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { loadStore, saveStore } from "./sessions.js";
+import { loadStore, saveStore } from "../src/sessions.js";
 
-describe("S173 corrupt session store", () => {
+describe("corrupt session store", () => {
   it("returns an empty store and logs a diagnostic instead of exiting", () => {
-    const dir = mkdtempSync(join(tmpdir(), "s173-acp-"));
+    const dir = mkdtempSync(join(tmpdir(), "corrupt-session-store-acp-"));
     const path = join(dir, "sessions.json");
     writeFileSync(path, "{truncated", "utf8");
     const stderr = vi
@@ -22,8 +22,8 @@ describe("S173 corrupt session store", () => {
     }
   });
 
-  it("S173 C02: a missing store file is silently treated as empty", () => {
-    const dir = mkdtempSync(join(tmpdir(), "s173-acp-"));
+  it("a missing store file is silently treated as empty", () => {
+    const dir = mkdtempSync(join(tmpdir(), "corrupt-session-store-acp-"));
     const stderr = vi
       .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
@@ -36,8 +36,8 @@ describe("S173 corrupt session store", () => {
     }
   });
 
-  it("S173 C03: valid records are loaded while malformed rows are filtered out", () => {
-    const dir = mkdtempSync(join(tmpdir(), "s173-acp-"));
+  it("valid records are loaded while malformed rows are filtered out", () => {
+    const dir = mkdtempSync(join(tmpdir(), "corrupt-session-store-acp-"));
     const path = join(dir, "sessions.json");
     writeFileSync(
       path,
@@ -60,8 +60,8 @@ describe("S173 corrupt session store", () => {
     expect(records[0]?.title).toBe("First");
   });
 
-  it("S173 C04: saveStore replaces the store atomically and loadStore reads it back", () => {
-    const dir = mkdtempSync(join(tmpdir(), "s173-acp-"));
+  it("saveStore replaces the store atomically and loadStore reads it back", () => {
+    const dir = mkdtempSync(join(tmpdir(), "corrupt-session-store-acp-"));
     const path = join(dir, "nested", "sessions.json");
     const record = {
       sessionId: "s9",

@@ -5,15 +5,15 @@ import {
   requestPermission,
   requestPermissionOutcome,
   withTimeout,
-} from "./client-requests.js";
+} from "../src/client-requests.js";
 import {
   RequestTracker,
   attachWireHandler,
   encodeWire,
   sendWireRequest,
-} from "./socket.js";
+} from "../src/socket.js";
 
-describe("S19: permission identity and bounded RPCs", () => {
+describe("permission identity and bounded RPCs", () => {
   it("carries the pi tool-call id and removes a timed-out pending entry", async () => {
     const calls: { method: string; params: unknown }[] = [];
     const client = async (method: string, params: unknown) => {
@@ -49,8 +49,8 @@ describe("S19: permission identity and bounded RPCs", () => {
   });
 });
 
-describe("S19: permission options, failure outcomes and wire round trip", () => {
-  it("S19 C02: rejection outcomes and the offered options are preserved", async () => {
+describe("permission options, failure outcomes and wire round trip", () => {
+  it("rejection outcomes and the offered options are preserved", async () => {
     expect(permissionOptions().map((option) => option.optionId)).toEqual([
       "allow_once",
       "reject_once",
@@ -70,7 +70,7 @@ describe("S19: permission options, failure outcomes and wire round trip", () => 
     expect(calls).toHaveLength(1);
   });
 
-  it("S19 C03: a cancelled result and a slow request both fail", async () => {
+  it("a cancelled result and a slow request both fail", async () => {
     expect(() =>
       requestPermissionOutcome({ outcome: { outcome: "cancelled" } }),
     ).toThrow("permission request was cancelled");
@@ -79,7 +79,7 @@ describe("S19: permission options, failure outcomes and wire round trip", () => 
     );
   });
 
-  it("S19 C04: the wire handler answers requests and settles tracked responses", async () => {
+  it("the wire handler answers requests and settles tracked responses", async () => {
     const written: string[] = [];
     const socket = new EventEmitter() as EventEmitter & {
       write: (line: string) => void;

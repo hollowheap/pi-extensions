@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { registerMode } from "@hollowheap/core/modes";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it, vi } from "vitest";
-import { type ToolDeps, createAcpTools } from "./tools.js";
+import { type ToolDeps, createAcpTools } from "../../src/extension/tools.js";
 
 for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
@@ -73,7 +73,7 @@ async function run(
   return result.content.map((block) => block.text).join("");
 }
 
-describe("S20: ACP tool protocol details", () => {
+describe("ACP tool protocol details", () => {
   it("creates write parents, rejects missing and drifted edits, terminates flags and requires a directory", async () => {
     const { ctx, dir } = project();
     const local: ToolDeps = {
@@ -135,7 +135,7 @@ describe("S20: ACP tool protocol details", () => {
   });
 });
 
-describe("S20: write input boundary, read failure and write-to-read flow", () => {
+describe("write input boundary, read failure and write-to-read flow", () => {
   function localTools() {
     const local: ToolDeps = {
       getCaps: () => ({}),
@@ -149,7 +149,7 @@ describe("S20: write input boundary, read failure and write-to-read flow", () =>
       };
   }
 
-  it("S20 C02: acp_write refuses conflict markers and existing paths", async () => {
+  it("acp_write refuses conflict markers and existing paths", async () => {
     const { ctx, dir } = project();
     const tool = localTools();
     await expect(
@@ -165,14 +165,14 @@ describe("S20: write input boundary, read failure and write-to-read flow", () =>
     ).rejects.toThrow("path already exists");
   });
 
-  it("S20 C03: reading a missing file fails instead of returning empty content", async () => {
+  it("reading a missing file fails instead of returning empty content", async () => {
     const { ctx } = project();
     await expect(
       run(localTools()("acp_read"), { path: "missing.txt" }, ctx),
     ).rejects.toThrow(/ENOENT|no such file/i);
   });
 
-  it("S20 C04: a written file is read back through the companion tool", async () => {
+  it("a written file is read back through the companion tool", async () => {
     const { ctx, dir } = project();
     const tool = localTools();
     const created = await run(

@@ -8,17 +8,17 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerMode } from "@hollowheap/core/modes";
-import { setMode } from "@hollowheap/core/state";
+import { setCwd, setMode } from "@hollowheap/core/state";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it, vi } from "vitest";
-import type { ClientCaps } from "./client.js";
+import type { ClientCaps } from "../../src/extension/client.js";
 import {
   type ToolDeps,
   applyEdits,
   askPermission,
   createAcpTools,
   hasConflictMarkers,
-} from "./tools.js";
+} from "../../src/extension/tools.js";
 
 for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
@@ -650,6 +650,55 @@ describe("tool protocol details", () => {
       await assertion;
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("honours trustedRoots in acp_fd, resolves effectiveCwd in acp_rg, and filters denied entries in acp_eza", async () => {
+    const { dir, ctx } = project(["allow search *", "deny search secret.txt"]);
+    const outside = mkdtempSync(join(tmpdir(), "pi-acp-trusted-search-"));
+    try {
+      writeFileSync(join(outside, "found.txt"), "ok");
+      writeFileSync(
+        join(agentState.dir, "guard.json"),
+        JSON.stringify({ trustedRoots: [outside], decisions: {} }),
+      );
+      const { deps } = scriptedDeps({}, ALLOW);
+      const tools = createAcpTools(deps);
+      const [fd] = tools.filter((tool) => tool.name === "acp_fd");
+      const [rg] = tools.filter((tool) => tool.name === "acp_rg");
+      const [eza] = tools.filter((tool) => tool.name === "acp_eza");
+
+      runBinaryMock.mockClear();
+      runBinaryMock.mockResolvedValueOnce("found.txt\n");
+      const fdText = await run(
+        fd,
+        "1",
+        { pattern: "*.txt", path: outside },
+        ctx,
+      );
+      expect(fdText).toContain("found.txt");
+
+      mkdirSync(join(dir, "sub"), { recursive: true });
+      setCwd(ctx.sessionManager, join(dir, "sub"));
+      runBinaryMock.mockClear();
+      runBinaryMock.mockResolvedValueOnce("sub/keep.txt:1:hit\n");
+      const rgText = await run(rg, "2", { pattern: "hit" }, ctx);
+      expect(rgText).toContain("sub/keep.txt:1:hit");
+      const rgArgs = runBinaryMock.mock.calls[0][1] as string[];
+      expect(rgArgs[rgArgs.length - 1]).toBe("sub");
+      setCwd(ctx.sessionManager, undefined);
+
+      writeFileSync(join(dir, "secret.txt"), "s");
+      writeFileSync(join(dir, "keep.txt"), "k");
+      runBinaryMock.mockClear();
+      runBinaryMock.mockResolvedValueOnce(
+        ".rw-r--r-- 1 user 20 Nov 01:00 keep.txt\n.rw-r--r-- 1 user 20 Nov 01:00 secret.txt\n",
+      );
+      const ezaText = await run(eza, "3", {}, ctx);
+      expect(ezaText).toContain("keep.txt");
+      expect(ezaText).not.toContain("secret.txt");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 });

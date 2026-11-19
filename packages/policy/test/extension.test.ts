@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setCwd, setMode } from "@hollowheap/core/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ agentDir: "" }));
@@ -11,7 +12,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
 }));
 
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import extension from "./extension.js";
+import extension from "../src/extension.js";
 
 type Handler = (event: never, ctx: never) => Promise<unknown>;
 
@@ -152,5 +153,51 @@ describe("headless policy extension", () => {
       expect.stringContaining("not valid JSON"),
       "warning",
     );
+  });
+
+  it("resolves relative tool targets against effectiveCwd", async () => {
+    const { call } = setup(["allow edit *"]);
+    const owner = {};
+    const root = mkdtempSync(join(tmpdir(), "pi-policy-cwd-"));
+    dirs.push(root);
+    mkdirSync(join(root, ".pi"), { recursive: true });
+    mkdirSync(join(root, "sub", "artifacts"), { recursive: true });
+    writeFileSync(
+      join(root, ".pi", "permissions.json"),
+      JSON.stringify({ rules: ["allow edit *"] }),
+    );
+    state.agentDir = join(root, "agent");
+    mkdirSync(state.agentDir, { recursive: true });
+
+    let handler: Handler | undefined;
+    extension({
+      on: (event: string, fn: Handler) => {
+        if (event === "tool_call") handler = fn;
+      },
+    } as never);
+    setMode(owner, "plan");
+    setCwd(owner, join(root, "sub"));
+    const ctx = {
+      cwd: root,
+      sessionManager: owner,
+      hasUI: false,
+      isProjectTrusted: () => true,
+      ui: {},
+    };
+
+    const allowedToAsk = await handler?.(
+      {
+        type: "tool_call",
+        toolCallId: "1",
+        toolName: "write",
+        input: { path: "artifacts/plan.md" },
+      } as never,
+      ctx as never,
+    );
+    expect(allowedToAsk).toEqual({
+      block: true,
+      reason: expect.stringContaining("needs approval"),
+    });
+    await expect(call("read", { path: "src/x.ts" })).resolves.toBeUndefined();
   });
 });

@@ -4,7 +4,7 @@ import {
   isPassthroughTaskCall,
   readCommandArg,
   readToolTarget,
-} from "./targets.js";
+} from "../src/targets.js";
 
 describe("policy targets", () => {
   it("maps built-in and suite tools to categories", () => {

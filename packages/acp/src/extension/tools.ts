@@ -1,6 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
   type ExtensionContext,
@@ -9,11 +15,14 @@ import {
 import {
   displayPath,
   displayTarget,
+  errorMessage,
+  toolTextResult,
   truncateText,
 } from "@hollowheap/core/format";
 import { evaluate } from "@hollowheap/core/modes";
-import { checkPath } from "@hollowheap/core/policy";
-import type { Tag } from "@hollowheap/core/types";
+import { resolveScopedPath } from "@hollowheap/core/scope";
+import { effectiveCwd } from "@hollowheap/core/state";
+import type { Rule, Tag } from "@hollowheap/core/types";
 import { clampMaxResults, runBinary } from "@hollowheap/runtime/exec";
 import type { ClientCaps } from "./client.js";
 import { recordSessionDecision, sessionDecisionsFor } from "./decisions.js";
@@ -73,8 +82,61 @@ export function applyEdits(original: string, edits: TextEdit[]): string {
   return result + original.slice(cursor);
 }
 
-function resolveAbs(cwd: string, path: string): string {
-  return isAbsolute(path) ? path : resolve(cwd, path);
+function resolveAbs(ctx: ExtensionContext, path: string): string {
+  return resolveScopedPath(ctx.cwd, path, ctx.sessionManager);
+}
+
+function isSearchDenied(
+  ctx: ExtensionContext,
+  absPath: string,
+  rules: readonly Rule[],
+): boolean {
+  return (
+    evaluate({
+      owner: ctx.sessionManager,
+      cwd: ctx.cwd,
+      tag: "search",
+      target: absPath,
+      rules,
+      ...loadEvaluateOptions(ctx),
+      sessionDecisions: sessionDecisionsFor(ctx.sessionManager),
+    }) === "deny"
+  );
+}
+
+function filterEzaOutput(
+  stdout: string,
+  dir: string,
+  ctx: ExtensionContext,
+  rules: readonly Rule[],
+): string {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return stdout;
+  }
+  const denied = entries.filter((name) =>
+    isSearchDenied(ctx, join(dir, name), rules),
+  );
+  if (denied.length === 0) return stdout;
+  const deniedSet = new Set(denied);
+  return stdout
+    .split("\n")
+    .filter((line) => {
+      if (line.trim() === "") return true;
+      for (const name of deniedSet) {
+        if (
+          line.endsWith(` ${name}`) ||
+          line.includes(` ${name} -> `) ||
+          line.trim() === name
+        ) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .join("\n");
 }
 
 function readLocal(path: string): string {
@@ -93,7 +155,7 @@ function existsLocal(path: string): boolean {
 function isMissingFileError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   if (code === "ENOENT") return true;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /(?:not found|does not exist|ENOENT)/i.test(message);
 }
 
@@ -316,13 +378,6 @@ async function runTerminal(
   }
 }
 
-function textResult(text: string): {
-  content: { type: "text"; text: string }[];
-  details: Record<string, never>;
-} {
-  return { content: [{ type: "text", text }], details: {} };
-}
-
 export function createAcpTools(deps: ToolDeps) {
   const readTool = defineTool({
     name: "acp_read",
@@ -334,7 +389,7 @@ export function createAcpTools(deps: ToolDeps) {
       }),
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      const abs = resolveAbs(ctx.cwd, params.path);
+      const abs = resolveAbs(ctx, params.path);
       await runPolicy(
         deps,
         ctx,
@@ -350,7 +405,7 @@ export function createAcpTools(deps: ToolDeps) {
         caps.fs?.readTextFile === true
           ? await readThroughClient(deps, abs)
           : readLocal(abs);
-      return textResult(truncateText(text, "acp"));
+      return toolTextResult(truncateText(text, "acp"));
     },
   });
 
@@ -369,7 +424,7 @@ export function createAcpTools(deps: ToolDeps) {
       if (hasConflictMarkers(params.content)) {
         throw new Error("pi-acp: content contains conflict markers");
       }
-      const abs = resolveAbs(ctx.cwd, params.path);
+      const abs = resolveAbs(ctx, params.path);
       await runPolicy(
         deps,
         ctx,
@@ -389,7 +444,7 @@ export function createAcpTools(deps: ToolDeps) {
         } catch (error) {
           if (existsLocal(abs) || !isMissingFileError(error)) {
             throw new Error(
-              `pi-acp: cannot verify whether ${abs} exists in editor: ${error instanceof Error ? error.message : String(error)}`,
+              `pi-acp: cannot verify whether ${abs} exists in editor: ${errorMessage(error)}`,
             );
           }
         }
@@ -401,7 +456,7 @@ export function createAcpTools(deps: ToolDeps) {
         mkdirSync(dirname(abs), { recursive: true });
         writeFileSync(abs, params.content);
       }
-      return textResult(`Created ${displayPath(ctx.cwd, abs)}`);
+      return toolTextResult(`Created ${displayPath(ctx.cwd, abs)}`);
     },
   });
 
@@ -427,7 +482,7 @@ export function createAcpTools(deps: ToolDeps) {
           throw new Error("pi-acp: content contains conflict markers");
         }
       }
-      const abs = resolveAbs(ctx.cwd, params.path);
+      const abs = resolveAbs(ctx, params.path);
       await runPolicy(
         deps,
         ctx,
@@ -442,8 +497,11 @@ export function createAcpTools(deps: ToolDeps) {
       let local: string;
       try {
         local = readLocal(abs);
-      } catch {
-        throw new Error(`pi-acp: file not found: ${abs}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+          throw new Error(`pi-acp: file not found: ${abs}`);
+        }
+        throw new Error(`pi-acp: cannot read ${abs}: ${errorMessage(error)}`);
       }
       if (caps.fs?.readTextFile === true) {
         let remote: string;
@@ -451,7 +509,7 @@ export function createAcpTools(deps: ToolDeps) {
           remote = await readThroughClient(deps, abs);
         } catch (error) {
           throw new Error(
-            `pi-acp: cannot read editor buffer for ${abs}: ${error instanceof Error ? error.message : String(error)}`,
+            `pi-acp: cannot read editor buffer for ${abs}: ${errorMessage(error)}`,
           );
         }
         if (remote !== local) {
@@ -464,7 +522,7 @@ export function createAcpTools(deps: ToolDeps) {
       const canWriteClient = deps.getCaps().fs?.writeTextFile === true;
       if (canWriteClient) await writeThroughClient(deps, abs, updated);
       else writeFileSync(abs, updated);
-      return textResult(`Edited ${displayPath(ctx.cwd, abs)}`);
+      return toolTextResult(`Edited ${displayPath(ctx.cwd, abs)}`);
     },
   });
 
@@ -506,16 +564,12 @@ export function createAcpTools(deps: ToolDeps) {
         );
       }
       const caps = deps.getCaps();
+      const cwd = effectiveCwd(ctx.cwd, ctx.sessionManager);
       const output =
         caps.terminal === true
-          ? await runTerminal(
-              deps,
-              params.command,
-              ctx.cwd,
-              signal ?? undefined,
-            )
-          : await localBash(params.command, ctx.cwd, signal ?? undefined);
-      return textResult(truncateText(output, "acp"));
+          ? await runTerminal(deps, params.command, cwd, signal ?? undefined)
+          : await localBash(params.command, cwd, signal ?? undefined);
+      return toolTextResult(truncateText(output, "acp"));
     },
   });
 
@@ -532,7 +586,7 @@ export function createAcpTools(deps: ToolDeps) {
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const searchDir = resolve(root, params.path ?? ".");
+      const searchDir = resolveAbs(ctx, params.path ?? ".");
       await runPolicy(
         deps,
         ctx,
@@ -561,14 +615,14 @@ export function createAcpTools(deps: ToolDeps) {
         } catch {
           continue;
         }
-        if (checkPath(rules, abs, "search", root) === "deny") continue;
+        if (isSearchDenied(ctx, abs, rules)) continue;
         found.push({ rel: displayPath(root, abs), mtime });
       }
       found.sort((a, b) => b.mtime - a.mtime);
       const paths = found
         .slice(0, clampMaxResults(params.max_results))
         .map((entry) => entry.rel);
-      return textResult(
+      return toolTextResult(
         paths.length > 0 ? paths.join("\n") : "No files found.",
       );
     },
@@ -590,7 +644,7 @@ export function createAcpTools(deps: ToolDeps) {
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const root = ctx.cwd;
-      const target = resolve(root, params.path ?? ".");
+      const target = resolveAbs(ctx, params.path ?? ".");
       await runPolicy(
         deps,
         ctx,
@@ -610,7 +664,7 @@ export function createAcpTools(deps: ToolDeps) {
         params.pattern,
       ];
       if (params.glob !== undefined) args.push("--glob", params.glob);
-      args.push("--", params.path ?? ".");
+      args.push("--", displayPath(root, target));
       const stdout = await runBinary("rg", args, root, signal ?? undefined, {
         okExitCodes: [1],
       });
@@ -621,12 +675,12 @@ export function createAcpTools(deps: ToolDeps) {
         const match = /^(.*):(\d+):(.*)$/.exec(line);
         if (match === null) continue;
         const abs = resolve(root, match[1]);
-        if (checkPath(rules, abs, "search", root) === "deny") continue;
+        if (isSearchDenied(ctx, abs, rules)) continue;
         const text = `${displayPath(root, abs)}:${match[2]}:${match[3]}`;
         matches.push(text.length > 300 ? text.slice(0, 300) : text);
         if (matches.length >= clampMaxResults(params.max_results)) break;
       }
-      return textResult(
+      return toolTextResult(
         matches.length > 0 ? matches.join("\n") : "No matches found.",
       );
     },
@@ -640,7 +694,7 @@ export function createAcpTools(deps: ToolDeps) {
       path: Type.Optional(Type.String({ description: "Directory to list" })),
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      const dir = resolve(ctx.cwd, params.path ?? ".");
+      const dir = resolveAbs(ctx, params.path ?? ".");
       await runPolicy(
         deps,
         ctx,
@@ -666,7 +720,8 @@ export function createAcpTools(deps: ToolDeps) {
         ctx.cwd,
         undefined,
       );
-      return textResult(truncateText(stdout, "acp"));
+      const filtered = filterEzaOutput(stdout, dir, ctx, loadPermissions(ctx));
+      return toolTextResult(truncateText(filtered, "acp"));
     },
   });
 

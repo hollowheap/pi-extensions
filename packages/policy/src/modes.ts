@@ -50,6 +50,7 @@ export const PLAN_MODE: ModeLayer = Object.freeze({
 
 export const AUTO_MODE: ModeLayer = Object.freeze({
   name: "auto",
+  source: "builtin",
   description: "Writes and non-destructive bash run without asking",
   defaults: Object.freeze({
     read: "allow" as const,
@@ -70,4 +71,5 @@ export const BUILTIN_MODE_LAYERS: readonly ModeLayer[] = Object.freeze([
   MANUAL_MODE,
   EDIT_MODE,
   PLAN_MODE,
+  AUTO_MODE,
 ]);

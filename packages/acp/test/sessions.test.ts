@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { loadStore, saveStore } from "./sessions.js";
+import { loadStore, saveStore } from "../src/sessions.js";
 
 describe("sessions store", () => {
   it("logs a diagnostic with the file path and returns an empty store when sessions.json does not parse", () => {

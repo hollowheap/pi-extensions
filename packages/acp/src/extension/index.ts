@@ -5,7 +5,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { loadModesConfig } from "@hollowheap/core/config";
-import { displayTarget } from "@hollowheap/core/format";
+import { displayTarget, errorMessage } from "@hollowheap/core/format";
 import {
   enterMode,
   evaluate,
@@ -14,8 +14,9 @@ import {
   replaceConfigModes,
   resetSession,
 } from "@hollowheap/core/modes";
+import { resolveScopedPath } from "@hollowheap/core/scope";
 import type { Tag } from "@hollowheap/core/types";
-import { AUTO_MODE, BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import {
   TOOL_TAGS,
   readCommandArg,
@@ -163,7 +164,6 @@ function connectAdapter(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
   for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
-  registerMode(AUTO_MODE);
   for (const tool of createAcpTools(toolDeps)) pi.registerTool(tool);
   const restore = (ctx: ExtensionContext): void => {
     const notify = (message: string) =>
@@ -187,7 +187,9 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("tool_call", async (event, ctx) => {
     if (ACP_TOOLS.has(event.toolName)) return undefined;
-    const tag: Tag | undefined = TOOL_TAGS[event.toolName];
+    const tag: Tag | undefined = Object.hasOwn(TOOL_TAGS, event.toolName)
+      ? TOOL_TAGS[event.toolName]
+      : undefined;
     if (tag === undefined) {
       try {
         await askPermission(
@@ -201,15 +203,19 @@ export default function (pi: ExtensionAPI) {
       } catch (error) {
         return {
           block: true,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: errorMessage(error),
         };
       }
       return undefined;
     }
-    const target =
+    const rawTarget =
       tag === "shell"
         ? readCommandArg(event.input)
         : (readToolTarget(event.toolName, event.input) ?? ".");
+    const target =
+      tag !== "shell" && tag !== "external"
+        ? resolveScopedPath(ctx.cwd, rawTarget, ctx.sessionManager)
+        : rawTarget;
     const verdict = evaluate({
       owner: ctx.sessionManager,
       cwd: ctx.cwd,
@@ -238,14 +244,16 @@ export default function (pi: ExtensionAPI) {
           toolDeps,
           event.toolName,
           target,
-          BUILTIN_KINDS[event.toolName] ?? "other",
+          Object.hasOwn(BUILTIN_KINDS, event.toolName)
+            ? BUILTIN_KINDS[event.toolName]
+            : "other",
           event.toolCallId,
           ctx.sessionManager,
         );
       } catch (error) {
         return {
           block: true,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: errorMessage(error),
         };
       }
     }

@@ -6,9 +6,9 @@ import {
   encodeMessage,
   isNotification,
   isRequest,
-} from "./acp.js";
-import { Adapter } from "./adapter.js";
-import { main } from "./main.js";
+} from "../src/acp.js";
+import { Adapter } from "../src/adapter.js";
+import { main } from "../src/main.js";
 
 describe("acp framing", () => {
   it("round-trips a request through encode and decode", () => {

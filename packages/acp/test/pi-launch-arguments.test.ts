@@ -4,9 +4,9 @@ import {
   SOCKET_ENV,
   ensureEnvironment,
   piRpcArgs,
-} from "./pi-rpc.js";
+} from "../src/pi-rpc.js";
 
-describe("S17: spawned pi command line", () => {
+describe("spawned pi command line", () => {
   it("includes -nbt alongside -ne and the bundled extension after -e", () => {
     const args = piRpcArgs({
       cwd: "/tmp/work",
@@ -23,7 +23,7 @@ describe("S17: spawned pi command line", () => {
   });
 });
 
-describe("S17: optional flags, empty values and spawn environment", () => {
+describe("optional flags, empty values and spawn environment", () => {
   const base = {
     cwd: "/tmp/work",
     socketPath: "/tmp/s.sock",
@@ -33,7 +33,7 @@ describe("S17: optional flags, empty values and spawn environment", () => {
     onEvent: () => {},
   };
 
-  it("S17 C02: model and session flags appear only when supplied", () => {
+  it("model and session flags appear only when supplied", () => {
     const plain = piRpcArgs(base);
     expect(plain).not.toContain("--model");
     expect(plain).not.toContain("--session");
@@ -50,13 +50,13 @@ describe("S17: optional flags, empty values and spawn environment", () => {
     );
   });
 
-  it("S17 C03: an empty model is omitted while an empty session path is passed", () => {
+  it("an empty model is omitted while an empty session path is passed", () => {
     const args = piRpcArgs({ ...base, model: "", sessionFile: "" });
     expect(args).not.toContain("--model");
     expect(args[args.indexOf("--session") + 1]).toBe("");
   });
 
-  it("S17 C04: the spawn environment carries the socket and capabilities values", () => {
+  it("the spawn environment carries the socket and capabilities values", () => {
     const env = ensureEnvironment({
       [SOCKET_ENV]: "/tmp/x.sock",
       [CAPS_ENV]: '{"fs":{}}',

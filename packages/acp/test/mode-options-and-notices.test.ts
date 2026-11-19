@@ -1,10 +1,10 @@
 import { registerMode } from "@hollowheap/core/modes";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
 import { describe, expect, it } from "vitest";
-import { modeOption } from "./adapter.js";
-import { modeDescriptors } from "./extension/index.js";
+import { modeOption } from "../src/adapter.js";
+import { modeDescriptors } from "../src/extension/index.js";
 
-describe("S28: ACP mode list comes from the extension and notices ride in the option", () => {
+describe("ACP mode list comes from the extension and notices ride in the option", () => {
   it("makes an extension-registered mode selectable and appends the notice to the active description", () => {
     const modes = [
       { name: "plan", description: "Plan mode" },
@@ -34,8 +34,8 @@ describe("S28: ACP mode list comes from the extension and notices ride in the op
   });
 });
 
-describe("S28: default mode list, unmatched notice and extension consumer", () => {
-  it("S28 C02: with no descriptors the option lists the built-in modes", () => {
+describe("default mode list, unmatched notice and extension consumer", () => {
+  it("with no descriptors the option lists the built-in modes", () => {
     const option = modeOption("manual") as {
       options: { value: string }[];
       currentValue: string;
@@ -48,7 +48,7 @@ describe("S28: default mode list, unmatched notice and extension consumer", () =
     expect(option.currentValue).toBe("manual");
   });
 
-  it("S28 C03: a notice for an unlisted mode becomes the top-level description", () => {
+  it("a notice for an unlisted mode becomes the top-level description", () => {
     const option = modeOption(
       "missing",
       [{ name: "plan", description: "Plan mode" }],
@@ -61,7 +61,7 @@ describe("S28: default mode list, unmatched notice and extension consumer", () =
     expect(option.options[0].description).toBe("Plan mode");
   });
 
-  it("S28 C04: extension-registered modes populate the adapter select option", () => {
+  it("extension-registered modes populate the adapter select option", () => {
     for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
     const descriptors = modeDescriptors();
     expect(descriptors.map((entry) => entry.name)).toContain("plan");

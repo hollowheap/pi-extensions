@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { type Socket, createServer } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import {
+  ProjectTrustStore,
+  getAgentDir,
+  parseFrontmatter,
+} from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "@hollowheap/core/format";
 import { METHOD_NOT_FOUND } from "./acp.js";
 import {
   type ClientRequest,
@@ -261,21 +267,16 @@ export function findModelMatch(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function parseModelFromFrontmatter(content: string): string | undefined {
-  if (!content.startsWith("---")) return undefined;
-  const endIndex = content.indexOf("---", 3);
-  if (endIndex === -1) return undefined;
-  const frontmatter = content.slice(3, endIndex);
-  for (const line of frontmatter.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("model:")) {
-      const val = trimmed
-        .slice(6)
-        .trim()
-        .replace(/^["']|["']$/g, "");
-      if (val) return val;
+function readAgentFrontmatterModel(filePath: string): string | undefined {
+  if (!existsSync(filePath)) return undefined;
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    const { frontmatter } = parseFrontmatter<{ model?: unknown }>(content);
+    if (typeof frontmatter.model === "string") {
+      const trimmed = frontmatter.model.trim();
+      if (trimmed) return trimmed;
     }
-  }
+  } catch {}
   return undefined;
 }
 
@@ -287,7 +288,7 @@ export function resolveConfiguredModel(cwd?: string): string | undefined {
     return process.env.PI_MODEL.trim();
   }
 
-  const agentHome = process.env.PI_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const agentHome = process.env.PI_AGENT_DIR ?? getAgentDir();
 
   const settingsPath = join(agentHome, "settings.json");
   if (existsSync(settingsPath)) {
@@ -319,32 +320,25 @@ export function resolveConfiguredModel(cwd?: string): string | undefined {
     } catch {}
   }
 
-  const candidateDirs = [
-    ...(cwd ? [join(cwd, ".pi", "agents"), join(cwd, "agents")] : []),
-    join(agentHome, "agents"),
-  ];
-
-  for (const dir of candidateDirs) {
-    const candidateFile = join(dir, `${agentName}.md`);
-    if (existsSync(candidateFile)) {
-      try {
-        const content = readFileSync(candidateFile, "utf-8");
-        const model = parseModelFromFrontmatter(content);
-        if (model) return model;
-      } catch {}
+  let projectTrusted = false;
+  if (cwd) {
+    try {
+      projectTrusted = new ProjectTrustStore(agentHome).get(cwd) === true;
+    } catch {
+      projectTrusted = false;
     }
   }
 
-  if (agentName !== "ask") {
+  const candidateDirs = [
+    ...(cwd && projectTrusted ? [join(cwd, ".pi", "agents")] : []),
+    join(agentHome, "agents"),
+  ];
+
+  const names = agentName !== "ask" ? [agentName, "ask"] : [agentName];
+  for (const name of names) {
     for (const dir of candidateDirs) {
-      const candidateFile = join(dir, "ask.md");
-      if (existsSync(candidateFile)) {
-        try {
-          const content = readFileSync(candidateFile, "utf-8");
-          const model = parseModelFromFrontmatter(content);
-          if (model) return model;
-        } catch {}
-      }
+      const model = readAgentFrontmatterModel(join(dir, `${name}.md`));
+      if (model) return model;
     }
   }
 
@@ -483,7 +477,7 @@ export class Adapter {
         }
         void this.handleSocket(owner, request).then(respond, (error) =>
           respond({
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           }),
         );
       });
@@ -911,9 +905,7 @@ export class Adapter {
       const notice = noticeText(reply);
       if (notice !== undefined) this.deps.log(`mode notice: ${notice}`);
     } catch (error) {
-      this.deps.log(
-        `set-mode failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.deps.log(`set-mode failed: ${errorMessage(error)}`);
     }
   }
 
@@ -938,9 +930,7 @@ export class Adapter {
           const modes = readModes(reply);
           if (modes.length > 0) live.modes = modes;
         } catch (error) {
-          this.deps.log(
-            `get-modes failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          this.deps.log(`get-modes failed: ${errorMessage(error)}`);
         }
         return;
       }

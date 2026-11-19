@@ -8,7 +8,7 @@ import {
   type WireRequest,
   attachWireHandler,
   sendWireRequest,
-} from "./socket.js";
+} from "../src/socket.js";
 
 type Handler = (
   request: WireRequest,

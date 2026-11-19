@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { PiRpc, ensureEnvironment, piRpcArgs } from "./pi-rpc.js";
+import { PiRpc, ensureEnvironment, piRpcArgs } from "../src/pi-rpc.js";
 
 function setup(onEvent: (event: unknown) => void = () => {}): {
   rpc: PiRpc;

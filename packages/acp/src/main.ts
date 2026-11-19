@@ -1,6 +1,7 @@
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "@hollowheap/core/format";
 import {
   LineSplitter,
   encodeMessage,
@@ -143,7 +144,7 @@ export async function main(
       message = JSON.parse(line);
     } catch (error) {
       process.stderr.write(
-        `[pi-acp] dropping malformed line: ${error instanceof Error ? error.message : String(error)}\n`,
+        `[pi-acp] dropping malformed line: ${errorMessage(error)}\n`,
       );
       return;
     }
@@ -161,7 +162,7 @@ export async function main(
                 typeof (error as { code?: unknown })?.code === "number"
                   ? (error as { code: number }).code
                   : -32603,
-              message: error instanceof Error ? error.message : String(error),
+              message: errorMessage(error),
             },
           }),
       );
@@ -170,7 +171,7 @@ export async function main(
     if (isNotification(message)) {
       void adapter.handle(message.method, message.params).catch((error) => {
         process.stderr.write(
-          `[pi-acp] notification ${message.method} failed: ${error instanceof Error ? error.message : String(error)}\n`,
+          `[pi-acp] notification ${message.method} failed: ${errorMessage(error)}\n`,
         );
       });
       return;
@@ -223,9 +224,7 @@ const invokedAsMain =
 
 if (invokedAsMain) {
   main().catch((error) => {
-    process.stderr.write(
-      `[pi-acp] fatal: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    process.stderr.write(`[pi-acp] fatal: ${errorMessage(error)}\n`);
     process.exit(1);
   });
 }

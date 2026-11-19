@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import extension from "./index.js";
+import extension from "../../src/extension/index.js";
 
 const state = vi.hoisted(() => ({
   agentDir: "/nonexistent-pi-agent-dir-for-tests",
@@ -18,7 +18,7 @@ afterEach(() => {
   Reflect.deleteProperty(process.env, "HOLLOWHEAP_ACP_CAPS");
 });
 
-describe("S15: ACP ask fails closed without a client", () => {
+describe("ACP ask fails closed without a client", () => {
   it("blocks and never opens a permission request when no client is connected", async () => {
     const dir = mkdtempSync(join(tmpdir(), "draw-s15-"));
     mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -68,7 +68,7 @@ describe("S15: ACP ask fails closed without a client", () => {
   });
 });
 
-describe("S15: allow boundary, explicit deny and restored-mode consumer", () => {
+describe("allow boundary, explicit deny and restored-mode consumer", () => {
   function setupAcp(rules: string[], sessionManager: object = {}) {
     const dir = mkdtempSync(join(tmpdir(), "draw-s15-extra-"));
     mkdirSync(join(dir, ".pi"), { recursive: true });
@@ -111,12 +111,12 @@ describe("S15: allow boundary, explicit deny and restored-mode consumer", () => 
     return { pi, ctx, callWrite };
   }
 
-  it("S15 C02: an allowed write needs no client and is not blocked", async () => {
+  it("an allowed write needs no client and is not blocked", async () => {
     const { callWrite } = setupAcp(["allow edit *"]);
     await expect(callWrite()).resolves.toBeUndefined();
   });
 
-  it("S15 C03: a denied write blocks with a denial reason and opens no request", async () => {
+  it("a denied write blocks with a denial reason and opens no request", async () => {
     const { pi, callWrite } = setupAcp(["deny edit *"]);
     const result = await callWrite();
     expect(result?.block).toBe(true);
@@ -127,7 +127,7 @@ describe("S15: allow boundary, explicit deny and restored-mode consumer", () => 
     );
   });
 
-  it("S15 C04: a persisted plan mode restored at session start denies a normal edit", async () => {
+  it("a persisted plan mode restored at session start denies a normal edit", async () => {
     const entries = [
       { customType: "hollowheap.core.mode", data: { mode: "plan" } },
     ];
