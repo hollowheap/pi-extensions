@@ -584,7 +584,7 @@ describe("pi-guard extension", () => {
     );
   });
 
-  it("gates task start as shell and allows list/status/wait/cancel without asking", async () => {
+  it("gates task start and cancel as shell and allows list/status/wait without asking", async () => {
     const { ctx, call } = setupProject(
       JSON.stringify({
         rules: ["allow shell npm", "deny shell rm"],
@@ -598,12 +598,12 @@ describe("pi-guard extension", () => {
       call("task", { action: "wait", id: "task-1" }),
     ).resolves.toBeUndefined();
     await expect(
-      call("task", { action: "cancel", id: "task-1" }),
-    ).resolves.toBeUndefined();
-    await expect(
       call("task", { action: "start", command: "npm test" }),
     ).resolves.toBeUndefined();
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("task", { action: "cancel", id: "task-1" }),
+    ).resolves.toBeUndefined();
 
     await expect(
       call("task", { action: "start", command: "rm -rf build" }),
@@ -620,7 +620,7 @@ describe("pi-guard extension", () => {
     });
   });
 
-  it("treats subagent definition and inspection actions as passthrough and gates start by mode", async () => {
+  it("treats subagent definition and inspection actions as passthrough and gates delete/cancel/start", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(
       call("subagent", {
@@ -629,17 +629,20 @@ describe("pi-guard extension", () => {
         systemPrompt: "Review changes.",
       }),
     ).resolves.toBeUndefined();
-    await expect(
-      call("subagent", { action: "delete", name: "reviewer" }),
-    ).resolves.toBeUndefined();
     await expect(call("subagent", { action: "list" })).resolves.toBeUndefined();
     await expect(
       call("subagent", { action: "status", id: "sub-1" }),
     ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+    await expect(
+      call("subagent", { action: "delete", name: "reviewer" }),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("pi-guard"),
+    });
     await expect(
       call("subagent", { action: "cancel", id: "sub-1" }),
     ).resolves.toBeUndefined();
-    expect(ctx.ui.confirm).not.toHaveBeenCalled();
 
     await expect(
       call("subagent", {

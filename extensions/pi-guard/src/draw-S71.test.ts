@@ -63,7 +63,7 @@ function setup(
 }
 
 describe("S71: task.start is gated as shell while read/control actions pass", () => {
-  it("allows list/status/wait/cancel, prompts on ask, and blocks on deny", async () => {
+  it("allows list/status/wait, gates cancel, prompts on ask, and blocks on deny", async () => {
     const { ctx, call } = setup(
       JSON.stringify({
         rules: ["allow shell npm", "deny shell rm"],
@@ -74,7 +74,6 @@ describe("S71: task.start is gated as shell while read/control actions pass", ()
       { action: "list" },
       { action: "status", id: "task-1" },
       { action: "wait", id: "task-1" },
-      { action: "cancel", id: "task-1" },
       { action: "start", command: "npm test" },
     ]) {
       await expect(call("task", input)).resolves.toBeUndefined();
