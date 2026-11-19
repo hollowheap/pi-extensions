@@ -170,6 +170,7 @@ export default function (pi: ExtensionAPI): void {
           return {
             ...active.panel,
             verbPack: active.verbPack,
+            toolVerbosity: active.toolVerbosity,
             surface:
               active.panel.surface && active.panel.surface !== "transparent"
                 ? active.panel.surface
@@ -192,8 +193,16 @@ export default function (pi: ExtensionAPI): void {
   pi.registerMarkdownTransformer?.((markdown, context) => {
     const cfg = getActiveTuiConfig();
     if (context.messageType === "assistant-thinking") {
-      if (cfg.thinkingVerbosity === "verbose") return markdown;
       if (cfg.thinkingVerbosity === "none") return "";
+      if (cfg.thinkingVerbosity === "low") {
+        return THINKING_PREFIXES[cfg.verbPack].trimEnd();
+      }
+      if (
+        cfg.thinkingVerbosity === "high" ||
+        cfg.thinkingVerbosity === "verbose"
+      ) {
+        return markdown;
+      }
       const line = formatOneLineThinkingText(markdown, context.availableWidth, {
         pick: "first",
         prefix: THINKING_PREFIXES[cfg.verbPack],

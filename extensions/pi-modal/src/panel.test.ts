@@ -805,3 +805,71 @@ describe("wrapToolRenderer", () => {
     expect(stripTerminalSequences(out2[0] ?? "")).toContain("Conjuring...");
   });
 });
+
+describe("tool verbosity", () => {
+  const LONG_OUTPUT = Array.from({ length: 14 }, (_, i) => `line-${i}`).join(
+    "\n",
+  );
+
+  function renderTool(
+    toolVerbosity: "low" | "medium" | "high",
+    hostExpanded: boolean,
+  ) {
+    const cfg = { ...makeConfig(), toolVerbosity };
+    const renderer = wrapToolRenderer("bash", undefined, () => cfg);
+    const state = {};
+    const context = {
+      args: { command: "echo verbose" },
+      toolCallId: "tv-1",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state,
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: false,
+      expanded: hostExpanded,
+      showImages: false,
+      isError: false,
+      durationMs: 5,
+      outputPad: 1,
+    };
+    const call = renderer.renderCall?.(
+      { command: "echo verbose" },
+      mockTheme,
+      context,
+    );
+    const result = renderer.renderResult?.(
+      { content: [{ type: "text", text: LONG_OUTPUT }], details: undefined },
+      { expanded: hostExpanded, isPartial: false },
+      mockTheme,
+      context,
+    );
+    return {
+      call: (call?.render(50) ?? []).map(stripTerminalSequences),
+      result: (result?.render(50) ?? []).map(stripTerminalSequences),
+    };
+  }
+
+  it("low shows only the command and hides all tool output even when the host expands", () => {
+    const { call, result } = renderTool("low", true);
+    expect(call.join("\n")).toContain("echo verbose");
+    expect(result).toEqual([]);
+  });
+
+  it("medium shows truncated output even when the host expands", () => {
+    const { result } = renderTool("medium", true);
+    const joined = result.join("\n");
+    expect(joined).toContain("line-0");
+    expect(joined).toContain("... (4 more lines)");
+    expect(joined).not.toContain("line-13");
+  });
+
+  it("high shows full output even when the host collapses", () => {
+    const { result } = renderTool("high", false);
+    const joined = result.join("\n");
+    expect(joined).toContain("line-0");
+    expect(joined).toContain("line-13");
+    expect(joined).not.toContain("more lines");
+  });
+});

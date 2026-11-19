@@ -26,6 +26,7 @@ import type {
   PanelConfig,
   PanelRenderMode,
   ToolVerbPack,
+  ToolVerbosity,
 } from "@hollowheap/core/tui-config";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/tui/state";
@@ -96,7 +97,19 @@ function formatUnknownToolName(toolName: string): string {
 export type PanelRenderConfig = PanelConfig & {
   verbPack: ToolVerbPack;
   surface?: OverlaySurfaceMode;
+  toolVerbosity?: ToolVerbosity;
 };
+
+function resolveToolResultExpansion(
+  verbosity: ToolVerbosity | undefined,
+  hostExpanded: boolean,
+  isCodemode: boolean,
+): { expanded: boolean; hideOutput: boolean } {
+  if (verbosity === "low") return { expanded: false, hideOutput: true };
+  if (verbosity === "medium") return { expanded: false, hideOutput: false };
+  if (verbosity === "high") return { expanded: true, hideOutput: false };
+  return { expanded: isCodemode || hostExpanded, hideOutput: false };
+}
 
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
 export function resolveToolVerb(
@@ -794,10 +807,24 @@ export function wrapToolRenderer(
       theme,
       context,
     ): Component & { dispose?: () => void } {
-      const effectiveContext =
-        toolName === "codemode" ? { ...context, expanded: true } : context;
-      if (!getConfig().enabled && base?.renderResult) {
-        return base.renderResult(result, options, theme, effectiveContext);
+      const config = getConfig();
+      const { expanded, hideOutput } = resolveToolResultExpansion(
+        config.toolVerbosity,
+        options.expanded,
+        toolName === "codemode",
+      );
+      const effectiveOptions: ToolRenderResultOptions = {
+        ...options,
+        expanded,
+      };
+      const effectiveContext = { ...context, expanded };
+      if (!config.enabled && base?.renderResult) {
+        return base.renderResult(
+          result,
+          effectiveOptions,
+          theme,
+          effectiveContext,
+        );
       }
       const panelState = getPanelState(context);
       panelState.resultCalled = true;
@@ -819,7 +846,7 @@ export function wrapToolRenderer(
         try {
           innerResult = base.renderResult(
             result,
-            options,
+            effectiveOptions,
             theme,
             innerResultContext,
           );
@@ -833,6 +860,7 @@ export function wrapToolRenderer(
       }
 
       const computeLines = (innerWidth: number): string[] => {
+        if (hideOutput) return [];
         if (innerResult) {
           try {
             return trimEdgeBlankLines(innerResult.render(innerWidth));
@@ -841,7 +869,12 @@ export function wrapToolRenderer(
           }
         }
         return trimEdgeBlankLines(
-          renderFallbackResultLines(result, options, theme, getUi().colored),
+          renderFallbackResultLines(
+            result,
+            effectiveOptions,
+            theme,
+            getUi().colored,
+          ),
         );
       };
 

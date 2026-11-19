@@ -2191,4 +2191,44 @@ describe("TUI config, /tui command, and panel integration", () => {
       }),
     ).toBe("");
   });
+
+  it("maps low/medium/high thinking verbosity to verb, one-line, and full output", () => {
+    let markdownTransformer: ((md: string, ctx: unknown) => string) | undefined;
+    const pi = {
+      on: vi.fn(() => () => {}),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+      registerToolRenderer: vi.fn(),
+      registerMarkdownTransformer: vi.fn((fn: never) => {
+        markdownTransformer = fn;
+      }),
+      events: { emit: vi.fn() },
+    };
+    extension(pi as never);
+    if (!markdownTransformer) throw new Error("no markdown transformer");
+
+    const transform = (verbosity: string, verbPack: string, md: string) => {
+      setActiveTuiConfig({
+        ...DEFAULT_TUI_CONFIG,
+        thinkingVerbosity: verbosity as never,
+        verbPack: verbPack as never,
+        thinkingAnimate: false,
+        colored: false,
+      });
+      return markdownTransformer?.(md, {
+        messageType: "assistant-thinking",
+        isStreaming: false,
+        availableWidth: 60,
+      });
+    };
+
+    expect(transform("low", "standard", "Alpha\nBeta")).toBe("Thinking:");
+    expect(transform("low", "playful", "Alpha\nBeta")).toBe("Pondering:");
+    expect(transform("medium", "standard", "Alpha\nBeta")).toBe(
+      "Thinking: Alpha",
+    );
+    expect(transform("high", "standard", "Alpha **bold**")).toBe(
+      "Alpha **bold**",
+    );
+  });
 });
