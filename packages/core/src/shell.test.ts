@@ -206,6 +206,45 @@ describe("checkShell", () => {
     ).toBe("allow");
   });
 
+  it("dequotes command tokens before dangerous and destructive checks", () => {
+    const allowAll = rules(["allow shell *"]);
+    for (const command of [
+      "'sh' -c 'echo hi'",
+      '"bash" -c 1',
+      "nohup 'dash' -c 1",
+      "'timeout' 5 sh -c 1",
+      "timeout 5 'bash' -c 1",
+    ]) {
+      expect(checkShell(command, allowAll).decision).toBe("deny");
+    }
+    for (const command of [
+      "'rm' -rf /",
+      '"rm" -rf ~',
+      "timeout 5 'rm' -rf /",
+      "'rm' -rf '/etc'",
+    ]) {
+      expect(checkShell(command, allowAll).decision).toBe("ask");
+    }
+  });
+
+  it("asks for recursive deletes of absolute system directories", () => {
+    const allowAll = rules(["allow shell *", "allow shell rm"]);
+    for (const command of [
+      "rm -rf /etc",
+      "rm -rf /usr",
+      "rm -rf /var/log",
+      "rm -rf /lib64",
+      "timeout 5 rm -rf /etc",
+      "rm -rf '/etc'",
+    ]) {
+      expect(checkShell(command, allowAll).decision).toBe("ask");
+    }
+    expect(checkShell("rm -rf /work/build", allowAll).decision).toBe("allow");
+    expect(
+      checkShell("rm -rf /etc", rules(["allow shell rm -rf /etc"])).decision,
+    ).toBe("allow");
+  });
+
   it("allows safe fd merges and /dev/null redirects while denying file redirects", () => {
     const allow = rules([
       "allow shell head",

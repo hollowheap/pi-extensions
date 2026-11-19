@@ -6,6 +6,7 @@ import {
   cancelProcessGroup,
   isProcessAlive,
   readLog,
+  signalProcessGroup,
   spawnDetachedProcess,
 } from "./process.js";
 
@@ -45,6 +46,37 @@ describe("cancelProcessGroup", () => {
       ).resolves.toBe(false);
     } finally {
       killSpy.mockRestore();
+    }
+  });
+
+  it("fails closed when the leader start time cannot be read", () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      expect(isProcessAlive(999_999_999, 123)).toBe(false);
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("does not signal a process group whose leader pid was reused", async () => {
+    const dir = makeTempDir();
+    const child = spawnDetachedProcess({
+      command: "sleep",
+      args: ["30"],
+      logPath: join(dir, "child.log"),
+    });
+    const kill = vi.spyOn(process, "kill");
+    try {
+      expect(child.startTime).toBeDefined();
+      const staleStart = (child.startTime ?? 0) + 1_000_000;
+      expect(signalProcessGroup(child.pid, "SIGTERM", true, staleStart)).toBe(
+        false,
+      );
+      expect(kill).not.toHaveBeenCalledWith(-child.pid, "SIGTERM");
+      expect(isProcessAlive(child.pid, child.startTime)).toBe(true);
+    } finally {
+      kill.mockRestore();
+      await cancelProcessGroup(child.pid, child.startTime, 50);
     }
   });
 

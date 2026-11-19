@@ -29,11 +29,9 @@ export const TOOL_TAGS: Record<string, Tag> = {
 
 export const PASSTHROUGH_ACTIONS = new Set([
   "define",
-  "delete",
   "list",
   "status",
   "wait",
-  "cancel",
 ]);
 
 export function readPathArg(input: unknown): string | undefined {

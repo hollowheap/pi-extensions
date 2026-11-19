@@ -112,6 +112,42 @@ describe("calculateDollarCost and formatDollarCost", () => {
     expect(cost).toBeCloseTo(4.05);
   });
 
+  it("ignores non-finite and negative cache token counts", () => {
+    const rates = {
+      input: 3.0,
+      output: 15.0,
+      cacheRead: 0.3,
+      cacheWrite: 3.75,
+    };
+    for (const cacheRead of [Number.NaN, Number.POSITIVE_INFINITY, -100]) {
+      expect(
+        calculateDollarCost(
+          { input: 0, output: 0, cacheRead, cacheWrite: 0 },
+          rates,
+        ),
+      ).toBe(0);
+    }
+    for (const cacheWrite of [Number.NaN, Number.NEGATIVE_INFINITY, -5]) {
+      expect(
+        calculateDollarCost(
+          { input: 0, output: 0, cacheRead: 0, cacheWrite },
+          rates,
+        ),
+      ).toBe(0);
+    }
+    expect(
+      calculateDollarCost(
+        {
+          input: 0,
+          output: 0,
+          cacheRead: 1_000_000,
+          cacheWrite: Number.NaN,
+        },
+        rates,
+      ),
+    ).toBeCloseTo(0.3);
+  });
+
   it("formats dollar values accurately", () => {
     expect(formatDollarCost(0)).toBe("$0.00");
     expect(formatDollarCost(0.0042)).toBe("$0.0042");

@@ -78,9 +78,14 @@ export function isProcessAlive(
   }
   if (expectedStartTime !== undefined) {
     const actual = readProcStartTime(pid);
-    if (actual !== undefined && actual !== expectedStartTime) return false;
+    if (actual !== expectedStartTime) return false;
   }
   return true;
+}
+
+function isStaleProcessIdentity(pid: number, startTime?: number): boolean {
+  if (startTime === undefined) return false;
+  return isProcessAlive(pid) && !isProcessAlive(pid, startTime);
 }
 
 export function spawnDetachedProcess(
@@ -169,10 +174,11 @@ export async function waitForProcessExit(
   return true;
 }
 
-function isProcessGroupAlive(pid: number): boolean {
+function isProcessGroupAlive(pid: number, startTime?: number): boolean {
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
     return false;
   }
+  if (isStaleProcessIdentity(pid, startTime)) return false;
   try {
     process.kill(-pid, 0);
     return true;
@@ -186,10 +192,12 @@ export function signalProcessGroup(
   pid: number,
   signal: NodeJS.Signals,
   leaderAlive = true,
+  startTime?: number,
 ): boolean {
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
     return false;
   }
+  if (isStaleProcessIdentity(pid, startTime)) return false;
   try {
     process.kill(-pid, signal);
     return true;
@@ -223,16 +231,16 @@ export async function terminateProcessGroup(
 ): Promise<boolean> {
   const { startTime, graceMs = 250, killWaitMs = 1_000 } = options;
   const alive = () =>
-    isProcessAlive(pid, startTime) || isProcessGroupAlive(pid);
+    isProcessAlive(pid, startTime) || isProcessGroupAlive(pid, startTime);
   if (!alive()) return false;
-  signalProcessGroup(pid, "SIGTERM", isProcessAlive(pid, startTime));
+  signalProcessGroup(pid, "SIGTERM", isProcessAlive(pid, startTime), startTime);
   const graceDeadline = Date.now() + Math.max(0, graceMs);
   while (alive()) {
     if (Date.now() >= graceDeadline) break;
     await sleep(Math.min(50, Math.max(1, graceDeadline - Date.now())));
   }
   if (!alive()) return true;
-  signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime));
+  signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime), startTime);
   const killDeadline = Date.now() + Math.max(0, killWaitMs);
   while (alive()) {
     if (Date.now() >= killDeadline) break;

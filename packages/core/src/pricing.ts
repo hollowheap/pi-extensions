@@ -123,14 +123,12 @@ export function calculateDollarCost(
   }
   const inputCost = (usage.input / 1_000_000) * rates.input;
   const outputCost = (usage.output / 1_000_000) * rates.output;
+  const cacheRead = finiteNonNegative(usage.cacheRead);
+  const cacheWrite = finiteNonNegative(usage.cacheWrite);
   const cacheReadCost =
-    usage.cacheRead && rates.cacheRead
-      ? (usage.cacheRead / 1_000_000) * rates.cacheRead
-      : 0;
+    (cacheRead / 1_000_000) * finiteNonNegative(rates.cacheRead);
   const cacheWriteCost =
-    usage.cacheWrite && rates.cacheWrite
-      ? (usage.cacheWrite / 1_000_000) * rates.cacheWrite
-      : 0;
+    (cacheWrite / 1_000_000) * finiteNonNegative(rates.cacheWrite);
   return inputCost + outputCost + cacheReadCost + cacheWriteCost;
 }
 

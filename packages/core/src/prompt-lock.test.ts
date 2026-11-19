@@ -177,6 +177,33 @@ describe("prompt-lock", () => {
     expect(next).toBe("unblocked");
   });
 
+  it("does not hand the lock to the next waiter while the aborted holder is active", async () => {
+    const controller = new AbortController();
+    let secondStarted = false;
+    const holder = withPromptLock(() => new Promise<string>(() => {}), {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = withPromptLock(async () => {
+      secondStarted = true;
+      return "second";
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    controller.abort();
+    void holder.catch(() => {});
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(secondStarted).toBe(false);
+
+    await expect(holder).rejects.toThrow(/abort/i);
+    await expect(second).resolves.toBe("second");
+    expect(secondStarted).toBe(true);
+  });
+
   it("allows acquisition from a timer scheduled inside a completed lock", async () => {
     let timerPromise!: Promise<string>;
     await withPromptLock(async () => {

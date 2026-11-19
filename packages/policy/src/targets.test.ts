@@ -47,11 +47,14 @@ describe("policy targets", () => {
     expect(readCommandArg({ id: "abc" })).toBe("subagent @abc");
   });
 
-  it("passes through task inspection actions", () => {
+  it("passes through only inspection actions", () => {
     expect(isPassthroughTaskCall("task", { action: "list" })).toBe(true);
+    expect(isPassthroughTaskCall("task", { action: "status" })).toBe(true);
+    expect(isPassthroughTaskCall("task", { action: "wait" })).toBe(true);
     expect(isPassthroughTaskCall("subagent", { action: "define" })).toBe(true);
-    expect(isPassthroughTaskCall("subagent", { action: "delete" })).toBe(true);
-    expect(isPassthroughTaskCall("subagent", { action: "cancel" })).toBe(true);
+    expect(isPassthroughTaskCall("subagent", { action: "delete" })).toBe(false);
+    expect(isPassthroughTaskCall("subagent", { action: "cancel" })).toBe(false);
+    expect(isPassthroughTaskCall("task", { action: "cancel" })).toBe(false);
     expect(isPassthroughTaskCall("task", { action: "start" })).toBe(false);
     expect(isPassthroughTaskCall("bash", { action: "list" })).toBe(false);
   });

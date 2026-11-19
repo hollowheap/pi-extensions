@@ -90,6 +90,7 @@ export async function withPromptLock<T>(
   };
 
   let acquired = false;
+  let failedError: Error | undefined;
   let cancelHold: ((error: Error) => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -116,7 +117,7 @@ export async function withPromptLock<T>(
       rejectWait?.(error);
       return;
     }
-    release();
+    failedError = error;
     queueMicrotask(() => {
       cancelHold?.(error);
     });
@@ -158,11 +159,10 @@ export async function withPromptLock<T>(
     throw error;
   }
 
-  if (released) {
+  if (failedError !== undefined) {
     cleanup();
-    throw signal?.aborted
-      ? toAbortError(signal)
-      : new Error("prompt lock: timed out");
+    release();
+    throw failedError;
   }
 
   try {
