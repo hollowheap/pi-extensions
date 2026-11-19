@@ -330,7 +330,7 @@ describe("pi-web extension", () => {
     );
   });
 
-  it("supports /web settings and config alias with completions and OS permission errors", async () => {
+  it("supports /web settings with completions and OS permission errors", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-web-idx-"));
     tempDirs.push(dir);
     state.agentDir = dir;
@@ -346,10 +346,13 @@ describe("pi-web extension", () => {
 
     expect(
       (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual(["settings", "config", "insert"]);
+    ).toEqual(["settings", "insert"]);
+    expect(
+      (command.getArgumentCompletions?.("se") ?? []).map((item) => item.value),
+    ).toEqual(["settings"]);
     expect(
       (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
-    ).toEqual(["config"]);
+    ).toEqual([]);
 
     let component:
       | { handleInput(data: string): void; render(width: number): string[] }
@@ -376,7 +379,7 @@ describe("pi-web extension", () => {
         }),
     );
     const notify = vi.fn();
-    const pending = command.handler("config", {
+    const pending = command.handler("settings", {
       hasUI: true,
       mode: "tui",
       ui: { pasteToEditor: vi.fn(), notify, custom },
@@ -392,7 +395,7 @@ describe("pi-web extension", () => {
     component = undefined;
     const getComponent = () => component;
     const errNotify = vi.fn();
-    const errPending = command.handler("config", {
+    const errPending = command.handler("settings", {
       hasUI: true,
       mode: "tui",
       ui: { pasteToEditor: vi.fn(), notify: errNotify, custom },

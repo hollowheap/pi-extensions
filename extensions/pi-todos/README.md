@@ -36,7 +36,7 @@ project-file state.
   mode, close the list with Esc, Enter, q, or Ctrl+C. RPC uses a notification.
 - `/todos complete <id|all>`, `/todos edit <id> <text>`, `/todos delete [id]`,
   and `/todos priority <id> <high|medium|low>` manage the list. Priorities sort
-  the widget and list. `/todo` is an alias for all these commands.
+  the widget and list.
 - `/widget toggle` or Alt+W then P collapses and expands the sticky widgets.
   On macOS, use Option+W then P. Pi lists the shortcut under Extensions in
   `/hotkeys`.

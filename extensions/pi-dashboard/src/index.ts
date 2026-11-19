@@ -28,6 +28,7 @@ import {
   type DashboardConfig,
   type DashboardSettings,
   loadConfig,
+  normalizeConfig,
   saveDashboardSettings,
   showDashboardSettings,
 } from "./settings.js";
@@ -412,6 +413,8 @@ function hasConversationStarted(ctx: ExtensionContext): boolean {
 export default function (pi: ExtensionAPI) {
   let active: DashboardController | undefined;
   let currentConfig: DashboardConfig | undefined;
+  let activeCtx: ExtensionContext | undefined;
+  let unsubscribeConfigChanged: (() => void) | undefined;
   let hidden = false;
 
   const makeStateInput = (
@@ -546,6 +549,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
+    activeCtx = ctx;
     const loaded = loadConfig(getAgentDir());
     if (loaded.diagnostics.length > 0) {
       const hasPerm = loaded.diagnostics.some((diagnostic) =>
@@ -557,6 +561,22 @@ export default function (pi: ExtensionAPI) {
         hasPerm ? "error" : "warning",
       );
     }
+    if (typeof unsubscribeConfigChanged === "function") {
+      unsubscribeConfigChanged();
+    }
+    unsubscribeConfigChanged = pi.events?.on(
+      "dashboard:config-changed",
+      (data) => {
+        const next =
+          data !== undefined
+            ? normalizeConfig(data).config
+            : loadConfig(getAgentDir()).config;
+        currentConfig = next;
+        if (activeCtx && activeCtx.mode === "tui") {
+          install(activeCtx, next);
+        }
+      },
+    );
     install(ctx, loaded.config);
   });
 
@@ -569,24 +589,26 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_tree", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
+    activeCtx = ctx;
     const config = currentConfig ?? loadConfig(getAgentDir()).config;
     install(ctx, config);
   });
 
   pi.registerCommand("dashboard", {
     description:
-      "Open interactive dashboard (or '/dashboard settings' / '/dashboard config' to configure)",
+      "Open interactive dashboard (or '/dashboard settings' to configure)",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length > 1) return null;
-      return prefixCompletions(parts[0] ?? "", ["settings", "config"]).map(
-        (item) => ({ ...item, description: "open dashboard settings" }),
-      );
+      return prefixCompletions(parts[0] ?? "", ["settings"]).map((item) => ({
+        ...item,
+        description: "open dashboard settings",
+      }));
     },
     handler: async (args, ctx) => {
       if (ctx.mode !== "tui") return;
       const subcommand = args.trim().toLowerCase();
-      if (subcommand === "settings" || subcommand === "config") {
+      if (subcommand === "settings") {
         await openSettings(ctx);
         return;
       }
@@ -595,6 +617,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    if (typeof unsubscribeConfigChanged === "function") {
+      unsubscribeConfigChanged();
+    }
+    unsubscribeConfigChanged = undefined;
+    activeCtx = undefined;
     active?.stop();
     active = undefined;
     hidden = false;

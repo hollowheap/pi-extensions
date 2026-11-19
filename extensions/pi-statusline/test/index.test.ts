@@ -367,7 +367,7 @@ describe("pi-statusline extension", () => {
     expect(ctx.ui.setHiddenThinkingLabel).toHaveBeenCalledWith("reasoning");
   });
 
-  it("supports /statusline config as an alias for settings and exposes completions", async () => {
+  it("supports /statusline settings and exposes completions", async () => {
     const pi = createMockPi();
     extension(pi as never);
     const command = pi.registerCommand.mock.calls.find(
@@ -381,10 +381,13 @@ describe("pi-statusline extension", () => {
 
     expect(
       command.getArgumentCompletions("")?.map((item) => item.value),
-    ).toEqual(["click", "settings", "config", "working", "thinking"]);
+    ).toEqual(["click", "settings", "working", "thinking"]);
+    expect(
+      command.getArgumentCompletions("set")?.map((item) => item.value),
+    ).toEqual(["settings"]);
     expect(
       command.getArgumentCompletions("con")?.map((item) => item.value),
-    ).toEqual(["config"]);
+    ).toEqual([]);
     expect(
       command.getArgumentCompletions("working ")?.map((item) => item.value),
     ).toEqual(["default", "pulse", "compact", "hidden"]);
@@ -394,11 +397,11 @@ describe("pi-statusline extension", () => {
       mode: "tui",
       ui: { ...createMockCtx().ui, custom },
     });
-    await command.handler("config", ctx);
+    await command.handler("settings", ctx);
     expect(custom).toHaveBeenCalledTimes(1);
   });
 
-  it("notifies with an error when saving /statusline config fails with EACCES", async () => {
+  it("notifies with an error when saving /statusline settings fails with EACCES", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-statusline-eacces-"));
     state.agentDir = dir;
     const pi = createMockPi();
@@ -440,7 +443,7 @@ describe("pi-statusline extension", () => {
     });
     try {
       if (process.getuid?.() !== 0) {
-        await command.handler("config", ctx);
+        await command.handler("settings", ctx);
         expect(ctx.ui.notify).toHaveBeenCalledWith(
           expect.stringMatching(/failed to save settings.*permission|EACCES/i),
           "error",
@@ -659,5 +662,36 @@ describe("usage-pct footer component", () => {
     branch.push(makeEntry(2000));
     expect(component.render(120)[0]).toContain("↑3.0k");
     expect(usageReads).toBeGreaterThan(readsAfterInstall);
+  });
+
+  it("reloads config and re-renders on statusline:config-changed and cleans up on shutdown", () => {
+    const unsub = vi.fn();
+    const listeners = new Map<string, (data: unknown) => void>();
+    const pi = createMockPi();
+    pi.events.on.mockImplementation(
+      (channel: string, handler: (data: unknown) => void) => {
+        listeners.set(channel, handler);
+        return channel === "statusline:config-changed" ? unsub : () => {};
+      },
+    );
+    extension(pi as never);
+    const ctx = createMockCtx();
+    const { component, tui } = installFooter(pi, ctx);
+
+    const onConfigChanged = listeners.get("statusline:config-changed");
+    expect(onConfigChanged).toBeDefined();
+
+    tui.requestRender.mockClear();
+    onConfigChanged?.({
+      options: { componentSeparator: "|", sectionSeparator: " | " },
+      sections: { a: [{ type: "mode-guard" }], z: [{ type: "clock" }] },
+    });
+
+    expect(tui.requestRender).toHaveBeenCalledTimes(1);
+    const line = component.render(120).join(" ");
+    expect(line).not.toBe("");
+
+    handlers(pi).session_shutdown(undefined as never, ctx as never);
+    expect(unsub).toHaveBeenCalledTimes(1);
   });
 });

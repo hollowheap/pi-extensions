@@ -26,7 +26,11 @@ import {
   loadSubagentsConfig,
   resolveSubagentSandboxOptions,
 } from "./settings.js";
-import { runnerRequest, waitForRunner } from "./socket.js";
+import {
+  readLogFailureDetail,
+  runnerRequest,
+  waitForRunner,
+} from "./socket.js";
 import { type SubagentState, SubagentStore } from "./state.js";
 
 export interface StartSubagentOptions {
@@ -137,29 +141,26 @@ export async function startSubagent(
     let childCommand = options.command;
     let childArgs = [...(options.args ?? [])];
     if (effectiveSandbox) {
-      const sandboxOpts: SandboxOptions =
-        typeof effectiveSandbox === "object"
-          ? { ...effectiveSandbox, cwd: effectiveSandbox.cwd ?? options.cwd }
-          : { cwd: options.cwd };
-      const wrapped = wrapSandboxCommand(childCommand, childArgs, sandboxOpts);
-      const extraBinds: string[] = [];
+      const writablePaths: string[] = [];
       if (options.sessionPath !== undefined) {
         const sessionDir = dirname(resolve(options.cwd, options.sessionPath));
         mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
-        extraBinds.push("--bind", sessionDir, sessionDir);
+        writablePaths.push(sessionDir);
       }
-      const sepIndex = wrapped.args.indexOf("--");
+      const sandboxOpts: SandboxOptions =
+        typeof effectiveSandbox === "object"
+          ? {
+              ...effectiveSandbox,
+              cwd: effectiveSandbox.cwd ?? options.cwd,
+              writablePaths: [
+                ...(effectiveSandbox.writablePaths ?? []),
+                ...writablePaths,
+              ],
+            }
+          : { cwd: options.cwd, writablePaths };
+      const wrapped = wrapSandboxCommand(childCommand, childArgs, sandboxOpts);
       childCommand = wrapped.command;
-      childArgs =
-        extraBinds.length === 0
-          ? wrapped.args
-          : sepIndex >= 0
-            ? [
-                ...wrapped.args.slice(0, sepIndex),
-                ...extraBinds,
-                ...wrapped.args.slice(sepIndex),
-              ]
-            : [...wrapped.args, ...extraBinds];
+      childArgs = wrapped.args;
     }
 
     writeConfig(configPath, {
@@ -192,7 +193,10 @@ export async function startSubagent(
       runnerError = error;
     });
     try {
-      await waitForRunner(state, options.timeoutMs ?? 5_000, runner);
+      await waitForRunner(state, options.timeoutMs ?? 5_000, {
+        ...runner,
+        childLogPath: store.logPath(id),
+      });
     } catch (error) {
       throw runnerError ?? error;
     }
@@ -281,7 +285,18 @@ export async function sendSubagent(
     typeof payload.message === "string"
       ? payload.message
       : payload;
-  await runnerRequest(state, "send", input, options);
+  try {
+    await runnerRequest(state, "send", input, options);
+  } catch (error) {
+    const logDetail = readLogFailureDetail([
+      store.logPath(id),
+      join(store.dir, `${id}.runner.log`),
+    ]);
+    if (logDetail !== undefined) {
+      throw new Error(`subagent ${id} exited: ${logDetail}`);
+    }
+    throw error;
+  }
 }
 
 export async function abortSubagent(

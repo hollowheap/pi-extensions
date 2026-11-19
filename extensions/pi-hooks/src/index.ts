@@ -402,7 +402,7 @@ async function handleToolResult(
 function getHooksCompletions(prefix: string) {
   const parts = prefix.trimStart().split(/\s+/);
   if (parts.length > 1) return null;
-  return prefixCompletions(parts[0] ?? "", ["settings", "config", "status"]);
+  return prefixCompletions(parts[0] ?? "", ["settings", "status"]);
 }
 
 function runHooksStatus(ctx: ExtensionContext): void {
@@ -433,13 +433,9 @@ async function handleHooksCommand(
     return;
   }
 
-  if (
-    subcommand !== "" &&
-    subcommand !== "settings" &&
-    subcommand !== "config"
-  ) {
+  if (subcommand !== "" && subcommand !== "settings") {
     if (ctx.hasUI) {
-      notify(ctx, "Usage: /hooks [settings|config|status]", "info");
+      notify(ctx, "Usage: /hooks [settings|status]", "info");
     }
     return;
   }
@@ -520,7 +516,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("hooks", {
-    description: "Manage hooks: /hooks [settings|config|status]",
+    description: "Manage hooks: /hooks [settings|status]",
     getArgumentCompletions: getHooksCompletions,
     handler: async (args, ctx) => {
       lastCtx = ctx;

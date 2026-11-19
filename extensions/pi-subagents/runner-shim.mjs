@@ -114,9 +114,11 @@ if (readState().status === "cancelled") {
   process.exit(0);
 }
 
+const inheritedEnv = Object.assign({}, process.env);
+Reflect.deleteProperty(inheritedEnv, "BUN_BE_BUN");
 const child = spawn(config.command, config.args || [], {
   cwd: config.cwd,
-  env: Object.assign({}, process.env, config.env || {}),
+  env: Object.assign(inheritedEnv, config.env || {}),
   detached: true,
   stdio: ["pipe", "pipe", "pipe"],
 });
@@ -335,6 +337,10 @@ try {
   fs.unlinkSync(config.socketPath);
 } catch {}
 server.listen(config.socketPath, () => {
+  if (exited) {
+    closeServer();
+    return;
+  }
   try {
     fs.chmodSync(config.socketPath, 0o600);
   } catch {}

@@ -57,14 +57,7 @@ describe("ACP inactivity", () => {
     const command = pi.registerCommand.mock.calls[0][1];
     const completions = command.getArgumentCompletions("");
     expect(completions.map((item: { value: string }) => item.value)).toEqual(
-      expect.arrayContaining([
-        "logs",
-        "pause",
-        "resume",
-        "steer",
-        "settings",
-        "config",
-      ]),
+      expect.arrayContaining(["view", "pause", "resume", "steer", "settings"]),
     );
   });
 });

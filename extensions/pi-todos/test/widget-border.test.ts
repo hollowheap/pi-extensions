@@ -3,6 +3,12 @@ import {
   resetActiveTuiConfig,
   setActiveTuiConfig,
 } from "@hollowheap/tui/state";
+import {
+  formatSubagentWidget,
+  formatTaskWidget,
+  mountWidgetProviders,
+  registerWidgetProvider,
+} from "@hollowheap/tui/widget";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 
@@ -77,9 +83,24 @@ function harness() {
     },
   };
   extension(pi as never);
+  registerWidgetProvider({
+    name: "subagents",
+    label: "Subagents",
+    render: (width) =>
+      formatSubagentWidget([{ id: "sub-1", state: "running" }], {
+        width: width >= 80 ? width : 0,
+      }),
+  });
+  registerWidgetProvider({
+    name: "tasks",
+    label: "Tasks",
+    render: (width) =>
+      formatTaskWidget([{ id: "task-1", status: "running" }], {
+        width: width >= 80 ? width : 0,
+      }),
+  });
   handlers.get("session_start")?.({}, ctx);
-  eventHandlers.get("subagents:state")?.([{ id: "sub-1", state: "running" }]);
-  eventHandlers.get("tasks:state")?.([{ id: "task-1", status: "running" }]);
+  mountWidgetProviders(ctx as never);
   return {
     ctx,
     widgets,

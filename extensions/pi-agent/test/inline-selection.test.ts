@@ -46,8 +46,9 @@ describe("inline agent selection and shared default settings", () => {
       ?.getArgumentCompletions?.("")
       ?.map((c) => (c as { value: string }).value);
     expect(completions).toEqual(
-      expect.arrayContaining(["default", "reset", "settings"]),
+      expect.arrayContaining(["default", "settings"]),
     );
+    expect(completions).not.toContain("reset");
   });
 
   it("an unmatched prefix yields no completions", () => {

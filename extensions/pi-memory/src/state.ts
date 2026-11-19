@@ -8,18 +8,13 @@ import {
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "@hollowheap/core/format";
-import { messageCost } from "@hollowheap/core/pricing";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import {
   type StatuslinePublisher,
   createStatuslinePublisher,
 } from "@hollowheap/core/statusline";
-import {
-  USAGE_ENTRY_TYPE,
-  recordTurnUsage,
-  restoreSessionUsage,
-} from "@hollowheap/core/usage";
+import { recordAuxiliaryUsage } from "@hollowheap/core/usage";
 import { notify } from "@hollowheap/pi-ui/host";
 import { compactFromMemory, stringHeaders } from "./compaction.js";
 import {
@@ -215,22 +210,22 @@ function recordUsage(
     cost?: { total?: number };
   },
 ): MemoryUsageSummary {
-  const cost = messageCost(usage, model);
-  const next = recordTurnUsage(
-    restoreSessionUsage(ctx.sessionManager),
-    {
-      input: usage.input,
-      output: usage.output,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
+  const modelId = model.id ?? "memory";
+  const { cost } = recordAuxiliaryUsage({
+    sessionManager: ctx.sessionManager,
+    context: ctx,
+    modelId,
+    model,
+    usage,
+    appendEntry: (customType, data) => {
+      state.pi.appendEntry(customType, data);
     },
-    cost,
-    model.id ?? "memory",
-  );
-  state.pi.appendEntry(USAGE_ENTRY_TYPE, next);
-  state.pi.events?.emit?.("usage:refresh", undefined);
+    emitEvent: (event, data) => {
+      state.pi.events?.emit?.(event, data);
+    },
+  });
   return {
-    model: model.id ?? "memory",
+    model: modelId,
     input: usage.input,
     output: usage.output,
     cost,
@@ -280,6 +275,7 @@ function serializePending(
 export async function maybeObserve(
   state: MemoryState,
   ctx: ExtensionContext,
+  options?: { force?: boolean },
 ): Promise<void> {
   if (state.observing) return;
   const config = loadConfig(state);
@@ -324,7 +320,7 @@ export async function maybeObserve(
     return;
   }
   if (chunk.text.trim() === "") return;
-  if (chunk.tokens < config.observeAfterTokens) return;
+  if (!options?.force && chunk.tokens < config.observeAfterTokens) return;
 
   const entryIds = chunk.entries.map((entry) => entry.id);
   const startGeneration = state.generation;
@@ -420,8 +416,21 @@ export async function handleBeforeCompact(
   const config = loadConfig(state);
   if (!isMemoryActive(config)) return undefined;
   if (config.deterministicCompaction) {
-    if (event.signal?.aborted === true) return { cancel: true };
-    const compaction = compactFromMemory(event, config);
+    const signal = event.signal;
+    if (signal?.aborted === true) return { cancel: true };
+    let compaction = compactFromMemory(event, config);
+    if (compaction === undefined) {
+      await maybeObserve(state, ctx, { force: true });
+      if ((signal as { aborted?: boolean } | undefined)?.aborted === true) {
+        return { cancel: true };
+      }
+      const refreshedBranch =
+        ctx.sessionManager?.getBranch?.() ?? event.branchEntries;
+      compaction = compactFromMemory(
+        { ...event, branchEntries: refreshedBranch },
+        config,
+      );
+    }
     if (compaction !== undefined) {
       state.lastCompactionUsage = undefined;
       return { compaction };

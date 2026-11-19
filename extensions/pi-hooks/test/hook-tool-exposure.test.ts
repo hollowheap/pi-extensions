@@ -21,7 +21,7 @@ describe("pi-hooks registers no model-callable tool", () => {
 });
 
 describe("command registration and handler seams", () => {
-  it("the hooks command advertises settings/config/status completions", () => {
+  it("the hooks command advertises settings/status completions", () => {
     const pi = {
       on: vi.fn(),
       registerTool: vi.fn(),
@@ -70,7 +70,7 @@ describe("command registration and handler seams", () => {
     await commands.hooks.handler("bogus", ctx);
 
     expect(notify).toHaveBeenCalledWith(
-      "Usage: /hooks [settings|config|status]",
+      "Usage: /hooks [settings|status]",
       "info",
     );
   });

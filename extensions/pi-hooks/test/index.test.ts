@@ -615,7 +615,7 @@ describe("pi-hooks extension", () => {
     expect(snap.hooks?.runs).toBeGreaterThanOrEqual(11);
   });
 
-  it("registers /hooks command with settings, config alias, status, completions, and OS permission error warnings", async () => {
+  it("registers /hooks command with settings, status, completions, and OS permission error warnings", async () => {
     const { clearHooksCache } = await import("../src/settings.js");
     clearHooksCache();
     writeHooks({
@@ -633,11 +633,12 @@ describe("pi-hooks extension", () => {
     expect(command).toBeDefined();
     expect(
       (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual(["settings", "config", "status"]);
+    ).toEqual(["settings", "status"]);
     expect(
-      (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
-    ).toEqual(["config"]);
-    expect(command.getArgumentCompletions?.("config extra")).toBeNull();
+      (command.getArgumentCompletions?.("se") ?? []).map((item) => item.value),
+    ).toEqual(["settings"]);
+    expect(command.getArgumentCompletions?.("co")).toEqual([]);
+    expect(command.getArgumentCompletions?.("settings extra")).toBeNull();
 
     const statusNotify = vi.fn();
     await command.handler("status", {
@@ -678,7 +679,7 @@ describe("pi-hooks extension", () => {
         }),
     );
     const tuiNotify = vi.fn();
-    const pending = command.handler("config", {
+    const pending = command.handler("settings", {
       cwd: agentDir,
       sessionManager: {},
       hasUI: true,

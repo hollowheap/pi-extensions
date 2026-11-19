@@ -1,10 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SettingsList } from "@earendil-works/pi-tui";
-import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import type { SettingsList } from "@earendil-works/pi-tui";
 import { resolveCanonicalPath } from "@hollowheap/core/trust";
-import { canOverlay, showDialog } from "@hollowheap/pi-ui/host";
-import { settingsListTheme } from "@hollowheap/pi-ui/settings";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { showSettingsDialog } from "@hollowheap/pi-ui/settings";
 import { type Config, loadConfig, rootPath, saveConfig } from "./settings.js";
 import { guardNotify, guardWarn } from "./state.js";
 
@@ -93,30 +90,25 @@ function clearSavedDecisions(
   list.updateValue("clear-decisions", "keep");
 }
 
-function createSettingsDialog(
-  dialogState: { config: Config },
-  options: Options,
-  canonicalCwd: string,
-  tui: { requestRender: () => void },
-  theme: Parameters<typeof settingsListTheme>[0] & {
-    fg: (token: "muted", text: string) => string;
-  },
-  done: () => void,
-) {
-  let settled = false;
-  const finish = (): void => {
-    if (settled) return;
-    settled = true;
-    done();
-  };
+export async function show(options: Options): Promise<void> {
+  const { ctx, agentDir, cwd } = options;
 
-  const list = new SettingsList(
-    [
+  const dialogState = {
+    config: loadConfig(agentDir, guardWarn(ctx)),
+  };
+  const canonicalCwd = resolveCanonicalPath(cwd, ".");
+
+  await showSettingsDialog({
+    ctx,
+    title: "Guard settings",
+    listHeight: 6,
+    promptLock: true,
+    items: [
       {
         id: "trust-cwd",
         label: "Trust current workspace",
         description: `Persist ${canonicalCwd} in guard.json trustedRoots`,
-        currentValue: trustValue(dialogState.config, options.cwd, canonicalCwd),
+        currentValue: trustValue(dialogState.config, cwd, canonicalCwd),
         values: ["prompt", "trusted"],
       },
       {
@@ -134,9 +126,14 @@ function createSettingsDialog(
         values: ["keep", "clear"],
       },
     ],
-    6,
-    settingsListTheme(theme),
-    (id, newValue) => {
+    header: (_list, theme) => [
+      theme.fg(
+        "muted",
+        `Trusted roots: ${(dialogState.config.trustedRoots ?? []).length} · Saved rules: ${Object.keys(dialogState.config.decisions ?? {}).length} · Active grants: ${options.activeGrantCount()}`,
+      ),
+      "",
+    ],
+    onChange: (id, newValue, list) => {
       if (id === "trust-cwd") {
         toggleWorkspaceTrust(
           dialogState,
@@ -147,65 +144,11 @@ function createSettingsDialog(
         );
       } else if (id === "clear-grants" && newValue === "clear") {
         const cleared = options.onClearGrants();
-        guardNotify(options.ctx, `cleared ${cleared} temporary grant(s)`);
+        guardNotify(ctx, `cleared ${cleared} temporary grant(s)`);
         list.updateValue("clear-grants", "keep");
       } else if (id === "clear-decisions" && newValue === "clear") {
         clearSavedDecisions(dialogState, options, list);
       }
-      tui.requestRender();
     },
-    finish,
-  );
-
-  return {
-    render(width: number): string[] {
-      const innerWidth = getFrameInnerWidth(width);
-      const summary = theme.fg(
-        "muted",
-        `Trusted roots: ${(dialogState.config.trustedRoots ?? []).length} · Saved rules: ${Object.keys(dialogState.config.decisions ?? {}).length} · Active grants: ${options.activeGrantCount()}`,
-      );
-      return boxFrame(
-        [summary, "", ...list.render(innerWidth)],
-        width,
-        theme,
-        "Guard settings",
-      );
-    },
-    invalidate() {
-      list.invalidate();
-    },
-    handleInput(data: string) {
-      list.handleInput(data);
-      tui.requestRender();
-    },
-    dispose(): void {
-      finish();
-    },
-  };
-}
-
-export async function show(options: Options): Promise<void> {
-  const { ctx, agentDir, cwd } = options;
-  if (!canOverlay(ctx)) return;
-
-  const dialogState = {
-    config: loadConfig(agentDir, guardWarn(ctx)),
-  };
-  const canonicalCwd = resolveCanonicalPath(cwd, ".");
-
-  await withPromptLock(() =>
-    showDialog<void>(
-      ctx,
-      (tui, theme, _keybindings, done) =>
-        createSettingsDialog(
-          dialogState,
-          options,
-          canonicalCwd,
-          tui,
-          theme,
-          done,
-        ),
-      { overlay: true },
-    ),
-  );
+  });
 }

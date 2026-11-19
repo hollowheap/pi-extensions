@@ -50,16 +50,15 @@ In trusted projects, new observations are also saved under `.pi/memory/` at the 
 
 ## Tools
 
-- `memory_search` searches active observations and reflections by keyword. It returns up to 20 matches (default 5) with IDs, relevance, and timestamps.
-- `memory_remember` stores one durable fact as an observation. It deduplicates exact text and honors `redactSecrets`.
-- `memory_recall` is a codemode-only search of observations. The default `session` scope searches the active branch. Set `scope: "workspace"` to search saved observations across sessions in the current workspace.
+- `recall` searches observations and reflections by keyword. The default `session` scope searches the active branch (returning up to 20 matches, default 5, with IDs, relevance, and timestamps). Set `scope: "workspace"` to search saved observations across sessions in the current workspace.
 
-These tools require `enabled: true`.
+This tool requires `enabled: true`.
 
 ## Commands
 
 - `/memory status` shows enabled state, model, session and workspace observation counts, pending tokens, last observer usage, and config diagnostics. `/memory status workspace` shows the workspace count.
 - `/memory view` opens session observations and reflections in a Markdown pager. `/memory view workspace` opens workspace observations.
+- `/memory checkpoint` flushes any pending unobserved messages through the observer model immediately and triggers session compaction.
 - `/memory clear` confirms, then appends a tombstone that clears current session observations and marks current messages consumed. Workspace copies have separate retention.
 - `/memory migrate` imports active observations from saved Pi sessions in the same workspace. It follows a fork's saved ancestry to keep the original workspace and session ID and skips observations whose origin cannot be verified. It honors each branch's clear records, applies the current redaction setting, and leaves the original sessions intact. Repeating it adds no duplicates.
 

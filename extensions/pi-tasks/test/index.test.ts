@@ -473,7 +473,7 @@ describe("pi-tasks extension", () => {
     });
   });
 
-  it("supports /task settings and /task config with completions, interactive toggles, and OS permission errors", async () => {
+  it("supports /task settings with completions, interactive toggles, and OS permission errors", async () => {
     const pi = createMockPi();
     extension(pi as never);
     const command = pi.registerCommand.mock.calls[0]?.[1] as {
@@ -485,10 +485,13 @@ describe("pi-tasks extension", () => {
 
     expect(
       (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual(["logs", "settings", "config"]);
+    ).toEqual(["logs", "settings"]);
+    expect(
+      (command.getArgumentCompletions?.("se") ?? []).map((item) => item.value),
+    ).toEqual(["settings"]);
     expect(
       (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
-    ).toEqual(["config"]);
+    ).toEqual([]);
 
     let component:
       | { handleInput(data: string): void; render(width: number): string[] }
@@ -521,7 +524,7 @@ describe("pi-tasks extension", () => {
       ui: { notify, setStatus: vi.fn(), custom },
     };
 
-    const pending = command.handler("config", ctx);
+    const pending = command.handler("settings", ctx);
     await vi.waitFor(() => expect(component).toBeDefined());
     const rendered = component?.render(80).join("\n") ?? "";
     expect(rendered).toContain("Tasks settings");

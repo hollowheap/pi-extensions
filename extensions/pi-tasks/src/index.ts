@@ -9,6 +9,12 @@ import { createStatuslinePublisher } from "@hollowheap/core/statusline";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
 import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import {
+  type WidgetTaskStateItem,
+  formatTaskWidget,
+  mountWidgetProviders,
+  registerWidgetProvider,
+} from "@hollowheap/tui/widget";
 import { taskAlertTracker } from "./alerts.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";
@@ -108,6 +114,22 @@ export default function (pi: ExtensionAPI) {
 
   let lastRunningCount = 0;
   let lastContext: ExtensionContext | undefined;
+  let widgetTasks: WidgetTaskStateItem[] = [];
+
+  registerWidgetProvider({
+    name: "tasks",
+    label: "Tasks",
+    render: (width) =>
+      formatTaskWidget(widgetTasks, { width: width >= 80 ? width : 0 }),
+  });
+
+  const updateUI = (ctx?: ExtensionContext) => {
+    const target = ctx ?? lastContext;
+    if (!target?.hasUI || typeof hostUi(target).setWidget !== "function") {
+      return;
+    }
+    mountWidgetProviders(target);
+  };
 
   const syncTasksSnapshot = (
     sessionManager: unknown,
@@ -158,6 +180,8 @@ export default function (pi: ExtensionAPI) {
     const running = all
       .filter((t) => t.status === "running")
       .map((t) => ({ id: t.id, command: t.command, status: t.status }));
+    widgetTasks = running;
+    updateUI();
     pi.events?.emit?.("tasks:state", running);
     if (lastContext?.sessionManager) {
       syncTasksSnapshot(lastContext.sessionManager, all);
@@ -175,6 +199,8 @@ export default function (pi: ExtensionAPI) {
         publishStatusline(runningCount, ctx);
       },
       onTasksChange: (tasks) => {
+        widgetTasks = tasks;
+        updateUI();
         pi.events?.emit?.("tasks:state", tasks);
       },
     }),
@@ -195,11 +221,14 @@ export default function (pi: ExtensionAPI) {
         const tasks = reconcileAllTasks(getAgentDir());
         void taskAlertTracker.observe(tasks);
         void taskWorkspaceTracker.cleanupTerminal(tasks);
-        let runningCount = 0;
-        for (const t of tasks) {
-          if (t.status === "running") runningCount++;
-        }
+        const running = tasks
+          .filter((t) => t.status === "running")
+          .map((t) => ({ id: t.id, command: t.command, status: t.status }));
+        const runningCount = running.length;
         if (runningCount !== lastRunningCount) {
+          widgetTasks = running;
+          updateUI();
+          pi.events?.emit?.("tasks:state", running);
           publishStatusline(runningCount);
           if (lastContext) {
             updateTasksStatus(lastContext, runningCount);
@@ -213,7 +242,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("task", {
-    description: "Task management: /task [logs] [id] | /task settings|config",
+    description: "Task management: /task [logs] [id] | /task settings",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
@@ -222,7 +251,6 @@ export default function (pi: ExtensionAPI) {
           [
             ["logs", "show task log"],
             ["settings", "configure task sandbox settings"],
-            ["config", "configure task sandbox settings"],
           ] as const,
           ([value, description]) => ({ value, label: value, description }),
         );
@@ -241,7 +269,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const subcommand = (parts[0] ?? "").toLowerCase();
-      if (subcommand === "settings" || subcommand === "config") {
+      if (subcommand === "settings") {
         const agentDir = getAgentDir();
         const config = loadTasksConfig(agentDir);
         await runSettingsCommand(ctx, {
@@ -282,7 +310,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (ctx.hasUI) {
-        notify(ctx, "Usage: /task [logs] [id] | /task settings|config", "info");
+        notify(ctx, "Usage: /task [logs] [id] | /task settings", "info");
       }
     },
   });
@@ -315,6 +343,7 @@ export default function (pi: ExtensionAPI) {
     stopAlertTicker();
     lastRunningCount = 0;
     lastContext = undefined;
+    widgetTasks = [];
     statusline.publish("");
     // Durable shell tasks intentionally survive session shutdown.
   });

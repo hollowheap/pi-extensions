@@ -19,19 +19,11 @@ import {
   toolErrorResult,
   toolTextResult,
 } from "@hollowheap/core/format";
-import { messageCost } from "@hollowheap/core/pricing";
 import { isRecord } from "@hollowheap/core/records";
 import { getSessionCache } from "@hollowheap/core/session-cache";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry } from "@hollowheap/core/state";
-import {
-  USAGE_ENTRY_TYPE,
-  getSessionUsage,
-  persistUsage,
-  recordTurnUsage,
-  restoreSessionUsage,
-  setSessionUsage,
-} from "@hollowheap/core/usage";
+import { recordAuxiliaryUsage } from "@hollowheap/core/usage";
 import { Type } from "typebox";
 import { loadDecideConfig } from "./settings.js";
 
@@ -98,11 +90,6 @@ function recordBilledClassifierUsage(
   usage: Usage,
   pi?: ExtensionAPI,
 ): void {
-  const sessionManager = ctx.sessionManager;
-  const current = sessionManager
-    ? restoreSessionUsage(sessionManager)
-    : getSessionUsage(ctx);
-
   const slash = modelId.indexOf("/");
   const provider = slash > 0 ? modelId.slice(0, slash) : "";
   const id = slash > 0 ? modelId.slice(slash + 1) : modelId;
@@ -111,28 +98,22 @@ function recordBilledClassifierUsage(
     provider,
     id,
   );
-  const cost = messageCost({ usage, model: modelId }, modelObj ?? modelId);
-
-  const next = recordTurnUsage(
-    current,
-    {
-      input: usage.input,
-      output: usage.output,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
-    },
-    cost,
+  recordAuxiliaryUsage({
+    sessionManager: ctx.sessionManager,
+    context: ctx,
     modelId,
-  );
-
-  if (sessionManager) {
-    setSessionUsage(sessionManager, next);
-    persistUsage(sessionManager, next);
-  }
-  if (pi) {
-    appendSessionEntry(pi, undefined, USAGE_ENTRY_TYPE, next);
-    pi.events?.emit?.("usage:refresh", undefined);
-  }
+    model: modelObj,
+    usage,
+    appendEntry:
+      pi !== undefined
+        ? (customType, data) => {
+            appendSessionEntry(pi, undefined, customType, data);
+          }
+        : undefined,
+    emitEvent: (event, data) => {
+      pi?.events?.emit?.(event, data);
+    },
+  });
 }
 
 interface Inflight {

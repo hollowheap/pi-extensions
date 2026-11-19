@@ -26,6 +26,7 @@ import {
   type MemoryUsageSummary,
   abortObserver,
   loadConfig,
+  maybeObserve,
   publishMemory,
   workspaceObservations,
 } from "./state.js";
@@ -262,6 +263,34 @@ async function clearMemory(
   if (ctx.hasUI) notify(ctx, "pi-memory: cleared", "info");
 }
 
+async function checkpointMemory(
+  state: MemoryState,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  const config = loadConfig(state);
+  if (!isMemoryActive(config)) {
+    reportCommandOutput(
+      ctx,
+      "pi-memory: checkpoint requires enabled memory with an observer model",
+      "warning",
+    );
+    return;
+  }
+  await maybeObserve(state, ctx, { force: true });
+  if (typeof ctx.compact === "function") {
+    ctx.compact({
+      onError: (error) => {
+        if (ctx.hasUI) notify(ctx, `pi-memory: ${error.message}`, "warning");
+      },
+    });
+  }
+  reportCommandOutput(
+    ctx,
+    `pi-memory: checkpointed (${state.ledger.observations.length}/${config.maxObservations} observations)`,
+    "info",
+  );
+}
+
 function getMemoryArgumentCompletions(prefix: string) {
   const value = prefix.trimStart().toLowerCase();
   const scope = /^(status|view)\s+(\S*)$/.exec(value);
@@ -273,6 +302,7 @@ function getMemoryArgumentCompletions(prefix: string) {
   return prefixCompletions(value, [
     "status",
     "view",
+    "checkpoint",
     "clear",
     "handoff",
     "migrate",
@@ -282,7 +312,7 @@ function getMemoryArgumentCompletions(prefix: string) {
 export function registerMemoryCommands(state: MemoryState): void {
   state.pi.registerCommand("memory", {
     description:
-      "Observational memory: /memory status|view [session|workspace], /memory clear or migrate",
+      "Observational memory: /memory status|view [session|workspace], /memory checkpoint|clear|migrate",
     getArgumentCompletions: getMemoryArgumentCompletions,
     handler: async (args, ctx) => {
       const [action = "status", requestedScope, extra] = args
@@ -297,6 +327,10 @@ export function registerMemoryCommands(state: MemoryState): void {
       ) {
         if (action === "status") showStatus(state, ctx, scope);
         else await showView(state, ctx, scope);
+        return;
+      }
+      if (action === "checkpoint" && requestedScope === undefined) {
+        await checkpointMemory(state, ctx);
         return;
       }
       if (action === "clear") {
@@ -314,7 +348,7 @@ export function registerMemoryCommands(state: MemoryState): void {
       if (ctx.hasUI) {
         notify(
           ctx,
-          "Usage: /memory status|view [session|workspace], /memory clear or migrate",
+          "Usage: /memory status|view [session|workspace], /memory checkpoint|clear|migrate",
           "info",
         );
       }

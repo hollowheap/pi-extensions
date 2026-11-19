@@ -40,7 +40,6 @@ export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
 
 interface PendingFork {
   agent: AgentConfig;
-  sessionName: string;
   labelId: string;
   baseActiveTools?: string[];
 }
@@ -62,38 +61,6 @@ const VALID_THINKING_LEVELS = new Set<string>([
   "xhigh",
   "max",
 ]);
-
-function firstUserMessageText(branch: readonly unknown[]): string | undefined {
-  for (const item of branch) {
-    if (typeof item !== "object" || item === null) continue;
-    const entry = item as {
-      type?: unknown;
-      message?: { role?: unknown; content?: unknown };
-    };
-    if (entry.type !== "message" || entry.message?.role !== "user") continue;
-    const content = entry.message.content;
-    let text = "";
-    if (typeof content === "string") {
-      text = content;
-    } else if (Array.isArray(content)) {
-      const parts: string[] = [];
-      for (const block of content) {
-        if (typeof block !== "object" || block === null) continue;
-        const { type, text: blockText } = block as {
-          type?: unknown;
-          text?: unknown;
-        };
-        if (type === "text" && typeof blockText === "string") {
-          parts.push(blockText);
-        }
-      }
-      text = parts.join(" ");
-    }
-    const cleaned = sanitizeTerminalText(text).replace(/\s+/g, " ").trim();
-    if (cleaned !== "") return cleaned.slice(0, 60);
-  }
-  return undefined;
-}
 
 function toAgentEntryData(agent: AgentConfig): {
   name: string;
@@ -292,7 +259,6 @@ function emitAgentStatus(
   const safeName =
     agentName !== undefined ? sanitizeTerminalText(agentName) : undefined;
   hostUi(ctx)?.setStatus?.("agent", safeName);
-  hostUi(ctx)?.setTitle?.(safeName ? `Pi — ${safeName}` : "Pi");
   publishStatus(safeName ?? "");
 }
 
@@ -409,24 +375,6 @@ function applyAgentTools(
   }
 }
 
-function buildForkSessionName(
-  branch: readonly unknown[],
-  existingName: string | undefined,
-  agentName: string,
-): string {
-  const strippedName = existingName
-    ?.trim()
-    .replace(/^\[[^\]]+\]\s*/, "")
-    .trim();
-  const baseName =
-    strippedName !== undefined &&
-    strippedName !== "" &&
-    strippedName !== "session"
-      ? strippedName
-      : (firstUserMessageText(branch) ?? agentName);
-  return `[${agentName}] ${baseName}`;
-}
-
 function buildAgentsRoster(
   names: readonly string[],
   candidates: readonly AgentConfig[],
@@ -461,11 +409,6 @@ function buildAgentCompletions(
     {
       value: "default",
       label: "default",
-      description: "Reset to default agent",
-    },
-    {
-      value: "reset",
-      label: "reset",
       description: "Reset to default agent",
     },
     {
@@ -578,6 +521,9 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         if (error && options.notify) {
           notify(ctx, `Mode error: ${error}`, "error");
         }
+        if (error === undefined) {
+          piApi.events?.emit?.("mode:changed", { mode: result.mode });
+        }
       }
 
       const skipModel = hasSessionModelOverride(
@@ -614,7 +560,10 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       if (options.persist && previousAgent?.mode && ctx.sessionManager) {
-        enterMode(ctx.sessionManager, "manual");
+        const result = enterMode(ctx.sessionManager, "manual");
+        if (result.diagnostic === undefined && result.veto === undefined) {
+          piApi.events?.emit?.("mode:changed", { mode: result.mode });
+        }
       }
 
       restoreBaseTools(piApi, baseActiveTools);
@@ -635,12 +584,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           (entry as { message?: { role?: string } }).message?.role === "user",
       );
 
-      const sessionName = buildForkSessionName(
-        branch,
-        pi.getSessionName(),
-        agent.name,
-      );
-
       hostUi(ctx)?.setStatus?.("agent", agent.name);
 
       if (hasHistory && branch.length > 0 && typeof ctx.fork === "function") {
@@ -650,7 +593,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         // the agent from its own session_start (reason "fork").
         pendingForkSlot[PENDING_FORK] = {
           agent,
-          sessionName,
           labelId: lastEntry.id,
           baseActiveTools:
             baseActiveTools === undefined ? undefined : [...baseActiveTools],
@@ -684,9 +626,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         }
       }
 
-      if (typeof pi.setSessionName === "function") {
-        pi.setSessionName(sessionName);
-      }
       await applyAgent(agent, ctx, pi, { persist: true, notify: false });
     };
 
@@ -780,7 +719,6 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       if (pending.baseActiveTools !== undefined) {
         baseActiveTools = [...pending.baseActiveTools];
       }
-      pi.setSessionName(pending.sessionName);
       if (typeof pi.setLabel === "function") {
         pi.setLabel(pending.labelId, `agent: ${pending.agent.name}`);
       }
@@ -881,7 +819,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
         if (raw !== "") {
           const lower = raw.toLowerCase();
-          if (lower === "settings" || lower === "config") {
+          if (lower === "settings") {
             const agentDir = getAgentDir();
             const config = loadAgentConfig({
               agentDir,
@@ -903,7 +841,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             });
             return;
           }
-          if (lower === "default" || lower === "reset") {
+          if (lower === "default") {
             applyDefault(ctx, pi, { persist: true, notify: true });
             return;
           }

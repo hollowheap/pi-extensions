@@ -249,7 +249,7 @@ describe("pi-dashboard extension", () => {
     ).toHaveLength(1);
   });
 
-  it("supports /dashboard settings and config alias with argument completions", async () => {
+  it("supports /dashboard settings with argument completions", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-dash-cfg-"));
     state.agentDir = dir;
     const pi = createMockPi();
@@ -263,13 +263,14 @@ describe("pi-dashboard extension", () => {
 
     expect(
       (registered.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual(["settings", "config"]);
+    ).toEqual(["settings"]);
     expect(
-      (registered.getArgumentCompletions?.("con") ?? []).map(
+      (registered.getArgumentCompletions?.("set") ?? []).map(
         (item) => item.value,
       ),
-    ).toEqual(["config"]);
-    expect(registered.getArgumentCompletions?.("config extra")).toBeNull();
+    ).toEqual(["settings"]);
+    expect(registered.getArgumentCompletions?.("con")).toEqual([]);
+    expect(registered.getArgumentCompletions?.("settings extra")).toBeNull();
 
     let component:
       | { handleInput(data: string): void; render(width: number): string[] }
@@ -300,7 +301,7 @@ describe("pi-dashboard extension", () => {
       ui: { setHeader: vi.fn(), notify: vi.fn(), custom },
     });
 
-    const pending = registered.handler("config", ctx);
+    const pending = registered.handler("settings", ctx);
     await vi.waitFor(() => expect(component).toBeDefined());
     expect(component?.render(80).join("\n")).toContain("Dashboard settings");
     component?.handleInput("\x1b");
@@ -349,7 +350,7 @@ describe("pi-dashboard extension", () => {
       ui: { setHeader: vi.fn(), notify, custom },
     });
 
-    const pending = registered.handler("config", ctx);
+    const pending = registered.handler("settings", ctx);
     await vi.waitFor(() => expect(component).toBeDefined());
     component?.handleInput("\r");
     component?.handleInput("\x1b");
@@ -384,6 +385,45 @@ describe("pi-dashboard extension", () => {
         chmodSync(permPath, 0o600);
       }
     }
+  });
+
+  it("re-installs dashboard on dashboard:config-changed and cleans up on shutdown", () => {
+    const unsub = vi.fn();
+    const listeners = new Map<string, (data: unknown) => void>();
+    const pi = {
+      ...createMockPi(),
+      events: {
+        on: vi.fn((channel: string, handler: (data: unknown) => void) => {
+          listeners.set(channel, handler);
+          return unsub;
+        }),
+        emit: vi.fn(),
+      },
+    };
+    extension(pi as never);
+    const ctx = createMockCtx();
+    const handlers = Object.fromEntries(
+      pi.on.mock.calls.map(([event, fn]) => [event, fn]),
+    );
+    handlers.session_start(undefined as never, ctx as never);
+    expect(ctx.ui.setHeader).toHaveBeenCalledTimes(1);
+
+    const onConfigChanged = listeners.get("dashboard:config-changed");
+    expect(onConfigChanged).toBeDefined();
+    onConfigChanged?.({
+      width: 72,
+      autoHide: false,
+      sections: [{ type: "header", ascii: ["CUSTOM"], gap: 0 }],
+    });
+
+    expect(ctx.ui.setHeader).toHaveBeenCalledTimes(2);
+    const factory = ctx.ui.setHeader.mock.calls[1][0];
+    const header = factory({ requestRender: vi.fn() }, {});
+    expect(header.render(40).join("\n")).toContain("CUSTOM");
+    header.dispose();
+
+    handlers.session_shutdown(undefined as never, ctx as never);
+    expect(unsub).toHaveBeenCalledTimes(1);
   });
 });
 

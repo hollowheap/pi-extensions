@@ -12,8 +12,8 @@ pi -e ./extensions/pi-agent
 
 - `/agent` — fuzzy-searchable modal picker of available user (`~/.pi/agent/agents/*.md`) and project (`.pi/agents/*.md`) agents, with a metadata preview. Non-TUI clients fall back to `ctx.ui.select`.
 - `/agent <name>` — activates agent `<name>` directly (with tab completion).
-- `/agent default` (or `reset`) — restores the default agent profile.
-- **Auto-Forking**: When switching agents in an active conversation, automatically forks the session tree at the current node, labels the fork point (`agent: <name>`), and renames the session to `[<name>] <title>`. An unnamed session uses its first user message, falling back to the agent name instead of `session`.
+- `/agent default` — restores the default agent profile.
+- **Auto-Forking**: When switching agents in an active conversation, automatically forks the session tree at the current node and labels the fork point (`agent: <name>`).
 - **Popup Notification**: In TUI mode, displays a modal popup overlay detailing active mode, model, thinking effort, tool loadout, skills, and forked branch name.
 
 Set an agent's effort in its model reference, for example

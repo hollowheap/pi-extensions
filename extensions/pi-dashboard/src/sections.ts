@@ -35,7 +35,7 @@ export const DEFAULT_DASHBOARD_ACTIONS: readonly DashboardActionItem[] = [
   { key: "t", label: "Todos", command: "/todos" },
   { key: "a", label: "Agent", command: "/agent" },
   { key: "u", label: "Usage", command: "/usage" },
-  { key: "g", label: "Grants", command: "/grants" },
+  { key: "g", label: "Grants", command: "/grant list" },
   { key: "s", label: "Settings", command: "/dashboard settings" },
 ];
 

@@ -50,7 +50,7 @@ Invalid values diagnose and fall back. The file is optional.
 Run `/subagent view <id>` to see a child's transcript across the terminal.
 Bare `/subagent` opens the picker. Alt+Left/Up or Alt+H/K selects the previous
 child, and Alt+Right/Down or Alt+L/J selects the next. Escape returns to the
-parent prompt. `/subagent logs <id>` opens the log pager.
+parent prompt.
 
 ## Agents
 
@@ -151,7 +151,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 ## Commands
 
 - `/subagent` opens a fuzzy subagent picker, then the selected child log in a keyboard-scrollable Markdown overlay in TUI mode.
-- `/subagent logs <id>` opens the child log directly.
+- `/subagent view <id>` opens the child log directly.
 - `/subagent pause <id>` aborts the live child.
 - `/subagent resume <id>` restarts a failed child.
 - `/subagent steer <id> <message>` sends steering text to the live child.
@@ -173,7 +173,7 @@ The directory is `0700`; files and sockets are `0600`. The parent can exit and a
 
 Subagent state carries the project folder that started the child. Lists, the picker, statusline counts, todo widgets, completion alerts, and id actions only see children whose recorded folder matches the current working directory. Children from other folders and legacy states without a recorded folder stay hidden.
 
-Lists and the picker label a child by agent, model, and task summary instead of its full id, and show the recorded workspace path. Ids remain the input for `status`, `send`, `wait`, `cancel`, `resume`, and `/subagent logs`.
+Lists and the picker label a child by agent, model, and task summary instead of its full id, and show the recorded workspace path. Ids remain the input for `status`, `send`, `wait`, `cancel`, `resume`, and `/subagent view`.
 
 ## Write serialization
 

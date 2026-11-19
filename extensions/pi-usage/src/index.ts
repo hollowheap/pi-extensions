@@ -378,7 +378,7 @@ export default function (pi: ExtensionAPI) {
       const raw = args.trim();
       const [subcommand, ...rest] = raw.split(/\s+/).filter(Boolean);
       const sub = subcommand?.toLowerCase();
-      if (sub === "cap" || sub === "budget") {
+      if (sub === "cap") {
         const value = rest.join(" ").trim();
         if (value === "") {
           const usage = getSessionUsage(ctx.sessionManager);
@@ -390,7 +390,7 @@ export default function (pi: ExtensionAPI) {
           else console.log(text);
           return;
         }
-        if (value.toLowerCase() === "off" || value.toLowerCase() === "none") {
+        if (value.toLowerCase() === "off") {
           warningNotified = false;
           setSessionBudgetCap(ctx.sessionManager, undefined, {
             persist: true,
@@ -407,7 +407,7 @@ export default function (pi: ExtensionAPI) {
           if (ctx.hasUI)
             notify(
               ctx,
-              `pi-usage: cap must be a positive dollar amount, e.g. /usage ${sub} $5`,
+              "pi-usage: cap must be a positive dollar amount, e.g. /usage cap $5",
               "error",
             );
           return;

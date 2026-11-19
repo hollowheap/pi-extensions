@@ -23,11 +23,11 @@ import type { Tag } from "@hollowheap/core/types";
 import { confirmDialog, notify } from "@hollowheap/pi-ui/host";
 import {
   TOOL_TAGS,
+  classifyToolCall,
   isPassthroughTaskCall,
   readCommandArg,
   readToolTarget,
 } from "@hollowheap/policy";
-import { classifyToolCall } from "./classifier.js";
 import { loadConfig } from "./settings.js";
 import {
   type GuardState,
@@ -182,7 +182,14 @@ async function handleToolCall(
       ? userTags[event.toolName]
       : undefined);
 
-  const classifierVerdict = await classifyToolCall(event, tag, ctx);
+  const classifierVerdict = await classifyToolCall(event, tag, ctx, {
+    appendEntry: (customType, data) => {
+      pi.appendEntry?.(customType, data);
+    },
+    emitEvent: (eventName, data) => {
+      pi.events?.emit?.(eventName, data);
+    },
+  });
   if (classifierVerdict?.kind === "block") {
     return denyWithAudit(
       pi,

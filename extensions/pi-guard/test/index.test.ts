@@ -1336,7 +1336,7 @@ it("persists and restores audit counters, publishing guard snapshot", async () =
   expect(newSnap?.deniedCount).toBe(1);
 });
 
-describe("/guard settings|config|status", () => {
+describe("/guard settings|status", () => {
   it("publishes the uppercase mode-guard statusline badge", () => {
     expect(formatModeBadge("manual")).toBe("MANUAL");
     expect(formatModeBadge("edit")).toBe("EDIT");
@@ -1360,10 +1360,13 @@ describe("/guard settings|config|status", () => {
     };
     expect(
       guardCmd.getArgumentCompletions("")?.map((item) => item.value),
-    ).toEqual(["settings", "config", "status"]);
+    ).toEqual(["settings", "status"]);
+    expect(
+      guardCmd.getArgumentCompletions("set")?.map((item) => item.value),
+    ).toEqual(["settings"]);
     expect(
       guardCmd.getArgumentCompletions("con")?.map((item) => item.value),
-    ).toEqual(["config"]);
+    ).toEqual([]);
 
     const ctx = createContext(dir);
     await guardCmd.handler("status", ctx);
@@ -1373,7 +1376,7 @@ describe("/guard settings|config|status", () => {
     );
   });
 
-  it("opens /guard settings and /guard config in TUI mode and persists trustedRoots", async () => {
+  it("opens /guard settings in TUI mode and persists trustedRoots", async () => {
     const agentDir = makeGuardTempDir();
     const workspaceDir = makeGuardTempDir();
     testAgentState.agentDir = agentDir;
@@ -1425,7 +1428,7 @@ describe("/guard settings|config|status", () => {
         custom,
       },
     };
-    await guardCmd.handler("config", ctx);
+    await guardCmd.handler("settings", ctx);
     expect(custom).toHaveBeenCalledTimes(1);
 
     const saved = JSON.parse(

@@ -47,9 +47,10 @@ describe("workspace memory seams", () => {
     const tools = p.registerTool.mock.calls.map(
       (call: unknown[]) => call[0] as { name?: string; exposure?: string },
     );
-    const recall = tools.find((t) => t.name === "memory_recall");
+    const recall = tools.find((t) => t.name === "recall");
     expect(recall).toBeDefined();
-    expect(recall?.exposure).toBe("codemode");
+    expect(recall?.exposure).toBe("direct");
+    expect(tools.find((t) => t.name === "memory_remember")).toBeUndefined();
   });
 
   it("workspace memory entries carry origin metadata", () => {
@@ -106,28 +107,28 @@ describe("workspace memory seams", () => {
     expect(p.appendEntry).toHaveBeenCalled();
   });
 
-  it("session-scoped memory tools keep their direct exposure", () => {
+  it("recall keeps direct exposure and retires memory_remember", () => {
     const p = pi();
     extension(p as never);
     const tools = p.registerTool.mock.calls.map(
       (call: unknown[]) => call[0] as { name?: string; exposure?: string },
     );
-    const search = tools.find((t) => t.name === "memory_search");
+    const recall = tools.find((t) => t.name === "recall");
     const remember = tools.find((t) => t.name === "memory_remember");
-    expect(search?.exposure).toBe("direct");
-    expect(remember?.exposure).toBe("direct");
+    expect(recall?.exposure).toBe("direct");
+    expect(remember).toBeUndefined();
   });
 
-  it("the recall tool advertises scoped codemode-only use", () => {
+  it("the recall tool supports session and workspace scope", () => {
     const p = pi();
     extension(p as never);
     const recall = p.registerTool.mock.calls
       .map(
         (call: unknown[]) => call[0] as { name?: string; description?: string },
       )
-      .find((t) => t.name === "memory_recall");
-    expect(recall?.description).toContain("scope");
-    expect(recall?.description).toContain("codemode");
+      .find((t) => t.name === "recall");
+    expect(recall?.description).toContain("session");
+    expect(recall?.description).toContain("workspace");
   });
 
   it("the memory command is registered alongside the tools", () => {

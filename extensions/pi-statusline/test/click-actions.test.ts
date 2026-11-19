@@ -91,7 +91,7 @@ describe("configurable click actions", () => {
     await command.handler("click", ctx);
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Usage: /statusline click <segment> | /statusline settings|config",
+      "Usage: /statusline click <segment> | /statusline settings",
       "info",
     );
   });

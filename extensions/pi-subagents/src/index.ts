@@ -7,10 +7,15 @@ import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
 import { createStatuslinePublisher } from "@hollowheap/core/statusline";
-import { canOverlay, notify } from "@hollowheap/pi-ui/host";
+import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
 import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import { escapeMarkdownInline } from "@hollowheap/tui/thinking";
+import {
+  formatSubagentWidget,
+  mountWidgetProviders,
+  registerWidgetProvider,
+} from "@hollowheap/tui/widget";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {
@@ -138,7 +143,25 @@ export function createSubagentsExtension(
       agent: string;
       task: string;
     }> = [];
+    let widgetSubagents: SubagentStateEventItem[] = [];
     let sessionAgents = new Map<string, AgentConfig>();
+
+    registerWidgetProvider({
+      name: "subagents",
+      label: "Subagents",
+      render: (width) =>
+        formatSubagentWidget(widgetSubagents, {
+          width: width >= 80 ? width : 0,
+        }),
+    });
+
+    const updateUI = (ctx?: ExtensionContext) => {
+      const target = ctx ?? lastCtx;
+      if (!target?.hasUI || typeof hostUi(target).setWidget !== "function") {
+        return;
+      }
+      mountWidgetProviders(target);
+    };
 
     const syncSubagentsSnapshot = async (
       all?: Array<{
@@ -257,6 +280,8 @@ export function createSubagentsExtension(
             : {}),
         }));
 
+        widgetSubagents = items;
+        updateUI();
         pi.events?.emit?.("subagents:state", items);
         publishStatusline(items.length);
         void subagentAlertTracker.observe(
@@ -276,6 +301,8 @@ export function createSubagentsExtension(
         }
         return items;
       } catch {
+        widgetSubagents = [];
+        updateUI();
         publishStatusline(0);
         stopTicker();
         return [];
@@ -414,25 +441,18 @@ export function createSubagentsExtension(
 
     pi.registerCommand("subagent", {
       description:
-        "Manage subagents: /subagent [logs] [id] | pause|resume|steer <id> [message] | settings|config",
+        "Manage subagents: /subagent [view] [id] | pause|resume|steer <id> [message] | settings",
       getArgumentCompletions: (prefix: string) => {
         const parts = prefix.trimStart().split(/\s+/);
-        const actions = [
-          "logs",
-          "view",
-          "pause",
-          "resume",
-          "steer",
-          "settings",
-          "config",
-        ];
+        const idActions = ["view", "pause", "resume", "steer"];
+        const actions = [...idActions, "settings"];
         if (parts.length === 1) {
           return prefixCompletions(parts[0] ?? "", actions);
         }
         const first = (parts[0] ?? "").toLowerCase();
         // Allow id completion for steer while the id is still being typed,
         // even when a trailing space has started the free-text message part.
-        if (first === "settings" || first === "config") {
+        if (!idActions.includes(first)) {
           return null;
         }
         if (parts.length > 2 && first !== "steer") {
@@ -454,7 +474,7 @@ export function createSubagentsExtension(
         const lowerAction = action?.toLowerCase();
         const id = parts[1];
         const agentDir = resolveAgentDir();
-        if (lowerAction === "settings" || lowerAction === "config") {
+        if (lowerAction === "settings") {
           const config = loadSubagentsConfig(agentDir);
           await runSettingsCommand(ctx, {
             prefix: "pi-subagents",
@@ -489,7 +509,7 @@ export function createSubagentsExtension(
           });
           return;
         }
-        if (!action || ((action === "logs" || action === "view") && !id)) {
+        if (!action || (action === "view" && !id)) {
           await pickSubagent(ctx);
 
           return;
@@ -498,13 +518,13 @@ export function createSubagentsExtension(
           if (ctx.hasUI) {
             notify(
               ctx,
-              "Usage: /subagent logs|pause|resume|steer <id> [message] | settings|config",
+              "Usage: /subagent view|pause|resume|steer <id> [message] | settings",
               "info",
             );
           }
           return;
         }
-        if (action === "logs" || action === "view") {
+        if (action === "view") {
           const raw = parts.includes("raw");
           await openSubagentLog(ctx, id, undefined, raw);
           return;
@@ -569,7 +589,7 @@ export function createSubagentsExtension(
         if (ctx.hasUI) {
           notify(
             ctx,
-            "Usage: /subagent logs|pause|resume|steer <id> [message]",
+            "Usage: /subagent view|pause|resume|steer <id> [message] | settings",
             "info",
           );
         }
@@ -581,6 +601,7 @@ export function createSubagentsExtension(
       lastActiveCount = 0;
       statusline.publish("");
       lastStates = [];
+      widgetSubagents = [];
       sessionAgents = new Map();
     });
   };

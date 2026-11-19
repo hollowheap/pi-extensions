@@ -6,7 +6,6 @@ import {
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText, toolTextResult } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { isRecord } from "@hollowheap/core/records";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
 import { createStatuslinePublisher } from "@hollowheap/core/statusline";
@@ -19,9 +18,6 @@ import {
 } from "@hollowheap/pi-ui/host";
 import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import {
-  type WidgetSubagentStateItem as SubagentStateItem,
-  formatSubagentWidget,
-  formatTaskWidget,
   formatTodoWidget,
   mountWidgetProviders,
   registerWidgetProvider,
@@ -29,7 +25,6 @@ import {
 } from "@hollowheap/tui/widget";
 import { Type } from "typebox";
 import {
-  type TaskStateItem,
   type Todo,
   type TodoState,
   applyTodoCommand,
@@ -48,59 +43,6 @@ function isPromptLockHeld(): boolean {
     globalThis as Record<symbol, { state?: { locked?: boolean } } | undefined>
   )[Symbol.for("@hollowheap/core/prompt-lock")];
   return lock?.state?.locked === true;
-}
-
-function readSubagentItems(value: unknown): SubagentStateItem[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const items: SubagentStateItem[] = [];
-  for (const entry of value) {
-    if (
-      !isRecord(entry) ||
-      typeof entry.id !== "string" ||
-      entry.id === "" ||
-      typeof entry.state !== "string"
-    ) {
-      continue;
-    }
-    const item: SubagentStateItem = { id: entry.id, state: entry.state };
-    if (typeof entry.agent === "string") item.agent = entry.agent;
-    if (typeof entry.task === "string") item.task = entry.task;
-    if (
-      typeof entry.startedAt === "number" &&
-      Number.isFinite(entry.startedAt)
-    ) {
-      item.startedAt = entry.startedAt;
-    }
-    if (typeof entry.activeTool === "string")
-      item.activeTool = entry.activeTool;
-    if (
-      typeof entry.activeToolStartedAt === "number" &&
-      Number.isFinite(entry.activeToolStartedAt)
-    ) {
-      item.activeToolStartedAt = entry.activeToolStartedAt;
-    }
-    items.push(item);
-  }
-  return items;
-}
-
-function readTaskItems(value: unknown): TaskStateItem[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const items: TaskStateItem[] = [];
-  for (const entry of value) {
-    if (
-      !isRecord(entry) ||
-      typeof entry.id !== "string" ||
-      entry.id === "" ||
-      typeof entry.status !== "string"
-    ) {
-      continue;
-    }
-    const item: TaskStateItem = { id: entry.id, status: entry.status };
-    if (typeof entry.command === "string") item.command = entry.command;
-    items.push(item);
-  }
-  return items;
 }
 
 function readTodos(value: unknown): Todo[] | undefined {
@@ -323,8 +265,6 @@ export function createTodoTool(
 
 export default function (pi: ExtensionAPI) {
   let state: TodoState = emptyTodoState();
-  let subagents: SubagentStateItem[] = [];
-  let tasks: TaskStateItem[] = [];
   let lastCtx: ExtensionContext | undefined;
   let lastOpenCount = 0;
 
@@ -341,20 +281,6 @@ export default function (pi: ExtensionAPI) {
         strikethrough,
       });
     },
-  });
-  registerWidgetProvider({
-    name: "subagents",
-    label: "Subagents",
-    render: (width) =>
-      formatSubagentWidget(subagents, {
-        width: width >= 80 ? width : 0,
-      }),
-  });
-  registerWidgetProvider({
-    name: "tasks",
-    label: "Tasks",
-    render: (width) =>
-      formatTaskWidget(tasks, { width: width >= 80 ? width : 0 }),
   });
 
   const statusline = createStatuslinePublisher(pi.events, "todos", () =>
@@ -423,20 +349,6 @@ export default function (pi: ExtensionAPI) {
       },
     ),
   );
-
-  pi.events.on("subagents:state", (data: unknown) => {
-    const items = readSubagentItems(data);
-    if (items === undefined) return;
-    subagents = items;
-    if (lastCtx?.hasUI) updateUI(lastCtx);
-  });
-
-  pi.events.on("tasks:state", (data: unknown) => {
-    const items = readTaskItems(data);
-    if (items === undefined) return;
-    tasks = items;
-    if (lastCtx?.hasUI) updateUI(lastCtx);
-  });
 
   const restore = (ctx: ExtensionContext) => {
     state = emptyTodoState();
@@ -767,10 +679,6 @@ export default function (pi: ExtensionAPI) {
     },
   };
   pi.registerCommand("todos", todoCommand);
-  pi.registerCommand("todo", {
-    ...todoCommand,
-    description: "Alias for /todos",
-  });
 
   pi.registerCommand("widget", {
     description:

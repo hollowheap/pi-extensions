@@ -98,7 +98,10 @@ describe("pi-todos extension", () => {
       "todos",
       expect.any(Object),
     );
-    expect(pi.registerCommand).toHaveBeenCalledWith("todo", expect.any(Object));
+    expect(pi.registerCommand).not.toHaveBeenCalledWith(
+      "todo",
+      expect.any(Object),
+    );
     expect(pi.registerCommand).toHaveBeenCalledWith(
       "widget",
       expect.any(Object),
@@ -328,51 +331,48 @@ describe("pi-todos extension", () => {
     );
   });
 
-  it.each(["todos", "todo"])(
-    "completes and edits todos via /%s",
-    async (name) => {
-      const { pi } = createMockPi();
-      extension(pi as never);
-      const tool = pi.registerTool.mock.calls[0][0];
-      const ctx = context();
+  it("completes and edits todos via /todos", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const tool = pi.registerTool.mock.calls[0][0];
+    const ctx = context();
 
-      await tool.execute(
-        "call-1",
-        { action: "create", tasks: ["Task A", "Task B"] },
-        undefined,
-        undefined,
-        ctx,
-      );
+    await tool.execute(
+      "call-1",
+      { action: "create", tasks: ["Task A", "Task B"] },
+      undefined,
+      undefined,
+      ctx,
+    );
 
-      const todoCmd = pi.registerCommand.mock.calls.find(
-        ([command]) => command === name,
-      )?.[1];
-      expect(todoCmd).toBeDefined();
+    const todoCmd = pi.registerCommand.mock.calls.find(
+      ([command]) => command === "todos",
+    )?.[1];
+    expect(todoCmd).toBeDefined();
 
-      await todoCmd.handler("complete 1", ctx);
-      expect(ctx.ui.notify).toHaveBeenCalledWith(
-        expect.stringContaining("✓ 1 Task A"),
-        "info",
-      );
+    await todoCmd.handler("complete 1", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("✓ 1 Task A"),
+      "info",
+    );
 
-      await todoCmd.handler("edit 2 Updated B", ctx);
-      const listResult = await tool.execute(
-        "call-2",
-        { action: "list" },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(listResult.details).toMatchObject({
-        todos: [
-          { id: 1, done: true },
-          { id: 2, text: "Updated B", done: false },
-        ],
-      });
-    },
-  );
+    await todoCmd.handler("edit 2 Updated B", ctx);
+    const listResult = await tool.execute(
+      "call-2",
+      { action: "list" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(listResult.details).toMatchObject({
+      todos: [
+        { id: 1, done: true },
+        { id: 2, text: "Updated B", done: false },
+      ],
+    });
+  });
 
-  it.each(["todos", "todo"])("searches todo text via /%s", async (name) => {
+  it("searches todo text via /todos", async () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const ctx = context({ mode: "rpc" });
@@ -387,7 +387,7 @@ describe("pi-todos extension", () => {
     ]);
     handlers.session_start({}, ctx);
     const command = pi.registerCommand.mock.calls.find(
-      ([command]) => command === name,
+      ([command]) => command === "todos",
     )?.[1];
 
     await command.handler("  SeArCh   RELEASE notes  ", ctx);
@@ -453,7 +453,7 @@ describe("pi-todos extension", () => {
 
     // Complete Task 1
     const todoCmd = pi.registerCommand.mock.calls.find(
-      ([name]) => name === "todo",
+      ([name]) => name === "todos",
     )?.[1];
     await todoCmd.handler("complete 1", ctx);
 
@@ -595,25 +595,22 @@ describe("pi-todos extension", () => {
     expect(onInput("p")).not.toMatchObject({ consume: true });
   });
 
-  it.each(["todos", "todo"])(
-    "opens the /%s overlay under the prompt lock",
-    async (name) => {
-      const { pi } = createMockPi();
-      extension(pi as never);
-      const ctx = context();
-      let lockHeldDuringCustom: boolean | undefined;
-      ctx.ui.custom = vi.fn(async () => {
-        lockHeldDuringCustom = isPromptLockHeld();
-      });
-      const todosCmd = pi.registerCommand.mock.calls.find(
-        ([command]) => command === name,
-      )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
+  it("opens the /todos overlay under the prompt lock", async () => {
+    const { pi } = createMockPi();
+    extension(pi as never);
+    const ctx = context();
+    let lockHeldDuringCustom: boolean | undefined;
+    ctx.ui.custom = vi.fn(async () => {
+      lockHeldDuringCustom = isPromptLockHeld();
+    });
+    const todosCmd = pi.registerCommand.mock.calls.find(
+      ([command]) => command === "todos",
+    )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
 
-      await todosCmd.handler("", ctx);
-      expect(ctx.ui.custom).toHaveBeenCalledTimes(1);
-      expect(lockHeldDuringCustom).toBe(true);
-    },
-  );
+    await todosCmd.handler("", ctx);
+    expect(ctx.ui.custom).toHaveBeenCalledTimes(1);
+    expect(lockHeldDuringCustom).toBe(true);
+  });
 
   it("settles and releases the prompt lock when the /todos overlay is disposed", async () => {
     const { pi } = createMockPi();

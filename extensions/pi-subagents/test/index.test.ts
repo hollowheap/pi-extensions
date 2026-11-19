@@ -237,13 +237,13 @@ describe("pi-subagents extension", () => {
       ) => Array<{ value: string; description?: string }>;
     };
     expect(
-      command.getArgumentCompletions("lo").map((item) => item.value),
-    ).toEqual(["logs"]);
+      command.getArgumentCompletions("vi").map((item) => item.value),
+    ).toEqual(["view"]);
     expect(
-      command.getArgumentCompletions("logs ").map((item) => item.value),
+      command.getArgumentCompletions("view ").map((item) => item.value),
     ).toContain("sub-1");
     expect(
-      command.getArgumentCompletions("logs sub")[0]?.description,
+      command.getArgumentCompletions("view sub")[0]?.description,
     ).toContain("running");
   });
 
@@ -276,12 +276,13 @@ describe("pi-subagents extension", () => {
     const command = pi.registerCommand.mock.calls[0]?.[1] as {
       getArgumentCompletions: (
         prefix: string,
-      ) => Array<{ value: string; description?: string }>;
+      ) => Array<{ value: string; description?: string }> | null;
     };
     const description =
-      command.getArgumentCompletions("logs sub")[0]?.description ?? "";
+      command.getArgumentCompletions("view sub")?.[0]?.description ?? "";
     expect(description).not.toContain("\x1b");
     expect(description).toContain("@scout: Inspect task");
+    expect(command.getArgumentCompletions("logs sub")).toBeNull();
   });
 
   it("registers nothing under ACP", () => {
@@ -354,7 +355,7 @@ describe("pi-subagents extension", () => {
     });
   });
 
-  it("supports /subagent settings and config alias with completions and OS permission errors", async () => {
+  it("supports /subagent settings with completions and OS permission errors", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-subagents-settings-"));
     tempDirs.push(dir);
     const pi = createMockPi();
@@ -373,19 +374,14 @@ describe("pi-subagents extension", () => {
 
     expect(
       (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual([
-      "logs",
-      "view",
-      "pause",
-      "resume",
-      "steer",
-      "settings",
-      "config",
-    ]);
+    ).toEqual(["view", "pause", "resume", "steer", "settings"]);
+    expect(
+      (command.getArgumentCompletions?.("se") ?? []).map((item) => item.value),
+    ).toEqual(["settings"]);
     expect(
       (command.getArgumentCompletions?.("co") ?? []).map((item) => item.value),
-    ).toEqual(["config"]);
-    expect(command.getArgumentCompletions?.("config extra")).toBeNull();
+    ).toEqual([]);
+    expect(command.getArgumentCompletions?.("settings extra")).toBeNull();
 
     let component:
       | { handleInput(data: string): void; render(width: number): string[] }
@@ -412,7 +408,7 @@ describe("pi-subagents extension", () => {
         }),
     );
     const notify = vi.fn();
-    const pending = command.handler("config", {
+    const pending = command.handler("settings", {
       cwd: dir,
       hasUI: true,
       mode: "tui",

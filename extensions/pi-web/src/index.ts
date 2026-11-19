@@ -117,15 +117,11 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.registerCommand("web", {
     description:
-      "Web tools: /web settings|config; /web insert <n> inserts a recent result link",
+      "Web tools: /web settings; /web insert <n> inserts a recent result link",
     getArgumentCompletions: (prefix: string) => {
       const parts = prefix.trimStart().split(/\s+/);
       if (parts.length === 1) {
-        return prefixCompletions(parts[0] ?? "", [
-          "settings",
-          "config",
-          "insert",
-        ]);
+        return prefixCompletions(parts[0] ?? "", ["settings", "insert"]);
       }
       if (parts[0] !== "insert" || parts.length > 2) return null;
       const query = (parts[1] ?? "").toLowerCase();
@@ -183,17 +179,9 @@ export default function (pi: ExtensionAPI): void {
         }
         return;
       }
-      if (
-        subcommand !== "" &&
-        subcommand !== "settings" &&
-        subcommand !== "config"
-      ) {
+      if (subcommand !== "" && subcommand !== "settings") {
         if (ctx.hasUI) {
-          notify(
-            ctx,
-            "Usage: /web [settings|config] or /web insert <n>",
-            "info",
-          );
+          notify(ctx, "Usage: /web [settings] or /web insert <n>", "info");
         }
         return;
       }

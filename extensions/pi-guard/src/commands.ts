@@ -29,7 +29,7 @@ import {
 
 const GRANT_DURATIONS = ["30s", "5m", "15m", "1h"] as const;
 const GRANT_SUBCOMMANDS = ["list"] as const;
-const GUARD_SUBCOMMANDS = ["settings", "config", "status"] as const;
+const GUARD_SUBCOMMANDS = ["settings", "status"] as const;
 
 /** Pick a recently checked permission target with fuzzy search. */
 export async function showGrantPicker(
@@ -269,7 +269,7 @@ async function handleGuardCommand(
     return;
   }
 
-  if (sub === "" || sub === "settings" || sub === "config") {
+  if (sub === "" || sub === "settings") {
     if (!canOverlay(ctx)) {
       const summary = formatGuardStatus(state, agentDir, ctx);
       if (ctx.hasUI) {
@@ -290,7 +290,7 @@ async function handleGuardCommand(
   }
 
   if (ctx.hasUI) {
-    notify(ctx, "Usage: /guard [settings|config|status]", "error");
+    notify(ctx, "Usage: /guard [settings|status]", "error");
   }
 }
 
@@ -311,7 +311,7 @@ export function createCommands(state: GuardState) {
     },
     guard: {
       description:
-        "Inspect or configure pi-guard settings: /guard [settings|config|status]",
+        "Inspect or configure pi-guard settings: /guard [settings|status]",
       getArgumentCompletions: completeGuardArgs,
       handler: (args: string, ctx: ExtensionContext) =>
         handleGuardCommand(state, args, ctx),

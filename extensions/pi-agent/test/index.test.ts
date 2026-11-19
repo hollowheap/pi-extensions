@@ -197,7 +197,7 @@ describe("pi-agent extension", () => {
     const completions = cmd.getArgumentCompletions("");
     const values = completions.map((c) => c.value);
     expect(values).toContain("default");
-    expect(values).toContain("reset");
+    expect(values).not.toContain("reset");
     expect(values).toContain("scout");
     expect(values).toContain("engineer");
 
@@ -271,9 +271,12 @@ describe("pi-agent extension", () => {
       expect.objectContaining({ position: "at" }),
     );
     expect(forkedPi.setLabel).toHaveBeenCalledWith("msg-1", "agent: scout");
-    expect(forkedPi.setSessionName).toHaveBeenCalledWith("[scout] session-1");
+    expect(forkedPi.setSessionName).not.toHaveBeenCalled();
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
-    expect(forkCtx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+    expect(forkCtx.ui.setTitle).not.toHaveBeenCalled();
+    expect(forkedPi.events.emit).toHaveBeenCalledWith("mode:changed", {
+      mode: "plan",
+    });
     expect(forkedPi.appendEntry).toHaveBeenCalledWith(
       ACTIVE_AGENT_TYPE,
       expect.objectContaining({
@@ -430,7 +433,7 @@ describe("pi-agent extension", () => {
     await cmd.handler("engineer", ctx);
 
     expect(ctx.fork).not.toHaveBeenCalled();
-    expect(pi.setSessionName).toHaveBeenCalledWith("[engineer] session-1");
+    expect(pi.setSessionName).not.toHaveBeenCalled();
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
     expect(pi.appendEntry).toHaveBeenCalledWith(
       ACTIVE_AGENT_TYPE,
@@ -445,73 +448,6 @@ describe("pi-agent extension", () => {
     );
     expect(pi.setThinkingLevel).toHaveBeenCalledWith("high");
     expect(ctx.ui.custom).not.toHaveBeenCalled();
-  });
-
-  it("names a nameless session after the agent instead of 'session'", async () => {
-    const pi = createMockPi();
-    pi.getSessionName = vi.fn(() => undefined);
-    createAgentExtension()(pi as never);
-
-    const ctx = createMockContext();
-    await pi.getCommand("agent").handler("engineer", ctx);
-
-    expect(pi.setSessionName).toHaveBeenCalledWith("[engineer] engineer");
-  });
-
-  it("replaces a legacy bare 'session' title with the agent name", async () => {
-    const pi = createMockPi();
-    pi.getSessionName = vi.fn(() => "[engineer] session");
-    createAgentExtension()(pi as never);
-
-    const ctx = createMockContext();
-    await pi.getCommand("agent").handler("scout", ctx);
-
-    expect(pi.setSessionName).toHaveBeenCalledWith("[scout] scout");
-  });
-
-  it("ignores malformed user content blocks when deriving fork session name", async () => {
-    const pi = createMockPi();
-    pi.getSessionName = vi.fn(() => undefined);
-    createAgentExtension()(pi as never);
-
-    const forkedPi = createMockPi();
-    forkedPi.getSessionName = vi.fn(() => undefined);
-    createAgentExtension()(forkedPi as never);
-
-    const ctx = createMockContext();
-    ctx.branch.push(
-      {
-        id: "msg-bad",
-        type: "message",
-        message: { role: "user", content: 42 },
-      },
-      {
-        id: "msg-array",
-        type: "message",
-        message: {
-          role: "user",
-          content: [
-            null,
-            "not-an-object",
-            { type: "text", text: 123 },
-            { type: "image", data: "abc" },
-            { type: "text", text: "  safe   prompt  " },
-          ],
-        },
-      },
-    );
-    const forkCtx = createMockContext({ branch: ctx.branch });
-    ctx.fork = vi.fn(async (_id, opts) => {
-      await Promise.all(
-        forkedPi.emit("session_start", { reason: "fork" }, forkCtx),
-      );
-      await opts?.withSession?.(forkCtx);
-      return { cancelled: false };
-    }) as never;
-
-    await pi.getCommand("agent").handler("scout", ctx);
-
-    expect(forkedPi.setSessionName).toHaveBeenCalledWith("[scout] safe prompt");
   });
 
   it("filters skills without injecting agent instructions", async () => {
@@ -648,7 +584,10 @@ describe("pi-agent extension", () => {
       name: null,
     });
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi");
+    expect(ctx.ui.setTitle).not.toHaveBeenCalled();
+    expect(pi.events.emit).toHaveBeenCalledWith("mode:changed", {
+      mode: "manual",
+    });
     expect(pi.setActiveTools).toHaveBeenCalledWith([
       "read",
       "edit",
@@ -1191,7 +1130,7 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "engineer");
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — engineer");
+    expect(ctx.ui.setTitle).not.toHaveBeenCalled();
     expect(pi.setModel).toHaveBeenCalledWith({
       provider: "opencode-go",
       id: "deepseek-v4.1-flash",
@@ -1220,7 +1159,7 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+    expect(ctx.ui.setTitle).not.toHaveBeenCalled();
   });
 
   it("does not auto-activate configured default agent when session explicitly reset to default", async () => {
@@ -1243,7 +1182,7 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", undefined);
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi");
+    expect(ctx.ui.setTitle).not.toHaveBeenCalled();
   });
 
   it("notifies warning and falls back to default when configured default agent is not found", async () => {
@@ -1290,7 +1229,7 @@ describe("pi-agent extension", () => {
     await Promise.all(pi.emit("session_start", {}, ctx));
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
-    expect(ctx.ui.setTitle).toHaveBeenCalledWith("Pi — scout");
+    expect(ctx.ui.setTitle).not.toHaveBeenCalled();
   });
 
   it("emits statusline values on agent switch and answers statusline:request", async () => {

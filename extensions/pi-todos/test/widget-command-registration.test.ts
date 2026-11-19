@@ -1,3 +1,9 @@
+import {
+  formatSubagentWidget,
+  formatTaskWidget,
+  mountWidgetProviders,
+  registerWidgetProvider,
+} from "@hollowheap/tui/widget";
 import { describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 
@@ -50,15 +56,6 @@ function eventHandler(
 ): ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined {
   return pi.on.mock.calls.find(([event]) => event === name)?.[1] as
     | ((event: unknown, ctx: unknown) => Promise<void> | void)
-    | undefined;
-}
-
-function stateHandler(
-  pi: ReturnType<typeof createMockPi>,
-  name: string,
-): ((data: unknown) => void) | undefined {
-  return pi.events.on.mock.calls.find(([event]) => event === name)?.[1] as
-    | ((data: unknown) => void)
     | undefined;
 }
 
@@ -124,19 +121,39 @@ describe("widget command surface", () => {
   it("collapses only the targeted widget", async () => {
     const pi = createMockPi();
     extension(pi as never);
-    const ctx = widgetCtx();
-    await eventHandler(pi, "session_start")?.({}, ctx);
-    stateHandler(pi, "subagents:state")?.([{ id: "s1", state: "running" }]);
-    stateHandler(pi, "tasks:state")?.([{ id: "t1", status: "running" }]);
-    ctx.ui.setWidget.mockClear();
+    const disposeSubagents = registerWidgetProvider({
+      name: "subagents",
+      label: "Subagents",
+      render: (width) =>
+        formatSubagentWidget([{ id: "s1", state: "running" }], {
+          width: width >= 80 ? width : 0,
+        }),
+    });
+    const disposeTasks = registerWidgetProvider({
+      name: "tasks",
+      label: "Tasks",
+      render: (width) =>
+        formatTaskWidget([{ id: "t1", status: "running" }], {
+          width: width >= 80 ? width : 0,
+        }),
+    });
+    try {
+      const ctx = widgetCtx();
+      await eventHandler(pi, "session_start")?.({}, ctx);
+      mountWidgetProviders(ctx as never);
+      ctx.ui.setWidget.mockClear();
 
-    await widgetCommand(pi).handler("toggle subagents", ctx);
+      await widgetCommand(pi).handler("toggle subagents", ctx);
 
-    const widgets = new Map(
-      ctx.ui.setWidget.mock.calls.map(([name, factory]) => [name, factory]),
-    );
-    expect(widgets.get("subagents")).toBeUndefined();
-    expect(typeof widgets.get("tasks")).toBe("function");
+      const widgets = new Map(
+        ctx.ui.setWidget.mock.calls.map(([name, factory]) => [name, factory]),
+      );
+      expect(widgets.get("subagents")).toBeUndefined();
+      expect(typeof widgets.get("tasks")).toBe("function");
+    } finally {
+      disposeSubagents();
+      disposeTasks();
+    }
   });
 
   it("toggling changes widget state and targets are completable", async () => {

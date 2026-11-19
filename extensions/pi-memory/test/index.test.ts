@@ -924,14 +924,14 @@ describe("pi-memory extension", () => {
     expect(snap?.latestObservation).toBeUndefined();
   });
 
-  it("searches stored observations with the memory_search tool", async () => {
+  it("searches stored observations with the recall tool", async () => {
     const pi = createMockPi();
     const dir = configDir();
     createMemoryExtension({ getAgentDir: () => dir })(pi as never);
     const ctx = createCtx([observationEntry("Prefer pnpm over npm")]);
     await handler(pi, "session_start")?.({}, ctx);
 
-    const tool = memoryTool(pi, "memory_search");
+    const tool = memoryTool(pi, "recall");
     const result = await tool?.execute(
       "call-1",
       { query: "pnpm" },
@@ -950,36 +950,38 @@ describe("pi-memory extension", () => {
     );
   });
 
-  it("stores durable facts and deduplicates memory_remember", async () => {
+  it("flushes pending observations on /memory checkpoint and before deterministic compaction", async () => {
     const pi = createMockPi();
-    const dir = configDir();
-    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
-    const ctx = createCtx([messageEntry("m1", "hello")]);
+    const dir = configDir({
+      deterministicCompaction: true,
+      observeAfterTokens: 50_000,
+    });
+    const observe = vi.fn().mockResolvedValue({
+      observations: [{ text: "Flushed checkpoint observation", relevance: 5 }],
+    });
+    createMemoryExtension({ getAgentDir: () => dir, observe })(pi as never);
+    const branch = [
+      messageEntry("m1", "Short message below observeAfterTokens"),
+      messageEntry("m2", "Recent kept message"),
+    ];
+    const compactMock = vi.fn();
+    const ctx = {
+      ...createCtx(branch),
+      compact: compactMock,
+    };
     await handler(pi, "session_start")?.({}, ctx);
 
-    const tool = memoryTool(pi, "memory_remember");
-    const first = await tool?.execute(
-      "call-1",
-      { text: "Use flake checks", relevance: 5 },
-      undefined,
-      undefined,
-      ctx,
-    );
-    const second = await tool?.execute(
-      "call-2",
-      { text: "Use flake checks", relevance: 5 },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    const command = memoryCommand(pi);
+    await command?.handler("checkpoint", ctx);
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(compactMock).toHaveBeenCalledTimes(1);
     expect(pi.appendEntry).toHaveBeenCalledWith(
       MEMORY_OBSERVATION_TYPE,
-      expect.objectContaining({ text: "Use flake checks", relevance: 5 }),
+      expect.objectContaining({
+        text: "Flushed checkpoint observation",
+        sourceEntryIds: ["m1", "m2"],
+      }),
     );
-    expect(JSON.parse(first?.content[0]?.text ?? "{}").duplicate).toBe(false);
-    expect(JSON.parse(second?.content[0]?.text ?? "{}").duplicate).toBe(true);
   });
 
   it("recalls bounded redacted observations from a worktree and scopes the memory commands", async () => {
@@ -1005,15 +1007,6 @@ describe("pi-memory extension", () => {
       ...createCtx([messageEntry("m1", "x".repeat(5_000))]),
       cwd: nested,
     };
-    await handler(writer, "session_start")?.({}, writerCtx);
-    const remember = memoryTool(writer, "memory_remember");
-    await remember?.execute(
-      "call-1",
-      { text: "Workspace old fixture" },
-      undefined,
-      undefined,
-      writerCtx,
-    );
     const observerCtx = {
       ...writerCtx,
       sessionManager: {
@@ -1048,7 +1041,7 @@ describe("pi-memory extension", () => {
     const reader = createMockPi();
     createMemoryExtension({ getAgentDir: () => dir })(reader as never);
     const readerCtx = { ...createCtx([]), cwd };
-    const recall = memoryTool(reader, "memory_recall");
+    const recall = memoryTool(reader, "recall");
     const result = await recall?.execute(
       "call-2",
       { query: "workspace", scope: "workspace" },
@@ -1090,92 +1083,31 @@ describe("pi-memory extension", () => {
     );
   });
 
-  it("preserves session remembers on workspace failure and retries publication with the same identity", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "pi-memory-symlink-"));
-    const outside = mkdtempSync(join(tmpdir(), "pi-memory-outside-"));
-    const dir = configDir();
-    workspaceFixtures.push(cwd, outside, dir);
-    mkdirSync(join(cwd, ".pi"));
-    symlinkSync(outside, join(cwd, ".pi", "memory"), "dir");
-
-    const pi = createMockPi();
-    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
-    const ctx = { ...createCtx([]), cwd };
-    const remember = memoryTool(pi, "memory_remember");
-    const first = await remember?.execute(
-      "call-1",
-      { text: "Only in this session" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    expect(pi.appendEntry).toHaveBeenCalledWith(
-      MEMORY_OBSERVATION_TYPE,
-      expect.objectContaining({ text: "Only in this session" }),
-    );
-    expect(readdirSync(outside)).toEqual([]);
-
-    const recall = memoryTool(pi, "memory_recall");
-    const result = await recall?.execute(
-      "call-2",
-      { query: "session", scope: "workspace" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    expect(JSON.parse(result?.content[0]?.text ?? "{}").results).toEqual([]);
-
-    rmSync(join(cwd, ".pi", "memory"));
-    const retried = await remember?.execute(
-      "call-3",
-      { text: "Only in this session" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    const originalId = JSON.parse(first?.content[0]?.text ?? "{}").id;
-    expect(JSON.parse(retried?.content[0]?.text ?? "{}")).toMatchObject({
-      id: originalId,
-      duplicate: true,
-    });
-    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
-    const saved = join(cwd, ".pi", "memory");
-    const record = readdirSync(saved).find((name) => name.endsWith(".json"));
-    expect(record).toBeDefined();
-    if (!record) return;
-    writeFileSync(join(saved, record), "{}");
-    await remember?.execute(
-      "call-4",
-      { text: "Only in this session" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    const repaired = await recall?.execute(
-      "call-5",
-      { query: "session", scope: "workspace" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    expect(
-      JSON.parse(repaired?.content[0]?.text ?? "{}").results,
-    ).toMatchObject([{ id: originalId, text: "Only in this session" }]);
-  });
-
   it("does not let a malformed newer file occupy the workspace retention window", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "pi-memory-invalid-"));
-    const dir = configDir({ maxObservations: 1 });
+    const dir = configDir({ maxObservations: 1, observeAfterTokens: 1_000 });
     workspaceFixtures.push(cwd, dir);
     mkdirSync(join(cwd, ".pi"));
+    let nextText = "valid earlier record";
+    const observe = vi.fn().mockImplementation(async () => ({
+      observations: [{ text: nextText, relevance: 4 }],
+    }));
     const pi = createMockPi();
-    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
-    const ctx = { ...createCtx([]), cwd };
-    const remember = memoryTool(pi, "memory_remember");
-    const write = (text: string) =>
-      remember?.execute("call-1", { text }, undefined, undefined, ctx);
+    createMemoryExtension({ getAgentDir: () => dir, observe })(pi as never);
+    const branch = [messageEntry("m1", "x".repeat(5_000))];
+    const ctx = { ...createCtx(branch), cwd };
+    await handler(pi, "session_start")?.({}, ctx);
+    const write = async (text: string, id: string) => {
+      nextText = text;
+      const writeCtx = {
+        ...createCtx([messageEntry(id, "x".repeat(5_000))]),
+        cwd,
+      };
+      await handler(pi, "session_start")?.({}, writeCtx);
+      await memoryCommand(pi)?.handler("checkpoint", writeCtx);
+    };
     const recall = async () => {
-      const result = await memoryTool(pi, "memory_recall")?.execute(
+      const result = await memoryTool(pi, "recall")?.execute(
         "call-2",
         { query: "valid", scope: "workspace" },
         undefined,
@@ -1184,7 +1116,7 @@ describe("pi-memory extension", () => {
       );
       return JSON.parse(result?.content[0]?.text ?? "{}").results;
     };
-    await write("valid earlier record");
+    await write("valid earlier record", "m2");
     writeFileSync(
       join(cwd, ".pi", "memory", `9999999999999999-${"a".repeat(64)}.json`),
       "{}",
@@ -1193,7 +1125,7 @@ describe("pi-memory extension", () => {
 
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1_000);
     try {
-      await write("valid later record");
+      await write("valid later record", "m3");
     } finally {
       clock.mockRestore();
     }
@@ -1258,7 +1190,7 @@ describe("pi-memory extension", () => {
       "pi-memory: imported 0 workspace observations, skipped 1 unverified session sources",
       "info",
     );
-    const result = await memoryTool(pi, "memory_recall")?.execute(
+    const result = await memoryTool(pi, "recall")?.execute(
       "call-migrate",
       { query: "note", scope: "workspace" },
       undefined,
@@ -1338,7 +1270,7 @@ describe("pi-memory extension", () => {
     const command = memoryCommand(pi);
     await command?.handler("migrate", ctx);
     await command?.handler("migrate", ctx);
-    const result = await memoryTool(pi, "memory_recall")?.execute(
+    const result = await memoryTool(pi, "recall")?.execute(
       "call-migrate",
       { query: "note", scope: "workspace" },
       undefined,
@@ -1393,7 +1325,7 @@ describe("pi-memory extension", () => {
     createMemoryExtension({ getAgentDir: () => dir })(pi as never);
     const ctx = { ...createCtx([]), cwd, sessionManager: opened };
     await memoryCommand(pi)?.handler("migrate", ctx);
-    const result = await memoryTool(pi, "memory_recall")?.execute(
+    const result = await memoryTool(pi, "recall")?.execute(
       "call-migrate",
       { query: "note", scope: "workspace" },
       undefined,
@@ -1412,7 +1344,7 @@ describe("pi-memory extension", () => {
 
     expect(
       command?.getArgumentCompletions?.("")?.map((item) => item.value),
-    ).toEqual(["status", "view", "clear", "handoff", "migrate"]);
+    ).toEqual(["status", "view", "checkpoint", "clear", "handoff", "migrate"]);
     expect(
       command?.getArgumentCompletions?.("st")?.map((item) => item.value),
     ).toEqual(["status"]);

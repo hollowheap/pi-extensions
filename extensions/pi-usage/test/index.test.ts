@@ -1134,18 +1134,18 @@ describe("pi-usage extension lifecycle", () => {
     expect(env.sessionManager.getEntries).not.toHaveBeenCalled();
   });
 
-  it("persists budget cap via /usage budget and syncs snapshot", async () => {
+  it("persists budget cap via /usage cap and syncs snapshot", async () => {
     const env = setupUsageExtension();
     env.sessionStart();
 
     // Set budget cap
-    await env.commands.usage.handler("budget 10", env.ctx);
+    await env.commands.usage.handler("cap 10", env.ctx);
     expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBe(10);
     const snap = getSessionSnapshot(env.ctx.sessionManager).usage;
     expect(snap?.budgetCap).toBe(10);
 
-    // Clear budget cap via /usage budget off
-    await env.commands.usage.handler("budget off", env.ctx);
+    // Clear budget cap via /usage cap off
+    await env.commands.usage.handler("cap off", env.ctx);
     expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBeUndefined();
     const snapCleared = getSessionSnapshot(env.ctx.sessionManager).usage;
     expect(snapCleared?.budgetCap).toBeUndefined();

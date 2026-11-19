@@ -133,7 +133,7 @@ cap; `/usage cap` is optional.
 
 `/grant <path-or-tool> <duration>` temporarily allows one exact target in the current session. Durations accept `s`, `m`, or `h` (for example `30s`, `5m`, `1h`). Targets may contain spaces, so `/grant git status 5m` grants the exact shell target `git status`.
 
-In TUI mode, `/grant` without arguments opens a fuzzy picker over recently checked permission targets, then asks for a duration. `/grant <target>` asks only for the duration. Tab completion offers recent targets and duration presets. `/grants` lists active grants and their remaining time. Grants expire at their deadline or when the session ends.
+In TUI mode, `/grant` without arguments opens a fuzzy picker over recently checked permission targets, then asks for a duration. `/grant <target>` asks only for the duration. Tab completion offers recent targets and duration presets. `/grant list` lists active grants and their remaining time. Grants expire at their deadline or when the session ends.
 
 ## Statusline values
 

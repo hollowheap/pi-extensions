@@ -35,6 +35,7 @@ import {
   type StatuslineConfig,
   defaultConfig,
   loadConfig,
+  normalizeConfig,
   saveOptions,
   showStatuslineSettings,
 } from "./settings.js";
@@ -107,6 +108,7 @@ export default function (pi: ExtensionAPI) {
   let diffState: GitDiffState = createGitDiffState(defaultGitRunner, () => {});
   let requestRender: (() => void) | undefined;
   let cleanupFooter: (() => void) | undefined;
+  let unsubscribeConfigChanged: (() => void) | undefined;
   let owner: ExtensionContext["sessionManager"] | undefined;
   let currentGitBranch: string | null = null;
   let branchTotalsCache:
@@ -316,13 +318,17 @@ export default function (pi: ExtensionAPI) {
     requestRender?.();
   }
 
-  pi.on("session_start", (_event, ctx) => {
-    clearStatuslineEventValues();
-    const loaded = loadConfig(getAgentDir());
-    config = loaded.config;
+  function applyConfig(next: StatuslineConfig): void {
+    config = next;
     showsBudgetPercent = Object.values(config.sections).some((specs) =>
       specs.some((spec) => spec.type === "usage-pct"),
     );
+  }
+
+  pi.on("session_start", (_event, ctx) => {
+    clearStatuslineEventValues();
+    const loaded = loadConfig(getAgentDir());
+    applyConfig(loaded.config);
     busy = false;
     currentModel = ctx.model;
     if (loaded.diagnostics.length > 0) {
@@ -332,6 +338,20 @@ export default function (pi: ExtensionAPI) {
         "warning",
       );
     }
+    if (typeof unsubscribeConfigChanged === "function") {
+      unsubscribeConfigChanged();
+    }
+    unsubscribeConfigChanged = pi.events?.on(
+      "statusline:config-changed",
+      (data) => {
+        const next =
+          data !== undefined
+            ? normalizeConfig(data).config
+            : loadConfig(getAgentDir()).config;
+        applyConfig(next);
+        requestRender?.();
+      },
+    );
     installFooter(ctx);
   });
 
@@ -344,6 +364,10 @@ export default function (pi: ExtensionAPI) {
     if (ctx.sessionManager !== owner) return;
     owner = undefined;
     branchTotalsCache = undefined;
+    if (typeof unsubscribeConfigChanged === "function") {
+      unsubscribeConfigChanged();
+    }
+    unsubscribeConfigChanged = undefined;
     disposeFooter();
     clearStatuslineEventValues();
     hostUi(ctx).setFooter(undefined);
@@ -393,15 +417,13 @@ export default function (pi: ExtensionAPI) {
   const STATUSLINE_SUBCOMMANDS = [
     "click",
     "settings",
-    "config",
     "working",
     "thinking",
   ] as const;
   const WORKING_PRESETS = ["default", "pulse", "compact", "hidden"] as const;
 
   pi.registerCommand("statusline", {
-    description:
-      "Statusline actions: click, settings, config, working, or thinking",
+    description: "Statusline actions: click, settings, working, or thinking",
     getArgumentCompletions: (prefix: string) => {
       const trimmedStart = prefix.trimStart();
       const trailingSpace = /\s$/.test(prefix);
@@ -489,7 +511,7 @@ export default function (pi: ExtensionAPI) {
         }
         return;
       }
-      if (parts[0] === "settings" || parts[0] === "config") {
+      if (parts[0] === "settings") {
         if (!canOverlay(ctx)) {
           if (ctx.hasUI)
             notify(
@@ -564,7 +586,7 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) {
         notify(
           ctx,
-          "Usage: /statusline click <segment> | /statusline settings|config",
+          "Usage: /statusline click <segment> | /statusline settings",
           "info",
         );
       }
