@@ -17,18 +17,17 @@ Every package here is completely plug-and-play. You can grab individual packages
 | :--- | :--- | :--- |
 | [`@hollowheap/core`](./packages/core) | `0.3.0` | Shared contracts, rules, budgets, usage ledger, and mode-registry primitives |
 | [`@hollowheap/runtime`](./packages/runtime) | `0.3.0` | Command execution, detached process, atomic state, and JSONL Unix-socket primitives |
-| [`@hollowheap/tui`](./packages/tui) | `0.3.0` | Shared frames, pickers, pagers, progress, and code viewer |
+| [`@hollowheap/tui`](./packages/tui) | `0.3.0` | Shared frames, tabs, pickers, pagers, progress, and code viewer |
 | [`@hollowheap/policy`](./packages/policy) | `0.3.0` | Headless permission policy and shared tool-target helpers |
 | [`@hollowheap/pi-statusline`](./extensions/pi-statusline) | `0.3.0` | Configurable lualine-style statusline footer |
 | [`@hollowheap/pi-guard`](./extensions/pi-guard) | `0.3.0` | Policy enforcement, approvals, and shell safety gates |
 | [`@hollowheap/pi-hooks`](./extensions/pi-hooks) | `0.3.0` | Session-start, pre-tool, and post-tool commands configured in `hooks.json` |
 | [`@hollowheap/pi-dashboard`](./extensions/pi-dashboard) | `0.3.0` | Interactive startup dashboard with ASCII banners and widgets |
-| [`@hollowheap/pi-modes`](./extensions/pi-modes) | `0.3.0` | Approval modes with `/mode` and `alt+m` |
-| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.3.0` | Workspace `/cd` control |
+| [`@hollowheap/pi-tools`](./extensions/pi-tools) | `0.3.0` | Workspace `/cd` and codemode utilities |
 | [`@hollowheap/pi-language-tools`](./extensions/pi-language-tools) | `0.3.0` | Read-only LSP code intelligence via a codemode-only `lang` tool |
 | [`@hollowheap/pi-memory`](./extensions/pi-memory) | `0.3.0` | Opt-in observational memory with compaction injection, search, and remember tools |
 | [`@hollowheap/pi-question`](./extensions/pi-question) | `0.3.0` | Single-question prompt tool for guided user input |
-| [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.3.0` | Tool-free todo blocks with branch-local state and `/todos` |
+| [`@hollowheap/pi-todos`](./extensions/pi-todos) | `0.3.0` | Branch-local todos via codemode and `/todos` |
 | [`@hollowheap/pi-tasks`](./extensions/pi-tasks) | `0.3.0` | Durable background shell tasks |
 | [`@hollowheap/pi-subagents`](./extensions/pi-subagents) | `0.3.0` | Durable child agents with live reattach, write locking, explicit resume, generic CLI harnesses, and bounded, deletable session-only definitions |
 | [`@hollowheap/pi-decide`](./extensions/pi-decide) | `0.3.0` | Advisory decision tool with structured `decide` calls |
@@ -78,6 +77,8 @@ npm run lint        # check code with biome
 ```
 
 ### Test-drive an extension locally
+
+Extension and package tests live in sibling `test/` directories. Run a package's tests with `npx vitest run extensions/pi-<name>/test`.
 You can load any local extension into a live Pi session without installing it:
 
 ```bash

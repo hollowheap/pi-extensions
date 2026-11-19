@@ -6,7 +6,9 @@
   "include": [
     "extensions/*/index.ts",
     "extensions/*/src/**/*.ts",
+    "extensions/*/test/**/*.ts",
     "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
     "vitest.config.ts",
     "scripts/**/*.mjs"
   ]

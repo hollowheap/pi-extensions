@@ -20,6 +20,7 @@ if (existsSync(dest)) {
 }
 
 mkdirSync(join(dest, "src"), { recursive: true });
+mkdirSync(join(dest, "test"), { recursive: true });
 
 const scope = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
@@ -48,7 +49,7 @@ const pkg = {
 writeFileSync(join(dest, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
 writeFileSync(
   join(dest, "tsconfig.json"),
-  `${JSON.stringify({ extends: "../../tsconfig.base.json", include: ["index.ts", "src/**/*.ts"] }, null, 2)}\n`,
+  `${JSON.stringify({ extends: "../../tsconfig.base.json", include: ["index.ts", "src/**/*.ts", "test/**/*.ts"] }, null, 2)}\n`,
 );
 writeFileSync(
   join(dest, "index.ts"),
@@ -63,8 +64,8 @@ writeFileSync(
   `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";\n\nexport default function (pi: ExtensionAPI) {\n  pi.registerCommand("${command}", {\n    description: "${rawName} example command",\n    handler: async (_args, ctx) => {\n      ctx.ui.notify("${rawName} ready", "info");\n    },\n  });\n}\n`,
 );
 writeFileSync(
-  join(dest, "src", "index.test.ts"),
-  `import { describe, expect, it, vi } from "vitest";\nimport extension from "./index.js";\n\ndescribe("${rawName} extension", () => {\n  it("registers the /${command} command", () => {\n    const pi = { registerCommand: vi.fn() };\n    extension(pi as never);\n    expect(pi.registerCommand).toHaveBeenCalledTimes(1);\n    expect(pi.registerCommand.mock.calls[0][0]).toBe("${command}");\n  });\n});\n`,
+  join(dest, "test", "index.test.ts"),
+  `import { describe, expect, it, vi } from "vitest";\nimport extension from "../src/index.js";\n\ndescribe("${rawName} extension", () => {\n  it("registers the /${command} command", () => {\n    const pi = { registerCommand: vi.fn() };\n    extension(pi as never);\n    expect(pi.registerCommand).toHaveBeenCalledTimes(1);\n    expect(pi.registerCommand.mock.calls[0][0]).toBe("${command}");\n  });\n});\n`,
 );
 
 try {

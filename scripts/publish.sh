@@ -6,7 +6,6 @@ packages=(
   @hollowheap/core
   @hollowheap/tui
   @hollowheap/policy
-  @hollowheap/pi-modes
   @hollowheap/pi-dashboard
   @hollowheap/pi-decide
   @hollowheap/pi-hooks

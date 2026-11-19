@@ -18,7 +18,6 @@
       "./extensions/pi-question/index.ts",
       "./extensions/pi-dashboard/index.ts",
       "./extensions/pi-tools/index.ts",
-      "./extensions/pi-modes/index.ts",
       "./extensions/pi-todos/index.ts",
       "./extensions/pi-language-tools/index.ts",
       "./extensions/pi-tasks/index.ts",
