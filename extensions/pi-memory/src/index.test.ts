@@ -383,13 +383,22 @@ describe("pi-memory extension", () => {
     );
   });
 
-  it("injects memory into compaction", async () => {
+  it("injects memory into compaction and records the returned usage once", async () => {
     const pi = createMockPi();
-    const compact = vi.fn().mockResolvedValue({
+    const compaction = {
       summary: "summary with memory",
       firstKeptEntryId: "m0",
       tokensBefore: 100,
-    });
+      usage: {
+        input: 25,
+        output: 5,
+        cacheRead: 10,
+        cacheWrite: 0,
+        totalTokens: 40,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.2 },
+      },
+    };
+    const compact = vi.fn().mockResolvedValue(compaction);
     const dir = configDir();
     createMemoryExtension({
       getAgentDir: () => dir,
@@ -398,7 +407,21 @@ describe("pi-memory extension", () => {
     })(pi as never);
 
     const branch = [observationEntry()];
-    const ctx = createCtx(branch);
+    const ctx = createCtx([
+      ...branch,
+      {
+        type: "custom",
+        customType: USAGE_ENTRY_TYPE,
+        data: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 15,
+          totalCost: 0.1,
+        },
+      },
+    ]);
     await handler(pi, "session_start")?.({}, ctx);
 
     const result = await handler(pi, "session_before_compact")?.(
@@ -410,13 +433,8 @@ describe("pi-memory extension", () => {
       ctx,
     );
 
-    expect(result).toEqual({
-      compaction: {
-        summary: "summary with memory",
-        firstKeptEntryId: "m0",
-        tokensBefore: 100,
-      },
-    });
+    expect(result).toEqual({ compaction });
+    expect(compact).toHaveBeenCalledTimes(1);
     expect(compact).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: "main-model" }),
@@ -426,7 +444,68 @@ describe("pi-memory extension", () => {
       expect.any(AbortSignal),
     );
     expect(compact.mock.calls[0]?.[4]).toContain("Prefer small commits");
-    expect(compact.mock.calls[0]?.[4]).toContain("focus on tests");
+    expect(
+      pi.appendEntry.mock.calls.filter(([type]) => type === USAGE_ENTRY_TYPE),
+    ).toEqual([
+      [
+        USAGE_ENTRY_TYPE,
+        expect.objectContaining({
+          totalTokens: 55,
+          totalCost: 0.3,
+        }),
+      ],
+    ]);
+    await memoryCommand(pi)?.handler("status", ctx);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("last compaction: main-model, 30 tokens, $0.20"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("last observer: none"),
+      "info",
+    );
+  });
+
+  it("discards a compaction that finishes after branch navigation", async () => {
+    const pi = createMockPi();
+    let finishCompaction!: (value: unknown) => void;
+    const compact = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finishCompaction = resolve;
+        }),
+    );
+    const dir = configDir();
+    createMemoryExtension({
+      getAgentDir: () => dir,
+      compact: compact as never,
+    })(pi as never);
+
+    const branch = [observationEntry()];
+    const ctx = createCtx(branch);
+    await handler(pi, "session_start")?.({}, ctx);
+    const result = handler(pi, "session_before_compact")?.(
+      {
+        preparation: { firstKeptEntryId: "m0" },
+        signal: new AbortController().signal,
+      },
+      ctx,
+    );
+    await vi.waitFor(() => expect(compact).toHaveBeenCalledTimes(1));
+    branch.length = 0;
+    await handler(pi, "session_tree")?.({}, ctx);
+    finishCompaction({
+      summary: "old branch summary",
+      firstKeptEntryId: "m0",
+      tokensBefore: 100,
+      usage: { input: 25, output: 5, cost: { total: 0.2 } },
+    });
+
+    expect(await result).toEqual({ cancel: true });
+    expect(pi.appendEntry).not.toHaveBeenCalledWith(
+      USAGE_ENTRY_TYPE,
+      expect.anything(),
+    );
   });
 
   it("shows memory in a pager", async () => {

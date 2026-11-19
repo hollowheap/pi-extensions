@@ -16,11 +16,7 @@ import {
   sanitizeTerminalText,
   stringifyToolJson,
 } from "@hollowheap/core/format";
-import {
-  calculateDollarCost,
-  formatDollarCost,
-  resolveModelPricing,
-} from "@hollowheap/core/pricing";
+import { formatDollarCost, messageCost } from "@hollowheap/core/pricing";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import {
   USAGE_ENTRY_TYPE,
@@ -55,6 +51,22 @@ export interface MemoryExtensionDeps {
   getAgentDir?: () => string;
   observe?: typeof observeConversation;
   compact?: typeof compactSession;
+}
+
+interface MemoryUsageSummary {
+  model: string;
+  input: number;
+  output: number;
+  cost: number;
+}
+
+function formatUsageSummary(
+  kind: "observer" | "compaction",
+  usage: MemoryUsageSummary | undefined,
+): string {
+  return usage
+    ? `last ${kind}: ${usage.model}, ${usage.input + usage.output} tokens, ${formatDollarCost(usage.cost)}`
+    : `last ${kind}: none`;
 }
 
 function observationId(): string {
@@ -161,9 +173,8 @@ export function createMemoryExtension(
     let generation = 0;
     let consecutiveFailures = 0;
     let lastNotifiedError: string | undefined;
-    let lastUsage:
-      | { model: string; input: number; output: number; cost: number }
-      | undefined;
+    let lastObserverUsage: MemoryUsageSummary | undefined;
+    let lastCompactionUsage: MemoryUsageSummary | undefined;
     let lastStatusText = "";
 
     function memoryStatusText(m: MemoryLedger): string {
@@ -234,7 +245,8 @@ export function createMemoryExtension(
 
     const restore = (ctx: ExtensionContext): void => {
       abortObserver();
-      lastUsage = undefined;
+      lastObserverUsage = undefined;
+      lastCompactionUsage = undefined;
       consecutiveFailures = 0;
       lastNotifiedError = undefined;
       try {
@@ -255,23 +267,8 @@ export function createMemoryExtension(
         cacheWrite: number;
         cost?: { total?: number };
       },
-    ): void => {
-      const pricing = resolveModelPricing(model);
-      const reportedCost = usage.cost?.total;
-      const cost =
-        typeof reportedCost === "number" && Number.isFinite(reportedCost)
-          ? reportedCost
-          : pricing
-            ? calculateDollarCost(
-                {
-                  input: usage.input,
-                  output: usage.output,
-                  cacheRead: usage.cacheRead,
-                  cacheWrite: usage.cacheWrite,
-                },
-                pricing,
-              )
-            : 0;
+    ): MemoryUsageSummary => {
+      const cost = messageCost(usage, model);
       const next = recordTurnUsage(
         restoreSessionUsage(ctx.sessionManager),
         {
@@ -285,7 +282,7 @@ export function createMemoryExtension(
       );
       pi.appendEntry(USAGE_ENTRY_TYPE, next);
       pi.events?.emit?.("usage:refresh", undefined);
-      lastUsage = {
+      return {
         model: model.id ?? "memory",
         input: usage.input,
         output: usage.output,
@@ -382,7 +379,7 @@ export function createMemoryExtension(
         consecutiveFailures = 0;
         lastNotifiedError = undefined;
         if (result.usage !== undefined) {
-          recordUsage(ctx, model, result.usage);
+          lastObserverUsage = recordUsage(ctx, model, result.usage);
         }
         publishMemory(ctx);
       } catch (error) {
@@ -423,7 +420,8 @@ export function createMemoryExtension(
     pi.on("session_shutdown", () => {
       abortObserver();
       ledger = emptyMemoryLedger();
-      lastUsage = undefined;
+      lastObserverUsage = undefined;
+      lastCompactionUsage = undefined;
       consecutiveFailures = 0;
       lastNotifiedError = undefined;
       publishStatusline("");
@@ -453,10 +451,19 @@ export function createMemoryExtension(
         const customInstructions = event.customInstructions
           ? `${event.customInstructions}\n\n${memoryInstructions}`
           : memoryInstructions;
+        const startGeneration = generation;
+        const startSession = ctx.sessionManager.getSessionId?.();
+        const cancelled = (): boolean =>
+          event.signal?.aborted === true ||
+          startGeneration !== generation ||
+          startSession !== ctx.sessionManager.getSessionId?.();
+        if (cancelled()) return { cancel: true };
+        let result: Awaited<ReturnType<typeof compactSession>>;
         try {
           const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+          if (cancelled()) return { cancel: true };
           if (!auth.ok) return undefined;
-          const result = await compact(
+          result = await compact(
             event.preparation,
             model,
             auth.apiKey,
@@ -464,8 +471,8 @@ export function createMemoryExtension(
             customInstructions,
             event.signal,
           );
-          return { compaction: result };
         } catch (error) {
+          if (cancelled()) return { cancel: true };
           if (config.notifyErrors && ctx.hasUI) {
             ctx.ui.notify(
               `pi-memory: compaction failed: ${
@@ -476,6 +483,24 @@ export function createMemoryExtension(
           }
           return undefined;
         }
+
+        if (cancelled()) return { cancel: true };
+        lastCompactionUsage = undefined;
+        if (result.usage !== undefined) {
+          try {
+            lastCompactionUsage = recordUsage(ctx, model, result.usage);
+          } catch (error) {
+            if (config.notifyErrors && ctx.hasUI) {
+              ctx.ui.notify(
+                `pi-memory: could not record compaction usage: ${sanitizeTerminalText(
+                  error instanceof Error ? error.message : String(error),
+                )}`,
+                "warning",
+              );
+            }
+          }
+        }
+        return { compaction: result };
       },
     );
 
@@ -747,9 +772,8 @@ export function createMemoryExtension(
         `reflections: ${ledger.reflections.length}`,
         `pending: ${pending.length} messages, ~${estimateTokens(pendingText)} tokens`,
         `observe after: ${config.observeAfterTokens} tokens`,
-        lastUsage
-          ? `last observer: ${lastUsage.model}, ${lastUsage.input + lastUsage.output} tokens, ${formatDollarCost(lastUsage.cost)}`
-          : "last observer: none",
+        formatUsageSummary("observer", lastObserverUsage),
+        formatUsageSummary("compaction", lastCompactionUsage),
       ];
       if (config.diagnostics.length > 0) {
         lines.push("diagnostics:", ...config.diagnostics);
