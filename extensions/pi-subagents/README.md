@@ -140,7 +140,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 | `cancel` | `id`                                                                                                           | Aborts the child and waits briefly.                                                                                                                                                                         |
 | `resume` | `id`                                                                                                           | Restarts a failed child from its session, same id, next attempt.                                                                                                                                            |
 
-`start` and `resume` require a trusted project. Concurrent starts in the current project are bounded by `maxConcurrent`; recursive starts are bounded by `maxDepth`.
+`start` and `resume` require a trusted project. The global `maxConcurrent` cap applies per parent session: children from other sessions do not consume the current session's slots. Recursive starts are bounded by `maxDepth`.
 
 ## Commands
 

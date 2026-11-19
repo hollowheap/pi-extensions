@@ -74,6 +74,7 @@ const running: SubagentState = {
   depth: 1,
   attempt: 1,
   project: "/repo",
+  parentSession: "session-1",
   model: "test/fast",
   workspace: "/repo/subagents/sub-1",
   startedAt: 1,
@@ -1176,13 +1177,18 @@ describe("subagent tool", () => {
     );
   });
 
-  it("does not count other projects toward maxConcurrent", async () => {
+  it("does not count other sessions toward maxConcurrent", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,
     });
     mocks.listSubagents.mockResolvedValue([
-      { ...running, id: "sub-other", project: "/elsewhere" },
+      {
+        ...running,
+        id: "sub-other",
+        project: "/elsewhere",
+        parentSession: "other-session",
+      },
     ]);
     const tool = createTool();
 
@@ -1221,7 +1227,7 @@ describe("subagent tool", () => {
     expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
   });
 
-  it("S223 C02: resume is blocked by same-project running children", async () => {
+  it("S223 C02: resume is blocked by same-session running children", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,
@@ -1276,7 +1282,7 @@ describe("subagent tool", () => {
     expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
   });
 
-  it("S223 C04: the same children are counted per caller project", async () => {
+  it("S223 C04: the same children are counted per caller session", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,
@@ -1299,7 +1305,10 @@ describe("subagent tool", () => {
       { action: "start", agent: "scout", task: "find" },
       undefined,
       undefined,
-      { ...ctx, cwd: "/elsewhere" } as never,
+      {
+        ...ctx,
+        sessionManager: { getSessionId: () => "other-session" },
+      } as never,
     );
     expect(textOf(elsewhere)).not.toContain("maxConcurrent");
     expect(mocks.startSubagent).toHaveBeenCalledTimes(1);

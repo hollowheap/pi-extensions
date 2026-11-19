@@ -590,9 +590,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               `subagent depth ${depth} exceeds maxDepth ${config.maxDepth}`,
             );
           }
+          const parentSession = ctx.sessionManager?.getSessionId?.();
           const running = (await listSubagents(agentDir)).filter(
             (state) =>
-              isInProject(state, ctx.cwd) &&
+              state.parentSession === parentSession &&
               (state.status === "running" || state.status === "starting"),
           ).length;
           if (running >= config.maxConcurrent) {
@@ -652,7 +653,6 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               : effectiveAgent.mode === "plan"
                 ? "plan"
                 : "manual";
-          const parentSession = ctx.sessionManager?.getSessionId?.();
           const sandbox = resolveSubagentSandboxOptions(
             config,
             effectiveAgent.name,
@@ -817,9 +817,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               `subagent depth ${state.depth} exceeds maxDepth ${config.maxDepth}`,
             );
           }
+          const parentSession = ctx.sessionManager?.getSessionId?.();
           const running = (await listSubagents(agentDir)).filter(
             (item) =>
-              isInProject(item, ctx.cwd) &&
+              item.parentSession === parentSession &&
               (item.status === "running" || item.status === "starting"),
           ).length;
           if (running >= config.maxConcurrent) {
