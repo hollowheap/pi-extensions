@@ -28,6 +28,7 @@ describe("loadMemoryConfig", () => {
       observeAfterTokens: 20_000,
       maxObservations: 50,
       injectionTokens: 2_000,
+      deterministicCompaction: false,
       redactSecrets: true,
       notifyErrors: false,
     });
@@ -43,6 +44,7 @@ describe("loadMemoryConfig", () => {
       observeAfterTokens: 40_000,
       maxObservations: 25,
       injectionTokens: 4_000,
+      deterministicCompaction: true,
       redactSecrets: false,
       notifyErrors: true,
     });
@@ -54,6 +56,7 @@ describe("loadMemoryConfig", () => {
       observeAfterTokens: 40_000,
       maxObservations: 25,
       injectionTokens: 4_000,
+      deterministicCompaction: true,
       redactSecrets: false,
       notifyErrors: true,
     });
@@ -68,6 +71,7 @@ describe("loadMemoryConfig", () => {
       observeAfterTokens: 1,
       maxObservations: 0,
       injectionTokens: 10,
+      deterministicCompaction: "true",
       redactSecrets: "yes",
       notifyErrors: 1,
     });
@@ -78,10 +82,11 @@ describe("loadMemoryConfig", () => {
       observeAfterTokens: 20_000,
       maxObservations: 50,
       injectionTokens: 2_000,
+      deterministicCompaction: false,
       redactSecrets: true,
       notifyErrors: false,
     });
-    expect(config.diagnostics).toHaveLength(7);
+    expect(config.diagnostics).toHaveLength(8);
   });
 
   it("rejects incomplete provider/model pairs", () => {

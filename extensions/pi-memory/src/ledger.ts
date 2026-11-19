@@ -143,6 +143,32 @@ export function memoryFromEntries(entries: unknown): MemoryLedger {
   return ledger;
 }
 
+export function sourceEntryCoverage(
+  sourceEntryIds: readonly string[],
+  observations: readonly MemoryObservation[],
+  selectedSources?: ReadonlySet<string>,
+): { coveredIds: ReadonlySet<string>; observationIds: ReadonlySet<string> } {
+  const positions = new Map(sourceEntryIds.map((id, index) => [id, index]));
+  const coveredIds = new Set<string>();
+  const observationIds = new Set<string>();
+  for (const observation of observations) {
+    if (observation.coversUpToId === undefined) continue;
+    const watermark = positions.get(observation.coversUpToId);
+    if (watermark === undefined) continue;
+
+    // A watermark bounds this observation's batch. Earlier batches can have gaps.
+    for (const id of observation.sourceEntryIds) {
+      if (selectedSources?.has(id) === false) continue;
+      const position = positions.get(id);
+      if (position !== undefined && position <= watermark) {
+        coveredIds.add(id);
+        observationIds.add(observation.id);
+      }
+    }
+  }
+  return { coveredIds, observationIds };
+}
+
 export function pendingMessageEntries(
   entries: unknown,
   consumedIds: ReadonlySet<string>,

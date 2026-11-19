@@ -178,6 +178,7 @@ describe("pi-memory extension", () => {
           text: "Use pnpm",
           relevance: 5,
           sourceEntryIds: ["m1"],
+          coversUpToId: "m1",
         }),
       );
     });
@@ -185,7 +186,10 @@ describe("pi-memory extension", () => {
       USAGE_ENTRY_TYPE,
       expect.objectContaining({
         byModel: expect.objectContaining({
-          "memory-model": expect.objectContaining({ inputTokens: 10 }),
+          "memory-model": expect.objectContaining({
+            inputTokens: 10,
+            cost: 0.01,
+          }),
         }),
       }),
     );
@@ -505,6 +509,277 @@ describe("pi-memory extension", () => {
     expect(pi.appendEntry).not.toHaveBeenCalledWith(
       USAGE_ENTRY_TYPE,
       expect.anything(),
+    );
+  });
+
+  it("compacts a covered retained prefix without losing prior summary or file metadata", async () => {
+    const pi = createMockPi();
+    const compact = vi.fn().mockResolvedValue({
+      summary: "model summary",
+      firstKeptEntryId: "kept",
+      tokensBefore: 2_000,
+    });
+    const dir = configDir({ deterministicCompaction: true });
+    createMemoryExtension({ getAgentDir: () => dir, compact })(pi as never);
+    const observation = observationEntry();
+    const previouslyCompacted = messageEntry("old", "already summarized");
+    const covered = messageEntry("covered", "covered in the retained history");
+    const previousSummary = "Previously saved project constraints";
+    const branch = [
+      previouslyCompacted,
+      covered,
+      {
+        ...observation,
+        data: {
+          ...observation.data,
+          sourceEntryIds: ["covered"],
+          coversUpToId: "covered",
+        },
+      },
+      messageEntry("kept", "still visible"),
+      {
+        type: "compaction",
+        id: "previous",
+        firstKeptEntryId: "covered",
+        summary: previousSummary,
+        fromHook: true,
+        details: { readFiles: ["old-read"], modifiedFiles: ["old-write"] },
+      },
+    ];
+    const ctx = createCtx(branch);
+    await handler(pi, "session_start")?.({}, ctx);
+    const result = await handler(pi, "session_before_compact")?.(
+      {
+        branchEntries: branch,
+        preparation: {
+          firstKeptEntryId: "kept",
+          messagesToSummarize: [covered.message],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 2_000,
+          previousSummary,
+          fileOps: {
+            read: new Set(["new-read", "old-write"]),
+            written: new Set(["new-write"]),
+            edited: new Set(),
+          },
+        },
+        signal: new AbortController().signal,
+      },
+      ctx,
+    );
+
+    expect(result).toMatchObject({
+      compaction: {
+        summary: expect.stringContaining(previousSummary),
+        firstKeptEntryId: "kept",
+        tokensBefore: 2_000,
+        details: {
+          readFiles: ["new-read", "old-read"],
+          modifiedFiles: ["new-write", "old-write"],
+        },
+      },
+    });
+    expect(ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+    expect(compact).not.toHaveBeenCalled();
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it("adds each discarded observation and tracked-file block once across consecutive local compactions", async () => {
+    const pi = createMockPi();
+    const compact = vi.fn();
+    const dir = configDir({ deterministicCompaction: true });
+    createMemoryExtension({ getAgentDir: () => dir, compact })(pi as never);
+
+    const observation = observationEntry();
+    const observed = (id: string, text: string, sourceEntryIds: string[]) => ({
+      ...observation,
+      data: {
+        ...observation.data,
+        id,
+        text,
+        sourceEntryIds,
+        coversUpToId: sourceEntryIds.at(-1),
+      },
+    });
+    const first = messageEntry("first", "first source");
+    const next = messageEntry("next", "next source");
+    const kept = messageEntry("kept", "still visible");
+    const branch: unknown[] = [
+      first,
+      next,
+      observed("batch", "A recurring batch fact", ["first", "next"]),
+      kept,
+      observed("retained", "Unrelated retained fact", ["kept"]),
+    ];
+    const ctx = createCtx(branch);
+    await handler(pi, "session_start")?.({}, ctx);
+    const firstResult = (await handler(pi, "session_before_compact")?.(
+      {
+        branchEntries: branch,
+        preparation: {
+          firstKeptEntryId: "next",
+          messagesToSummarize: [first.message],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 2_000,
+          fileOps: {
+            read: new Set(["old-read"]),
+            written: new Set(["old-write"]),
+            edited: new Set(),
+          },
+        },
+        signal: new AbortController().signal,
+      },
+      ctx,
+    )) as { compaction: { summary: string } };
+    branch.push(
+      {
+        type: "compaction",
+        id: "prior",
+        fromHook: true,
+        ...firstResult.compaction,
+      },
+      observed("new", "A newly discarded fact", ["next"]),
+    );
+    const secondResult = (await handler(pi, "session_before_compact")?.(
+      {
+        branchEntries: branch,
+        preparation: {
+          firstKeptEntryId: "kept",
+          messagesToSummarize: [next.message],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 2_000,
+          previousSummary: firstResult.compaction.summary,
+          fileOps: {
+            read: new Set(["new-read"]),
+            written: new Set(["new-write"]),
+            edited: new Set(),
+          },
+        },
+        signal: new AbortController().signal,
+      },
+      ctx,
+    )) as { compaction: { summary: string; details: unknown } };
+
+    expect(
+      secondResult.compaction.summary.match(/A recurring batch fact/g),
+    ).toHaveLength(1);
+    expect(secondResult.compaction.summary).toContain("A newly discarded fact");
+    expect(secondResult.compaction.summary).not.toContain(
+      "Unrelated retained fact",
+    );
+    expect(secondResult.compaction.summary.match(/<read-files>/g)).toHaveLength(
+      1,
+    );
+    expect(
+      secondResult.compaction.summary.match(/<modified-files>/g),
+    ).toHaveLength(1);
+    expect(secondResult.compaction.details).toMatchObject({
+      readFiles: ["new-read", "old-read"],
+      modifiedFiles: ["new-write", "old-write"],
+    });
+    expect(compact).not.toHaveBeenCalled();
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing cutoff", "split turn", "custom instructions"] as const)(
+    "uses model-assisted compaction for a covered prefix with %s",
+    async (reason) => {
+      const pi = createMockPi();
+      const modelCompaction = {
+        summary: "model summary",
+        firstKeptEntryId: "kept",
+        tokensBefore: 2_000,
+      };
+      const compact = vi.fn().mockResolvedValue(modelCompaction);
+      const dir = configDir({ deterministicCompaction: true });
+      createMemoryExtension({ getAgentDir: () => dir, compact })(pi as never);
+      const observation = observationEntry();
+      const covered = messageEntry("m0", "covered");
+      const branch = [
+        covered,
+        { ...observation, data: { ...observation.data, coversUpToId: "m0" } },
+        messageEntry("kept", "still visible"),
+      ];
+      const ctx = createCtx(branch);
+      await handler(pi, "session_start")?.({}, ctx);
+      const result = await handler(pi, "session_before_compact")?.(
+        {
+          branchEntries: branch,
+          customInstructions:
+            reason === "custom instructions" ? "Retain task state" : undefined,
+          preparation: {
+            ...modelCompaction,
+            firstKeptEntryId: reason === "missing cutoff" ? "unknown" : "kept",
+            messagesToSummarize: [covered.message],
+            turnPrefixMessages: [],
+            isSplitTurn: reason === "split turn",
+            fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+          },
+          signal: new AbortController().signal,
+        },
+        ctx,
+      );
+
+      expect(result).toEqual({ compaction: modelCompaction });
+      expect(compact).toHaveBeenCalledOnce();
+      if (reason === "custom instructions") {
+        expect(compact.mock.calls[0]?.[4]).toContain("Retain task state");
+      }
+    },
+  );
+
+  it("cancels opted-in compaction before model lookup when the host already aborted", async () => {
+    const pi = createMockPi();
+    const compact = vi.fn();
+    const dir = configDir({ deterministicCompaction: true });
+    createMemoryExtension({ getAgentDir: () => dir, compact })(pi as never);
+    const ctx = createCtx([observationEntry()]);
+    await handler(pi, "session_start")?.({}, ctx);
+
+    const result = await handler(pi, "session_before_compact")?.(
+      { signal: AbortSignal.abort() },
+      ctx,
+    );
+
+    expect(result).toEqual({ cancel: true });
+    expect(ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+    expect(compact).not.toHaveBeenCalled();
+  });
+
+  it("counts only covered source entries even when a watermark follows a gap", async () => {
+    const pi = createMockPi();
+    const dir = configDir();
+    createMemoryExtension({ getAgentDir: () => dir })(pi as never);
+
+    const observation = observationEntry();
+    const ctx = createCtx([
+      messageEntry("m0", "uncovered source before the watermark"),
+      messageEntry("m1", "covered source"),
+      {
+        ...observation,
+        data: {
+          ...observation.data,
+          sourceEntryIds: ["m1", "m1", "m3", "other-branch"],
+          coversUpToId: "m1",
+        },
+      },
+      messageEntry("m2", "consumed without an observation"),
+      {
+        type: "custom",
+        customType: MEMORY_CONSUMED_TYPE,
+        data: { sourceEntryIds: ["m2"] },
+      },
+      messageEntry("m3", "source after the watermark"),
+    ]);
+    await handler(pi, "session_start")?.({}, ctx);
+    await memoryCommand(pi)?.handler("status", ctx);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringMatching(/coverage:[^\n]*\b1\/4\b/),
+      "info",
     );
   });
 

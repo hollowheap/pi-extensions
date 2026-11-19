@@ -21,6 +21,7 @@ Create `<agentDir>/memory.json`:
   "observeAfterTokens": 20000,
   "maxObservations": 50,
   "injectionTokens": 2000,
+  "deterministicCompaction": false,
   "redactSecrets": true,
   "notifyErrors": false
 }
@@ -31,6 +32,7 @@ Create `<agentDir>/memory.json`:
 - `observeAfterTokens`: minimum estimated tokens of unobserved conversation before an observer call, default 20000, range 1000–200000.
 - `maxObservations`: maximum active observations, default 50, range 1–200.
 - `injectionTokens`: maximum memory text added to a compaction summary, default 2000, range 100–20000.
+- `deterministicCompaction`: use saved observations to compact fully covered history without a compaction model call. Defaults to `false`.
 - `redactSecrets`: redact common credentials before observer calls and stored observations, default `true`.
 - `notifyErrors`: show observer and compaction failures, default `false`.
 
@@ -41,8 +43,8 @@ Create `<agentDir>/memory.json`:
 - The observer returns JSON observations with relevance scores.
 - Each observation is appended as a `hollowheap.memory.observation` custom session entry. Empty observer results append a `hollowheap.memory.consumed` marker so the same messages are not processed again.
 - On `session_start` and `session_tree`, observations restore from the active branch.
-- On `session_before_compact`, active memory is passed to Pi's normal compaction path as additional focus. Memory does not replace compaction.
-- Observer usage is written to the shared `hollowheap.usage` ledger and `pi-usage` refreshes through the `usage:refresh` event.
+- Model-assisted compaction uses active memory as additional focus. With deterministic compaction enabled, eligible history uses saved observations and preserves the previous summary and tracked files. Incomplete coverage, split turns, custom instructions, and results over the configured budget use model-assisted compaction.
+- The observer and model-assisted compaction record available provider usage in the shared `hollowheap.usage` ledger. `pi-usage` refreshes through the `usage:refresh` event.
 
 Memory is branch-local and never writes a separate memory file. Navigating to a branch without an observation removes it from that branch.
 

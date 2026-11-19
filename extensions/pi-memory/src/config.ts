@@ -9,6 +9,7 @@ export interface MemoryConfig {
   readonly observeAfterTokens: number;
   readonly maxObservations: number;
   readonly injectionTokens: number;
+  readonly deterministicCompaction: boolean;
   readonly redactSecrets: boolean;
   readonly notifyErrors: boolean;
   readonly path: string;
@@ -146,6 +147,12 @@ export function loadMemoryConfig(
       MIN_INJECTION_TOKENS,
       MAX_INJECTION_TOKENS,
       "injectionTokens",
+      diagnostics,
+    ),
+    deterministicCompaction: parseBoolean(
+      isRecord(parsed) ? parsed.deterministicCompaction : undefined,
+      false,
+      "deterministicCompaction",
       diagnostics,
     ),
     redactSecrets: parseBoolean(
