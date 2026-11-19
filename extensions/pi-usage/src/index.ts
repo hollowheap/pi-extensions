@@ -394,10 +394,9 @@ export default function (pi: ExtensionAPI) {
         }
         if (value.toLowerCase() === "off" || value.toLowerCase() === "none") {
           warningNotified = false;
-          const next = setSessionBudgetCap(ctx.sessionManager, undefined, {
+          setSessionBudgetCap(ctx.sessionManager, undefined, {
             persist: true,
           });
-          persistUsage(ctx.sessionManager, next);
           publishCurrent();
           if (ctx.hasUI) ctx.ui.notify("pi-usage: budget cap cleared");
           return;
@@ -418,7 +417,6 @@ export default function (pi: ExtensionAPI) {
         const next = setSessionBudgetCap(ctx.sessionManager, amount, {
           persist: true,
         });
-        persistUsage(ctx.sessionManager, next);
         publishCurrent();
         if (ctx.hasUI) {
           ctx.ui.notify(

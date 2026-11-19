@@ -1059,14 +1059,6 @@ describe("pi-usage extension lifecycle", () => {
     // Set budget cap
     await env.commands.usage.handler("budget 10", env.ctx);
     expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBe(10);
-    expect(
-      env.customEntries.some(
-        (e) =>
-          e.customType === USAGE_ENTRY_TYPE &&
-          (e.data as { budgetCap?: number })?.budgetCap === 10,
-      ),
-    ).toBe(true);
-
     const snap = getSessionSnapshot(env.ctx.sessionManager).usage;
     expect(snap?.budgetCap).toBe(10);
 
@@ -1075,6 +1067,11 @@ describe("pi-usage extension lifecycle", () => {
     expect(getSessionUsage(env.ctx.sessionManager).budgetCap).toBeUndefined();
     const snapCleared = getSessionSnapshot(env.ctx.sessionManager).usage;
     expect(snapCleared?.budgetCap).toBeUndefined();
+    expect(
+      env.customEntries
+        .filter((entry) => entry.customType === USAGE_ENTRY_TYPE)
+        .map((entry) => (entry.data as { budgetCap?: number }).budgetCap),
+    ).toEqual([10, undefined]);
   });
 
   it("re-persists usage on session_compact when tokens, cost, or budgetCap are set", () => {
