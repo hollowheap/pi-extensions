@@ -248,7 +248,7 @@ const server = net.createServer((socket) => {
             payload: {
               pid: child.pid,
               alive: !exited,
-              status: aborting ? "cancelled" : "running",
+              status: "running",
             },
           })}\n`,
         );
@@ -275,11 +275,14 @@ function finish(status, code) {
   if (exited) return;
   exited = true;
   signalChildGroup("SIGTERM");
-  update({
-    status,
-    exitCode: typeof code === "number" ? code : null,
-    finishedAt: Date.now(),
-  });
+  // The host confirms exit of both process groups before recording cancellation.
+  if (!aborting) {
+    update({
+      status,
+      exitCode: typeof code === "number" ? code : null,
+      finishedAt: Date.now(),
+    });
+  }
   log.end();
   closeServer();
   const exitNow = () => {
@@ -308,7 +311,7 @@ child.on("error", (error) => {
   finish("failed", null);
 });
 child.on("exit", (code) => {
-  finish(aborting ? "cancelled" : code === 0 ? "completed" : "failed", code);
+  finish(code === 0 ? "completed" : "failed", code);
 });
 
 function terminateChild() {

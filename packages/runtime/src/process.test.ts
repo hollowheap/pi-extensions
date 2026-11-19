@@ -8,6 +8,7 @@ import {
   readLog,
   signalProcessGroup,
   spawnDetachedProcess,
+  terminateProcessGroups,
 } from "./process.js";
 
 const tempDirs: string[] = [];
@@ -117,5 +118,26 @@ describe("cancelProcessGroup", () => {
         // already dead
       }
     }
+  });
+});
+
+describe("terminateProcessGroups", () => {
+  it("does not confirm exit when a live process identity cannot be read", async () => {
+    const pid = 999_999_999;
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      await expect(
+        terminateProcessGroups([{ pid, startTime: 1 }]),
+      ).resolves.toBe(false);
+      expect(kill.mock.calls.every(([, signal]) => signal === 0)).toBe(true);
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("confirms valid groups that are already gone", async () => {
+    await expect(terminateProcessGroups([{ pid: 999_999_999 }])).resolves.toBe(
+      true,
+    );
   });
 });

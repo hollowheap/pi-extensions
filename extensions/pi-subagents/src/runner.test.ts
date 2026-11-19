@@ -8,8 +8,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isProcessAlive } from "@hollowheap/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import * as processRuntime from "@hollowheap/runtime/process";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   abortSubagent,
   attachSubagent,
@@ -19,6 +19,7 @@ import {
   startSubagent,
   waitSubagent,
 } from "./runner.js";
+import { runnerRequest } from "./socket.js";
 import { SubagentStore } from "./state.js";
 
 const CHILD = String.raw`
@@ -218,7 +219,9 @@ describe("subagent runner", () => {
     const after = store.read("listen-fail");
     expect(after?.status).toBe("failed");
     expect(after?.pid).toBeTypeOf("number");
-    expect(isProcessAlive(after?.pid, after?.startTime)).toBe(false);
+    expect(processRuntime.isProcessAlive(after?.pid, after?.startTime)).toBe(
+      false,
+    );
   });
 
   it("fails a runner whose pid was reused", async () => {
@@ -255,8 +258,148 @@ describe("subagent runner", () => {
     const done = await waitSubagent(root, state.id, 2_000);
     expect(done?.status).toBe("cancelled");
     expect(state.runnerPid).toBeDefined();
-    expect(isProcessAlive(state.runnerPid, state.runnerStartTime)).toBe(false);
-    expect(isProcessAlive(state.pid, state.startTime)).toBe(false);
+    expect(
+      processRuntime.isProcessAlive(state.runnerPid, state.runnerStartTime),
+    ).toBe(false);
+    expect(processRuntime.isProcessAlive(state.pid, state.startTime)).toBe(
+      false,
+    );
+  });
+
+  it("reports a responding child as active while abort is in progress", async () => {
+    const root = agentDir();
+    const state = await startSubagent({
+      agentDir: root,
+      agent: "worker",
+      task: "wait",
+      depth: 1,
+      command: process.execPath,
+      args: [
+        "-e",
+        'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)',
+      ],
+      cwd: process.cwd(),
+    });
+
+    try {
+      await vi.waitFor(() =>
+        expect(readSubagentLog(root, state.id)).toContain("ready"),
+      );
+      await runnerRequest(state, "abort");
+      expect(await runnerRequest(state, "status")).toMatchObject({
+        status: "running",
+        alive: true,
+      });
+    } finally {
+      await abortSubagent(root, state.id);
+    }
+  });
+
+  it.each(["running", "cancelled"] as const)(
+    "rejects cancellation of a %s record when either group remains unconfirmed",
+    async (status) => {
+      const root = agentDir();
+      const store = new SubagentStore(root);
+      store.write({
+        id: "still-running",
+        status,
+        agent: "worker",
+        task: "wait",
+        depth: 1,
+        attempt: 1,
+        startedAt: Date.now(),
+        pid: 1234,
+        startTime: 123,
+        runnerPid: 5678,
+        runnerStartTime: 456,
+      });
+      const alive = vi
+        .spyOn(processRuntime, "isProcessAlive")
+        .mockReturnValue(status === "running");
+      const cancelGroup = vi
+        .spyOn(processRuntime, "cancelProcessGroup")
+        .mockResolvedValue(false);
+      const wait = vi
+        .spyOn(processRuntime, "waitForProcessExit")
+        .mockResolvedValue(false);
+      const terminate = vi
+        .spyOn(processRuntime, "terminateProcessGroups")
+        .mockResolvedValue(false);
+      try {
+        await expect(abortSubagent(root, "still-running")).rejects.toThrow(
+          /unable to confirm/,
+        );
+        expect(store.read("still-running")?.status).toBe(status);
+      } finally {
+        alive.mockRestore();
+        cancelGroup.mockRestore();
+        wait.mockRestore();
+        terminate.mockRestore();
+      }
+    },
+  );
+
+  it("leaves a live legacy process alone when its generation is unknown", async () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "legacy",
+      status: "running",
+      agent: "scout",
+      task: "wait",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now(),
+      pid: 1234,
+    });
+    const alive = vi
+      .spyOn(processRuntime, "isProcessAlive")
+      .mockReturnValue(true);
+    const terminate = vi
+      .spyOn(processRuntime, "terminateProcessGroups")
+      .mockResolvedValue(true);
+    try {
+      await expect(abortSubagent(root, "legacy")).rejects.toThrow(
+        /unable to confirm/,
+      );
+      expect(terminate).not.toHaveBeenCalled();
+      expect(store.read("legacy")?.status).toBe("running");
+    } finally {
+      alive.mockRestore();
+      terminate.mockRestore();
+    }
+  });
+
+  it("asks for a retry while a starting runner has no recorded child", async () => {
+    const root = agentDir();
+    const store = new SubagentStore(root);
+    store.write({
+      id: "starting",
+      status: "starting",
+      agent: "scout",
+      task: "wait",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now(),
+      runnerPid: 5678,
+      runnerStartTime: 123,
+    });
+    const alive = vi
+      .spyOn(processRuntime, "isProcessAlive")
+      .mockReturnValue(true);
+    const terminate = vi
+      .spyOn(processRuntime, "terminateProcessGroups")
+      .mockResolvedValue(true);
+    try {
+      await expect(abortSubagent(root, "starting")).rejects.toThrow(
+        /still starting/,
+      );
+      expect(terminate).not.toHaveBeenCalled();
+      expect(store.read("starting")?.status).toBe("starting");
+    } finally {
+      alive.mockRestore();
+      terminate.mockRestore();
+    }
   });
 
   it("cancels a starting state without a pid", async () => {
@@ -274,6 +417,9 @@ describe("subagent runner", () => {
     });
     await abortSubagent(root, "starting");
     expect(store.read("starting")?.status).toBe("cancelled");
+    store.update("starting", { finishedAt: 1 });
+    await abortSubagent(root, "starting");
+    expect(store.read("starting")?.finishedAt).toBe(1);
   });
 
   it("marks a state failed when the runner cannot be spawned", async () => {

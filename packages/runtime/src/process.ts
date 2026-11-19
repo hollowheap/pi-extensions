@@ -274,7 +274,19 @@ export async function terminateProcessGroups(
       graceMs: options.graceMs,
       killWaitMs: options.killWaitMs,
     });
-    terminatedAll = terminatedAll && terminated;
+    // A valid group which exited before signaling also satisfies teardown.
+    if (
+      !terminated &&
+      (!Number.isInteger(group.pid) ||
+        group.pid <= 0 ||
+        isProcessAlive(group.pid, group.startTime) ||
+        isProcessGroupAlive(group.pid, group.startTime) ||
+        (group.startTime !== undefined &&
+          isProcessAlive(group.pid) &&
+          readProcStartTime(group.pid) === undefined))
+    ) {
+      terminatedAll = false;
+    }
   }
   return terminatedAll;
 }

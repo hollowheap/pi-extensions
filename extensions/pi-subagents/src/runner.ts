@@ -13,7 +13,8 @@ import {
   cancelProcessGroup,
   isProcessAlive,
   isSocketConnectable,
-  waitForProcessExit,
+  readProcStartTime,
+  terminateProcessGroups,
 } from "@hollowheap/runtime/process";
 import {
   type SandboxOptions,
@@ -212,7 +213,29 @@ export async function startSubagent(
     } catch (error) {
       throw runnerError ?? error;
     }
-    return store.read(id) ?? state;
+    const started = store.read(id) ?? state;
+    if (
+      started.status !== "running" ||
+      started.runnerPid !== runner.pid ||
+      started.pid === undefined ||
+      started.startTime !== undefined
+    ) {
+      return started;
+    }
+    const startTime = readProcStartTime(started.pid);
+    if (startTime === undefined) return started;
+    return (
+      store.updateIf(
+        id,
+        (current) =>
+          current.status === "running" &&
+          current.attempt === started.attempt &&
+          current.runnerPid === started.runnerPid &&
+          current.pid === started.pid &&
+          current.startTime === undefined,
+        { startTime },
+      ) ?? started
+    );
   } catch (error) {
     if (runner !== undefined) {
       await cancelProcessGroup(runner.pid, runner.startTime, 150);
@@ -281,7 +304,6 @@ export async function sendSubagent(
 export async function abortSubagent(
   agentDir: string,
   id: string,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<void> {
   const store = new SubagentStore(agentDir);
   const state = store.read(id);
@@ -291,35 +313,57 @@ export async function abortSubagent(
   if (
     state.status !== "running" &&
     state.status !== "starting" &&
+    state.status !== "cancelled" &&
     !childAlive
   ) {
     return;
   }
-  const pid = state.pid;
-  const runnerPid = state.runnerPid;
-  try {
-    await runnerRequest(state, "abort", undefined, options);
-  } catch {
-    // The socket may be gone while the process is alive; kill the group.
-    if (runnerPid !== undefined) {
-      await cancelProcessGroup(runnerPid, state.runnerStartTime, 250);
-    }
-    if (pid !== undefined) {
-      await cancelProcessGroup(pid, state.startTime, 250);
-    }
-  } finally {
-    if (runnerPid !== undefined) {
-      await waitForProcessExit(runnerPid, state.runnerStartTime, {
-        timeoutMs: 1_000,
-      });
-    }
-    if (pid !== undefined) {
-      await waitForProcessExit(pid, state.startTime, { timeoutMs: 1_000 });
-    }
-    store.updateIf(id, (current) => current.status !== "completed", {
-      status: "cancelled",
-      finishedAt: Date.now(),
-    });
+  if (
+    state.status === "starting" &&
+    state.pid === undefined &&
+    state.runnerPid !== undefined &&
+    isProcessAlive(state.runnerPid, state.runnerStartTime)
+  ) {
+    throw new Error(`subagent is still starting; retry cancellation: ${id}`);
+  }
+
+  const groups = [
+    ...(state.runnerPid !== undefined
+      ? [{ pid: state.runnerPid, startTime: state.runnerStartTime }]
+      : []),
+    ...(state.pid !== undefined
+      ? [{ pid: state.pid, startTime: state.startTime }]
+      : []),
+  ];
+  if (
+    groups.some(
+      ({ pid, startTime }) => startTime === undefined && isProcessAlive(pid),
+    ) ||
+    !(await terminateProcessGroups(groups))
+  ) {
+    throw new Error(`unable to confirm subagent process group exit: ${id}`);
+  }
+
+  const sameRun = (current: SubagentState) =>
+    current.attempt === state.attempt &&
+    current.runnerPid === state.runnerPid &&
+    current.runnerStartTime === state.runnerStartTime &&
+    current.pid === state.pid &&
+    current.startTime === state.startTime;
+  const finalState = store.updateIf(
+    id,
+    (current) =>
+      sameRun(current) &&
+      current.status !== "completed" &&
+      (current.status !== "cancelled" || current.finishedAt === undefined),
+    { status: "cancelled", finishedAt: Date.now() },
+  );
+  if (
+    finalState === undefined ||
+    !sameRun(finalState) ||
+    (finalState.status !== "cancelled" && finalState.status !== "completed")
+  ) {
+    throw new Error(`subagent changed during cancellation: ${id}`);
   }
 }
 
