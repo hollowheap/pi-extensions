@@ -1,4 +1,10 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setCwd } from "@hollowheap/core";
@@ -100,10 +106,17 @@ describe("pi-statusline extension", () => {
     const pi = createMockPi();
     extension(pi as never);
     const ctx = createMockCtx();
-    setCwd(ctx.sessionManager, "/tmp/effective-cwd-dir");
-    const { component } = installFooter(pi, ctx);
-    const lines = component.render(200).join(" ");
-    expect(lines).toContain("effective-cwd-dir");
+    const root = mkdtempSync(join(tmpdir(), "pi-statusline-cwd-"));
+    const cwd = join(root, "effective-cwd-dir");
+    mkdirSync(join(cwd, ".git"), { recursive: true });
+    try {
+      setCwd(ctx.sessionManager, cwd);
+      const { component } = installFooter(pi, ctx);
+      const lines = component.render(200).join(" ");
+      expect(lines).toContain("effective-cwd-dir");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("requests provider values and shows them on install", () => {
