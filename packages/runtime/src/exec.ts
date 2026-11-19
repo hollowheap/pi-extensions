@@ -76,6 +76,7 @@ export function runCapture(
     const child = spawn(targetCommand, targetArgs, {
       cwd,
       detached: true,
+      windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
 

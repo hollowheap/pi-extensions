@@ -1,0 +1,392 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
+import {
+  enterMode,
+  evaluate,
+  getModeLayer,
+  modeNames,
+  registerMode,
+  registerModeGate,
+  replaceConfigModes,
+} from "../src/modes.js";
+import { dropSession, session, setCwd, setMode } from "../src/state.js";
+import type { Effect, Rule, Tag } from "../src/types.js";
+
+for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
+
+const ALLOW: Record<Tag, Effect> = {
+  read: "allow",
+  search: "allow",
+  edit: "allow",
+  shell: "allow",
+  external: "allow",
+};
+
+function rule(effect: Effect, tag: Tag, pattern: string): Rule {
+  return { effect, tag, pattern };
+}
+
+function evaluateAs(
+  mode: string,
+  tag: Tag,
+  target: string,
+  rules: Rule[] = [],
+  cwd = "/work",
+): Effect {
+  const owner = {};
+  setMode(owner, mode);
+  const verdict = evaluate({ owner, cwd, tag, target, rules });
+  dropSession(owner);
+  return verdict;
+}
+
+afterEach(() => {
+  replaceConfigModes([]);
+});
+
+describe("built-in modes", () => {
+  it("matches the manual, edit, and plan matrix", () => {
+    expect(getModeLayer("manual")?.defaults).toEqual({
+      read: "allow",
+      search: "allow",
+      edit: "ask",
+      shell: "ask",
+      external: "allow",
+    });
+    expect(getModeLayer("edit")?.defaults).toEqual({
+      read: "allow",
+      search: "allow",
+      edit: "allow",
+      shell: "ask",
+      external: "allow",
+    });
+    expect(getModeLayer("plan")?.defaults).toEqual({
+      read: "allow",
+      search: "allow",
+      edit: "deny",
+      shell: "ask",
+      external: "allow",
+    });
+
+    expect(evaluateAs("ask", "edit", "src/a.ts")).toBe("ask");
+    expect(evaluateAs("ask", "shell", "ls")).toBe("ask");
+    expect(evaluateAs("ask", "read", "src/a.ts")).toBe("allow");
+
+    expect(evaluateAs("edit", "edit", "src/a.ts")).toBe("allow");
+    expect(evaluateAs("edit", "shell", "ls")).toBe("ask");
+
+    expect(evaluateAs("plan", "read", "src/a.ts")).toBe("allow");
+    expect(evaluateAs("plan", "edit", "src/a.ts")).toBe("deny");
+    expect(evaluateAs("plan", "shell", "ls")).toBe("ask");
+  });
+
+  it("evaluates external and custom categories without path semantics", () => {
+    expect(evaluateAs("edit", "external", "https://example.com")).toBe("allow");
+    expect(
+      evaluateAs("edit", "external", "https://example.com", [
+        rule("deny", "external", "https://example.com"),
+      ]),
+    ).toBe("deny");
+    expect(evaluateAs("edit", "custom", "https://example.com")).toBe("ask");
+    expect(
+      evaluateAs("edit", "custom", "https://example.com", [
+        rule("allow", "custom", "https://example.com"),
+      ]),
+    ).toBe("allow");
+  });
+
+  it("asks on plan artifacts in plan mode", () => {
+    expect(evaluateAs("plan", "edit", "artifacts/plan.md")).toBe("ask");
+    expect(evaluateAs("plan", "edit", "artifacts/specs.md")).toBe("ask");
+    expect(evaluateAs("edit", "edit", "artifacts/plan.md")).toBe("allow");
+  });
+
+  it("denies other edits in plan mode even when the project allows them", () => {
+    const rules = [rule("allow", "edit", "*")];
+    expect(evaluateAs("plan", "edit", "src/a.ts", rules)).toBe("deny");
+    expect(evaluateAs("plan", "edit", "artifacts/plan.md", rules)).toBe("ask");
+  });
+
+  it("denies plan-mode edits outside the effective cwd", () => {
+    const owner = {};
+    setMode(owner, "plan");
+    setCwd(owner, "/work/sub");
+    const rules = [rule("allow", "edit", "*")];
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "/work/src/a.ts",
+        rules,
+      }),
+    ).toBe("deny");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "/work/sub/artifacts/plan.md",
+        rules,
+      }),
+    ).toBe("ask");
+    dropSession(owner);
+  });
+
+  it("resolves plan artifacts against the effective cwd", () => {
+    const owner = {};
+    setMode(owner, "plan");
+    setCwd(owner, "/work/sub");
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "/work/sub/artifacts/plan.md",
+        rules: [],
+      }),
+    ).toBe("ask");
+    dropSession(owner);
+  });
+
+  it("keeps a project ask rule when the layer default allows", () => {
+    const owner = {};
+    setMode(owner, "loose");
+    setCwd(owner, "/work/sub");
+    replaceConfigModes([
+      {
+        name: "loose",
+        defaults: {
+          read: "allow",
+          search: "allow",
+          edit: "allow",
+          shell: "ask",
+        },
+        overrides: [{ tag: "edit", pattern: "docs/**", effect: "ask" }],
+      },
+    ]);
+    expect(
+      evaluate({
+        owner,
+        cwd: "/work",
+        tag: "edit",
+        target: "/work/src/a.ts",
+        rules: [rule("ask", "edit", "src/**")],
+      }),
+    ).toBe("ask");
+    dropSession(owner);
+  });
+
+  it("allows everything in auto except hard safety and denies", () => {
+    replaceConfigModes([{ name: "auto", defaults: ALLOW }]);
+    expect(evaluateAs("auto", "edit", "src/a.ts")).toBe("allow");
+    expect(evaluateAs("auto", "edit", "artifacts/plan.md")).toBe("allow");
+    expect(evaluateAs("auto", "shell", "git status && ls")).toBe("allow");
+    expect(evaluateAs("auto", "shell", "bash -c 'echo hi'")).toBe("deny");
+    expect(evaluateAs("auto", "shell", "echo $(date)")).toBe("deny");
+    expect(evaluateAs("auto", "edit", "../outside.ts")).toBe("deny");
+    expect(
+      evaluateAs("auto", "shell", "rm -rf build", [
+        rule("deny", "shell", "rm"),
+      ]),
+    ).toBe("deny");
+  });
+
+  it("asks for destructive shell commands in every mode including auto unless explicitly allowed", () => {
+    replaceConfigModes([
+      {
+        name: "auto",
+        defaults: ALLOW,
+        overrides: [{ tag: "shell", pattern: "rm", effect: "allow" as never }],
+      },
+    ]);
+    for (const mode of ["manual", "edit", "auto"]) {
+      for (const cmd of [
+        "rm -rf /",
+        "rm -rf ~",
+        "find / -delete",
+        "find . -exec rm -rf {} \\;",
+        "git push --force origin main",
+        "timeout 5 rm -rf /",
+        "nohup rm -rf ~",
+        "command find / -delete",
+        "env git push --force",
+        "ls; rm -rf /",
+        "ls && git push --force",
+        "echo ok | find / -delete",
+      ]) {
+        expect(evaluateAs(mode, "shell", cmd)).toBe("ask");
+      }
+    }
+
+    // Broad prefix allow does not opt out of destructive check
+    expect(
+      evaluateAs("autopilot", "shell", "git push --force origin main", [
+        rule("allow", "shell", "git"),
+        rule("allow", "shell", "git push"),
+      ]),
+    ).toBe("ask");
+
+    // Explicit allow rule for the destructive command opts out
+    expect(
+      evaluateAs("autopilot", "shell", "git push --force origin main", [
+        rule("allow", "shell", "git push --force"),
+      ]),
+    ).toBe("allow");
+  });
+});
+
+describe("mode overrides", () => {
+  it("applies shell mode overrides", () => {
+    replaceConfigModes([
+      {
+        name: "no-rm",
+        defaults: ALLOW,
+        overrides: [rule("deny", "shell", "rm")],
+      },
+    ]);
+    expect(evaluateAs("no-rm", "shell", "git status && rm build")).toBe("deny");
+  });
+});
+
+describe("mode registry", () => {
+  it("registers layers first-wins with a diagnostic", () => {
+    const diagnostics: string[] = [];
+    registerMode({ name: "custom-dupe", defaults: ALLOW });
+    expect(
+      registerMode({ name: "custom-dupe", defaults: ALLOW }, (message) =>
+        diagnostics.push(message),
+      ),
+    ).toBe(false);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("already registered");
+    expect(getModeLayer("custom-dupe")?.defaults.edit).toBe("allow");
+  });
+
+  it("runs entry gates in order, keeps the first veto, and collects every notice", () => {
+    const name = "gated-test";
+    registerMode({ name, defaults: ALLOW });
+    const calls: string[] = [];
+    const stopA = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("a");
+      return { notice: { text: "a", level: "info" } };
+    });
+    const stopB = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("b");
+      return { veto: "blocked" };
+    });
+    const stopC = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("c");
+      return { notice: { text: "c", level: "info" } };
+    });
+    const stopD = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("d");
+      return { veto: "also blocked" };
+    });
+
+    const owner = {};
+    const result = enterMode(owner, name);
+    expect(calls).toEqual(["a", "b", "c", "d"]);
+    expect(result.mode).toBe("manual");
+    expect(result.veto).toBe("blocked");
+    expect(result.notices).toEqual([
+      { text: "a", level: "info" },
+      { text: "c", level: "info" },
+    ]);
+    expect(session(owner).mode).toBe("manual");
+
+    stopA();
+    stopB();
+    stopC();
+    stopD();
+    dropSession(owner);
+  });
+
+  it("can enter a mode without persisting it", () => {
+    const append = vi.fn();
+    const owner = { appendCustomEntry: append };
+
+    const result = enterMode(owner, "plan", { persist: false });
+
+    expect(result.mode).toBe("plan");
+    expect(session(owner).mode).toBe("plan");
+    expect(append).not.toHaveBeenCalled();
+    dropSession(owner);
+  });
+
+  it("replaces a keyed gate instead of stacking it", () => {
+    const name = "keyed-test";
+    registerMode({ name, defaults: ALLOW });
+    const calls: string[] = [];
+    const stopFirst = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("first");
+      return undefined;
+    }, "reloadable");
+    const stopSecond = registerModeGate((mode) => {
+      if (mode !== name) return undefined;
+      calls.push("second");
+      return undefined;
+    }, "reloadable");
+
+    const owner = {};
+    enterMode(owner, name);
+    expect(calls).toEqual(["second"]);
+
+    stopFirst();
+    stopSecond();
+    dropSession(owner);
+  });
+
+  it("runs a layer onEnter gate and returns its notice", () => {
+    registerMode({
+      name: "notice-test",
+      defaults: ALLOW,
+      onEnter: () => ({
+        notice: { text: "hello", level: "warning" },
+      }),
+    });
+    const owner = {};
+    const result = enterMode(owner, "notice-test");
+    expect(result.mode).toBe("notice-test");
+    expect(result.notices).toEqual([{ text: "hello", level: "warning" }]);
+    dropSession(owner);
+  });
+
+  it("reports unknown modes without changing state", () => {
+    const owner = {};
+    setMode(owner, "edit");
+    const result = enterMode(owner, "missing");
+    expect(result.diagnostic).toContain("unknown mode");
+    expect(session(owner).mode).toBe("edit");
+    dropSession(owner);
+  });
+
+  it("replaces config layers wholesale and rejects collisions", () => {
+    replaceConfigModes([{ name: "readonly", defaults: ALLOW }]);
+    expect(modeNames()).toContain("readonly");
+    replaceConfigModes([{ name: "other", defaults: ALLOW }]);
+    expect(modeNames()).not.toContain("readonly");
+    expect(modeNames()).toContain("other");
+
+    const diagnostics: string[] = [];
+    replaceConfigModes([{ name: "plan", defaults: ALLOW }], (message) =>
+      diagnostics.push(message),
+    );
+    expect(diagnostics[0]).toContain("already registered");
+    expect(getModeLayer("plan")?.defaults.edit).toBe("deny");
+  });
+
+  it("shares the layer registry across module instances", async () => {
+    replaceConfigModes([{ name: "shared-layer", defaults: ALLOW }]);
+    vi.resetModules();
+    const fresh = await import("../src/modes.js");
+    expect(fresh.modeNames()).toContain("shared-layer");
+    fresh.replaceConfigModes([]);
+    expect(modeNames()).not.toContain("shared-layer");
+  });
+});

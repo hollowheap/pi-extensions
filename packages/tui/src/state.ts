@@ -12,6 +12,7 @@ type TuiConfigListener = (config: TuiConfig) => void;
 interface TuiStateStore {
   config: TuiConfig;
   listeners: Set<TuiConfigListener>;
+  outputPadding?: () => 0 | 1 | undefined;
 }
 
 function cloneConfig(config: TuiConfig): TuiConfig {
@@ -84,4 +85,19 @@ export function loadAndActivateTuiConfig(
   const loaded = loadTuiConfig(agentDir, onDiagnostic);
   setActiveTuiConfig(loaded);
   return getActiveTuiConfig();
+}
+
+/** Bind the current host settings while this extension session owns the TUI. */
+export function bindHostOutputPadding(
+  read: () => 0 | 1 | undefined,
+): () => void {
+  const store = getStore();
+  store.outputPadding = read;
+  return () => {
+    if (store.outputPadding === read) store.outputPadding = undefined;
+  };
+}
+
+export function getHostOutputPadding(): 0 | 1 | undefined {
+  return getStore().outputPadding?.();
 }

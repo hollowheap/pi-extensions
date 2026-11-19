@@ -1,4 +1,5 @@
 import { updateSessionSnapshot } from "./snapshot.js";
+import { appendCustomEntry, readBranchEntries } from "./state.js";
 
 export const USAGE_ENTRY_TYPE = "hollowheap.usage";
 
@@ -367,35 +368,13 @@ export function persistUsage(
   manager: UsageSessionManager,
   usage: CumulativeUsage,
 ): void {
-  try {
-    if (typeof manager.appendCustomEntry === "function") {
-      manager.appendCustomEntry(USAGE_ENTRY_TYPE, usage);
-    } else if (typeof manager.appendEntry === "function") {
-      manager.appendEntry(USAGE_ENTRY_TYPE, usage);
-    }
-  } catch {
-    // Custom entries are optional.
-  }
+  appendCustomEntry(manager, USAGE_ENTRY_TYPE, usage);
 }
 
 export function restoreSessionUsage(
   manager: UsageSessionManager,
 ): CumulativeUsage {
-  let entries: readonly unknown[] | undefined;
-  if (typeof manager.getBranch === "function") {
-    try {
-      entries = manager.getBranch();
-    } catch {
-      entries = undefined;
-    }
-  } else if (typeof manager.getEntries === "function") {
-    try {
-      entries = manager.getEntries();
-    } catch {
-      entries = undefined;
-    }
-  }
-
+  const entries = readBranchEntries(manager);
   if (entries === undefined || !Array.isArray(entries)) {
     return getSessionUsage(manager);
   }

@@ -1,6 +1,13 @@
-import { constants, accessSync, existsSync, statSync } from "node:fs";
+import {
+  constants,
+  accessSync,
+  lstatSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { errorMessage } from "./utils.js";
 
 export interface SandboxOptions {
   cwd?: string;
@@ -20,14 +27,77 @@ export interface WrappedSandboxCommand {
 export const DEFAULT_MASK_PATHS: readonly string[] = [
   join(homedir(), ".ssh"),
   join(homedir(), ".gnupg"),
+  join(homedir(), ".aws"),
+  join(homedir(), ".kube"),
+  join(homedir(), ".docker"),
+  join(homedir(), ".config", "gh"),
+  join(homedir(), ".config", "gcloud"),
+  join(homedir(), ".azure"),
+  join(homedir(), ".git-credentials"),
+  join(homedir(), ".netrc"),
+  join(homedir(), ".npmrc"),
+  join(homedir(), ".pypirc"),
 ];
+
+function tryRealpath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function isInsideOrEqual(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return (
+    rel === "" ||
+    (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`))
+  );
+}
+
+function appendMaskArgs(
+  args: string[],
+  maskPath: string,
+  targetDir: string,
+  shouldFilter: boolean,
+): void {
+  const linkStat = lstatSync(maskPath, { throwIfNoEntry: false });
+  if (shouldFilter && linkStat === undefined) return;
+  let targetStat = linkStat;
+  if (linkStat?.isSymbolicLink()) {
+    try {
+      targetStat = statSync(maskPath);
+    } catch {
+      targetStat = undefined;
+    }
+  }
+  const addMount = (mountPath: string, isFile: boolean) => {
+    if (isFile) {
+      args.push("--ro-bind", "/dev/null", mountPath);
+    } else {
+      args.push("--tmpfs", mountPath);
+    }
+  };
+  if (linkStat?.isSymbolicLink()) {
+    const resolvedMask = tryRealpath(maskPath);
+    if (
+      resolvedMask !== undefined &&
+      resolvedMask !== maskPath &&
+      !isInsideOrEqual(targetDir, resolvedMask)
+    ) {
+      addMount(resolvedMask, targetStat?.isFile() ?? false);
+    }
+    return;
+  }
+  addMount(maskPath, targetStat?.isFile() ?? false);
+}
 
 export function isOsPermissionError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
     return true;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted)\b/i.test(
     message,
   );
@@ -116,10 +186,7 @@ export function assertBwrapAvailable(binaryName = "bwrap"): void {
   if (probe.available) return;
   if (probe.reason === "permission") {
     const code = (probe.error as NodeJS.ErrnoException | undefined)?.code;
-    const detail =
-      probe.error instanceof Error
-        ? probe.error.message
-        : String(probe.error ?? "");
+    const detail = probe.error !== undefined ? errorMessage(probe.error) : "";
     throw new Error(
       `Bubblewrap sandbox is required, but '${probe.path ?? binaryName}' cannot be accessed (${code ?? "OS permission"} denied — check chmod +x and directory permissions): ${detail}`,
     );
@@ -138,7 +205,10 @@ export function assertBwrapAvailable(binaryName = "bwrap"): void {
  * Builds the array of command-line arguments for `bwrap`.
  */
 export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
-  const targetDir = resolve(options.workspace ?? options.cwd ?? process.cwd());
+  const resolvedTarget = resolve(
+    options.workspace ?? options.cwd ?? process.cwd(),
+  );
+  const targetDir = tryRealpath(resolvedTarget) ?? resolvedTarget;
   const args: string[] = [
     "--ro-bind",
     "/",
@@ -159,9 +229,7 @@ export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
     options.filterExisting ?? options.maskPaths === undefined;
 
   for (const maskPath of candidateMasks) {
-    if (!shouldFilter || existsSync(maskPath)) {
-      args.push("--tmpfs", maskPath);
-    }
+    appendMaskArgs(args, maskPath, targetDir, shouldFilter);
   }
 
   const isOffline = options.offline ?? options.network === false;
@@ -191,7 +259,7 @@ export function wrapSandboxCommand(
     } catch (error) {
       if (isOsPermissionError(error)) {
         const code = (error as NodeJS.ErrnoException | undefined)?.code;
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorMessage(error);
         throw new Error(
           `${command} failed: OS permission denied accessing working directory ${targetDir} (${code ?? "permission"}): ${detail}`,
         );

@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { isRecord } from "./utils.js";
 
 export interface ProcessState {
   id: string;
@@ -26,10 +27,6 @@ function sanitizeId(id: string): string {
     throw new Error(`Invalid process id: ${id}`);
   }
   return id;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidState(value: unknown): value is ProcessState {

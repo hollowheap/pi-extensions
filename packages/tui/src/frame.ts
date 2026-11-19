@@ -2,27 +2,40 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
 import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
-import { getActiveTuiConfig } from "./state.js";
+import { getActiveTuiConfig, getHostOutputPadding } from "./state.js";
 import { paintSurfaceLine } from "./surface.js";
 
 export interface FrameOptions {
   borderStyle?: BorderStyle;
   overlaySurface?: OverlaySurfaceMode;
   colored?: boolean;
+  paddingX?: 0 | 1;
 }
 
-/** Return usable content width inside a frame for the active border style. */
+function framePadding(
+  width: number,
+  borderStyle: BorderStyle,
+  paddingX?: 0 | 1,
+): 0 | 1 {
+  if (borderStyle !== "none" && width < 5) return 0;
+  return paddingX ?? getHostOutputPadding() ?? (borderStyle === "none" ? 0 : 1);
+}
+
+/** Return usable content width inside the selected border and padding. */
 export function getFrameInnerWidth(
   width: number,
-  borderStyle?: BorderStyle,
+  borderStyle: BorderStyle = getActiveTuiConfig().borderStyle,
+  paddingX?: 0 | 1,
 ): number {
-  const safeWidth = Math.max(4, width);
-  const effective = borderStyle ?? getActiveTuiConfig().borderStyle;
-  return effective === "none" ? safeWidth : Math.max(1, safeWidth - 4);
+  const edges = borderStyle === "none" ? 0 : 2;
+  return Math.max(
+    1,
+    Math.max(4, width) - edges - 2 * framePadding(width, borderStyle, paddingX),
+  );
 }
 
 /** Draw a configurable box around already-rendered lines. */
-export function roundedFrame(
+export function boxFrame(
   lines: readonly string[],
   width: number,
   theme: Theme,
@@ -34,6 +47,9 @@ export function roundedFrame(
   const borderStyle = options?.borderStyle ?? active.borderStyle;
   const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
   const colored = options?.colored ?? active.colored;
+  const paddingX = framePadding(safeWidth, borderStyle, options?.paddingX);
+  const innerWidth = getFrameInnerWidth(safeWidth, borderStyle, paddingX);
+  const inset = " ".repeat(paddingX);
 
   const border = (value: string) =>
     colored && typeof theme?.fg === "function"
@@ -51,15 +67,21 @@ export function roundedFrame(
     if (title) {
       const titleLine = truncateToWidth(
         fg("accent", bold(title)),
-        safeWidth,
+        innerWidth,
         "",
       );
       rows.push(
-        paintSurfaceLine(titleLine, safeWidth, theme, overlaySurface, colored),
+        paintSurfaceLine(
+          inset + titleLine,
+          safeWidth,
+          theme,
+          overlaySurface,
+          colored,
+        ),
       );
     }
     for (const line of lines) {
-      const fitted = truncateToWidth(line, safeWidth, "");
+      const fitted = inset + truncateToWidth(line, innerWidth, "");
       rows.push(
         paintSurfaceLine(fitted, safeWidth, theme, overlaySurface, colored),
       );
@@ -68,7 +90,6 @@ export function roundedFrame(
   }
 
   const chars = getBorderChars(borderStyle);
-  const innerWidth = safeWidth - 4;
   const rawLabel = title ? ` ${fg("accent", bold(title))} ` : "";
   const label = truncateToWidth(rawLabel, Math.max(0, safeWidth - 3), "");
   const labelWidth = visibleWidth(label);
@@ -84,7 +105,7 @@ export function roundedFrame(
   const body = lines.map((line) => {
     const text = truncateToWidth(line, innerWidth, "");
     const padding = Math.max(0, innerWidth - visibleWidth(text));
-    return `${border(chars.vertical)} ${text}${" ".repeat(padding)} ${border(chars.vertical)}`;
+    return `${border(chars.vertical)}${inset}${text}${" ".repeat(padding)}${inset}${border(chars.vertical)}`;
   });
 
   const framed = [top, ...body, bottom];

@@ -128,75 +128,48 @@ function tintSimpleFrames(
   return { frames, intervalMs };
 }
 
+type FixedSpinner = Exclude<LoadingIndicatorStyle, "host" | "crush">;
+const SPINNER_PRESETS = {
+  hidden: [[], 1000],
+  braille: [["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 80],
+  pulse: [["∙", "•", "●", "◉", "●", "•"], 120],
+  arc: [["◜", "◠", "◝", "◞", "◡", "◟"], 100],
+  bars: [
+    [
+      "▁▂▃▄",
+      "▂▃▄▅",
+      "▃▄▅▆",
+      "▄▅▆▇",
+      "▅▆▇█",
+      "▆▇█▇",
+      "▇█▇▆",
+      "█▇▆▅",
+      "▇▆▅▄",
+      "▆▅▄▃",
+      "▅▄▃▂",
+      "▄▃▂▁",
+      "▃▂▁▂",
+      "▂▁▂▃",
+    ],
+    80,
+  ],
+  dots: [["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"], 80],
+} as const satisfies Record<FixedSpinner, readonly [readonly string[], number]>;
+
 /** Build working indicator frames for a configured style, or `undefined` for the host default. */
 export function createWorkingIndicator(
   style: LoadingIndicatorStyle,
   theme?: unknown,
   colored = true,
 ): WorkingIndicatorFrames | undefined {
-  switch (style) {
-    case "host":
-      return undefined;
-    case "hidden":
-      return { frames: [], intervalMs: 1000 };
-    case "braille":
-      return tintSimpleFrames(
-        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-        80,
-        theme,
-        colored,
-      );
-    case "pulse":
-      return tintSimpleFrames(
-        ["∙", "•", "●", "◉", "●", "•"],
-        120,
-        theme,
-        colored,
-      );
-    case "arc":
-      return tintSimpleFrames(
-        ["◜", "◠", "◝", "◞", "◡", "◟"],
-        100,
-        theme,
-        colored,
-      );
-    case "bars":
-      return tintSimpleFrames(
-        [
-          "▁▂▃▄",
-          "▂▃▄▅",
-          "▃▄▅▆",
-          "▄▅▆▇",
-          "▅▆▇█",
-          "▆▇█▇",
-          "▇█▇▆",
-          "█▇▆▅",
-          "▇▆▅▄",
-          "▆▅▄▃",
-          "▅▄▃▂",
-          "▄▃▂▁",
-          "▃▂▁▂",
-          "▂▁▂▃",
-        ],
-        80,
-        theme,
-        colored,
-      );
-    case "dots":
-      return tintSimpleFrames(
-        ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],
-        80,
-        theme,
-        colored,
-      );
-    default:
-      return isWorkingTheme(theme)
-        ? crushWorkingIndicator(theme, colored)
-        : tintSimpleFrames(
-            ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-            80,
-            theme,
-            colored,
-          );
+  if (style === "host") return undefined;
+
+  if (Object.hasOwn(SPINNER_PRESETS, style)) {
+    const [frames, intervalMs] = SPINNER_PRESETS[style as FixedSpinner];
+    return tintSimpleFrames(frames, intervalMs, theme, colored);
   }
+
+  if (isWorkingTheme(theme)) return crushWorkingIndicator(theme, colored);
+  const [frames, intervalMs] = SPINNER_PRESETS.braille;
+  return tintSimpleFrames(frames, intervalMs, theme, colored);
 }

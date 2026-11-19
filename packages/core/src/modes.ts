@@ -1,10 +1,11 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import {
   isPathTag,
   isPolicySubpath,
   matchExternal,
   matchPath,
   matchPathSpecific,
+  normalizePolicyPath,
   resolveReal,
 } from "./policy.js";
 import type { PathTag } from "./policy.js";
@@ -228,7 +229,12 @@ function evaluatePath(
   fallback: Effect,
 ): Verdict {
   const base = resolve(options.cwd);
-  const actual = resolveReal(base, options.target);
+  const effective = effectiveCwd(options.cwd, options.owner);
+  const normalizedTarget = normalizePolicyPath(options.target);
+  const scopedTarget = isAbsolute(normalizedTarget)
+    ? normalizedTarget
+    : resolve(effective, normalizedTarget);
+  const actual = resolveReal(base, scopedTarget);
   if (actual === undefined) return "deny";
 
   const persistentEntries = entriesFromMap(options.persistentDecisions);
@@ -251,8 +257,8 @@ function evaluatePath(
     }
   }
 
-  const hard = matchPath([], options.target, tag, options.cwd);
-  const project = matchPath(options.rules, options.target, tag, options.cwd);
+  const hard = matchPath([], scopedTarget, tag, options.cwd);
+  const project = matchPath(options.rules, scopedTarget, tag, options.cwd);
   if (project.rule?.effect === "deny") return "deny";
 
   let bestDecision: Verdict | undefined;
@@ -295,9 +301,9 @@ function evaluatePath(
   );
   const override = matchPathSpecific(
     tagOverrides,
-    options.target,
+    scopedTarget,
     tag,
-    effectiveCwd(options.cwd, options.owner),
+    effective,
   );
   if (!override.outside && override.rule !== undefined) {
     return override.rule.effect;
@@ -315,34 +321,49 @@ function evaluatePath(
   return fallback;
 }
 
+export interface EvaluateResult {
+  verdict: Verdict;
+  reason?: string;
+}
+
 function evaluateShell(
   options: EvaluateOptions,
   layer: ModeLayer | undefined,
   fallback: Effect,
-): Verdict {
+): EvaluateResult {
   const parts = splitShellParts(options.target);
-  if (parts.length === 0) return "deny";
+  if (parts.length === 0) return { verdict: "deny", reason: "empty command" };
 
   const overrides = (layer?.overrides ?? []).filter(
     (rule) => rule.tag === "shell" && rule.effect !== "allow",
   );
   let verdict: Verdict = "allow";
   for (const part of parts) {
-    if (shellPartSafety(part) !== undefined) return "deny";
+    const safety = shellPartSafety(part);
+    if (safety !== undefined) return { verdict: "deny", reason: safety };
     const project = matchShellPart(part, options.rules);
-    if (project === "deny") return "deny";
+    if (project === "deny") {
+      return { verdict: "deny", reason: `denied by rule for "${part.name}"` };
+    }
     const override = matchShellPart(part, overrides);
-    if (override === "deny") return "deny";
+    if (override === "deny") {
+      return {
+        verdict: "deny",
+        reason: `denied by mode "${layer?.name ?? DEFAULT_MODE}" for "${part.name}"`,
+      };
+    }
     if (shellPartDestructive(part) !== undefined) {
       const destructiveVerdict: Verdict = project === "allow" ? "allow" : "ask";
       verdict = strictest(verdict, destructiveVerdict);
       continue;
     }
     const partVerdict = override ?? project ?? fallback;
-    if (partVerdict === "deny") return "deny";
+    if (partVerdict === "deny") {
+      return { verdict: "deny", reason: `denied for "${part.name}"` };
+    }
     verdict = strictest(verdict, partVerdict);
   }
-  return verdict;
+  return { verdict };
 }
 
 function evaluateExternal(
@@ -362,13 +383,17 @@ function evaluateExternal(
   return fallback;
 }
 
-export function evaluate(options: EvaluateOptions): Verdict {
+export function evaluateDetailed(options: EvaluateOptions): EvaluateResult {
   const active = getModeLayer(session(options.owner).mode);
   const layer = active ?? getModeLayer(DEFAULT_MODE);
   const fallback = layer?.defaults[options.tag] ?? "ask";
   if (options.tag === "shell") return evaluateShell(options, layer, fallback);
   if (isPathTag(options.tag)) {
-    return evaluatePath(options, options.tag, layer, fallback);
+    return { verdict: evaluatePath(options, options.tag, layer, fallback) };
   }
-  return evaluateExternal(options, layer, fallback);
+  return { verdict: evaluateExternal(options, layer, fallback) };
+}
+
+export function evaluate(options: EvaluateOptions): Verdict {
+  return evaluateDetailed(options).verdict;
 }

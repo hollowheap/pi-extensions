@@ -1,12 +1,11 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BORDER_STYLES, type BorderStyle } from "./border.js";
 import {
   type UpdateJsonConfigResult,
-  formatFsPermissionError,
-  isPermissionError,
+  readJsonObject,
   updateJsonConfig,
 } from "./config.js";
+import { isRecord } from "./records.js";
 
 export type OverlaySurfaceMode =
   | "transparent"
@@ -25,6 +24,19 @@ export type PanelRenderMode = "box" | "background";
 
 export const PANEL_RENDER_MODES: readonly PanelRenderMode[] = [
   "box",
+  "background",
+];
+
+export type PanelStyle =
+  | BorderStyle
+  | Exclude<OverlaySurfaceMode, "transparent">
+  | "background";
+
+export const PANEL_STYLES: readonly PanelStyle[] = [
+  ...BORDER_STYLES,
+  "surface",
+  "card",
+  "contrast",
   "background",
 ];
 
@@ -93,6 +105,7 @@ export interface CustomToolVerb {
 
 export interface PanelConfig {
   enabled: boolean;
+  style?: PanelStyle;
   mode: PanelRenderMode;
   borderStyle: BorderStyle;
   accentStripe: boolean;
@@ -100,6 +113,40 @@ export interface PanelConfig {
   reuseSpinner: boolean;
   customVerbs: Record<string, CustomToolVerb>;
   surface?: OverlaySurfaceMode;
+}
+
+export function getPanelStyle(panel: PanelConfig): PanelStyle {
+  if (panel.style !== undefined) return panel.style;
+  if (panel.mode === "background") return "background";
+  return panel.surface && panel.surface !== "transparent"
+    ? panel.surface
+    : panel.borderStyle;
+}
+
+export function applyPanelStyle(
+  panel: PanelConfig,
+  style: PanelStyle,
+  borderStyle: BorderStyle,
+): PanelConfig {
+  if (style === "background") {
+    return {
+      ...panel,
+      style,
+      mode: "background",
+      borderStyle: "none",
+      surface: undefined,
+    };
+  }
+  if (style === "surface" || style === "card" || style === "contrast") {
+    return { ...panel, style, mode: "box", borderStyle, surface: style };
+  }
+  return {
+    ...panel,
+    style,
+    mode: "box",
+    borderStyle: style,
+    surface: "transparent",
+  };
 }
 
 export interface TuiConfig {
@@ -149,10 +196,6 @@ function cloneDefaults(): TuiConfig {
   };
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function parseEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -178,13 +221,13 @@ function parseCustomVerbs(
   diagnostics?: string[],
 ): Record<string, CustomToolVerb> {
   if (raw === undefined) return {};
-  if (!isPlainObject(raw)) {
+  if (!isRecord(raw)) {
     diagnostics?.push("tui.json: panel.customVerbs must be an object");
     return {};
   }
   const result: Record<string, CustomToolVerb> = {};
   for (const [toolName, entry] of Object.entries(raw)) {
-    if (!isPlainObject(entry)) {
+    if (!isRecord(entry)) {
       diagnostics?.push(
         `tui.json: panel.customVerbs.${toolName} must be an object`,
       );
@@ -221,7 +264,7 @@ export function normalizeTuiConfig(
   diagnostics?: string[],
 ): TuiConfig {
   const defaults = cloneDefaults();
-  if (!isPlainObject(raw)) {
+  if (!isRecord(raw)) {
     if (raw !== undefined) {
       diagnostics?.push("tui.json must be a JSON object");
     }
@@ -295,9 +338,7 @@ export function normalizeTuiConfig(
   );
 
   const rawPanel = raw.panel;
-  const legacyVerbPack = isPlainObject(rawPanel)
-    ? rawPanel.verbPack
-    : undefined;
+  const legacyVerbPack = isRecord(rawPanel) ? rawPanel.verbPack : undefined;
   const verbPack = parseEnum(
     raw.verbPack ?? legacyVerbPack,
     TOOL_VERB_PACKS,
@@ -305,13 +346,13 @@ export function normalizeTuiConfig(
     "verbPack",
     diagnostics,
   );
-  const panel: PanelConfig = {
+  let panel: PanelConfig = {
     ...defaults.panel,
     borderStyle,
     customVerbs: {},
   };
   if (rawPanel !== undefined) {
-    if (!isPlainObject(rawPanel)) {
+    if (!isRecord(rawPanel)) {
       diagnostics?.push("tui.json: panel must be an object");
     } else {
       panel.enabled = parseBoolean(
@@ -367,6 +408,16 @@ export function normalizeTuiConfig(
       );
 
       panel.customVerbs = parseCustomVerbs(rawPanel.customVerbs, diagnostics);
+      if (rawPanel.style !== undefined) {
+        const style = parseEnum(
+          rawPanel.style,
+          PANEL_STYLES,
+          getPanelStyle(panel),
+          "panel.style",
+          diagnostics,
+        );
+        panel = applyPanelStyle(panel, style, borderStyle);
+      }
     }
   } else {
     panel.borderStyle = borderStyle;
@@ -396,37 +447,14 @@ export function loadTuiConfig(
   onDiagnostic?: (message: string) => void,
 ): TuiConfig {
   const path = getTuiConfigPath(agentDir);
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
-      const message = isPermissionError(error)
-        ? formatFsPermissionError("read TUI config", path, error)
-        : `cannot read TUI config ${path}: ${
-            error instanceof Error ? error.message : String(error)
-          }`;
-      onDiagnostic?.(message);
-    }
-    return cloneDefaults();
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    onDiagnostic?.(
-      `tui.json is not valid JSON (${path}): ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-    return cloneDefaults();
-  }
-
   const diagnostics: string[] = [];
-  const config = normalizeTuiConfig(parsed, diagnostics);
-  for (const diagnostic of diagnostics) {
-    onDiagnostic?.(diagnostic);
+  const parsed = readJsonObject(path, diagnostics);
+  const config =
+    parsed === undefined
+      ? cloneDefaults()
+      : normalizeTuiConfig(parsed, diagnostics);
+  for (const message of diagnostics) {
+    onDiagnostic?.(message);
   }
   return config;
 }
@@ -452,10 +480,14 @@ export function updateTuiConfig(
       verbPack: updated.verbPack,
       panel: {
         enabled: updated.panel?.enabled ?? DEFAULT_TUI_CONFIG.panel.enabled,
-        mode: updated.panel?.mode ?? DEFAULT_TUI_CONFIG.panel.mode,
-        borderStyle:
-          updated.panel?.borderStyle ?? DEFAULT_TUI_CONFIG.panel.borderStyle,
-        surface: updated.panel?.surface ?? DEFAULT_TUI_CONFIG.overlaySurface,
+        ...(updated.panel.style === undefined
+          ? {
+              mode: updated.panel.mode,
+              borderStyle: updated.panel.borderStyle,
+              surface:
+                updated.panel.surface ?? DEFAULT_TUI_CONFIG.overlaySurface,
+            }
+          : { style: updated.panel.style }),
         accentStripe:
           updated.panel?.accentStripe ?? DEFAULT_TUI_CONFIG.panel.accentStripe,
         outcomeBadges:

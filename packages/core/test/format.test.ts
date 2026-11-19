@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import {
+  displayPath,
+  displayTarget,
+  errorMessage,
+  stringifyToolJson,
+  toolErrorResult,
+  toolTextResult,
+  truncateText,
+} from "../src/format.js";
+
+describe("errorMessage", () => {
+  it("reads Error messages and stringifies other values", () => {
+    expect(errorMessage(new Error("failed"))).toBe("failed");
+    expect(errorMessage("plain")).toBe("plain");
+    expect(errorMessage(42)).toBe("42");
+  });
+});
+
+describe("truncateText", () => {
+  it("leaves short text unchanged", () => {
+    expect(truncateText("short")).toBe("short");
+    expect(truncateText("x".repeat(4000))).toBe("x".repeat(4000));
+  });
+
+  it("keeps 3000 head and 1000 tail characters", () => {
+    const text = `${"a".repeat(3000)}${"b".repeat(1000)}${"c".repeat(1000)}`;
+    const result = truncateText(text);
+    expect(result).toBe(
+      `${"a".repeat(3000)}\n[truncated: cut 1000 characters]\n${"c".repeat(1000)}`,
+    );
+  });
+
+  it("accepts a caller label", () => {
+    expect(truncateText("x".repeat(5000), "acp")).toContain(
+      "[acp: cut 1000 characters]",
+    );
+  });
+});
+
+describe("stringifyToolJson", () => {
+  it("escapes characters that markup or terminal renderers reinterpret", () => {
+    const printed = stringifyToolJson({
+      text: '<b>&\u2028\u2029\x1b[31mred\x1b[0m "quoted"',
+    });
+    expect(printed).toContain("\\u003cb\\u003e");
+    expect(printed).toContain("\\u0026");
+    expect(printed).toContain("\\u2028\\u2029");
+    expect(printed).toContain("\\u001b[31m");
+    expect(printed).toContain('\\"quoted\\"');
+    expect(JSON.parse(printed).text).toBe(
+      '<b>&\u2028\u2029\x1b[31mred\x1b[0m "quoted"',
+    );
+  });
+});
+
+describe("displayTarget", () => {
+  it("truncates past 500 characters showing head and tail", () => {
+    const target = "x".repeat(600);
+    expect(displayTarget(target)).toBe(
+      `${"x".repeat(250)}\n[… cut 100 characters]\n${"x".repeat(250)}`,
+    );
+    expect(displayTarget("x".repeat(500))).toBe("x".repeat(500));
+  });
+
+  it("sanitizes control bytes", () => {
+    expect(displayTarget("evil\x1b]0;pwned\x07target")).toBe("eviltarget");
+  });
+});
+
+describe("displayPath", () => {
+  it("returns a posix relative path", () => {
+    expect(displayPath("/work", "/work/src/a.ts")).toBe("src/a.ts");
+    expect(displayPath("/work", "/work/")).toBe("");
+    expect(displayPath("/work", "/other/a.ts")).toBe("../other/a.ts");
+  });
+});
+
+describe("sanitizeTerminalText", () => {
+  it("removes CSI, OSC, ESC, and C0/C1 control bytes while keeping newline and tab", async () => {
+    const { sanitizeTerminalText } = await import("../src/format.js");
+    const dirty =
+      "hello\t\x1b[31mred\x1b[0m\n" +
+      "\x1b]0;pwned-title\x07" +
+      "\x1b]52;c;YWJj\x1b\\" +
+      "line2\r\x00\x07\x08\x1b[2J\x9b32mok\x85\x9fend";
+    expect(sanitizeTerminalText(dirty)).toBe("hello\tred\nline2okend");
+  });
+
+  it("preserves 16-color, 256-color, and TrueColor SGR sequences when allowSgr is true while stripping control sequences", async () => {
+    const { sanitizeTerminalText } = await import("../src/format.js");
+    const input =
+      "\x1b[31m16-color\x1b[0m " +
+      "\x1b[38;5;208m256-color\x1b[0m " +
+      "\x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "\x1b]52;c;ZXZpbA==\x07" +
+      "\x1b]2;title\x07" +
+      "\x1b[2J\x1b[H\x1b[?25l" +
+      "\x00\x07\x08clean";
+    const expected =
+      "\x1b[31m16-color\x1b[0m " +
+      "\x1b[38;5;208m256-color\x1b[0m " +
+      "\x1b[38;2;255;100;0mTrueColor\x1b[0m\n" +
+      "clean";
+    expect(sanitizeTerminalText(input, { allowSgr: true })).toBe(expected);
+  });
+});
+
+describe("tool result helpers", () => {
+  it("builds text results with optional details", () => {
+    expect(toolTextResult("ok")).toEqual({
+      content: [{ type: "text", text: "ok" }],
+      details: {},
+    });
+    expect(toolTextResult("ok", { count: 2 })).toEqual({
+      content: [{ type: "text", text: "ok" }],
+      details: { count: 2 },
+    });
+  });
+
+  it("builds sanitized error results with default or custom details", () => {
+    expect(
+      toolErrorResult("web_search unavailable", new Error("bad\x1b[31mmsg")),
+    ).toEqual({
+      content: [{ type: "text", text: "web_search unavailable: badmsg" }],
+      details: { error: "badmsg" },
+    });
+    expect(
+      toolErrorResult("task failed", "missing id", { action: "status" }),
+    ).toEqual({
+      content: [{ type: "text", text: "task failed: missing id" }],
+      details: { action: "status" },
+    });
+  });
+});

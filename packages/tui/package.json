@@ -2,7 +2,7 @@
   "name": "@hollowheap/tui",
   "version": "0.3.0",
   "type": "module",
-  "description": "Shared Pi TUI primitives: frames, pickers, pagers, progress, and viewers",
+  "description": "Shared host-agnostic TUI primitives: frames, markdown, tabs, surfaces, spinners, and widgets",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -14,7 +14,8 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@hollowheap/core": "^0.3.0"
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/runtime": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

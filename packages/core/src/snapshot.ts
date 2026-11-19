@@ -1,3 +1,4 @@
+import { isRecord } from "./records.js";
 export interface ModeSnapshot {
   name: string;
   updatedAt: number;
@@ -294,10 +295,6 @@ export interface PersistedSessionSummary {
   subagentRuns?: number;
   webLinks?: number;
   decideCalls?: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Extract compact metadata from a session's branch entries without loading extensions. */

@@ -7,7 +7,7 @@ const MODE_ENTRY = "hollowheap.core.mode";
 export const CWD_ENTRY = "hollowheap.core.cwd";
 const DEFAULT_MODE = "manual";
 
-interface EntryLike {
+export interface EntryLike {
   customType?: unknown;
   data?: unknown;
 }
@@ -24,22 +24,52 @@ export function session(owner: unknown): SessionState {
   return state === undefined ? { mode: DEFAULT_MODE } : { ...state };
 }
 
-function appendCustom(owner: unknown, customType: string, data: unknown): void {
+export function appendCustomEntry(
+  owner: unknown,
+  customType: string,
+  data: unknown,
+): boolean {
   const sessionObj = owner as SessionLike | undefined;
   const appendCustomFn = sessionObj?.appendCustomEntry;
   const appendFn = sessionObj?.appendEntry;
   try {
     if (typeof appendCustomFn === "function") {
       appendCustomFn.call(owner, customType, data);
-    } else if (typeof appendFn === "function") {
+      return true;
+    }
+    if (typeof appendFn === "function") {
       appendFn.call(owner, customType, data);
+      return true;
     }
   } catch {
     // A session that cannot persist still keeps the in-process state.
   }
+  return false;
 }
 
-function readEntries(owner: unknown): readonly EntryLike[] | undefined {
+export function appendSessionEntry(
+  pi:
+    | { appendEntry?: (customType: string, data?: unknown) => unknown }
+    | undefined,
+  owner: unknown,
+  customType: string,
+  data: unknown,
+): boolean {
+  const appendFn = pi?.appendEntry;
+  if (typeof appendFn === "function") {
+    try {
+      appendFn.call(pi, customType, data);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return appendCustomEntry(owner, customType, data);
+}
+
+export function readBranchEntries(
+  owner: unknown,
+): readonly EntryLike[] | undefined {
   const sessionObj = owner as SessionLike | undefined;
   const getBranch = sessionObj?.getBranch;
   const getEntries = sessionObj?.getEntries;
@@ -56,6 +86,23 @@ function readEntries(owner: unknown): readonly EntryLike[] | undefined {
   return undefined;
 }
 
+export function readLastCustomEntry(
+  owner: unknown,
+  customType: string,
+): unknown {
+  const entries = readBranchEntries(owner);
+  if (entries === undefined) return undefined;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index] as
+      | (EntryLike & { type?: unknown })
+      | undefined;
+    if (entry?.customType === customType || entry?.type === customType) {
+      return entry.data;
+    }
+  }
+  return undefined;
+}
+
 export function setMode(
   owner: unknown,
   mode: string,
@@ -67,7 +114,7 @@ export function setMode(
   state.sessions.set(owner, { ...current, mode });
   updateSessionSnapshot(owner, "mode", { name: mode, updatedAt: Date.now() });
   if (options.persist === false) return;
-  appendCustom(owner, MODE_ENTRY, { mode });
+  appendCustomEntry(owner, MODE_ENTRY, { mode });
 }
 
 export function setCwd(
@@ -89,7 +136,7 @@ export function setCwd(
     });
   }
   if (options.persist === true) {
-    appendCustom(owner, CWD_ENTRY, {
+    appendCustomEntry(owner, CWD_ENTRY, {
       cwd: dir ?? null,
       updatedAt: Date.now(),
     });
@@ -110,7 +157,7 @@ export function dropSession(owner: unknown): void {
 }
 
 export function readPersistedMode(owner: unknown): string | undefined {
-  const entries = readEntries(owner);
+  const entries = readBranchEntries(owner);
   if (entries === undefined) return undefined;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -124,7 +171,7 @@ export function readPersistedMode(owner: unknown): string | undefined {
 }
 
 export function readPersistedCwd(owner: unknown): string | null | undefined {
-  const entries = readEntries(owner);
+  const entries = readBranchEntries(owner);
   if (entries === undefined) return undefined;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];

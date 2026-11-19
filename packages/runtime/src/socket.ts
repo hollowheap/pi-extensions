@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { type Socket, createConnection, createServer } from "node:net";
 import { dirname } from "node:path";
+import { errorMessage, isRecord } from "./utils.js";
 
 export interface JsonlRequest {
   id: string | number;
@@ -42,10 +43,6 @@ export interface JsonlRequestOptions {
 
 const DEFAULT_MAX_LINE_BYTES = 1_048_576;
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isRequest(value: unknown): value is JsonlRequest {
   return (
@@ -139,7 +136,7 @@ export async function startJsonlServer(
               send(socket, {
                 id: request.id,
                 ok: false,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorMessage(error),
               }),
           );
       }

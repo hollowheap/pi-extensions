@@ -1,5 +1,9 @@
 import { relative, sep } from "node:path";
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const TRUNCATE_THRESHOLD = 4000;
 const HEAD_LENGTH = 3000;
 const TAIL_LENGTH = 1000;
@@ -170,4 +174,60 @@ export function sanitizeTerminalText(
     index += 1;
   }
   return out;
+}
+
+export interface ToolTextBlock {
+  type: "text";
+  text: string;
+}
+
+export interface ToolTextResult<TDetails = Record<string, unknown>> {
+  content: ToolTextBlock[];
+  details: TDetails;
+}
+
+export function toolTextResult(
+  text: string,
+): ToolTextResult<Record<string, never>>;
+export function toolTextResult<TDetails>(
+  text: string,
+  details: TDetails,
+): ToolTextResult<TDetails>;
+export function toolTextResult<TDetails>(
+  text: string,
+  details?: TDetails,
+): ToolTextResult<TDetails | Record<string, never>> {
+  if (details === undefined) {
+    const empty: Record<string, never> = {};
+    return {
+      content: [{ type: "text", text }],
+      details: empty,
+    };
+  }
+  return {
+    content: [{ type: "text", text }],
+    details,
+  };
+}
+
+export function toolErrorResult(
+  prefix: string,
+  error: unknown,
+): ToolTextResult<{ error: string }>;
+export function toolErrorResult<TDetails>(
+  prefix: string,
+  error: unknown,
+  details: TDetails,
+): ToolTextResult<TDetails>;
+export function toolErrorResult<TDetails>(
+  prefix: string,
+  error: unknown,
+  details?: TDetails,
+): ToolTextResult<TDetails | { error: string }> {
+  const message = sanitizeTerminalText(errorMessage(error));
+  const text = `${prefix}: ${message}`;
+  if (details === undefined) {
+    return toolTextResult(text, { error: message });
+  }
+  return toolTextResult(text, details);
 }

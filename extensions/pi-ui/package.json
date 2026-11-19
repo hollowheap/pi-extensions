@@ -1,0 +1,30 @@
+{
+  "name": "@hollowheap/pi-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Host-aware UI dialogs and pickers for Pi extensions",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": ["pi-package"],
+  "files": ["src", "README.md"],
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "@hollowheap/core": "^0.3.0",
+    "@hollowheap/runtime": "^0.3.0",
+    "@hollowheap/tui": "^0.3.0"
+  }
+}

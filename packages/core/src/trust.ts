@@ -1,6 +1,20 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { formatFsPermissionError, isPermissionError } from "./config.js";
+import {
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  type UpdateJsonConfigResult,
+  formatFsPermissionError,
+  isPermissionError,
+  parseJsonObject,
+  updateJsonConfig,
+} from "./config.js";
+import { errorMessage } from "./format.js";
+import { isRecord } from "./records.js";
 import type { Verdict } from "./types.js";
 
 export interface TrustedRootTag {
@@ -19,10 +33,6 @@ const EMPTY_TRUST: GuardTrust = Object.freeze({
   trustedRoots: Object.freeze([]),
   persistentDecisions: Object.freeze({}),
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseTrustedRoot(value: unknown): TrustedRoot | undefined {
   if (typeof value === "string") {
@@ -106,27 +116,275 @@ export function loadGuardTrust(
   try {
     raw = readFileSync(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    if ((error as { code?: unknown }).code === "ENOENT") {
       return seedGuardTrust(agentDir);
     }
-    const message = isPermissionError(error)
-      ? formatFsPermissionError("read guard config", path, error)
-      : `cannot read ${path}: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
-    onDiagnostic?.(message);
+    const detail = isPermissionError(error)
+      ? formatFsPermissionError("read guard trust file", path, error)
+      : `${path}: ${errorMessage(error)}`;
+    onDiagnostic?.(detail);
     return EMPTY_TRUST;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    onDiagnostic?.(
-      `${path} is not valid JSON (${
-        error instanceof Error ? error.message : String(error)
-      }); using defaults`,
-    );
+  const diagnostics: string[] = [];
+  const parsed = parseJsonObject(raw, path, diagnostics);
+  for (const message of diagnostics) {
+    onDiagnostic?.(message);
+  }
+  if (parsed === undefined) {
     return EMPTY_TRUST;
   }
   return parseGuardTrust(parsed, path, onDiagnostic);
+}
+
+export type PersistenceScope = "session" | "indefinite";
+export type DecisionEffect = Verdict;
+
+export interface GuardTrustConfig {
+  trustedRoots?: TrustedRoot[];
+  decisions?: Record<string, DecisionEffect>;
+}
+
+export function saveGuardTrust(
+  agentDir: string,
+  config: GuardTrustConfig,
+): UpdateJsonConfigResult {
+  return updateJsonConfig(join(agentDir, "guard.json"), (root) => {
+    root.trustedRoots = config.trustedRoots ?? [];
+    root.decisions = config.decisions ?? {};
+  });
+}
+
+function tryRealpath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolves the canonical path, following symlinks if existing.
+ * For non-existent child files, resolves the parent directory's realpath.
+ */
+export function resolveCanonicalPath(
+  baseRoot: string,
+  targetPath: string,
+): string {
+  const resolved = isAbsolute(targetPath)
+    ? resolve(targetPath)
+    : resolve(baseRoot, targetPath);
+
+  const real = tryRealpath(resolved);
+  if (real !== undefined) return real;
+
+  // Walk up to find the closest existing ancestor to resolve symlinks
+  let current = resolved;
+  const trailingParts: string[] = [];
+
+  while (current !== "/" && current !== "." && current !== "") {
+    const parent = resolve(current, "..");
+    const baseName = current.slice(
+      parent.length + (parent.endsWith(sep) ? 0 : 1),
+    );
+    trailingParts.unshift(baseName);
+    current = parent;
+
+    const ancestorReal = tryRealpath(current);
+    if (ancestorReal !== undefined) {
+      return resolve(ancestorReal, ...trailingParts);
+    }
+  }
+
+  return resolved;
+}
+
+/**
+ * Checks whether targetPath is within root, strictly blocking ../ traversal and symlink escapes.
+ */
+export function isSubpath(
+  root: string,
+  targetPath: string,
+  baseRoot = process.cwd(),
+): boolean {
+  try {
+    const canonicalRoot = resolveCanonicalPath(baseRoot, root);
+    const canonicalTarget = resolveCanonicalPath(canonicalRoot, targetPath);
+    const rel = relative(canonicalRoot, canonicalTarget);
+    return (
+      rel === "" ||
+      (!rel.startsWith("..") && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function mostSpecificDecision(
+  entries: Iterable<[string, DecisionEffect]>,
+  target: string,
+  baseRoot: string,
+): DecisionEffect | undefined {
+  let bestPath: string | undefined;
+  let best: DecisionEffect | undefined;
+  for (const [decidedPath, effect] of entries) {
+    if (!isSubpath(decidedPath, target, baseRoot)) continue;
+    if (bestPath === undefined || decidedPath.length > bestPath.length) {
+      bestPath = decidedPath;
+      best = effect;
+    } else if (
+      decidedPath.length === bestPath.length &&
+      effect !== "allow" &&
+      best === "allow"
+    ) {
+      best = effect;
+    }
+  }
+  return best;
+}
+
+export interface PathTrustVerdict {
+  isOutsideWorkspace: boolean;
+  isTrusted: boolean;
+  canonicalPath: string;
+  cachedDecision?: DecisionEffect;
+}
+
+function resolveCachedDecision(
+  canonicalTarget: string,
+  workspaceRoot: string,
+  sources: ReadonlyArray<Iterable<[string, DecisionEffect]> | undefined>,
+  exactLookups: ReadonlyArray<
+    ((key: string) => DecisionEffect | undefined) | undefined
+  >,
+): DecisionEffect | undefined {
+  for (const lookup of exactLookups) {
+    const exact = lookup?.(canonicalTarget);
+    if (exact !== undefined) return exact;
+  }
+  for (const entries of sources) {
+    if (entries === undefined) continue;
+    const match = mostSpecificDecision(entries, canonicalTarget, workspaceRoot);
+    if (match !== undefined) return match;
+  }
+  return undefined;
+}
+
+/**
+ * Evaluates whether targetPath is in workspace, a trusted root, or has a cached decision.
+ */
+export function checkPathTrust(
+  targetPath: string,
+  workspaceRoot: string,
+  trustedRoots: readonly string[] = [],
+  sessionDecisions?: ReadonlyMap<string, DecisionEffect>,
+  persistentDecisions?: Readonly<Record<string, DecisionEffect>>,
+): PathTrustVerdict {
+  const canonicalTarget = resolveCanonicalPath(workspaceRoot, targetPath);
+  const inWorkspace = isSubpath(workspaceRoot, canonicalTarget);
+
+  const cachedDecision = resolveCachedDecision(
+    canonicalTarget,
+    workspaceRoot,
+    [
+      sessionDecisions?.entries(),
+      persistentDecisions ? Object.entries(persistentDecisions) : undefined,
+    ],
+    [
+      sessionDecisions ? (key) => sessionDecisions.get(key) : undefined,
+      persistentDecisions ? (key) => persistentDecisions[key] : undefined,
+    ],
+  );
+
+  // Deny ALWAYS holds, even when parent directory is trusted or allowed!
+  if (cachedDecision === "deny") {
+    return {
+      isOutsideWorkspace: !inWorkspace,
+      isTrusted: false,
+      canonicalPath: canonicalTarget,
+      cachedDecision: "deny",
+    };
+  }
+
+  if (inWorkspace) {
+    return {
+      isOutsideWorkspace: false,
+      isTrusted: true,
+      canonicalPath: canonicalTarget,
+      cachedDecision,
+    };
+  }
+
+  // Check if inside any configured trusted root
+  for (const root of trustedRoots) {
+    if (isSubpath(root, canonicalTarget, workspaceRoot)) {
+      return {
+        isOutsideWorkspace: true,
+        isTrusted: true,
+        canonicalPath: canonicalTarget,
+        cachedDecision: cachedDecision ?? "allow",
+      };
+    }
+  }
+
+  return {
+    isOutsideWorkspace: true,
+    isTrusted: cachedDecision === "allow",
+    canonicalPath: canonicalTarget,
+    cachedDecision,
+  };
+}
+
+/**
+ * Persists an allow/ask/deny decision either for this session or indefinitely in guard.json.
+ */
+export function persistGuardDecision(
+  agentDir: string,
+  canonicalPath: string,
+  effect: DecisionEffect,
+  scope: PersistenceScope,
+  sessionCache?: Map<string, DecisionEffect>,
+  onNotify?: (message: string, type?: "info" | "warning" | "error") => void,
+): void {
+  if (scope !== "session" && scope !== "indefinite") {
+    throw new Error(`Invalid persistence scope: ${String(scope)}`);
+  }
+
+  // Always keep decision in memory sessionCache so active session honours it
+  sessionCache?.set(canonicalPath, effect);
+
+  if (scope === "session") {
+    return;
+  }
+
+  const isDir = (() => {
+    try {
+      return statSync(canonicalPath).isDirectory();
+    } catch {
+      return false;
+    }
+  })();
+
+  const trust = loadGuardTrust(agentDir);
+  const decisions = { ...trust.persistentDecisions };
+  decisions[canonicalPath] = effect;
+
+  const trustedRoots = [...trust.trustedRoots];
+  if (effect === "allow" && isDir && !trustedRoots.includes(canonicalPath)) {
+    trustedRoots.push(canonicalPath);
+  } else if (effect === "deny") {
+    // If explicitly denied, remove from trustedRoots if present
+    const idx = trustedRoots.indexOf(canonicalPath);
+    if (idx >= 0) {
+      trustedRoots.splice(idx, 1);
+    }
+  }
+
+  const res = saveGuardTrust(agentDir, {
+    trustedRoots,
+    decisions,
+  });
+
+  if (!res.ok) {
+    onNotify?.(`pi-guard: ${res.error}`, "error");
+  }
 }

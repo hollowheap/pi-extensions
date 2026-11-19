@@ -7,8 +7,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { errorMessage } from "./format.js";
 import { getModeLayer } from "./modes.js";
 import { getMtimeCache } from "./mtime-cache.js";
+import { isRecord } from "./records.js";
 import {
   BUILTIN_TAGS,
   type Effect,
@@ -24,7 +26,7 @@ export function isPermissionError(error: unknown): boolean {
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
     return true;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system)\b/i.test(
     message,
   );
@@ -36,7 +38,7 @@ export function formatFsPermissionError(
   error: unknown,
 ): string {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = errorMessage(error);
   const hint =
     code === "EACCES" || code === "EPERM"
       ? ` (${code} OS permission denied — check file/directory ownership and chmod/ACLs)`
@@ -44,6 +46,74 @@ export function formatFsPermissionError(
         ? " (OS permission error — check file/directory permissions)"
         : "";
   return `cannot ${action} ${path}${hint}: ${detail}`;
+}
+
+export function parseJsonObject(
+  raw: string,
+  path: string,
+  diagnostics: string[],
+  fallbackSuffix = "; using defaults",
+): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    diagnostics.push(`${path} is not valid JSON${fallbackSuffix}`);
+    return undefined;
+  }
+  if (!isRecord(parsed)) {
+    diagnostics.push(`${path} must be an object${fallbackSuffix}`);
+    return undefined;
+  }
+  return parsed;
+}
+
+export interface ReadJsonObjectOptions {
+  fallbackSuffix?: string;
+  readErrorSuffix?: string;
+}
+
+export function readJsonObject(
+  path: string,
+  diagnostics: string[],
+  options: ReadJsonObjectOptions = {},
+): Record<string, unknown> | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== "ENOENT") {
+      const detail = isPermissionError(error)
+        ? formatFsPermissionError("read config file", path, error)
+        : `${path}: ${errorMessage(error)}`;
+      diagnostics.push(`${detail}${options.readErrorSuffix ?? ""}`);
+    }
+    return undefined;
+  }
+  return parseJsonObject(
+    raw,
+    path,
+    diagnostics,
+    options.fallbackSuffix ?? "; using defaults",
+  );
+}
+
+export interface LoadJsonConfigOptions<T> extends ReadJsonObjectOptions {
+  path: string;
+  parse: (
+    data: Record<string, unknown> | undefined,
+    diagnostics: string[],
+  ) => T;
+  diagnostics?: string[];
+}
+
+export function loadJsonConfig<T>(options: LoadJsonConfigOptions<T>): T {
+  const diagnostics = options.diagnostics ?? [];
+  const data = readJsonObject(options.path, diagnostics, {
+    fallbackSuffix: options.fallbackSuffix,
+    readErrorSuffix: options.readErrorSuffix,
+  });
+  return options.parse(data, diagnostics);
 }
 
 interface PermissionsEntry {
@@ -71,10 +141,6 @@ export interface LoadPermissionsOptions {
   workspaceRoot: string;
   trusted: boolean;
   onDiagnostic?: (message: string) => void;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function mtimeMs(path: string): number {
@@ -598,7 +664,7 @@ export function updateJsonConfig(
     raw = readFileSync(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       return {
         ok: false,
         path,
@@ -614,7 +680,7 @@ export function updateJsonConfig(
     try {
       parsed = JSON.parse(raw);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       return {
         ok: false,
         path,
@@ -647,7 +713,7 @@ export function updateJsonConfig(
     } catch {
       // Ignore temp cleanup failure.
     }
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     return {
       ok: false,
       path,

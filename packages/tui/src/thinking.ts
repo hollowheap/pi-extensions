@@ -1,11 +1,17 @@
 import {
+  AssistantMessageComponent,
+  type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
+import {
   foregroundAnsi,
   mixColors,
   rgbColor,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import type { TuiConfig } from "@hollowheap/core/tui-config";
 import { isWorkingTheme } from "./spinner.js";
+import { getActiveTuiConfig } from "./state.js";
 
 const RESET_FG = "\x1b[39m";
 const DEFAULT_SHIMMER_BAND = 10;
@@ -52,6 +58,30 @@ export function formatOneLineThinkingText(
   const combined =
     selected === "…" ? `${prefix.trimEnd()} …` : `${prefix}${selected}`;
   return truncateToWidth(combined, safeWidth, "…");
+}
+
+const THINKING_PREFIXES = {
+  standard: "Thinking: ",
+  terse: "think: ",
+  playful: "Pondering: ",
+} as const;
+
+export function formatThinkingMarkdown(
+  markdown: string,
+  width: number,
+  config: Pick<TuiConfig, "thinkingVerbosity" | "verbPack">,
+): string {
+  if (config.thinkingVerbosity === "none") return "";
+  if (
+    config.thinkingVerbosity !== "medium" &&
+    config.thinkingVerbosity !== "minimal"
+  ) {
+    return markdown;
+  }
+  return formatOneLineThinkingText(markdown, width, {
+    pick: "first",
+    prefix: THINKING_PREFIXES[config.verbPack],
+  });
 }
 
 const MARKDOWN_INLINE_RE = /[\\`*_~<>[\]]/g;
@@ -176,5 +206,61 @@ export function createThinkingShimmerAnimator(
       disposed = true;
       clearInterval(timer);
     },
+  };
+}
+
+type MarkdownTransformer = Parameters<
+  ExtensionAPI["registerMarkdownTransformer"]
+>[0];
+const THINKING_VISIBILITY = Symbol.for("@hollowheap/tui/thinking-visibility");
+
+/** Apply our display preference before Pi chooses its native thinking component. */
+export function installThinkingVisibility(
+  transformer: MarkdownTransformer,
+): void {
+  const prototype = AssistantMessageComponent.prototype;
+  const registered = Reflect.get(prototype, THINKING_VISIBILITY) as
+    | WeakSet<MarkdownTransformer>
+    | undefined;
+  if (registered) {
+    registered.add(transformer);
+    return;
+  }
+
+  const transformers = new WeakSet([transformer]);
+  Reflect.defineProperty(prototype, THINKING_VISIBILITY, {
+    value: transformers,
+  });
+  const updateContent = prototype.updateContent;
+  prototype.updateContent = function (message, streaming) {
+    const activeTransformers: unknown = Reflect.get(
+      this,
+      "markdownTransformers",
+    );
+    const hostHidden: unknown = Reflect.get(this, "hideThinkingBlock");
+    const overrides: unknown = Reflect.get(this, "thinkingVisibilityOverrides");
+    if (
+      typeof hostHidden !== "boolean" ||
+      !Array.isArray(activeTransformers) ||
+      !activeTransformers.some((fn) => transformers.has(fn)) ||
+      !(overrides instanceof Map)
+    ) {
+      updateContent.call(this, message, streaming);
+      return;
+    }
+
+    // Pi selects its hidden Text or expanded Markdown branch before calling
+    // transformers. Apply the preference for this render without writing settings.
+    Reflect.set(
+      this,
+      "hideThinkingBlock",
+      getActiveTuiConfig().thinkingVerbosity === "low",
+    );
+    overrides.clear();
+    try {
+      updateContent.call(this, message, streaming);
+    } finally {
+      Reflect.set(this, "hideThinkingBlock", hostHidden);
+    }
   };
 }

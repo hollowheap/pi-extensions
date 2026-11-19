@@ -1,5 +1,5 @@
 import { mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export interface Workspace {
   path: string;
@@ -62,4 +62,89 @@ export async function integrateWorkspace(
     throw new Error("workspace is not isolated");
   }
   await integrate(workspace.path);
+}
+
+const DEFAULT_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export interface WorkspaceTrackerOptions {
+  cleanup?: (workspace: Workspace) => Promise<void>;
+  terminalStatuses?: Iterable<string>;
+}
+
+export function isWorkspacePath(path: string | undefined, id: string): boolean {
+  if (typeof path !== "string" || path === "" || id === "") return false;
+  try {
+    return (
+      safeId(id) === basename(path) &&
+      basename(dirname(path)) === ".pi-workspaces"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export class WorkspaceTracker<
+  T extends { id: string; status: string; cwd?: string } = {
+    id: string;
+    status: string;
+    cwd?: string;
+  },
+> {
+  private readonly workspaces = new Map<string, Workspace>();
+  private readonly cleanup: (workspace: Workspace) => Promise<void>;
+  private readonly terminalStatuses: ReadonlySet<string>;
+
+  constructor(
+    cleanupOrOptions?:
+      | ((workspace: Workspace) => Promise<void>)
+      | WorkspaceTrackerOptions,
+  ) {
+    const options =
+      typeof cleanupOrOptions === "function"
+        ? { cleanup: cleanupOrOptions }
+        : (cleanupOrOptions ?? {});
+    this.cleanup =
+      options.cleanup ?? ((workspace) => cleanupWorkspace(workspace));
+    this.terminalStatuses =
+      options.terminalStatuses === undefined
+        ? DEFAULT_TERMINAL_STATUSES
+        : options.terminalStatuses instanceof Set
+          ? options.terminalStatuses
+          : new Set(options.terminalStatuses);
+  }
+
+  track(id: string, workspace: Workspace): void {
+    if (workspace.isolated) this.workspaces.set(id, workspace);
+  }
+
+  async cleanupTerminal(
+    items: readonly T[],
+    onCleaned?: (id: string) => void,
+  ): Promise<void> {
+    for (const item of items) {
+      if (!this.terminalStatuses.has(item.status)) continue;
+      const workspace = this.workspaces.get(item.id);
+      if (workspace === undefined) continue;
+      this.workspaces.delete(item.id);
+      try {
+        await this.cleanup(workspace);
+        onCleaned?.(item.id);
+      } catch {
+        // A failed cleanup must not affect caller state.
+      }
+    }
+  }
+
+  rehydrate(items: readonly T[]): void {
+    for (const item of items) {
+      if (item.cwd === undefined || !isWorkspacePath(item.cwd, item.id)) {
+        continue;
+      }
+      this.track(item.id, { path: item.cwd, isolated: true });
+    }
+  }
 }

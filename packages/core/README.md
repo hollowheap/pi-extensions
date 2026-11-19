@@ -17,15 +17,18 @@ The version moves together with the extension packages: every workspace package 
 ## What lives here
 
 - `policy.ts` — `checkPath`, `matchPath`, `matchPathSpecific`: path matching for the `edit`, `read`, and `search` tags (glob patterns, symlink-safe root checks, specificity and deny-first resolution).
-- `config.ts` — `loadPermissions` and `loadModesConfig`: mtime-cached JSON config with once-per-change diagnostics.
+- `config.ts` — `loadPermissions`, `loadToolTags`, `loadModesConfig`, `parseJsonObject`, `readJsonObject`, `loadJsonConfig`, `updateJsonConfig`, `isPermissionError`, `formatFsPermissionError`: mtime-cached JSON config, atomic config updates, and filesystem permission error helpers.
+- `sandbox-config.ts` — `parseSandboxConfig`, `resolveSandboxOptions`, `isSandboxEnabled`, `isSandboxOffline`, `saveSandboxConfig`: shared sandbox config parsing and atomic persistence.
 - `shell.ts` — `checkShell` and the `splitShellParts`/`shellPartSafety`/`matchShellPart` helpers: shell command splitting, hard safety, and rule matching on token boundaries.
-- `exec.ts` — `runBinary`: bounded subprocess runner (max buffer, abort signal, exit-code allowlist, `command not found`/missing-cwd diagnostics) plus `clampMaxResults`. `runCapture` is the same runner with optional stdin; it resolves `{ code, stdout, stderr }` for any exit code instead of throwing, so a caller can tell "the command decided" from "the command failed".
-- `sandbox.ts` — `wrapSandboxCommand`, `buildSandboxArgs`, `isBwrapAvailable`: Bubblewrap (`bwrap`) OS-level sandbox wrapper isolating shell commands with read-only root, tmpfs mounts, masked credential paths, and workspace-only writable bind mount.
-- `format.ts` — `truncateText` (4000-char threshold, 3000 head + 1000 tail), `displayTarget` (500-char ellipsis), `displayPath` (relative posix path).
+- `alerts.ts` — `buildAlertPayload`, `deliverAlert`, `AlertDispatcher`, `CompletionAlertTracker`: native/terminal completion alert delivery and per-topic state-transition tracking.
+- `workspace.ts` — `workspacePath`, `allocateWorkspace`, `cleanupWorkspace`, `integrateWorkspace`, `isWorkspacePath`, `WorkspaceTracker`: isolated `.pi-workspaces` allocation, path checks, cleanup tracking, and rehydration.
+- `format.ts` — `truncateText` (4000-char threshold, 3000 head + 1000 tail), `displayTarget` (500-char ellipsis), `displayPath` (relative posix path), `errorMessage`, `stringifyToolJson`, `sanitizeTerminalText`, and `toolTextResult`/`toolErrorResult` tool result helpers.
 - `blocks.ts` — `scanTaggedBlocks` (finds `'''tag` … `'''` blocks, ignores markdown code fences, reports offsets and unclosed state) and `parseMarkdownBlocks` (minimal heading/list/listItem/paragraph AST with ordered and optional checked state). Host-free; shared with `pi-question` and future tagged-block consumers.
-- `state.ts` — `session`, `setMode`, `setCwd`, `effectiveCwd`, `dropSession`, `resetSession`: the per-session store keyed by the pi session owner.
+- `state.ts` — `session`, `setMode`, `setCwd`, `effectiveCwd`, `dropSession`, `resetSession`, `readBranchEntries`, `appendSessionEntry`, `appendCustomEntry`, `readLastCustomEntry`, `createDirtyFlusher`: the per-session store keyed by the pi session owner and session entry persistence helpers.
+- `scope.ts` — `resolveScopedPath`, `isWithinWorkspace`, `isSameWorkspace`, `resolveWorkspaceTarget`, `findAncestorMatch`: shared workspace scoping, symlink-canonical containment, and ancestor discovery helpers.
 - `modes.ts` — `registerMode`, `registerModeGate`, `replaceConfigModes`, `enterMode`, `resetSession`, and `evaluate`: the mode registry, entry gates, and the five-step verdict ladder.
 - `prompt-lock.ts` — `withPromptLock`: process-wide FIFO queue for blocking UI prompts; releases on settle or throw and rejects nested acquisition.
+- `statusline.ts` — `registerStatuslineProvider`, `getStatuslineProvider`, `createScriptStatuslineProvider`, and `createStatuslinePublisher`: process-global named statusline component providers and disposable event-bus publisher helper.
 - `types.ts` — `Tag`, `Effect`, `Verdict`, `Rule`, `ModeLayer`, `ModeNotice`, `ModeEnter`.
 
 ## Permission rules
@@ -61,7 +64,7 @@ The project overlay is ignored (with a diagnostic) when the project is not trust
 
 ## Mode layers
 
-Modes are declarative layers: `defaults` per tag plus restrictive `overrides`. `pi-modes`, the `@hollowheap/policy` extension, and the ACP extension register the built-in layers `manual`, `edit`, `plan`, and `auto`; legacy `ask`/`autopilot` names resolve to `manual`/`auto`; user layers come from `<agentDir>/modes.json`:
+Modes are declarative layers: `defaults` per tag plus restrictive `overrides`. `@hollowheap/policy` defines the built-in layers shared by `pi-guard`, headless children, and ACP `manual`, `edit`, `plan`, and `auto`; legacy `ask`/`autopilot` names resolve to `manual`/`auto`; user layers come from `<agentDir>/modes.json`:
 
 ```json
 {
@@ -94,4 +97,4 @@ The active mode is appended to the session as the custom entry `hollowheap.core.
 
 ## State ownership
 
-All shared state lives on the process-global registry `globalThis[Symbol.for("@hollowheap/core/state")]`, never in module-level variables: pi loads each extension with a fresh module instance and gives installed packages separate module roots, so module-level state would be duplicated. Consumers therefore never share state through event envelopes; they call core directly.
+All shared state lives on process-global registries such as `globalThis[Symbol.for("@hollowheap/core/state")]` and `globalThis[Symbol.for("@hollowheap/core/statusline-providers")]`, never in module-level variables: pi loads each extension with a fresh module instance and gives installed packages separate module roots, so module-level state would be duplicated. Consumers therefore never share state through event envelopes; they call core directly.

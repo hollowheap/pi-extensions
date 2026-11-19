@@ -8,6 +8,7 @@ import {
   readFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { abortableDelay } from "./abort.js";
 import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
 
 export interface SpawnDetachedOptions {
@@ -138,24 +139,6 @@ export function readLog(logPath: string): string {
   }
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 export async function waitForProcessExit(
   pid: number,
   startTime?: number,
@@ -166,7 +149,7 @@ export async function waitForProcessExit(
   const deadline = Date.now() + Math.max(0, timeoutMs);
   while (isProcessAlive(pid, startTime)) {
     if (options.signal?.aborted || Date.now() >= deadline) return false;
-    await sleep(
+    await abortableDelay(
       Math.min(pollMs, Math.max(1, deadline - Date.now())),
       options.signal,
     );
@@ -237,14 +220,14 @@ export async function terminateProcessGroup(
   const graceDeadline = Date.now() + Math.max(0, graceMs);
   while (alive()) {
     if (Date.now() >= graceDeadline) break;
-    await sleep(Math.min(50, Math.max(1, graceDeadline - Date.now())));
+    await abortableDelay(Math.min(50, Math.max(1, graceDeadline - Date.now())));
   }
   if (!alive()) return true;
   signalProcessGroup(pid, "SIGKILL", isProcessAlive(pid, startTime), startTime);
   const killDeadline = Date.now() + Math.max(0, killWaitMs);
   while (alive()) {
     if (Date.now() >= killDeadline) break;
-    await sleep(Math.min(50, Math.max(1, killDeadline - Date.now())));
+    await abortableDelay(Math.min(50, Math.max(1, killDeadline - Date.now())));
   }
   return !alive();
 }
