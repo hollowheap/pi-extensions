@@ -169,6 +169,7 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
     function (this: SkillInvocationMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
     },
   );
   Reflect.set(
@@ -215,6 +216,7 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
 
       this.clear();
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
       this.setBgFn(undefined);
       this.addChild(
         new MouseRegion(
@@ -270,6 +272,7 @@ export function installBranchSummaryPanel(
     function (this: BranchSummaryMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
     },
   );
   Reflect.set(
@@ -320,6 +323,7 @@ export function installBranchSummaryPanel(
 
       this.clear();
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
       this.setBgFn(undefined);
       this.addChild(
         new MouseRegion(
@@ -384,6 +388,7 @@ export function installCompactionSummaryPanel(
     function (this: CompactionSummaryMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
     },
   );
   Reflect.set(
@@ -438,6 +443,7 @@ export function installCompactionSummaryPanel(
 
       this.clear();
       this.setPaddingX(0);
+      Reflect.set(this, "paddingY", 0);
       this.setBgFn(undefined);
       this.addChild(
         new MouseRegion(

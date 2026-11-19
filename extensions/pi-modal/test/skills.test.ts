@@ -103,9 +103,9 @@ describe("skill invocation panels", () => {
     const component = new SkillInvocationMessageComponent(block, undefined, 1);
     const lines = component
       .render(40)
-      .map((line) => stripTerminalSequences(line))
-      .filter((line) => line.trim().length > 0);
+      .map((line) => stripTerminalSequences(line));
 
+    expect(lines).toHaveLength(3);
     expect(lines[0]).toBe(`┌${"─".repeat(38)}┐`);
     expect(lines[1]?.startsWith("│ $alpha (")).toBe(true);
     expect(lines[1]?.endsWith("│")).toBe(true);
@@ -114,8 +114,8 @@ describe("skill invocation panels", () => {
     component.setOutputPad(1);
     const afterSetPad = component
       .render(40)
-      .map((line) => stripTerminalSequences(line))
-      .filter((line) => line.trim().length > 0);
+      .map((line) => stripTerminalSequences(line));
+    expect(afterSetPad).toHaveLength(3);
     expect(afterSetPad[0]).toBe(`┌${"─".repeat(38)}┐`);
     expect(afterSetPad[1]?.startsWith("│ $alpha (")).toBe(true);
   });

@@ -550,10 +550,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       undefined,
       1,
     );
-    const branchCollapsed = branch
-      .render(44)
-      .map(stripTerminalSequences)
-      .filter((l) => l.trim().length > 0);
+    const branchCollapsed = branch.render(44).map(stripTerminalSequences);
     expect(branchCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
     expect(branchCollapsed[1]?.startsWith("│ [branch]")).toBe(true);
     expect(branchCollapsed.some((l) => l.includes("│ Branch summary ("))).toBe(
@@ -562,10 +559,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     expect(branchCollapsed.at(-1)).toBe(`└${"─".repeat(42)}┘`);
 
     branch.setExpanded(true);
-    const branchExpanded = branch
-      .render(44)
-      .map(stripTerminalSequences)
-      .filter((l) => l.trim().length > 0);
+    const branchExpanded = branch.render(44).map(stripTerminalSequences);
     expect(
       branchExpanded.some((l) => l.includes("Switched branch details")),
     ).toBe(true);
@@ -577,8 +571,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const compactionCollapsed = compaction
       .render(44)
-      .map(stripTerminalSequences)
-      .filter((l) => l.trim().length > 0);
+      .map(stripTerminalSequences);
     expect(compactionCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
     expect(compactionCollapsed[1]?.startsWith("│ [compaction]")).toBe(true);
     expect(compactionCollapsed.some((l) => l.includes("Compacted from"))).toBe(
@@ -589,8 +582,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     compaction.setExpanded(true);
     const compactionExpanded = compaction
       .render(44)
-      .map(stripTerminalSequences)
-      .filter((l) => l.trim().length > 0);
+      .map(stripTerminalSequences);
     expect(
       compactionExpanded.some((l) => l.includes("Compacted history summary")),
     ).toBe(true);
