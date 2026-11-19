@@ -682,7 +682,7 @@ describe("wrapToolRenderer", () => {
     expect(stripTerminalSequences(joined)).toContain("dark");
   });
 
-  it("paints the full panel surface through its borders and padding", () => {
+  it("paints the full panel surface borderlessly with outputPad + 1 padding", () => {
     const base = {
       renderCall: vi.fn(() => ({
         render: () => ["\x1b[31mline 1\x1b[0m"],
@@ -705,18 +705,28 @@ describe("wrapToolRenderer", () => {
       bold: (text: string) => text,
       bg: (_token: string, text: string) => `\x1b[44m${text}\x1b[49m`,
     } as never;
-    const comp = wrapped.renderCall?.({} as never, theme, {} as never);
+    const comp = wrapped.renderCall?.({} as never, theme, {
+      outputPad: 0,
+    } as never);
     const lines = comp?.render(50) ?? [];
-    expect(lines[0]?.startsWith("\x1b[44m╭")).toBe(true);
-    expect(lines.at(-1)?.startsWith("\x1b[44m╰")).toBe(true);
+    expect(lines.join("\n")).not.toContain("╭");
+    expect(lines.join("\n")).not.toContain("╰");
     expect(lines.find((line) => line.includes("line 1"))).toContain(
-      "line 1\x1b[0m\x1b[44m",
+      "▎ \x1b[31mline 1\x1b[0m\x1b[44m",
     );
     expect(
       lines.every(
         (line) => line.startsWith("\x1b[44m") && line.endsWith("\x1b[49m"),
       ),
     ).toBe(true);
+
+    const paddedComp = wrapped.renderCall?.({} as never, theme, {
+      outputPad: 1,
+    } as never);
+    const paddedLines = paddedComp?.render(50) ?? [];
+    expect(paddedLines.find((line) => line.includes("line 1"))).toContain(
+      "▎  \x1b[31mline 1\x1b[0m\x1b[44m",
+    );
   });
 
   it("fills tool calls with a background and no border in background mode", () => {

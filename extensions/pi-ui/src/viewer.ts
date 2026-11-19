@@ -5,7 +5,10 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { getBorderChars } from "@hollowheap/core/border";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import {
+  getActiveTuiConfig,
+  getHostOutputPadding,
+} from "@hollowheap/tui/state";
 import { paintSurfaceLine } from "@hollowheap/tui/surface";
 import { hostUi, showDialog } from "./host.js";
 
@@ -49,6 +52,8 @@ export async function showCodeViewer(
         render(width: number): string[] {
           const safeWidth = Math.max(4, width);
           const { borderStyle, overlaySurface, colored } = getActiveTuiConfig();
+          const surfaceActive = colored && overlaySurface !== "transparent";
+          const effectiveBorderStyle = surfaceActive ? "none" : borderStyle;
           const height = viewportHeight();
           offset = Math.max(0, Math.min(offset, maxOffset()));
           const visible = codeLines.slice(offset, offset + height);
@@ -57,10 +62,13 @@ export async function showCodeViewer(
               ? ` ↑↓ scroll ${offset + 1}/${codeLines.length} · Esc close `
               : " Esc close ";
 
-          if (borderStyle === "none") {
+          if (effectiveBorderStyle === "none") {
+            const padX = surfaceActive ? (getHostOutputPadding() ?? 0) + 1 : 0;
+            const inset = " ".repeat(padX);
+            const innerWidth = Math.max(1, safeWidth - 2 * padX);
             const paintLine = (text: string) =>
               paintSurfaceLine(
-                text,
+                inset + truncateToWidth(text, innerWidth, ""),
                 safeWidth,
                 getTheme(),
                 overlaySurface,
@@ -75,7 +83,7 @@ export async function showCodeViewer(
             return [top, ...content, bottom];
           }
 
-          const chars = getBorderChars(borderStyle);
+          const chars = getBorderChars(effectiveBorderStyle);
           const codeWidth = Math.max(1, safeWidth - 4);
           const header = truncateToWidth(
             ` ${titlePaint(title)} `,

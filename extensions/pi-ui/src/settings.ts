@@ -5,12 +5,18 @@ import {
   type SettingsListTheme,
   type TUI,
   type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import { isPermissionError } from "@hollowheap/core/config";
 import { errorMessage } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
-import { canOverlay, hostUi, notify, showDialog } from "./host.js";
+import {
+  type FrameOptions,
+  boxFrame,
+  getFrameInnerWidth,
+} from "@hollowheap/tui/frame";
+import { TabbedContent } from "@hollowheap/tui/tabs";
+import { canOverlay, notify, showDialog } from "./host.js";
 
 export function settingsListTheme(
   theme: Theme,
@@ -36,7 +42,7 @@ export interface SettingsDialogOptions {
   title: string;
   items: readonly SettingItem[];
   listHeight?: number;
-  header?: (list: SettingsList) => string[];
+  header?: (list: SettingsList, theme: Theme) => string[];
   onChange: (id: string, value: string, list: SettingsList, tui: TUI) => void;
   onClose?: () => void;
   mouseOffsetY?: number;
@@ -44,15 +50,37 @@ export interface SettingsDialogOptions {
   colored?: () => boolean;
 }
 
-export async function showSettingsDialog(
-  options: SettingsDialogOptions,
-): Promise<void> {
-  const { ctx } = options;
-  if (ctx.mode !== "tui" || typeof hostUi(ctx)?.custom !== "function") return;
+function frameOffsetX(width: number, frameOpts?: FrameOptions): number {
+  const innerWidth = getFrameInnerWidth(
+    width,
+    frameOpts?.borderStyle,
+    frameOpts?.paddingX,
+    frameOpts?.overlaySurface,
+    frameOpts?.colored,
+  );
+  return Math.max(0, Math.floor((Math.max(4, width) - innerWidth) / 2));
+}
 
+async function mountSettingsOverlay(options: {
+  ctx: ExtensionContext;
+  promptLock?: boolean;
+  onClose?: () => void;
+  maxHeight: `${number}%`;
+  build: (
+    tui: TUI,
+    theme: Theme,
+    finish: () => void,
+  ) => {
+    render: (width: number) => string[];
+    handleInput: (data: string) => void;
+    handleMouse?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
+    invalidate: () => void;
+  };
+}): Promise<void> {
+  if (!canOverlay(options.ctx)) return;
   const mount = () =>
     showDialog<void>(
-      ctx,
+      options.ctx,
       (tui, theme, _keybindings, done) => {
         let settled = false;
         const finish = () => {
@@ -61,51 +89,170 @@ export async function showSettingsDialog(
           options.onClose?.();
           done();
         };
-        const list = new SettingsList(
-          [...options.items],
-          options.listHeight ?? 8,
-          settingsListTheme(theme, options.colored),
-          (id, value) => {
-            options.onChange(id, value, list, tui);
-            tui.requestRender();
-          },
-          finish,
-          { enableSearch: true },
-        );
-
+        const content = options.build(tui, theme, finish);
         return {
-          render(width: number): string[] {
-            const lines = [
-              ...(options.header?.(list) ?? []),
-              ...list.render(getFrameInnerWidth(width)),
-            ];
-            return boxFrame(lines, width, theme, options.title);
-          },
-          handleInput(data: string): void {
-            list.handleInput(data);
-          },
-          handleMouse(event: TuiMouseEvent) {
-            if (options.mouseOffsetY === undefined) return undefined;
-            return list.handleMouse({
-              ...event,
-              x: event.x - 2,
-              y: event.y - options.mouseOffsetY,
-            });
-          },
-          invalidate(): void {
-            list.invalidate();
-          },
+          ...content,
           dispose: finish,
         };
       },
       {
         overlay: true,
-        overlayOptions: { width: "70%", maxHeight: "70%", margin: 1 },
+        overlayOptions: {
+          width: "70%",
+          maxHeight: options.maxHeight,
+          margin: 1,
+        },
       },
     );
 
   if (options.promptLock) await withPromptLock(mount);
   else await mount();
+}
+
+export async function showSettingsDialog(
+  options: SettingsDialogOptions,
+): Promise<void> {
+  await mountSettingsOverlay({
+    ctx: options.ctx,
+    promptLock: options.promptLock,
+    onClose: options.onClose,
+    maxHeight: "70%",
+    build: (tui, theme, finish) => {
+      const list = new SettingsList(
+        [...options.items],
+        options.listHeight ?? 8,
+        settingsListTheme(theme, options.colored),
+        (id, value) => {
+          options.onChange(id, value, list, tui);
+          tui.requestRender();
+        },
+        finish,
+        { enableSearch: true },
+      );
+      let offsetX = 2;
+
+      return {
+        render(width: number): string[] {
+          offsetX = frameOffsetX(width);
+          const lines = [
+            ...(options.header?.(list, theme) ?? []),
+            ...list.render(getFrameInnerWidth(width)),
+          ];
+          return boxFrame(lines, width, theme, options.title);
+        },
+        handleInput(data: string): void {
+          list.handleInput(data);
+        },
+        handleMouse(event: TuiMouseEvent) {
+          if (options.mouseOffsetY === undefined) return undefined;
+          const localY = event.y - options.mouseOffsetY;
+          if (localY < 0) return undefined;
+          return list.handleMouse({
+            ...event,
+            x: event.x - offsetX,
+            y: localY,
+          });
+        },
+        invalidate(): void {
+          list.invalidate();
+        },
+      };
+    },
+  });
+}
+
+export interface SettingsTab {
+  label: string;
+  items: readonly SettingItem[];
+}
+
+export interface TabbedSettingsDialogOptions {
+  ctx: ExtensionContext;
+  title: string;
+  tabs: readonly SettingsTab[];
+  listHeight?: number;
+  onChange: (id: string, value: string, list: SettingsList, tui: TUI) => void;
+  onClose?: () => void;
+  mouseOffsetY?: number;
+  promptLock?: boolean;
+  colored?: () => boolean;
+  frameOptions?: () => FrameOptions | undefined;
+}
+
+export async function showTabbedSettingsDialog(
+  options: TabbedSettingsDialogOptions,
+): Promise<void> {
+  await mountSettingsOverlay({
+    ctx: options.ctx,
+    promptLock: options.promptLock,
+    onClose: options.onClose,
+    maxHeight: "75%",
+    build: (tui, theme, finish) => {
+      const isColored = options.colored ?? (() => true);
+      const listTheme = settingsListTheme(theme, isColored);
+      const tabLists = options.tabs.map(
+        (tab) =>
+          new SettingsList(
+            [...tab.items],
+            options.listHeight ?? 6,
+            listTheme,
+            (id, value) => {
+              options.onChange(id, value, tabLists[tabs.activeIndex], tui);
+              tui.requestRender();
+            },
+            finish,
+            { enableSearch: true },
+          ),
+      );
+      const tabs = new TabbedContent(
+        options.tabs.map((tab, index) => ({
+          label: tab.label,
+          content: tabLists[index],
+        })),
+        (label, active) =>
+          isColored() ? theme.fg(active ? "accent" : "muted", label) : label,
+      );
+      const offsetY = options.mouseOffsetY ?? (tabLists.length > 1 ? 4 : 1);
+      let offsetX = 2;
+
+      return {
+        render(width: number): string[] {
+          const frameOpts = options.frameOptions?.();
+          offsetX = frameOffsetX(width, frameOpts);
+          const innerWidth = getFrameInnerWidth(
+            width,
+            frameOpts?.borderStyle,
+            frameOpts?.paddingX,
+            frameOpts?.overlaySurface,
+            frameOpts?.colored,
+          );
+          return boxFrame(
+            tabs.render(innerWidth),
+            width,
+            theme,
+            options.title,
+            frameOpts,
+          );
+        },
+        handleInput(data: string): void {
+          tabs.handleInput(data);
+        },
+        handleMouse(event: TuiMouseEvent) {
+          if (event.y < offsetY) return undefined;
+          const activeList = tabLists[tabs.activeIndex];
+          if (!activeList) return undefined;
+          return activeList.handleMouse({
+            ...event,
+            x: event.x - offsetX,
+            y: event.y - offsetY,
+          });
+        },
+        invalidate(): void {
+          tabs.invalidate();
+        },
+      };
+    },
+  });
 }
 
 export interface SettingsCommandOptions {

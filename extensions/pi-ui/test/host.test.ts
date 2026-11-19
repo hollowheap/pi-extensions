@@ -59,6 +59,18 @@ describe("shared prompt overlays", () => {
     expect(ui.setEditorComponent).not.toHaveBeenCalled();
   });
 
+  it("mounts inline in the host prompt slot when overlay is false", async () => {
+    const { ctx, ui, component } = setup();
+    const choice = selectDialog(ctx as never, "Select", ["One", "Two"], {
+      overlay: false,
+    });
+    expect(ui.custom).toHaveBeenCalledWith(expect.any(Function), {
+      overlay: false,
+    });
+    component()?.handleInput("\r");
+    await expect(choice).resolves.toBe("One");
+  });
+
   it("keeps confirmation closed on abort and defaults to No", async () => {
     const { ctx, component } = setup();
     const abort = new AbortController();
@@ -94,55 +106,4 @@ describe("shared prompt overlays", () => {
     );
     expect(ui.custom).not.toHaveBeenCalled();
   });
-});
-
-it("switches prompt focus on Shift navigation and releases its listener on close", async () => {
-  const { showDialog } = await import("../src/host.js");
-  let hidden = false;
-  let finish: (() => void) | undefined;
-  let onInput: ((data: string) => unknown) | undefined;
-  const unsubscribe = vi.fn();
-  const handle = {
-    isHidden: () => hidden,
-    setHidden: vi.fn((next: boolean) => {
-      hidden = next;
-    }),
-    focus: vi.fn(),
-    unfocus: vi.fn(),
-  };
-  const ctx = {
-    ui: {
-      onTerminalInput: (handler: (data: string) => unknown) => {
-        onInput = handler;
-        return unsubscribe;
-      },
-      custom: (
-        _factory: unknown,
-        options: { onHandle: (value: typeof handle) => void },
-      ) => {
-        options.onHandle(handle);
-        return new Promise<void>((resolve) => {
-          finish = resolve;
-        });
-      },
-    },
-  };
-  const result = showDialog<void>(
-    ctx as never,
-    () => ({ render: () => [], invalidate() {} }),
-    {
-      overlay: true,
-      switchPrompt: true,
-    },
-  );
-  expect(onInput?.("H")).toEqual({ consume: true });
-  expect(handle.unfocus).toHaveBeenCalledOnce();
-  expect(hidden).toBe(true);
-  expect(onInput?.("\x1b[1;2C")).toEqual({ consume: true });
-  expect(handle.focus).toHaveBeenCalledOnce();
-  expect(hidden).toBe(false);
-  expect(onInput?.("draft input")).toBeUndefined();
-  finish?.();
-  await result;
-  expect(unsubscribe).toHaveBeenCalledOnce();
 });

@@ -1,7 +1,7 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
 import { afterEach, describe, expect, it } from "vitest";
-import { boxFrame } from "../src/frame.js";
+import { boxFrame, getFrameInnerWidth } from "../src/frame.js";
 import {
   bindHostOutputPadding,
   resetActiveTuiConfig,
@@ -43,27 +43,47 @@ describe("boxFrame", () => {
     expect(dashedLines[1]?.startsWith("┊")).toBe(true);
   });
 
-  it("handles none border cleanly with title row and width padding", () => {
+  it("handles none border and surface styles with borderless host padding + 1", () => {
     const lines = boxFrame(["alpha", "beta"], 16, mockTheme, "Header", {
       borderStyle: "none",
       overlaySurface: "card",
     });
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe("[bg:userMessageBg]Header          [/bg]");
-    expect(lines[1]).toBe("[bg:userMessageBg]alpha           [/bg]");
-    expect(lines[2]).toBe("[bg:userMessageBg]beta            [/bg]");
+    expect(lines[0]).toBe("[bg:userMessageBg] Header         [/bg]");
+    expect(lines[1]).toBe("[bg:userMessageBg] alpha          [/bg]");
+    expect(lines[2]).toBe("[bg:userMessageBg] beta           [/bg]");
   });
 
-  it("inherits borderStyle and overlaySurface from active TUI config", () => {
+  it("neglects borders and increases horizontal padding by 1 when surface style is active", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "sharp",
       overlaySurface: "contrast",
     });
     const lines = boxFrame(["row"], 12, mockTheme);
-    expect(lines[0]).toContain("[bg:selectedBg]┌");
-    expect(lines[1]).toContain("[bg:selectedBg]│ row");
-    expect(lines[2]).toContain("[bg:selectedBg]└");
+    expect(lines).toEqual(["[bg:selectedBg] row        [/bg]"]);
+    expect(getFrameInnerWidth(12)).toBe(10);
+
+    const restore = bindHostOutputPadding(() => 1);
+    try {
+      expect(getFrameInnerWidth(12)).toBe(8);
+      expect(boxFrame(["row"], 12, mockTheme)).toEqual([
+        "[bg:selectedBg]  row       [/bg]",
+      ]);
+    } finally {
+      restore();
+    }
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "sharp",
+      overlaySurface: "contrast",
+      colored: false,
+    });
+    const uncolored = boxFrame(["row"], 12, mockTheme);
+    expect(uncolored[0]).toBe("┌──────────┐");
+    expect(uncolored[1]).toBe("│ row      │");
+    expect(uncolored[2]).toBe("└──────────┘");
   });
 });
 

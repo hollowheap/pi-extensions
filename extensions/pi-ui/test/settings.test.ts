@@ -3,6 +3,7 @@ import {
   notifyDiagnostics,
   runSettingsCommand,
   settingsListTheme,
+  showTabbedSettingsDialog,
 } from "../src/settings.js";
 
 const theme = {
@@ -247,5 +248,122 @@ describe("runSettingsCommand", () => {
       "pi-subagents: failed to save settings: EACCES write failed",
       "error",
     );
+  });
+});
+
+describe("showTabbedSettingsDialog", () => {
+  it("switches tabs, forwards handleMouse to active list, and notifies onChange/onClose", async () => {
+    let component:
+      | {
+          render(width: number): string[];
+          handleInput(data: string): void;
+          handleMouse(event: {
+            kind: "press" | "release" | "move";
+            button: "left" | "middle" | "right" | "wheelUp" | "wheelDown";
+            x: number;
+            y: number;
+          }): boolean | undefined;
+        }
+      | undefined;
+    const requestRender = vi.fn();
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keybindings: unknown,
+              done: () => void,
+            ) => typeof component,
+          ) =>
+            new Promise<void>((resolve) => {
+              component = factory(
+                { requestRender },
+                { fg: (_t: string, v: string) => v, bold: (v: string) => v },
+                {},
+                resolve,
+              );
+            }),
+        ),
+      },
+    };
+    const onChange = vi.fn();
+    const onClose = vi.fn();
+
+    const pending = showTabbedSettingsDialog({
+      ctx: ctx as never,
+      title: "Tabbed settings",
+      tabs: [
+        {
+          label: "First",
+          items: [
+            {
+              id: "first-opt",
+              label: "First option",
+              description: "First desc",
+              currentValue: "a",
+              values: ["a", "b"],
+            },
+          ],
+        },
+        {
+          label: "Second",
+          items: [
+            {
+              id: "second-opt",
+              label: "Second option",
+              description: "Second desc",
+              currentValue: "x",
+              values: ["x", "y"],
+            },
+          ],
+        },
+      ],
+      onChange,
+      onClose,
+    });
+
+    await vi.waitFor(() => expect(component).toBeDefined());
+    expect(component?.render(60).join("\n")).toContain("[First]");
+
+    component?.handleInput("\t");
+    expect(component?.render(60).join("\n")).toContain("[Second]");
+    component?.handleInput("\r");
+    expect(onChange).toHaveBeenCalledWith(
+      "second-opt",
+      "y",
+      expect.anything(),
+      expect.anything(),
+    );
+
+    expect(() =>
+      component?.handleMouse({
+        kind: "press",
+        button: "left",
+        x: 4,
+        y: 5,
+      }),
+    ).not.toThrow();
+
+    // Tab header clicks (y < offsetY) are ignored rather than forwarding negative y
+    expect(
+      component?.handleMouse({
+        type: "press",
+        button: "left",
+        x: 4,
+        y: 1,
+        screenX: 4,
+        screenY: 1,
+        width: 60,
+        height: 20,
+      } as never),
+    ).toBeUndefined();
+
+    component?.handleInput("\x1b");
+    await pending;
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

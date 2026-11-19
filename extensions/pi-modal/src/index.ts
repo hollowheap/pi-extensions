@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   getAgentDir,
+  parseSkillBlock,
 } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 import { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
@@ -10,7 +11,6 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
-import { showCodeViewer } from "@hollowheap/pi-ui/viewer";
 import { prefixCompletions } from "@hollowheap/tui/autocomplete";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import {
@@ -36,9 +36,21 @@ import { loadModalConfig } from "./settings.js";
 
 import { panelRenderConfig, wrapToolRenderer } from "./panel.js";
 import { formatTuiStatus, showTuiSettings } from "./settings.js";
-import { installSkillPanel } from "./skill-panel.js";
+import {
+  installBashPanel,
+  installBranchSummaryPanel,
+  installCompactionSummaryPanel,
+  installCustomMessagePanel,
+  installSkillPanel,
+  installUserMessagePanel,
+  markSteeredUserMessage,
+} from "./skill-panel.js";
 import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
-import { formatVimKeys } from "./vimkeys.js";
+import {
+  formatVimHotkeysMarkdown,
+  formatVimKeys,
+  installHotkeysPanel,
+} from "./vimkeys.js";
 
 export { ModalEditor } from "./editor.js";
 export * from "./keymap.js";
@@ -46,6 +58,8 @@ export { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 export * from "./skills.js";
 export * from "./panel.js";
 export * from "./settings.js";
+export * from "./skill-panel.js";
+export { formatVimHotkeysMarkdown, formatVimKeys, installHotkeysPanel };
 
 const LOADER_INDICATOR_PATCH = Symbol.for(
   "@hollowheap/pi-modal/loader-indicator-patch",
@@ -112,9 +126,22 @@ export default function (pi: ExtensionAPI): void {
     | { name: string; input: Record<string, unknown> }
     | undefined;
   let activeCtx: ExtensionContext | undefined;
-  installSkillPanel(() => activeCtx && hostUi(activeCtx)?.theme);
   let releasePadding: (() => void) | undefined;
   let activeEditor: ModalEditor | undefined;
+  const getTheme = () => activeCtx && hostUi(activeCtx)?.theme;
+  installSkillPanel(getTheme);
+  installBashPanel(getTheme);
+  installBranchSummaryPanel(getTheme);
+  installCompactionSummaryPanel(getTheme);
+  installCustomMessagePanel(getTheme);
+  installUserMessagePanel(
+    getTheme,
+    () =>
+      activeEditor?.getPromptChar() ??
+      loadModalConfig(getAgentDir()).promptChar ??
+      "❯",
+  );
+  installHotkeysPanel(getTheme, () => loadModalConfig(getAgentDir()));
   let activeTui:
     | {
         requestRender?: (force?: boolean) => void;
@@ -228,7 +255,7 @@ export default function (pi: ExtensionAPI): void {
     pi.registerMarkdownTransformer(transformMarkdown);
   }
 
-  const TUI_SUBCOMMANDS = ["settings", "config", "status"] as const;
+  const TUI_SUBCOMMANDS = ["settings", "status"] as const;
   pi.registerCommand("ui", {
     description:
       "Inspect or configure UI appearance, output, and tool settings",
@@ -247,7 +274,7 @@ export default function (pi: ExtensionAPI): void {
         }
         return;
       }
-      if (sub === "" || sub === "settings" || sub === "config") {
+      if (sub === "" || sub === "settings") {
         if (!canOverlay(ctx)) {
           if (ctx.hasUI) {
             notify(
@@ -271,7 +298,7 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
       if (ctx.hasUI) {
-        notify(ctx, "Usage: /ui [settings|config|status]", "error");
+        notify(ctx, "Usage: /ui [settings|status]", "error");
       }
     },
   });
@@ -295,20 +322,17 @@ export default function (pi: ExtensionAPI): void {
     publishModalSnapshot(ctx);
   };
 
-  const showVimKeys = async (ctx: ExtensionContext) => {
-    const config = loadModalConfig(getAgentDir(), (message) =>
-      notify(ctx, `pi-modal: ${message}`, "warning"),
-    );
-    await showCodeViewer(ctx, "pi-modal keybinds", formatVimKeys(config));
-  };
-
-  pi.registerShortcut("ctrl+shift+k", {
-    description: "Show vim mode keybinds",
-    handler: showVimKeys,
-  });
-
   pi.on("input", (event, _ctx) => {
-    return handleSkillInput(event, pi);
+    const res = handleSkillInput(event, pi);
+    if (
+      (event as { streamingBehavior?: unknown }).streamingBehavior === "steer"
+    ) {
+      const targetText =
+        res && res.action === "transform" ? res.text : event.text;
+      const skillBlock = parseSkillBlock(targetText);
+      markSteeredUserMessage(skillBlock?.userMessage ?? targetText);
+    }
+    return res;
   });
 
   pi.on("session_tree", (_event, ctx) => {

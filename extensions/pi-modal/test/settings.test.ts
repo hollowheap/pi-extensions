@@ -99,7 +99,7 @@ describe("showTuiSettings", () => {
     expect(status).toContain("panel.enabled=true");
   });
 
-  it("cycles settings live, triggers full repaint, updates active state, and persists tui.json", async () => {
+  it("cycles settings live, triggers repaint, updates active state, and persists tui.json", async () => {
     const dir = makeTempDir();
     const env = createSettingsContext();
     const onChange = vi.fn();
@@ -107,26 +107,30 @@ describe("showTuiSettings", () => {
     const pending = showTuiSettings(env.ctx as never, dir, onChange);
     await vi.waitFor(() => expect(env.component()).toBeDefined());
 
-    const rendered = env.component()?.render(80).join("\n") ?? "";
-    expect(rendered).toContain("TUI settings");
-    expect(rendered).toContain("Border style");
-    expect(rendered).toContain("Colored UI");
-    expect(rendered).toContain("Loading indicator");
+    try {
+      const rendered = env.component()?.render(80).join("\n") ?? "";
+      expect(rendered).toContain("TUI settings");
+      expect(rendered).toContain("Border style");
+      expect(rendered).toContain("Overlay surface");
+      expect(rendered).toContain("Colored UI");
+      expect(rendered).toContain("Mode indicator");
 
-    // Cycle borderStyle from "rounded" -> "sharp"
-    env.component()?.handleInput("\r");
-    expect(getActiveTuiConfig().borderStyle).toBe("sharp");
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(env.requestRender).toHaveBeenCalledWith(true);
+      // Cycle borderStyle from "rounded" -> "sharp"
+      env.component()?.handleInput("\r");
+      expect(getActiveTuiConfig().borderStyle).toBe("sharp");
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(env.requestRender).toHaveBeenCalledTimes(1);
+      expect(env.requestRender).toHaveBeenCalledWith();
 
-    const saved = JSON.parse(readFileSync(getTuiConfigPath(dir), "utf8")) as {
-      borderStyle: string;
-    };
-    expect(saved.borderStyle).toBe("sharp");
-
-    env.component()?.handleInput("\x1b");
-    expect(env.requestRender).toHaveBeenLastCalledWith(true);
-    await pending;
+      const saved = JSON.parse(readFileSync(getTuiConfigPath(dir), "utf8")) as {
+        borderStyle: string;
+      };
+      expect(saved.borderStyle).toBe("sharp");
+    } finally {
+      env.component()?.handleInput("\x1b");
+      await pending;
+    }
+    expect(env.requestRender).toHaveBeenCalledTimes(1);
   });
 
   it("keeps separate tab contents and persists all Tool verbosity levels", async () => {
@@ -141,23 +145,21 @@ describe("showTuiSettings", () => {
     try {
       const appearance = component.render(80).join("\n");
       expect(appearance).toContain("[Appearance]");
+      expect(appearance).toContain("Mode indicator");
       expect(appearance).not.toContain("Thinking verbosity");
       expect(appearance).not.toContain("Tool verbosity");
 
       component.handleInput("\t");
-      const output = component.render(80).join("\n");
-      expect(output).toContain("[Output]");
-      expect(output).toContain("Thinking verbosity");
-      expect(output).not.toContain("Border style");
-
-      component.handleInput("\t");
-      const tools = component.render(80).join("\n");
-      expect(tools).toContain("[Tools]");
-      expect(tools).toMatch(/Tool verbosity\s+medium/);
+      const verbosity = component.render(80).join("\n");
+      expect(verbosity).toContain("[Verbosity]");
+      expect(verbosity).toContain("Thinking verbosity");
+      expect(verbosity).toMatch(/Tool verbosity\s+medium/);
+      expect(verbosity).not.toContain("Border style");
       expect(
         component.render(22).every((line) => visibleWidth(line) <= 22),
       ).toBe(true);
 
+      component.handleInput("\x1b[B");
       for (const level of ["high", "low", "medium"]) {
         component.handleInput("\r");
         expect(getActiveTuiConfig().toolVerbosity).toBe(level);
@@ -173,9 +175,15 @@ describe("showTuiSettings", () => {
       expect(env.invalidate).toHaveBeenCalledTimes(3);
 
       component.handleInput("\t");
-      expect(component.render(80).join("\n")).toContain("[Appearance]");
+      const loading = component.render(80).join("\n");
+      expect(loading).toContain("[Loading]");
+      expect(loading).toContain("Loading indicator");
+      expect(loading).toContain("Panel renderer");
+
       component.handleInput("\x1b[Z");
-      expect(component.render(80).join("\n")).toContain("[Tools]");
+      expect(component.render(80).join("\n")).toContain("[Verbosity]");
+      component.handleInput("\x1b[Z");
+      expect(component.render(80).join("\n")).toContain("[Appearance]");
     } finally {
       component.handleInput("\x1b");
       await pending;

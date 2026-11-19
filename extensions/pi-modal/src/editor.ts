@@ -17,12 +17,22 @@ import {
 import { errorMessage } from "@hollowheap/core/format";
 
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import {
+  DEFAULT_TUI_CONFIG,
+  type OverlaySurfaceMode,
+  type TuiConfig,
+} from "@hollowheap/core/tui-config";
+import {
+  getActiveTuiConfig,
+  getHostOutputPadding,
+} from "@hollowheap/tui/state";
+import { paintSurfaceLine } from "@hollowheap/tui/surface";
 import {
   type EditorMode,
   type ModalConfig,
   resolveEffectiveKeymaps,
 } from "./keymap.js";
+import { panelRenderConfig } from "./panel.js";
 
 function formatEditorModeBadge(mode: EditorMode, isBash: boolean): string {
   if (isBash) return "BASH";
@@ -65,7 +75,19 @@ export class ModalEditor extends CustomEditor {
   private pendingInsertChord = "";
   private pendingNormalChord = "";
   private lastBottomBorder: string | undefined;
-  private fullRenderWidth: number | undefined;
+  private renderSnapshot:
+    | {
+        width: number;
+        config: TuiConfig;
+        hostPad: number;
+        surface: OverlaySurfaceMode;
+        surfaceActive: boolean;
+        borderStyle: BorderStyle;
+        promptPrefix: string;
+        promptWidth: number;
+        borderEnabled: boolean;
+      }
+    | undefined;
   private modeTheme: Theme | undefined;
 
   constructor(
@@ -675,8 +697,10 @@ export class ModalEditor extends CustomEditor {
     }
   }
 
-  private borderPaint(): (text: string) => string {
-    if (!getActiveTuiConfig().colored) {
+  private borderPaint(
+    colored = getActiveTuiConfig().colored,
+  ): (text: string) => string {
+    if (!colored) {
       return (text) => text;
     }
     const appTheme = this.modeTheme;
@@ -696,8 +720,57 @@ export class ModalEditor extends CustomEditor {
     }
   }
 
-  private getEffectiveBorderStyle(): BorderStyle {
-    return this.explicitBorderStyle ?? getActiveTuiConfig().borderStyle;
+  private isSurfaceActive(
+    surface: OverlaySurfaceMode,
+    colored = getActiveTuiConfig().colored,
+  ): boolean {
+    return (
+      surface !== "transparent" &&
+      colored &&
+      typeof this.modeTheme?.bg === "function"
+    );
+  }
+
+  private getRenderSnapshot(targetWidth: number) {
+    if (this.renderSnapshot && this.renderSnapshot.width === targetWidth) {
+      return this.renderSnapshot;
+    }
+    const config = getActiveTuiConfig();
+    const hostPad = getHostOutputPadding() ?? 0;
+    const panel = panelRenderConfig(config);
+    const surface: OverlaySurfaceMode =
+      panel.mode === "background" &&
+      (!panel.surface || panel.surface === "transparent")
+        ? "surface"
+        : (panel.surface ?? config.overlaySurface);
+    const surfaceActive = this.isSurfaceActive(surface, config.colored);
+    const sharedBorderStyle: BorderStyle =
+      config.panel.mode === "background"
+        ? "none"
+        : config.panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle ||
+            config.panel.style !== undefined
+          ? config.panel.borderStyle
+          : config.borderStyle;
+    const borderStyle = surfaceActive
+      ? "none"
+      : (this.explicitBorderStyle ?? sharedBorderStyle);
+    const promptPrefix = `${this.promptChar} `;
+    const promptWidth = visibleWidth(promptPrefix);
+    const borderEnabled =
+      !surfaceActive &&
+      borderStyle !== "none" &&
+      targetWidth >= promptWidth + 2;
+    return {
+      width: targetWidth,
+      config,
+      hostPad,
+      surface,
+      surfaceActive,
+      borderStyle,
+      promptPrefix,
+      promptWidth,
+      borderEnabled,
+    };
   }
 
   /** Clear constructor overrides so live `/ui` settings take effect immediately. */
@@ -711,14 +784,17 @@ export class ModalEditor extends CustomEditor {
     width: number,
     hiddenLineCount: number,
   ): string {
-    const targetWidth = this.fullRenderWidth ?? width;
-    const borderStyle = this.getEffectiveBorderStyle();
-    const colored = getActiveTuiConfig().colored;
-    if (borderStyle === "none" || targetWidth < 2) {
+    const targetWidth = this.renderSnapshot?.width ?? width;
+    const { config, borderStyle, borderEnabled } =
+      this.getRenderSnapshot(targetWidth);
+    if (!borderEnabled) {
       const raw = super.renderTopBorder(targetWidth, hiddenLineCount);
-      return (colored ? raw : stripTerminalSequences(raw)).replaceAll("─", " ");
+      return (config.colored ? raw : stripTerminalSequences(raw)).replaceAll(
+        "─",
+        " ",
+      );
     }
-    const paint = this.borderPaint();
+    const paint = this.borderPaint(config.colored);
     const borderChars = getBorderChars(borderStyle);
     const innerWidth = targetWidth - 2;
     const inner =
@@ -736,20 +812,25 @@ export class ModalEditor extends CustomEditor {
     width: number,
     hiddenLineCount: number,
   ): string {
-    const targetWidth = this.fullRenderWidth ?? width;
-    const borderStyle = this.getEffectiveBorderStyle();
+    const targetWidth = this.renderSnapshot?.width ?? width;
+    const { config, hostPad, surfaceActive, borderStyle, borderEnabled } =
+      this.getRenderSnapshot(targetWidth);
     const isBash = this.getText().trimStart().startsWith("!");
     const badge = formatEditorModeBadge(this.mode, isBash);
     const label = ` ${badge} `;
-    if (borderStyle === "none" || targetWidth < 2) {
+    if (!borderEnabled) {
       const base = stripTerminalSequences(
         super.renderBottomBorder(targetWidth, hiddenLineCount),
       ).replaceAll("─", " ");
-      const line = fitRightLabel(base, targetWidth, label);
+      const pad = resolveBorderlessPad(targetWidth - 1, hostPad, surfaceActive);
+      const rightInset = Math.max(0, pad - 1);
+      const line =
+        fitRightLabel(base, Math.max(0, targetWidth - rightInset), label) +
+        " ".repeat(rightInset);
       this.lastBottomBorder = line;
       return line;
     }
-    const paint = this.borderPaint();
+    const paint = this.borderPaint(config.colored);
     const borderChars = getBorderChars(borderStyle);
     const innerWidth = targetWidth - 2;
     const inner =
@@ -769,15 +850,27 @@ export class ModalEditor extends CustomEditor {
   }
 
   override render(width: number): string[] {
-    const borderStyle = this.getEffectiveBorderStyle();
-    const paint = this.borderPaint();
-    const promptPrefix = `${this.promptChar} `;
-    const promptWidth = visibleWidth(promptPrefix);
-    const borderEnabled = borderStyle !== "none" && width >= promptWidth + 2;
+    const snapshot = this.getRenderSnapshot(width);
+    const {
+      config,
+      hostPad,
+      surface,
+      surfaceActive,
+      borderStyle,
+      promptPrefix,
+      promptWidth,
+      borderEnabled,
+    } = snapshot;
+    const { colored } = config;
+    const paint = this.borderPaint(colored);
     const borderChars = borderEnabled ? getBorderChars(borderStyle) : null;
+    const borderRightPad = borderEnabled && width >= promptWidth + 3 ? 1 : 0;
+    const borderlessPad = !borderEnabled
+      ? resolveBorderlessPad(width - promptWidth - 1, hostPad, surfaceActive)
+      : 0;
     const contentWidth = borderEnabled
-      ? Math.max(1, width - promptWidth - 1)
-      : Math.max(1, width - promptWidth);
+      ? Math.max(1, width - promptWidth - 1 - borderRightPad)
+      : Math.max(1, width - promptWidth - 2 * borderlessPad);
     const paddingX = Math.min(
       this.getPaddingX(),
       Math.max(0, Math.floor((width - 1) / 2)),
@@ -787,11 +880,11 @@ export class ModalEditor extends CustomEditor {
       contentWidth + paddingX * 2 + (paddingX === 0 ? 1 : 0),
     );
     let lines: string[] = [];
-    this.fullRenderWidth = width;
+    this.renderSnapshot = snapshot;
     try {
       lines = super.render(hostWidth);
     } finally {
-      this.fullRenderWidth = undefined;
+      this.renderSnapshot = undefined;
     }
     if (lines.length === 0) return lines;
 
@@ -844,18 +937,36 @@ export class ModalEditor extends CustomEditor {
 
     if (borderEnabled && borderChars) {
       const vertical = paint(borderChars.vertical);
+      const rightPad = " ".repeat(borderRightPad);
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
         const gutter = idx === firstContentIdx ? promptPrefix : `${vertical} `;
-        lines[idx] = gutter + (lines[idx] ?? "") + vertical;
+        lines[idx] = gutter + (lines[idx] ?? "") + rightPad + vertical;
       }
     } else {
+      const edgePad = " ".repeat(borderlessPad);
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
         const gutter = idx === firstContentIdx ? promptPrefix : indent;
-        lines[idx] = gutter + (lines[idx] ?? "");
+        const row = edgePad + gutter + (lines[idx] ?? "") + edgePad;
+        lines[idx] =
+          width <= promptWidth ? truncateToWidth(row, width, "") : row;
       }
+    }
+    if (surfaceActive) {
+      return lines.map((row) =>
+        paintSurfaceLine(row, width, this.modeTheme, surface, colored),
+      );
     }
     return lines;
   }
+}
+
+function resolveBorderlessPad(
+  availableWidth: number,
+  hostPad: number,
+  surfaceActive: boolean,
+): number {
+  const desired = surfaceActive ? hostPad + 1 : hostPad;
+  return Math.min(desired, Math.max(0, Math.floor(availableWidth / 2)));
 }
 
 function printableKey(data: string): string | undefined {

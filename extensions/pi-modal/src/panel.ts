@@ -10,29 +10,32 @@ import { toolOutputDisplay } from "@hollowheap/tui/tool-output";
 type ToolRenderContext = Parameters<
   NonNullable<ToolRenderers["renderCall"]>
 >[2];
-import {
-  type Color,
-  type Component,
-  type TerminalColorMode,
-  foregroundAnsi,
-  indexedColor,
-  truncateToWidth,
-} from "@earendil-works/pi-tui";
-import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
+import type { Component } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import type {
   CustomToolVerb,
   LoadingIndicatorStyle,
+  OverlaySurfaceMode,
   PanelConfig,
-  PanelRenderMode,
   ToolVerbPack,
   ToolVerbosity,
   TuiConfig,
 } from "@hollowheap/core/tui-config";
+import {
+  type PanelStateToken,
+  framePanelLines,
+  resolvePanelFrameLayout,
+} from "@hollowheap/tui/frame";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/tui/state";
-import { paintSurfaceLine, stripBackgroundSgr } from "@hollowheap/tui/surface";
+export {
+  type PanelFrameLayout,
+  type PanelStateToken,
+  framePanelLines,
+  getPanelInnerWidth,
+  isPanelSurfaceActive,
+  resolvePanelFrameLayout,
+} from "@hollowheap/tui/frame";
 export { stripBackgroundSgr } from "@hollowheap/tui/surface";
 
 const FALLBACK_SPINNER_FRAMES = [
@@ -65,6 +68,8 @@ const VERB_PACKS: Readonly<
     web_search: { active: "Searching web...", settled: "Searched web" },
     fetch_url: { active: "Fetching...", settled: "Fetched" },
     codemode: { active: "Executing...", settled: "Executed" },
+    prompt: { active: "Prompting...", settled: "Prompted" },
+    steer: { active: "Steering...", settled: "Steered" },
   },
   terse: {
     read: { active: "read...", settled: "read" },
@@ -77,6 +82,8 @@ const VERB_PACKS: Readonly<
     web_search: { active: "search...", settled: "search" },
     fetch_url: { active: "fetch...", settled: "fetch" },
     codemode: { active: "code...", settled: "code" },
+    prompt: { active: "prompt...", settled: "prompt" },
+    steer: { active: "steer...", settled: "steer" },
   },
   playful: {
     read: { active: "Perusing...", settled: "Perused" },
@@ -89,6 +96,8 @@ const VERB_PACKS: Readonly<
     web_search: { active: "Foraging...", settled: "Foraged" },
     fetch_url: { active: "Reeling in...", settled: "Reeled in" },
     codemode: { active: "Weaving...", settled: "Woven" },
+    prompt: { active: "Asking...", settled: "Asked" },
+    steer: { active: "Nudging...", settled: "Nudged" },
   },
 };
 
@@ -222,6 +231,18 @@ function getConfigCacheKey(
   return `${JSON.stringify(cfg)}:${ui.colored}:${ui.loadingIndicator}`;
 }
 
+function isResultError(result: {
+  isError?: boolean;
+  details?: unknown;
+}): boolean {
+  if (result.isError) return true;
+  return (
+    typeof result.details === "object" &&
+    result.details !== null &&
+    typeof (result.details as { error?: unknown }).error === "string"
+  );
+}
+
 const PANEL_STATES = new WeakMap<object, PanelState>();
 
 function getPanelState(context: ToolRenderContext | undefined): PanelState {
@@ -297,159 +318,6 @@ function fg(
 
 function bold(theme: Theme | undefined, value: string): string {
   return typeof theme?.bold === "function" ? theme.bold(value) : value;
-}
-
-type PanelStateToken = "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
-
-const STATE_FALLBACK_TOKEN: Readonly<
-  Record<PanelStateToken, "accent" | "success" | "error">
-> = {
-  toolPendingBg: "accent",
-  toolSuccessBg: "success",
-  toolErrorBg: "error",
-};
-
-interface ColorTheme {
-  colors?: Readonly<Record<string, Color | undefined>>;
-  getColorMode?: () => TerminalColorMode;
-}
-
-/** ANSI 8 base colors become their brighter ANSI 16 variants for foreground use. */
-function brightenBaseAnsi(color: Color): Color {
-  return color.kind === "indexed" && color.index < 8
-    ? indexedColor(color.index + 8)
-    : color;
-}
-
-function stateAnsi(
-  theme: Theme | undefined,
-  token: PanelStateToken,
-  colored: boolean,
-): string | undefined {
-  if (!colored || theme === undefined) return undefined;
-  const candidate = theme as unknown as ColorTheme;
-  const color = candidate.colors?.[token];
-  if (color === undefined || typeof candidate.getColorMode !== "function") {
-    return undefined;
-  }
-  return foregroundAnsi(brightenBaseAnsi(color), candidate.getColorMode());
-}
-
-function paintState(
-  theme: Theme | undefined,
-  token: PanelStateToken,
-  colored: boolean,
-  value: string,
-): string {
-  const ansi = stateAnsi(theme, token, colored);
-  if (ansi !== undefined) return `${ansi}${value}\x1b[39m`;
-  return fg(theme, STATE_FALLBACK_TOKEN[token], value, colored);
-}
-
-export function getPanelInnerWidth(
-  width: number,
-  borderStyle: BorderStyle,
-  accentStripe: boolean,
-  outputPad: number,
-): number {
-  const safeWidth = Math.max(4, width);
-  const bordered = borderStyle !== "none" && safeWidth >= 6;
-  return Math.max(
-    1,
-    safeWidth - (bordered ? 2 : 0) - (accentStripe ? 1 : 0) - 2 * outputPad,
-  );
-}
-
-export function framePanelLines(
-  lines: readonly string[],
-  width: number,
-  theme: Theme | undefined,
-  options: {
-    mode?: PanelRenderMode;
-    borderStyle: BorderStyle;
-    accentStripe: boolean;
-    outputPad: number;
-    stateToken: PanelStateToken;
-    includeTop: boolean;
-    includeBottom: boolean;
-    colored?: boolean;
-    surface?: OverlaySurfaceMode;
-  },
-): string[] {
-  const safeWidth = Math.max(4, width);
-  const colored = options.colored ?? true;
-  const bordered =
-    options.mode !== "background" &&
-    options.borderStyle !== "none" &&
-    safeWidth >= 6;
-  const paint = (value: string) =>
-    paintState(theme, options.stateToken, colored, value);
-  const stripe = options.accentStripe ? paint("▎") : "";
-  const surface =
-    options.mode === "background" &&
-    (!options.surface || options.surface === "transparent")
-      ? "surface"
-      : (options.surface ?? "transparent");
-  const content =
-    surface === "transparent"
-      ? lines.map((line) => stripBackgroundSgr(line))
-      : lines;
-  const inset = " ".repeat(options.outputPad);
-  const innerWidth = getPanelInnerWidth(
-    safeWidth,
-    options.mode === "background" ? "none" : options.borderStyle,
-    options.accentStripe,
-    options.outputPad,
-  );
-  const fitLine = (line: string): string => {
-    const safeLine =
-      line.includes("\x1b[") && !line.endsWith("\x1b[0m")
-        ? `${line}\x1b[0m`
-        : line;
-    return truncateToWidth(safeLine, innerWidth, "", bordered);
-  };
-
-  if (!bordered) {
-    return content.map((line) => {
-      const row = `${stripe}${inset}${fitLine(line)}${inset}`;
-      return surface === "transparent"
-        ? row
-        : paintSurfaceLine(row, safeWidth, theme, surface, colored);
-    });
-  }
-
-  const chars = getBorderChars(options.borderStyle);
-  const borderPaint = paint;
-  const out: string[] = [];
-
-  if (options.includeTop) {
-    out.push(
-      borderPaint(
-        `${chars.topLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.topRight}`,
-      ),
-    );
-  }
-
-  const leftEdge = borderPaint(chars.vertical) + stripe + inset;
-  const rightEdge = inset + borderPaint(chars.vertical);
-
-  for (const line of content) {
-    out.push(`${leftEdge}${fitLine(line)}${rightEdge}`);
-  }
-
-  if (options.includeBottom) {
-    out.push(
-      borderPaint(
-        `${chars.bottomLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.bottomRight}`,
-      ),
-    );
-  }
-
-  return surface === "transparent"
-    ? out
-    : out.map((row) =>
-        paintSurfaceLine(row, safeWidth, theme, surface, colored),
-      );
 }
 
 function extractResultText(result: AgentToolResult<unknown>): string {
@@ -657,12 +525,14 @@ export function wrapToolRenderer(
             : isError
               ? "toolErrorBg"
               : "toolSuccessBg";
-          const innerWidth = getPanelInnerWidth(
-            width,
-            cfg.borderStyle,
-            cfg.accentStripe,
-            context.outputPad === 0 ? 0 : 1,
-          );
+          const { innerWidth } = resolvePanelFrameLayout(width, {
+            mode: cfg.mode,
+            borderStyle: cfg.borderStyle,
+            accentStripe: cfg.accentStripe,
+            outputPad: context.outputPad === 0 ? 0 : 1,
+            colored: ui.colored,
+            surface: cfg.surface,
+          });
 
           let callLines: string[] = [];
           if (innerCall) {
@@ -787,7 +657,7 @@ export function wrapToolRenderer(
       }
       const panelState = getPanelState(context);
       panelState.resultCalled = true;
-      panelState.resultIsError = Boolean(result.isError);
+      panelState.resultIsError = isResultError(result);
       panelState.settled = true;
       stopSpinnerTimer(panelState);
       panelState.cachedResult = undefined;
@@ -856,12 +726,14 @@ export function wrapToolRenderer(
             return panelState.cachedResultRender.lines;
           }
 
-          const innerWidth = getPanelInnerWidth(
-            width,
-            cfg.borderStyle,
-            cfg.accentStripe,
-            context.outputPad === 0 ? 0 : 1,
-          );
+          const { innerWidth } = resolvePanelFrameLayout(width, {
+            mode: cfg.mode,
+            borderStyle: cfg.borderStyle,
+            accentStripe: cfg.accentStripe,
+            outputPad: context.outputPad === 0 ? 0 : 1,
+            colored: ui.colored,
+            surface: cfg.surface,
+          });
           const lines =
             panelState.cachedResult?.width === width
               ? panelState.cachedResult.lines

@@ -1,12 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SettingsList } from "@earendil-works/pi-tui";
 import {
   type BwrapProbeResult,
   probeBwrapAvailability,
 } from "@hollowheap/runtime/sandbox";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
-import { hostUi, showDialog } from "./host.js";
-import { settingsListTheme } from "./settings.js";
+import { showSettingsDialog } from "./settings.js";
 
 export interface SandboxSettingsValues {
   sandboxEnabled: boolean;
@@ -42,77 +39,48 @@ export function formatBwrapProbeStatus(probe: BwrapProbeResult): string {
 export async function showSandboxSettings(
   options: ShowSandboxSettingsOptions,
 ): Promise<void> {
-  const { ctx } = options;
-  if (ctx.mode !== "tui" || typeof hostUi(ctx).custom !== "function") return;
-
   const probe = (options.probeBwrap ?? probeBwrapAvailability)();
   const statusText = formatBwrapProbeStatus(probe);
+  const statusTone = probe.available
+    ? "success"
+    : probe.reason === "permission"
+      ? "error"
+      : "warning";
 
-  await showDialog<void>(
-    ctx,
-    (tui, theme, _keybindings, done) => {
-      let sandboxEnabled = options.enabled;
-      let sandboxOffline = options.offline;
+  let sandboxEnabled = options.enabled;
+  let sandboxOffline = options.offline;
 
-      const list = new SettingsList(
-        [
-          {
-            id: "sandbox-enabled",
-            label: options.label,
-            description: options.enabledDescription(statusText),
-            currentValue: sandboxEnabled ? "on" : "off",
-            values: ["off", "on"],
-          },
-          {
-            id: "sandbox-offline",
-            label: "Sandbox offline",
-            description: options.offlineDescription,
-            currentValue: sandboxOffline ? "on" : "off",
-            values: ["off", "on"],
-          },
-        ],
-        8,
-        settingsListTheme(theme),
-        (id, value) => {
-          if (id === "sandbox-enabled") {
-            sandboxEnabled = value === "on";
-          } else if (id === "sandbox-offline") {
-            sandboxOffline = value === "on";
-          }
-          options.onSave({ sandboxEnabled, sandboxOffline });
-          tui.requestRender();
-        },
-        () => done(),
-        { enableSearch: true },
-      );
-
-      const statusTone = probe.available
-        ? "success"
-        : probe.reason === "permission"
-          ? "error"
-          : "warning";
-
-      return {
-        render(width: number): string[] {
-          const innerWidth = getFrameInnerWidth(width);
-          const statusLine = theme.fg(
-            statusTone,
-            `Bubblewrap (bwrap): ${statusText}`,
-          );
-          const lines = [statusLine, "", ...list.render(innerWidth)];
-          return boxFrame(lines, width, theme, options.title);
-        },
-        handleInput(data: string): void {
-          list.handleInput(data);
-        },
-        invalidate(): void {
-          list.invalidate();
-        },
-      };
+  await showSettingsDialog({
+    ctx: options.ctx,
+    title: options.title,
+    listHeight: 8,
+    items: [
+      {
+        id: "sandbox-enabled",
+        label: options.label,
+        description: options.enabledDescription(statusText),
+        currentValue: sandboxEnabled ? "on" : "off",
+        values: ["off", "on"],
+      },
+      {
+        id: "sandbox-offline",
+        label: "Sandbox offline",
+        description: options.offlineDescription,
+        currentValue: sandboxOffline ? "on" : "off",
+        values: ["off", "on"],
+      },
+    ],
+    header: (_list, theme) => [
+      theme.fg(statusTone, `Bubblewrap (bwrap): ${statusText}`),
+      "",
+    ],
+    onChange: (id, value) => {
+      if (id === "sandbox-enabled") {
+        sandboxEnabled = value === "on";
+      } else if (id === "sandbox-offline") {
+        sandboxOffline = value === "on";
+      }
+      options.onSave({ sandboxEnabled, sandboxOffline });
     },
-    {
-      overlay: true,
-      overlayOptions: { width: "70%", maxHeight: "70%", margin: 1 },
-    },
-  );
+  });
 }

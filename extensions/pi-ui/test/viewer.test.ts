@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
 import {
+  bindHostOutputPadding,
   resetActiveTuiConfig,
   setActiveTuiConfig,
 } from "@hollowheap/tui/state";
@@ -155,8 +156,17 @@ describe("showCodeViewer", () => {
       overlaySurface: "surface",
     });
     const doubleLines = component.render(32);
-    expect(doubleLines[0]).toContain("[customMessageBg]╔═");
-    expect(doubleLines.at(-1)).toContain("╚═");
+    expect(doubleLines[0]).toContain("[customMessageBg] Script");
+    expect(doubleLines[0]).not.toContain("╔");
+    expect(doubleLines.at(-1)).not.toContain("╚");
+
+    const restore = bindHostOutputPadding(() => 1);
+    try {
+      const paddedLines = component.render(32);
+      expect(paddedLines[0]).toContain("[customMessageBg]  Script");
+    } finally {
+      restore();
+    }
 
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
@@ -164,7 +174,7 @@ describe("showCodeViewer", () => {
       overlaySurface: "card",
     });
     const noneLines = component.render(32);
-    expect(noneLines[0]).toContain("[userMessageBg]Script");
+    expect(noneLines[0]).toContain("[userMessageBg] Script");
     expect(noneLines[0]).not.toContain("╭");
     expect(noneLines.join("\n")).toContain("const x = 1;");
   });

@@ -1,13 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type SettingItem, SettingsList } from "@earendil-works/pi-tui";
+import { BORDER_STYLES, type BorderStyle } from "@hollowheap/core/border";
 import { errorMessage } from "@hollowheap/core/format";
 import { isRecord } from "@hollowheap/core/records";
-import { settingsListTheme } from "@hollowheap/pi-ui/settings";
-
-import { BORDER_STYLES, type BorderStyle } from "@hollowheap/core/border";
-import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import {
   LOADING_INDICATOR_STYLES,
   type LoadingIndicatorStyle,
@@ -26,10 +22,12 @@ import {
   getPanelStyle,
   updateTuiConfig,
 } from "@hollowheap/core/tui-config";
-import { canOverlay, notify, showDialog } from "@hollowheap/pi-ui/host";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { canOverlay, notify } from "@hollowheap/pi-ui/host";
+import {
+  type SettingsTab,
+  showTabbedSettingsDialog,
+} from "@hollowheap/pi-ui/settings";
 import { getActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/tui/state";
-import { TabbedContent } from "@hollowheap/tui/tabs";
 import type { EditorMode, ModalConfig } from "./keymap.js";
 
 function applyTuiSetting(
@@ -47,16 +45,24 @@ function applyTuiSetting(
   switch (id) {
     case "borderStyle":
       next.borderStyle = value as BorderStyle;
+      next.panel.borderStyle = next.borderStyle;
       if (next.panel.style !== undefined) {
         next.panel = applyPanelStyle(
           next.panel,
-          next.panel.style,
+          (BORDER_STYLES as readonly string[]).includes(
+            String(next.panel.style),
+          )
+            ? next.borderStyle
+            : next.panel.style,
           next.borderStyle,
         );
       }
       break;
     case "colored":
       next.colored = value === "true";
+      break;
+    case "modeIndicator":
+      next.modeIndicator = value === "true";
       break;
     case "overlaySurface":
       next.overlaySurface = value as OverlaySurfaceMode;
@@ -79,13 +85,14 @@ function applyTuiSetting(
     case "panel.enabled":
       next.panel.enabled = value === "true";
       break;
-    case "panel.style":
-      next.panel = applyPanelStyle(
-        next.panel,
-        value as PanelStyle,
-        next.borderStyle,
-      );
+    case "panel.style": {
+      const style = value as PanelStyle;
+      next.panel = applyPanelStyle(next.panel, style, next.borderStyle);
+      if ((BORDER_STYLES as readonly string[]).includes(style)) {
+        next.borderStyle = style as BorderStyle;
+      }
       break;
+    }
     case "panel.accentStripe":
       next.panel.accentStripe = value === "true";
       break;
@@ -102,16 +109,8 @@ function applyTuiSetting(
   return next;
 }
 
-export interface ContributedTuiSetting extends SettingItem {
-  owner?: string;
-  onChange?: (value: string) => void;
-}
-
-function buildSettingTabs(
-  config: TuiConfig,
-  contributed: readonly ContributedTuiSetting[],
-): { label: string; items: SettingItem[] }[] {
-  const tabs: { label: string; items: SettingItem[] }[] = [
+function buildSettingTabs(config: TuiConfig): SettingsTab[] {
+  return [
     {
       label: "Appearance",
       items: [
@@ -123,13 +122,6 @@ function buildSettingTabs(
           values: [...BORDER_STYLES],
         },
         {
-          id: "colored",
-          label: "Colored UI",
-          description: "Enable theme foreground, surface, and spinner colors",
-          currentValue: String(config.colored),
-          values: ["true", "false"],
-        },
-        {
           id: "overlaySurface",
           label: "Overlay surface",
           description: "Background surface fill for TUI overlays",
@@ -137,25 +129,24 @@ function buildSettingTabs(
           values: [...OVERLAY_SURFACE_MODES],
         },
         {
-          id: "loadingIndicator",
-          label: "Loading indicator",
-          description: "Working spinner preset for status and panels",
-          currentValue: config.loadingIndicator,
-          values: [...LOADING_INDICATOR_STYLES],
+          id: "colored",
+          label: "Colored UI",
+          description: "Enable theme foreground, surface, and spinner colors",
+          currentValue: String(config.colored),
+          values: ["true", "false"],
+        },
+        {
+          id: "modeIndicator",
+          label: "Mode indicator",
+          description: "Show the active mode in the prompt status row",
+          currentValue: String(config.modeIndicator ?? true),
+          values: ["true", "false"],
         },
       ],
     },
     {
-      label: "Output",
+      label: "Verbosity",
       items: [
-        {
-          id: "markdownRender",
-          label: "Whole markdown",
-          description:
-            "Render full Markdown, including normalized horizontal rules",
-          currentValue: String(config.markdownRender),
-          values: ["true", "false"],
-        },
         {
           id: "thinkingVerbosity",
           label: "Thinking verbosity",
@@ -165,24 +156,46 @@ function buildSettingTabs(
           values: [...THINKING_VERBOSITY_MODES],
         },
         {
-          id: "thinkingAnimate",
-          label: "Thinking shimmer",
-          description: "Animate scrolling color sweep across one-line thinking",
-          currentValue: String(config.thinkingAnimate),
-          values: ["true", "false"],
-        },
-      ],
-    },
-    {
-      label: "Tools",
-      items: [
-        {
           id: "toolVerbosity",
           label: "Tool verbosity",
           description:
             "Arguments only, host collapsed results, or host expanded results",
           currentValue: config.toolVerbosity ?? "medium",
           values: [...TOOL_VERBOSITY_MODES],
+        },
+        {
+          id: "markdownRender",
+          label: "Whole markdown",
+          description:
+            "Render full Markdown, including normalized horizontal rules",
+          currentValue: String(config.markdownRender),
+          values: ["true", "false"],
+        },
+        {
+          id: "verbPack",
+          label: "Verb pack",
+          description: "Action verb style for tools and thinking",
+          currentValue: config.verbPack,
+          values: [...TOOL_VERB_PACKS],
+        },
+      ],
+    },
+    {
+      label: "Loading",
+      items: [
+        {
+          id: "loadingIndicator",
+          label: "Loading indicator",
+          description: "Working spinner preset for status and panels",
+          currentValue: config.loadingIndicator,
+          values: [...LOADING_INDICATOR_STYLES],
+        },
+        {
+          id: "thinkingAnimate",
+          label: "Thinking shimmer",
+          description: "Animate scrolling color sweep across one-line thinking",
+          currentValue: String(config.thinkingAnimate),
+          values: ["true", "false"],
         },
         {
           id: "panel.enabled",
@@ -207,13 +220,6 @@ function buildSettingTabs(
           values: ["true", "false"],
         },
         {
-          id: "verbPack",
-          label: "Verb pack",
-          description: "Action verb style for tools and thinking",
-          currentValue: config.verbPack,
-          values: [...TOOL_VERB_PACKS],
-        },
-        {
           id: "panel.outcomeBadges",
           label: "Panel outcome badges",
           description: "Show ✓/✗ and execution duration badges when settled",
@@ -230,25 +236,13 @@ function buildSettingTabs(
       ],
     },
   ];
-  if (contributed.length > 0) {
-    tabs.push({
-      label: "Extensions",
-      items: contributed.map((item) => ({
-        id: item.id,
-        label: item.label,
-        description: item.description,
-        currentValue: item.currentValue,
-        values: item.values,
-      })),
-    });
-  }
-  return tabs;
 }
 
 export function formatTuiStatus(config: TuiConfig): string {
   return [
     `borderStyle=${config.borderStyle}`,
     `colored=${config.colored}`,
+    `modeIndicator=${config.modeIndicator ?? true}`,
     `overlaySurface=${config.overlaySurface}`,
     `loadingIndicator=${config.loadingIndicator}`,
     `markdownRender=${config.markdownRender}`,
@@ -268,98 +262,34 @@ export async function showTuiSettings(
   ctx: ExtensionContext,
   agentDir: string,
   onChange?: (next: TuiConfig) => void,
-  contributed: readonly ContributedTuiSetting[] = [],
 ): Promise<void> {
   if (!canOverlay(ctx)) {
     return;
   }
 
-  await withPromptLock(() =>
-    showDialog<void>(
-      ctx,
-      (tui, theme, _keybindings, done) => {
-        let closed = false;
-        const close = (): void => {
-          if (closed) return;
-          closed = true;
-          done();
-          tui.requestRender(true);
-        };
-        const changeSetting = (id: string, value: string): void => {
-          const contributedSetting = contributed.find((item) => item.id === id);
-          if (contributedSetting !== undefined) {
-            contributedSetting.currentValue = value;
-            contributedSetting.onChange?.(value);
-          } else {
-            const next = applyTuiSetting(getActiveTuiConfig(), id, value);
-            setActiveTuiConfig(next);
-            const res = updateTuiConfig(agentDir, () => next);
-            if (!res.ok) notify(ctx, res.error, "error");
-            onChange?.(next);
-            if (
-              id === "toolVerbosity" ||
-              id === "thinkingVerbosity" ||
-              id === "panel.style"
-            )
-              tui.invalidate();
-          }
-          tui.requestRender(true);
-        };
-        const listTheme = settingsListTheme(
-          theme,
-          () => getActiveTuiConfig().colored,
-        );
-        const tabs = new TabbedContent(
-          buildSettingTabs(getActiveTuiConfig(), contributed).map(
-            ({ label, items }) => ({
-              label,
-              content: new SettingsList(
-                items,
-                6,
-                listTheme,
-                changeSetting,
-                close,
-                { enableSearch: true },
-              ),
-            }),
-          ),
-          (label, active) =>
-            getActiveTuiConfig().colored
-              ? theme.fg(active ? "accent" : "muted", label)
-              : label,
-        );
-
-        return {
-          render(width: number): string[] {
-            const active = getActiveTuiConfig();
-            const innerWidth = getFrameInnerWidth(width, active.borderStyle);
-            return boxFrame(
-              tabs.render(innerWidth),
-              width,
-              theme,
-              "TUI settings",
-              active,
-            );
-          },
-          handleInput(data: string): void {
-            tabs.handleInput(data);
-          },
-          invalidate(): void {
-            tabs.invalidate();
-          },
-          dispose: close,
-        };
-      },
-      {
-        overlay: true,
-        overlayOptions: {
-          width: "70%",
-          maxHeight: "75%",
-          margin: 1,
-        },
-      },
-    ),
-  );
+  await showTabbedSettingsDialog({
+    ctx,
+    title: "TUI settings",
+    tabs: buildSettingTabs(getActiveTuiConfig()),
+    listHeight: 6,
+    promptLock: true,
+    colored: () => getActiveTuiConfig().colored,
+    frameOptions: () => getActiveTuiConfig(),
+    onChange: (id, value, _list, tui) => {
+      const next = applyTuiSetting(getActiveTuiConfig(), id, value);
+      setActiveTuiConfig(next);
+      const res = updateTuiConfig(agentDir, () => next);
+      if (!res.ok) notify(ctx, res.error, "error");
+      onChange?.(next);
+      if (
+        id === "toolVerbosity" ||
+        id === "thinkingVerbosity" ||
+        id === "panel.style"
+      ) {
+        tui.invalidate();
+      }
+    },
+  });
 }
 
 const VALID_MODES = new Set<EditorMode>(["normal", "insert", "visual"]);

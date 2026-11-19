@@ -76,6 +76,49 @@ describe("skill invocation panels", () => {
     component.setExpanded(false);
     expect(render()).not.toContain("instructions");
   });
+
+  it("places host outputPad inside the border instead of adding outer Box margins", () => {
+    initTheme("dark");
+    const config = getActiveTuiConfig();
+    setActiveTuiConfig({
+      ...config,
+      panel: {
+        ...config.panel,
+        enabled: true,
+        borderStyle: "square",
+        accentStripe: false,
+        surface: "transparent",
+      },
+    });
+    installSkillPanel(() => undefined);
+    const alpha = formatSkillBlock(
+      "alpha",
+      "/skills/alpha/SKILL.md",
+      "/skills/alpha",
+      "Alpha instructions",
+    );
+    const block = parseSkillBlock(`${alpha}\n\nCheck padding.`);
+    if (!block) throw new Error("Expected Pi to parse the skill block");
+
+    const component = new SkillInvocationMessageComponent(block, undefined, 1);
+    const lines = component
+      .render(40)
+      .map((line) => stripTerminalSequences(line))
+      .filter((line) => line.trim().length > 0);
+
+    expect(lines[0]).toBe(`┌${"─".repeat(38)}┐`);
+    expect(lines[1]?.startsWith("│ $alpha (")).toBe(true);
+    expect(lines[1]?.endsWith("│")).toBe(true);
+    expect(lines[2]).toBe(`└${"─".repeat(38)}┘`);
+
+    component.setOutputPad(1);
+    const afterSetPad = component
+      .render(40)
+      .map((line) => stripTerminalSequences(line))
+      .filter((line) => line.trim().length > 0);
+    expect(afterSetPad[0]).toBe(`┌${"─".repeat(38)}┐`);
+    expect(afterSetPad[1]?.startsWith("│ $alpha (")).toBe(true);
+  });
 });
 
 describe("handleSkillInput", () => {

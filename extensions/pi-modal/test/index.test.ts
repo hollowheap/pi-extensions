@@ -896,10 +896,7 @@ describe("extension registration", () => {
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
     const commandNames = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commandNames).not.toContain("vimkeys");
-    expect(pi.registerShortcut).toHaveBeenCalledWith(
-      "ctrl+shift+k",
-      expect.objectContaining({ handler: expect.any(Function) }),
-    );
+    expect(pi.registerShortcut).not.toHaveBeenCalled();
   });
 
   it("installs the working indicator when the modal editor is disabled", () => {
@@ -1863,10 +1860,10 @@ describe("TUI config, /ui command, and panel integration", () => {
     expect(commands.expand).toBeUndefined();
     expect(
       uiCommand?.getArgumentCompletions?.("").map((item) => item.value),
-    ).toEqual(["settings", "config", "status"]);
+    ).toEqual(["settings", "status"]);
     expect(
       uiCommand?.getArgumentCompletions?.("co").map((item) => item.value),
-    ).toEqual(["config"]);
+    ).toEqual([]);
 
     const notify = vi.fn();
     await uiCommand?.handler("status", {
@@ -1923,7 +1920,8 @@ describe("TUI config, /ui command, and panel integration", () => {
       "tui:config-changed",
       expect.objectContaining({ borderStyle: "sharp" }),
     );
-    overlay?.handleInput("\x1b[Z");
+    overlay?.handleInput("\t");
+    overlay?.handleInput("\x1b[B");
     overlay?.handleInput("\r");
     expect(pi.events.emit).toHaveBeenLastCalledWith(
       "tui:config-changed",
@@ -2031,7 +2029,7 @@ describe("TUI config, /ui command, and panel integration", () => {
     expect(commands.ui).toBeDefined();
     expect(
       commands.ui?.getArgumentCompletions?.("").map((item) => item.value),
-    ).toEqual(["settings", "config", "status"]);
+    ).toEqual(["settings", "status"]);
 
     const notify = vi.fn();
     await commands.ui?.handler("status", {

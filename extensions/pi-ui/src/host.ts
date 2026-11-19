@@ -10,7 +10,6 @@ import {
   Editor,
   Input,
   Key,
-  type OverlayHandle,
   SelectList,
   type TUI,
   Text,
@@ -30,27 +29,10 @@ type DialogFactory<T> = (
   keys: KeybindingsManager,
   done: (result: T) => void,
 ) => FocusedComponent | Promise<FocusedComponent>;
-type DialogOptions = NonNullable<
-  Parameters<ExtensionUIContext["custom"]>[1]
-> & {
-  switchPrompt?: boolean;
+type DialogOptions = NonNullable<Parameters<ExtensionUIContext["custom"]>[1]>;
+type PromptOptions = ExtensionUIDialogOptions & {
+  overlay?: boolean;
 };
-type PromptOptions = ExtensionUIDialogOptions & { switchPrompt?: boolean };
-
-const PROMPT_SWITCH_KEYS = [
-  Key.shift("left"),
-  Key.shift("right"),
-  Key.shift("h"),
-  Key.shift("l"),
-];
-
-export function isPromptSwitchKey(data: string): boolean {
-  return (
-    data === "H" ||
-    data === "L" ||
-    PROMPT_SWITCH_KEYS.some((key) => matchesKey(data, key))
-  );
-}
 
 /** Host facilities for chrome such as footers, editor configuration, and themes. */
 export function hostUi<T>(ctx: { ui: T }): T;
@@ -73,34 +55,7 @@ export async function showDialog<T>(
   ctx: Pick<ExtensionContext, "ui">,
   ...args: [factory: DialogFactory<T>, options?: DialogOptions]
 ): Promise<T> {
-  const ui = hostUi(ctx);
-  if (!args[1]?.switchPrompt) return ui.custom<T>(...args);
-  const { switchPrompt, ...options } = args[1];
-  if (typeof ui.onTerminalInput !== "function")
-    return ui.custom<T>(args[0], options);
-  let handle: OverlayHandle | undefined;
-  const unsubscribe = ui.onTerminalInput((data) => {
-    if (!handle || !isPromptSwitchKey(data)) return undefined;
-    if (handle.isHidden()) {
-      handle.setHidden(false);
-      handle.focus();
-    } else {
-      handle.unfocus();
-      handle.setHidden(true);
-    }
-    return { consume: true };
-  });
-  try {
-    return await ui.custom<T>(args[0], {
-      ...options,
-      onHandle(next) {
-        handle = next;
-        options.onHandle?.(next);
-      },
-    });
-  } finally {
-    unsubscribe();
-  }
+  return hostUi(ctx).custom<T>(...args);
 }
 
 export function canOverlay(ctx: OverlayContext): boolean {
@@ -112,7 +67,6 @@ export interface InfoPopupOptions {
   lines?: readonly string[] | ((theme: Theme) => readonly string[]);
   render?: (width: number) => string[];
   closeKeys?: readonly string[];
-  switchPrompt?: boolean;
 }
 
 /** Mount a dismissable informational overlay with the shared frame and keys. */
@@ -165,7 +119,6 @@ export async function showInfoPopup(
     },
     {
       overlay: true,
-      ...(options.switchPrompt ? { switchPrompt: true } : {}),
       overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
     },
   );
@@ -235,14 +188,17 @@ function prompt<T>(
       };
     },
     {
-      overlay: true,
-      ...(options?.switchPrompt ? { switchPrompt: true } : {}),
-      overlayOptions: {
-        anchor: "bottom-center",
-        width: "70%",
-        maxHeight: "75%",
-        margin: 1,
-      },
+      overlay: options?.overlay ?? true,
+      ...(options?.overlay === false
+        ? {}
+        : {
+            overlayOptions: {
+              anchor: "bottom-center",
+              width: "70%",
+              maxHeight: "75%",
+              margin: 1,
+            },
+          }),
     },
   );
 }
