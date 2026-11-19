@@ -10,6 +10,8 @@ describe("S36: pi-question registers a codemode tool, not a message_end parser",
         return () => {};
       }),
       registerTool: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      registerMarkdownTransformer: vi.fn(),
       appendEntry: vi.fn(),
       getActiveTools: vi.fn(() => []),
       getAllTools: vi.fn(() => []),
@@ -40,6 +42,8 @@ describe("lifecycle, schema, and handler seams", () => {
         },
       ),
       registerTool: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      registerMarkdownTransformer: vi.fn(),
       appendEntry: vi.fn(),
       getActiveTools: vi.fn(() => ["question", "bash"]),
       getAllTools: vi.fn(() => [{ name: "codemode" }]),
@@ -51,6 +55,7 @@ describe("lifecycle, schema, and handler seams", () => {
 
   it("S36 C02: session_start swaps the question tool for codemode", () => {
     const { handlers, setActiveTools } = piWithTools();
+    expect(handlers.session_start).toBeTypeOf("function");
     handlers.session_start({}, {});
     expect(setActiveTools).toHaveBeenCalledWith(["bash", "codemode"]);
   });
@@ -66,6 +71,7 @@ describe("lifecycle, schema, and handler seams", () => {
 
   it("S36 C04: session_tree restores state without touching active tools", () => {
     const { handlers, setActiveTools } = piWithTools();
+    expect(handlers.session_tree).toBeTypeOf("function");
     handlers.session_tree({}, {});
     expect(setActiveTools).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQuestionTool } from "./index.js";
+import extension, { type createQuestionTool } from "./index.js";
 
 vi.mock("./alerts.js", () => ({ alertQuestion: vi.fn() }));
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
@@ -10,7 +10,10 @@ vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
 function mockPi() {
   return {
     on: vi.fn(() => () => {}),
-    registerTool: vi.fn(),
+    registerTool:
+      vi.fn<(tool: ReturnType<typeof createQuestionTool>) => void>(),
+    registerMessageRenderer: vi.fn(),
+    registerMarkdownTransformer: vi.fn(),
     appendEntry: vi.fn(),
     getActiveTools: vi.fn(() => []),
     getAllTools: vi.fn(() => []),
@@ -18,10 +21,18 @@ function mockPi() {
   };
 }
 
-describe("S48: cancelling a dialog cancels the set with no follow-up", () => {
+function registeredQuestionTool(pi: ReturnType<typeof mockPi>) {
+  extension(pi as never);
+  const tool = pi.registerTool.mock.calls[0]?.[0];
+  expect(tool?.name).toBe("question");
+  if (!tool) throw new Error("Question tool was not registered");
+  return tool;
+}
+
+describe("registered question tool cancellation", () => {
   it("does not throw and emits no answers entry when the dialog is cancelled", async () => {
     const pi = mockPi();
-    const tool = createQuestionTool(pi as never);
+    const tool = registeredQuestionTool(pi);
     const ctx = {
       hasUI: true,
       mode: "tui",
@@ -43,12 +54,9 @@ describe("S48: cancelling a dialog cancels the set with no follow-up", () => {
     ).resolves.toBeDefined();
     expect(pi.appendEntry).not.toHaveBeenCalled();
   });
-});
-
-describe("write-in, abort, and message seams", () => {
-  it("S48 C02: cancelling the write-in input emits no answers entry", async () => {
+  it("cancelling the write-in input emits no answers entry", async () => {
     const pi = mockPi();
-    const tool = createQuestionTool(pi as never);
+    const tool = registeredQuestionTool(pi);
     const ctx = {
       hasUI: true,
       mode: "rpc",
@@ -69,10 +77,11 @@ describe("write-in, abort, and message seams", () => {
     expect(pi.appendEntry).not.toHaveBeenCalled();
   });
 
-  it("S48 C03: an aborted signal cancels without emitting an entry", async () => {
+  it("an aborted signal cancels without emitting an entry", async () => {
     const pi = mockPi();
-    const tool = createQuestionTool(pi as never);
+    const tool = registeredQuestionTool(pi);
     const controller = new AbortController();
+    controller.abort();
     const ctx = {
       hasUI: true,
       mode: "rpc",
@@ -95,9 +104,9 @@ describe("write-in, abort, and message seams", () => {
     expect(pi.appendEntry).not.toHaveBeenCalled();
   });
 
-  it("S48 C04: cancellation reports the cancellation message", async () => {
+  it("cancellation reports the cancellation message", async () => {
     const pi = mockPi();
-    const tool = createQuestionTool(pi as never);
+    const tool = registeredQuestionTool(pi);
     const ctx = {
       hasUI: true,
       mode: "tui",
@@ -115,5 +124,36 @@ describe("write-in, abort, and message seams", () => {
       ctx as never,
     )) as { content: { text: string }[] };
     expect(result.content[0].text).toBe("Question cancelled by user.");
+  });
+
+  it("a cancelled tool result returns earlier answers without persisting them", async () => {
+    const pi = mockPi();
+    const tool = registeredQuestionTool(pi);
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("Option A")
+      .mockResolvedValueOnce(undefined);
+    const result = await tool.execute(
+      "partial",
+      {
+        questions: [
+          { prompt: "First?", options: ["Option A"] },
+          { prompt: "Second?", options: ["Option B"] },
+        ],
+      },
+      undefined,
+      undefined,
+      { hasUI: true, mode: "rpc", ui: { select } } as never,
+    );
+
+    const details = result.details as {
+      cancelled: boolean;
+      answers: unknown[];
+    };
+    expect(details.cancelled).toBe(true);
+    expect([...details.answers]).toEqual([
+      { mode: "single", value: "Option A" },
+    ]);
+    expect(pi.appendEntry).not.toHaveBeenCalled();
   });
 });

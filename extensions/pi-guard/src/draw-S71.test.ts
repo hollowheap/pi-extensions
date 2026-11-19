@@ -62,7 +62,7 @@ function setup(
   };
 }
 
-describe("S71: task.start is gated as shell while read/control actions pass", () => {
+describe("task permission routing", () => {
   it("allows list/status/wait, gates cancel, prompts on ask, and blocks on deny", async () => {
     const { ctx, call } = setup(
       JSON.stringify({
@@ -92,39 +92,52 @@ describe("S71: task.start is gated as shell while read/control actions pass", ()
     expect(ctx.ui.confirm).toHaveBeenCalledWith("Allow task?", "cargo build", {
       signal: undefined,
     });
+    await expect(
+      call("task", { action: "cancel", id: "task-1" }),
+    ).resolves.toBeUndefined();
+    expect(ctx.ui.confirm).toHaveBeenCalledTimes(2);
   });
 
-  it("S71 C02: blocks an ask-level command when the user declines", async () => {
+  it("blocks an ask-level start or cancel when the user declines", async () => {
     const { ctx, call } = setup(JSON.stringify({ rules: ["deny shell rm"] }), {
       confirm: false,
     });
-    await expect(
-      call("task", { action: "start", command: "cargo build" }),
-    ).resolves.toEqual({
-      block: true,
-      reason: expect.stringContaining("was not approved"),
-    });
-    expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
+    for (const input of [
+      { action: "start", command: "cargo build" },
+      { action: "cancel", id: "task-1" },
+    ]) {
+      await expect(call("task", input)).resolves.toEqual({
+        block: true,
+        reason: expect.stringContaining("was not approved"),
+      });
+    }
+    expect(ctx.ui.confirm).toHaveBeenCalledTimes(2);
   });
 
-  it("S71 C03: blocks an ask-level command with no UI without prompting", async () => {
+  it("blocks an ask-level start or cancel when no UI is available", async () => {
     const { ctx, call } = setup(JSON.stringify({ rules: ["deny shell rm"] }), {
       hasUI: false,
     });
-    await expect(
-      call("task", { action: "start", command: "cargo build" }),
-    ).resolves.toEqual({
-      block: true,
-      reason: expect.stringContaining("needs approval (no UI)"),
-    });
+    for (const input of [
+      { action: "start", command: "cargo build" },
+      { action: "cancel", id: "task-1" },
+    ]) {
+      await expect(call("task", input)).resolves.toEqual({
+        block: true,
+        reason: expect.stringContaining("needs approval (no UI)"),
+      });
+    }
     expect(ctx.ui.confirm).not.toHaveBeenCalled();
   });
 
-  it("S71 C04: gates unknown and missing actions as shell commands", async () => {
-    const { call } = setup(JSON.stringify({ rules: ["deny shell rm"] }));
+  it("applies the shell deny to unknown, missing, and cancel actions", async () => {
+    const { call } = setup(
+      JSON.stringify({ rules: ["deny shell rm", "deny shell subagent"] }),
+    );
     for (const input of [
       { command: "rm -rf build" },
       { action: "bogus", command: "rm -rf build" },
+      { action: "cancel", id: "task-1" },
     ]) {
       await expect(call("task", input)).resolves.toEqual({
         block: true,
