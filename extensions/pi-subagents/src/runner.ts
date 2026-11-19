@@ -20,6 +20,7 @@ import {
   wrapSandboxCommand,
 } from "@hollowheap/runtime/sandbox";
 import {
+  type SubagentHarnessTransport,
   loadSubagentsConfig,
   resolveSubagentSandboxOptions,
 } from "./config.js";
@@ -44,6 +45,7 @@ export interface StartSubagentOptions {
   isolated?: boolean;
   sessionPath?: string;
   harness?: string;
+  transport?: SubagentHarnessTransport;
   inputMode?: "jsonl" | "text";
   initialInput?: string;
   timeoutMs?: number;
@@ -120,6 +122,9 @@ export async function startSubagent(
     startedAt: Date.now(),
     socket: socketPath,
     harness: options.harness ?? "pi",
+    ...(options.transport !== undefined
+      ? { transport: options.transport }
+      : {}),
     inputMode: options.inputMode ?? "jsonl",
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.workspace !== undefined

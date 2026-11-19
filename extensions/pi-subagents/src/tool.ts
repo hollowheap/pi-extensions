@@ -22,6 +22,7 @@ import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import {
+  type SubagentHarnessTransport,
   type SubagentsConfig,
   loadSubagentsConfig,
   resolveSubagentSandboxOptions,
@@ -61,6 +62,7 @@ interface ChildSpec {
   command: string;
   args: string[];
   harness: string;
+  transport?: SubagentHarnessTransport;
   inputMode: "jsonl" | "text";
   initialInput?: string;
   env?: NodeJS.ProcessEnv;
@@ -162,6 +164,9 @@ function childSpec(
     command: harness.command,
     args,
     harness: agent.harness,
+    ...(harness.transport !== undefined
+      ? { transport: harness.transport }
+      : {}),
     inputMode: "text",
     ...(initialInput !== undefined ? { initialInput } : {}),
     ...(harness.env !== undefined ? { env: { ...harness.env } } : {}),
@@ -218,6 +223,7 @@ function summary(state: SubagentState): Record<string, unknown> {
     ...(state.finishedAt !== undefined ? { finishedAt: state.finishedAt } : {}),
     ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
     ...(state.harness !== undefined ? { harness: state.harness } : {}),
+    ...(state.transport !== undefined ? { transport: state.transport } : {}),
   };
 }
 
@@ -304,7 +310,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         Type.String({ description: "Effort override for define" }),
       ),
       harness: Type.Optional(
-        Type.String({ description: "Harness name for define" }),
+        Type.String({ description: "Harness name for define or start" }),
       ),
       agent: Type.Optional(
         Type.String({ description: "Agent name for start" }),
@@ -605,10 +611,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             trusted: true,
           });
           const sessionAgents = options.getSessionAgents?.() ?? [];
-          const agent =
+          const configuredAgent =
             sessionAgents.find((item) => item.name === name) ??
             discovery.agents.find((item) => item.name === name);
-          if (agent === undefined) {
+          if (configuredAgent === undefined) {
             const names = [...sessionAgents, ...discovery.agents].map(
               (item) => item.name,
             );
@@ -616,6 +622,10 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               `unknown agent "${name}"; available: ${names.join(", ") || "none"}`,
             );
           }
+          const harness = params.harness?.trim();
+          const agent = harness
+            ? { ...configuredAgent, harness }
+            : configuredAgent;
           const usesPiHarness =
             agent.harness === undefined || agent.harness === "pi";
           const resolvedModel = usesPiHarness
@@ -678,6 +688,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               workspace: workspace.path,
               isolated: workspace.isolated,
               harness: spec.harness,
+              ...(spec.transport !== undefined
+                ? { transport: spec.transport }
+                : {}),
               inputMode: spec.inputMode,
               ...(spec.initialInput !== undefined
                 ? { initialInput: spec.initialInput }
@@ -875,6 +888,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             config,
             rosterSection,
           );
+          const transport = state.transport ?? spec.transport;
           const parentMode = ctx.sessionManager
             ? session(ctx.sessionManager).mode
             : undefined;
@@ -908,6 +922,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               workspace: workspace.path,
               isolated: workspace.isolated,
               harness: spec.harness,
+              ...(transport !== undefined ? { transport } : {}),
               inputMode: spec.inputMode,
               ...(spec.initialInput !== undefined
                 ? { initialInput: spec.initialInput }

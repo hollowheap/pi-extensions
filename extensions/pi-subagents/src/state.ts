@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { ProcessState } from "@hollowheap/runtime";
 import { LockedProcessStore } from "@hollowheap/runtime/store";
+import type { SubagentHarnessTransport } from "./config.js";
 
 export const SUBAGENTS_DIR = "subagents";
 
@@ -22,6 +23,7 @@ export interface SubagentState extends ProcessState {
   runnerPid?: number;
   runnerStartTime?: number;
   harness?: string;
+  transport?: SubagentHarnessTransport;
   inputMode?: "jsonl" | "text";
   socket?: string;
   session?: string;
@@ -77,6 +79,7 @@ function sanitize(state: SubagentState): ProcessState {
       ? { runnerStartTime: state.runnerStartTime }
       : {}),
     ...(state.harness !== undefined ? { harness: state.harness } : {}),
+    ...(state.transport !== undefined ? { transport: state.transport } : {}),
     ...(state.inputMode !== undefined ? { inputMode: state.inputMode } : {}),
     ...(state.finishedAt !== undefined ? { finishedAt: state.finishedAt } : {}),
     ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),

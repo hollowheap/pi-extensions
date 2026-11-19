@@ -19,10 +19,13 @@ export interface SubagentAgentOverride {
   readonly sandbox?: boolean | SubagentSandboxConfig;
 }
 
+export type SubagentHarnessTransport = "headless" | "acp";
+
 export interface SubagentHarnessConfig {
   readonly command: string;
   readonly args: readonly string[];
   readonly input: "stdin" | "arg";
+  readonly transport?: SubagentHarnessTransport;
   readonly env?: Readonly<Record<string, string>>;
 }
 
@@ -248,10 +251,22 @@ function parseHarnesses(
       }
       env = { ...raw.env } as Record<string, string>;
     }
+    const transport = raw.transport;
+    if (
+      transport !== undefined &&
+      transport !== "headless" &&
+      transport !== "acp"
+    ) {
+      diagnostics.push(
+        `harness "${name}" transport must be "headless" or "acp"; ignoring`,
+      );
+      continue;
+    }
     harnesses[name] = Object.freeze({
       command,
       args: Object.freeze(args),
       input,
+      ...(transport !== undefined ? { transport } : {}),
       ...(env ? { env: Object.freeze(env) } : {}),
     });
   }

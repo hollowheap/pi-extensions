@@ -305,12 +305,13 @@ describe("subagent runner", () => {
       args: ["-e", TEXT_CHILD],
       cwd: process.cwd(),
       inputMode: "text",
+      transport: "acp",
       initialInput: "hello",
     });
     expect(state.inputMode).toBe("text");
     await sendSubagent(root, state.id, { type: "steer", message: "exit" });
     const done = await waitSubagent(root, state.id, 2_000);
-    expect(done?.status).toBe("completed");
+    expect(done).toMatchObject({ status: "completed", transport: "acp" });
     const log = readSubagentLog(root, state.id);
     expect(log).toContain("text:hello");
     expect(log).toContain("exit");

@@ -120,6 +120,28 @@ describe("loadSubagentsConfig", () => {
     expect(config.diagnostics).toEqual([]);
   });
 
+  it("accepts only supported harness transport categories", () => {
+    const dir = agentDir();
+    write(
+      dir,
+      JSON.stringify({
+        harnesses: {
+          cli: { command: "cli", transport: "headless" },
+          future: { command: "future", transport: "acp" },
+          unknown: { command: "unknown", transport: "unrecognized" },
+        },
+      }),
+    );
+
+    const config = loadSubagentsConfig(dir);
+    expect(config.harnesses.cli?.transport).toBe("headless");
+    expect(config.harnesses.future?.transport).toBe("acp");
+    expect(config.harnesses.unknown).toBeUndefined();
+    expect(config.diagnostics).toEqual([
+      expect.stringMatching(/harness "unknown".*transport/),
+    ]);
+  });
+
   it("diagnoses invalid harness definitions", () => {
     const dir = agentDir();
     write(

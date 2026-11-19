@@ -654,7 +654,7 @@ describe("subagent tool", () => {
     expect(textOf(deep)).toContain("exceeds maxDepth");
   });
 
-  it("runs a generic harness with stdin input and raw steering", async () => {
+  it("runs the configured named harness with stdin input and raw steering", async () => {
     const harnessAgent: AgentConfig = {
       ...agent,
       harness: "claude",
@@ -669,7 +669,12 @@ describe("subagent tool", () => {
       maxSessionAgents: 32,
       maxSessionAgentBytes: 65_536,
       harnesses: {
-        claude: { command: "claude", args: ["-p"], input: "stdin" },
+        claude: {
+          command: "claude",
+          args: ["-p"],
+          input: "stdin",
+          transport: "acp",
+        },
       },
       path: "/tmp/subagents.json",
       diagnostics: [],
@@ -687,6 +692,7 @@ describe("subagent tool", () => {
         command: "claude",
         args: ["-p"],
         harness: "claude",
+        transport: "acp",
         inputMode: "text",
         initialInput: "You are Claude.\n\nfind",
       }),
@@ -697,8 +703,17 @@ describe("subagent tool", () => {
     mocks.attachSubagent.mockResolvedValue({
       ...running,
       harness: "claude",
+      transport: "acp",
       inputMode: "text",
     });
+    const status = await tool.execute(
+      "1",
+      { action: "status", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(detailsOf(status).transport).toBe("acp");
     await tool.execute(
       "1",
       { action: "send", id: "sub-1", message: "keep going" },
@@ -710,6 +725,35 @@ describe("subagent tool", () => {
       "/tmp/pi-subagents-tool",
       "sub-1",
       "keep going",
+    );
+  });
+
+  it("uses an explicit start harness instead of the agent default", async () => {
+    mocks.discoverAgents.mockReturnValue({
+      agents: [{ ...agent, harness: "pi" }],
+    });
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      harnesses: {
+        custom: { command: "custom-cli", args: [], input: "stdin" },
+      },
+    });
+
+    await createTool().execute(
+      "1",
+      { action: "start", agent: "scout", task: "find", harness: "custom" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+
+    expect(mocks.startSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "custom-cli",
+        harness: "custom",
+        inputMode: "text",
+        initialInput: "You are a scout.\n\nfind",
+      }),
     );
   });
 
@@ -753,7 +797,7 @@ describe("subagent tool", () => {
 
   it("resumes a generic harness with its saved harness and text input", async () => {
     mocks.discoverAgents.mockReturnValue({
-      agents: [{ ...agent, harness: "claude" }],
+      agents: [{ ...agent, harness: "pi" }],
     });
     mocks.loadSubagentsConfig.mockReturnValue({
       maxConcurrent: 4,
@@ -763,7 +807,12 @@ describe("subagent tool", () => {
       maxSessionAgents: 32,
       maxSessionAgentBytes: 65_536,
       harnesses: {
-        claude: { command: "claude", args: ["-p"], input: "stdin" },
+        claude: {
+          command: "claude",
+          args: ["-p"],
+          input: "stdin",
+          transport: "headless",
+        },
       },
       path: "/tmp/subagents.json",
       diagnostics: [],
@@ -772,6 +821,7 @@ describe("subagent tool", () => {
       ...running,
       status: "failed",
       harness: "claude",
+      transport: "acp",
       inputMode: "text",
     });
     await createTool().execute(
@@ -785,6 +835,7 @@ describe("subagent tool", () => {
       expect.objectContaining({
         command: "claude",
         harness: "claude",
+        transport: "acp",
         inputMode: "text",
         initialInput: "You are a scout.\n\nfind",
       }),
@@ -1177,7 +1228,7 @@ describe("subagent tool", () => {
     );
   });
 
-  it("does not count other sessions toward maxConcurrent", async () => {
+  it("parent-session cap allows start beside another session in the same project", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,
@@ -1186,7 +1237,6 @@ describe("subagent tool", () => {
       {
         ...running,
         id: "sub-other",
-        project: "/elsewhere",
         parentSession: "other-session",
       },
     ]);
@@ -1201,42 +1251,31 @@ describe("subagent tool", () => {
     );
     expect(textOf(started)).not.toContain("maxConcurrent");
     expect(mocks.startSubagent).toHaveBeenCalled();
+  });
 
-    mocks.attachSubagent.mockResolvedValue({
-      ...running,
-      status: "failed",
+  it("parent-session cap allows resume only when the caller has a free slot", async () => {
+    mocks.loadSubagentsConfig.mockReturnValue({
+      ...baseConfig,
+      maxConcurrent: 1,
     });
+    mocks.attachSubagent.mockResolvedValue({ ...running, status: "failed" });
+    mocks.listSubagents.mockResolvedValue([
+      { ...running, id: "sub-busy", parentSession: "other-session" },
+    ]);
+    const tool = createTool();
     const resumed = await tool.execute(
-      "2",
+      "1",
       { action: "resume", id: "sub-1" },
       undefined,
       undefined,
       ctx as never,
     );
     expect(textOf(resumed)).not.toContain("maxConcurrent");
-    expect(mocks.startSubagent).toHaveBeenCalledTimes(2);
 
-    mocks.listSubagents.mockResolvedValue([running]);
-    const blocked = await tool.execute(
-      "3",
-      { action: "start", agent: "scout", task: "find" },
-      undefined,
-      undefined,
-      ctx as never,
-    );
-    expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
-  });
-
-  it("S223 C02: resume is blocked by same-session running children", async () => {
-    mocks.loadSubagentsConfig.mockReturnValue({
-      ...baseConfig,
-      maxConcurrent: 1,
-    });
-    mocks.attachSubagent.mockResolvedValue({ ...running, status: "failed" });
     mocks.listSubagents.mockResolvedValue([{ ...running, id: "sub-busy" }]);
 
-    const result = await createTool().execute(
-      "1",
+    const result = await tool.execute(
+      "2",
       { action: "resume", id: "sub-1" },
       undefined,
       undefined,
@@ -1244,10 +1283,10 @@ describe("subagent tool", () => {
     );
 
     expect(textOf(result)).toContain("maxConcurrent 1 reached");
-    expect(mocks.startSubagent).not.toHaveBeenCalled();
+    expect(mocks.startSubagent).toHaveBeenCalledTimes(1);
   });
 
-  it("S223 C03: only running or starting children consume the cap", async () => {
+  it("parent-session cap counts starting children only for their parent and ignores settled children", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,
@@ -1256,6 +1295,12 @@ describe("subagent tool", () => {
       { ...running, id: "sub-done", status: "completed" },
       { ...running, id: "sub-failed", status: "failed" },
       { ...running, id: "sub-cancelled", status: "cancelled" },
+      {
+        ...running,
+        id: "sub-other",
+        parentSession: "other-session",
+        status: "starting",
+      },
     ]);
 
     const tool = createTool();
@@ -1282,7 +1327,7 @@ describe("subagent tool", () => {
     expect(textOf(blocked)).toContain("maxConcurrent 1 reached");
   });
 
-  it("S223 C04: the same children are counted per caller session", async () => {
+  it("parent-session cap evaluates the same child list independently for each caller", async () => {
     mocks.loadSubagentsConfig.mockReturnValue({
       ...baseConfig,
       maxConcurrent: 1,

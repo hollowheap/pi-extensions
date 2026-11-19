@@ -41,7 +41,7 @@ Create `<agentDir>/subagents.json`:
 - `writeLockTimeoutMs`: 1–300000, default 30 seconds.
 - `maxSessionAgents`: 1–128, default 32. Maximum session definitions on one branch; redefining an existing name does not count.
 - `maxSessionAgentBytes`: 1024–1048576, default 65536. Maximum serialized size of one session definition.
-- `harnesses`: optional named generic CLI commands. `input` is `stdin` or `arg`; `arg` appends the prompt unless an argument contains `{prompt}`. `env` adds variables.
+- `harnesses`: optional named generic CLI commands. `input` is `stdin` or `arg`; `arg` appends the prompt unless an argument contains `{prompt}`. `env` adds variables. The optional `transport` field accepts `headless` or `acp` as a label in configuration and run records. Both labels use the configured command and its input setting.
 
 Invalid values diagnose and fall back. The file is optional.
 
@@ -132,7 +132,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 | -------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `define` | `name`, `systemPrompt`; optional `description`, `tools`, `model`, `thinking`, `agentMode`, `effort`, `harness` | Stores a session-only agent definition; no file is written.                                                                                                                                                 |
 | `delete` | `name`                                                                                                         | Removes a session-only definition; file agents cannot be deleted.                                                                                                                                           |
-| `start`  | `agent`, `task`                                                                                                | Starts a child and sends the task prompt. `agent` can name a file agent or a session definition.                                                                                                            |
+| `start`  | `agent`, `task`, optional `harness`                                                                           | Starts a file agent or session definition. `harness` can override its default with a configured name or `pi`.                                                                                             |
 | `list`   | none                                                                                                           | Summaries of persisted children.                                                                                                                                                                            |
 | `status` | `id`                                                                                                           | State plus bounded log output.                                                                                                                                                                              |
 | `send`   | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`)                                              | Writes an RPC message to the live child.                                                                                                                                                                    |
@@ -156,7 +156,7 @@ Actions and known subagent IDs support tab completion.
 
 Each child has a detached runner and a Unix control socket. State lives under `<agentDir>/subagents/`, using the shared `@hollowheap/runtime` store and detached-spawn lifecycle:
 
-- `<id>.json` — state, PID/start time, depth, attempt, harness, input mode, socket, session.
+- `<id>.json` — state, PID/start time, depth, attempt, harness, optional transport label, input mode, socket, session.
 - `<id>.log` — child output.
 - `<id>.runner.json` — temporary runner configuration; removed once the socket is ready.
 - `<id>.runner.log` — runner errors.
@@ -175,7 +175,7 @@ Lists and the picker label a child by agent, model, and task summary instead of 
 
 ## Recovery
 
-A child that exits non-zero, or whose runner dies, becomes `failed`. `resume` starts a new runner with the same logical id, preserves the saved harness, increments `attempt`, and sends the saved task again. An isolated child is reallocated in the same `.pi-workspaces/<id>` directory. Pi resumes its saved session; generic harnesses re-run the task without Pi session context. Resume is explicit; there is no auto-resume.
+A child that exits non-zero, or whose runner dies, becomes `failed`. `resume` starts a new runner with the same logical id, preserves the saved harness and transport label, increments `attempt`, and sends the saved task again. An isolated child is reallocated in the same `.pi-workspaces/<id>` directory. Pi resumes its saved session; generic harnesses re-run the task without Pi session context. Resume is explicit; there is no auto-resume.
 
 ## ACP
 

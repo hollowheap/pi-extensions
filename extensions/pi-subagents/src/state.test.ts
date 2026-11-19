@@ -87,10 +87,11 @@ describe("SubagentStore", () => {
       socket: "/tmp/x.sock",
       session: "/tmp/session.jsonl",
       model: "p/m",
+      transport: "acp",
     });
 
     expect(subagentsDir(root)).toBe(join(root, "subagents"));
-    expect(store.read("sub-1")).toMatchObject({
+    expect(new SubagentStore(root).read("sub-1")).toMatchObject({
       agent: "scout",
       task: "find things",
       depth: 1,
@@ -102,6 +103,7 @@ describe("SubagentStore", () => {
       socket: "/tmp/x.sock",
       session: "/tmp/session.jsonl",
       model: "p/m",
+      transport: "acp",
     });
     expect(statSync(store.dir).mode & 0o777).toBe(0o700);
     expect(statSync(store.statePath("sub-1")).mode & 0o777).toBe(0o600);
