@@ -429,17 +429,13 @@ export default function (pi: ExtensionAPI) {
       typeof ctx.ui.theme?.strikethrough === "function"
         ? (text: string) => ctx.ui.theme.strikethrough(text)
         : undefined;
-    const borderColor =
-      typeof ctx.ui.theme?.fg === "function"
-        ? (text: string) => ctx.ui.theme.fg("border", text)
-        : undefined;
     const options = strikethrough
-      ? { strikethrough, borderColor, collapsed: panelCollapsed }
-      : borderColor
-        ? { borderColor, collapsed: panelCollapsed }
-        : { collapsed: panelCollapsed };
+      ? { strikethrough, collapsed: panelCollapsed }
+      : { collapsed: panelCollapsed };
+    const theme = ctx.ui.theme;
     const mount = (
       name: string,
+      label: string,
       format: (opts: FormatTodoWidgetOptions) => string[] | undefined,
     ) => {
       if (format(options) === undefined) {
@@ -447,14 +443,26 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       ctx.ui.setWidget(name, () => ({
-        render: (width: number) =>
-          format({ ...options, width: width >= 80 ? width : 0 }) ?? [],
+        render: (width: number) => {
+          const lines =
+            format({ ...options, width: width >= 80 ? width : 0 }) ?? [];
+          return roundedFrame(
+            lines,
+            width,
+            theme,
+            `${label} · Ctrl+X then P to hide`,
+          );
+        },
         invalidate: () => {},
       }));
     };
-    mount("todos", (opts) => formatTodoWidget(state.todos, [], [], opts));
-    mount("subagents", (opts) => formatSubagentWidget(subagents, opts));
-    mount("tasks", (opts) => formatTaskWidget(tasks, opts));
+    mount("todos", "Todos", (opts) =>
+      formatTodoWidget(state.todos, [], [], opts),
+    );
+    mount("subagents", "Subagents", (opts) =>
+      formatSubagentWidget(subagents, opts),
+    );
+    mount("tasks", "Tasks", (opts) => formatTaskWidget(tasks, opts));
   };
 
   pi.registerTool(
