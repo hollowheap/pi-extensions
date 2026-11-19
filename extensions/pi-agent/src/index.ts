@@ -20,6 +20,7 @@ interface PendingFork {
   agent: AgentConfig;
   sessionName: string;
   labelId: string;
+  baseActiveTools?: string[];
 }
 
 const PENDING_FORK = Symbol.for("@hollowheap/pi-agent/pending-fork");
@@ -246,6 +247,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         notify?: boolean;
         preserveThinking?: boolean;
         preserveMode?: boolean;
+        skipBaseCapture?: boolean;
       } = {},
     ): Promise<void> => {
       const preservedThinking =
@@ -253,7 +255,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
         typeof piApi.getThinkingLevel === "function"
           ? piApi.getThinkingLevel()
           : undefined;
-      if (activeAgent === undefined && options.persist) {
+      if (
+        activeAgent === undefined &&
+        options.persist &&
+        !options.skipBaseCapture
+      ) {
         captureBaseActiveTools(piApi);
       }
       activeAgent = agent;
@@ -467,6 +473,8 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           agent,
           sessionName,
           labelId: lastEntry.id,
+          baseActiveTools:
+            baseActiveTools === undefined ? undefined : [...baseActiveTools],
         };
         try {
           await ctx.fork(lastEntry.id, {
@@ -628,6 +636,9 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       pendingForkSlot[PENDING_FORK] = undefined;
       lastCwd = ctx.cwd;
       lastTrusted = ctx.isProjectTrusted();
+      if (pending.baseActiveTools !== undefined) {
+        baseActiveTools = [...pending.baseActiveTools];
+      }
       pi.setSessionName(pending.sessionName);
       if (typeof pi.setLabel === "function") {
         pi.setLabel(pending.labelId, `agent: ${pending.agent.name}`);
@@ -635,6 +646,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       await applyAgent(pending.agent, ctx, pi, {
         persist: true,
         notify: false,
+        skipBaseCapture: true,
       });
     });
     pi.on("session_tree", (_event, ctx) => restore(ctx));

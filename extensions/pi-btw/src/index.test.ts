@@ -1,3 +1,4 @@
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import extension, { buildBtwMessages, responseText } from "./index.js";
 
@@ -6,6 +7,11 @@ const showMarkdownPager = vi.fn().mockResolvedValue(undefined);
 vi.mock("@hollowheap/tui/pager", () => ({
   showMarkdownPager: (...args: unknown[]) => showMarkdownPager(...args),
 }));
+
+vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, withPromptLock: vi.fn((fn: () => unknown) => fn()) };
+});
 
 type Command = {
   handler: (args: string, ctx: unknown) => Promise<void>;
@@ -59,6 +65,7 @@ function createCtx(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   showMarkdownPager.mockClear();
+  vi.mocked(withPromptLock).mockClear();
 });
 
 describe("pi-btw", () => {
@@ -111,6 +118,25 @@ describe("pi-btw", () => {
       "Question",
     );
     expect(showMarkdownPager).toHaveBeenCalled();
+  });
+
+  it("adopts the process-wide prompt lock for the input dialog", async () => {
+    const pi = createPi();
+    extension(pi as never);
+    const signal = new AbortController().signal;
+    const ctx = createCtx({ signal });
+
+    await pi.getCommand()?.handler("", ctx as never);
+
+    expect(withPromptLock).toHaveBeenCalledTimes(1);
+    expect(withPromptLock).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ signal }),
+    );
+    expect(ctx.ui.input).toHaveBeenCalledWith(
+      "Ask a side question",
+      "Question",
+    );
   });
 
   it("reports a missing model without calling the registry", async () => {

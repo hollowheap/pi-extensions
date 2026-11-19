@@ -303,6 +303,74 @@ describe("pi-agent extension", () => {
     );
   });
 
+  it("keeps codemode tools out of the base active set after fork", async () => {
+    const tools = [
+      { name: "read", exposure: "direct" },
+      { name: "edit", exposure: "direct" },
+      { name: "bash", exposure: "direct" },
+      { name: "grep", exposure: "direct" },
+      { name: "web_search", exposure: "codemode" },
+      { name: "codemode", exposure: "model-only" },
+    ];
+    writeAgent(
+      agentsDir,
+      "withcodemod",
+      "name: withcodemod\ndescription: Uses codemode\ntools: read, grep, codemode",
+    );
+    writeAgent(
+      agentsDir,
+      "plain",
+      "name: plain\ndescription: No tool restriction",
+    );
+
+    const pi = createMockPi();
+    pi.getAllTools.mockReturnValue(tools as never);
+    pi.getActiveTools.mockReturnValue(["read", "edit", "bash", "grep"]);
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    const cmd = pi.getCommand("agent");
+
+    await cmd.handler("withcodemod", ctx);
+    expect(pi.setActiveTools).toHaveBeenLastCalledWith([
+      "read",
+      "grep",
+      "codemode",
+    ]);
+
+    ctx.branch.push({
+      id: "msg-1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    });
+
+    const forkedPi = createMockPi();
+    forkedPi.getAllTools.mockReturnValue(tools as never);
+    forkedPi.getActiveTools.mockReturnValue(["read", "grep", "codemode"]);
+    createAgentExtension()(forkedPi as never);
+
+    const forkCtx = createMockContext({ branch: ctx.branch });
+    ctx.fork = vi.fn(async (_id, opts) => {
+      await Promise.all(
+        forkedPi.emit("session_start", { reason: "fork" }, forkCtx),
+      );
+      await opts?.withSession?.(forkCtx);
+      return { cancelled: false };
+    }) as never;
+
+    await cmd.handler("plain", ctx);
+
+    expect(forkedPi.setActiveTools).toHaveBeenLastCalledWith([
+      "read",
+      "edit",
+      "bash",
+      "grep",
+    ]);
+    expect(forkedPi.setActiveTools).not.toHaveBeenCalledWith(
+      expect.arrayContaining(["codemode"]),
+    );
+  });
+
   it("does not fall back to an in-place switch when the fork callback fails", async () => {
     const pi = createMockPi();
     const ext = createAgentExtension();

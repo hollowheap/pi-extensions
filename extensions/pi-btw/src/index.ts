@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { showMarkdownPager } from "@hollowheap/tui/pager";
 
 const MAX_RESPONSE_TOKENS = 1200;
@@ -98,7 +99,12 @@ export default function (pi: ExtensionAPI): void {
       let question = args.trim();
       if (question === "" && ctx.hasUI && typeof ctx.ui.input === "function") {
         question =
-          (await ctx.ui.input("Ask a side question", "Question"))?.trim() ?? "";
+          (
+            await withPromptLock(
+              () => ctx.ui.input("Ask a side question", "Question"),
+              { signal: ctx.signal },
+            )
+          )?.trim() ?? "";
       }
       if (question === "") {
         if (ctx.hasUI) ctx.ui.notify("Usage: /btw <question>", "info");
