@@ -126,7 +126,7 @@ export function getPanelStyle(panel: PanelConfig): PanelStyle {
 export function applyPanelStyle(
   panel: PanelConfig,
   style: PanelStyle,
-  borderStyle: BorderStyle,
+  borderStyle?: BorderStyle,
 ): PanelConfig {
   if (style === "background") {
     return {
@@ -138,7 +138,16 @@ export function applyPanelStyle(
     };
   }
   if (style === "surface" || style === "card" || style === "contrast") {
-    return { ...panel, style, mode: "box", borderStyle, surface: style };
+    const fallbackBorder =
+      borderStyle ??
+      (panel.borderStyle !== "none" ? panel.borderStyle : "rounded");
+    return {
+      ...panel,
+      style,
+      mode: "box",
+      borderStyle: fallbackBorder,
+      surface: style,
+    };
   }
   return {
     ...panel,
@@ -271,7 +280,7 @@ export function normalizeTuiConfig(
     return defaults;
   }
 
-  const borderStyle = parseEnum(
+  let borderStyle = parseEnum(
     raw.borderStyle,
     BORDER_STYLES,
     defaults.borderStyle,
@@ -417,6 +426,15 @@ export function normalizeTuiConfig(
           diagnostics,
         );
         panel = applyPanelStyle(panel, style, borderStyle);
+      }
+      if (raw.borderStyle === undefined && rawPanel.borderStyle !== undefined) {
+        borderStyle = panel.borderStyle;
+      } else if (
+        raw.borderStyle === undefined &&
+        rawPanel.style !== undefined &&
+        (BORDER_STYLES as readonly string[]).includes(String(panel.style))
+      ) {
+        borderStyle = panel.borderStyle;
       }
     }
   } else {

@@ -5,6 +5,7 @@ import {
   emptyUsage,
   getSessionUsage,
   persistUsage,
+  recordAuxiliaryUsage,
   restoreSessionUsage,
   setSessionUsage,
 } from "../src/usage.js";
@@ -125,5 +126,49 @@ describe("activeUsage", () => {
     expect(getSessionUsage(owner)).toEqual(usage);
     clearSessionUsage(owner);
     expect(map.has(owner)).toBe(false);
+  });
+});
+
+describe("recordAuxiliaryUsage", () => {
+  it("computes cost, updates cumulative usage, persists to sessionManager, calls appendEntry, and emits usage:refresh", () => {
+    const appendCustomEntry = vi.fn();
+    const sessionManager = {
+      getBranch: () => [],
+      appendCustomEntry,
+    };
+    const appendEntry = vi.fn();
+    const emitEvent = vi.fn();
+
+    const { cost, cumulative } = recordAuxiliaryUsage({
+      sessionManager,
+      modelId: "provider/aux-model",
+      usage: {
+        input: 100,
+        output: 20,
+        cacheRead: 5,
+        cacheWrite: 0,
+        cost: { total: 0.025 },
+      },
+      appendEntry,
+      emitEvent,
+    });
+
+    expect(cost).toBe(0.025);
+    expect(cumulative.totalTokens).toBe(125);
+    expect(cumulative.totalCost).toBe(0.025);
+    expect(cumulative.byModel["provider/aux-model"]).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 0,
+      cost: 0.025,
+    });
+    expect(getSessionUsage(sessionManager)).toEqual(cumulative);
+    expect(appendCustomEntry).toHaveBeenCalledWith(
+      USAGE_ENTRY_TYPE,
+      cumulative,
+    );
+    expect(appendEntry).toHaveBeenCalledWith(USAGE_ENTRY_TYPE, cumulative);
+    expect(emitEvent).toHaveBeenCalledWith("usage:refresh", undefined);
   });
 });

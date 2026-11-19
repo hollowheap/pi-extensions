@@ -197,7 +197,7 @@ describe("tui-config", () => {
 });
 
 describe("panel style", () => {
-  it("uses the standard frame border for a themed style and keeps legacy styles readable", () => {
+  it("preserves fallback borderStyle for surface styles and keeps legacy styles readable", () => {
     const themed = normalizeTuiConfig({
       borderStyle: "sharp",
       panel: { style: "card", borderStyle: "double", surface: "contrast" },
@@ -208,6 +208,18 @@ describe("panel style", () => {
       borderStyle: "sharp",
       surface: "card",
     });
+    for (const style of ["surface", "card", "contrast"] as const) {
+      const cfg = normalizeTuiConfig({
+        borderStyle: "rounded",
+        panel: { style },
+      });
+      expect(cfg.panel).toMatchObject({
+        style,
+        mode: "box",
+        borderStyle: "rounded",
+        surface: style,
+      });
+    }
     const plain = normalizeTuiConfig({
       overlaySurface: "contrast",
       panel: { style: "dashed" },

@@ -1,6 +1,271 @@
-import type { SandboxOptions } from "@hollowheap/runtime/sandbox";
+import {
+  constants,
+  accessSync,
+  lstatSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { updateJsonConfig } from "./config.js";
+import { errorMessage } from "./format.js";
 import { isRecord } from "./records.js";
+
+export interface SandboxOptions {
+  cwd?: string;
+  workspace?: string;
+  offline?: boolean;
+  network?: boolean;
+  maskPaths?: string[];
+  writablePaths?: readonly string[];
+  filterExisting?: boolean;
+  bwrapBinary?: string;
+}
+
+export interface WrappedSandboxCommand {
+  command: string;
+  args: string[];
+}
+
+export const DEFAULT_MASK_PATHS: readonly string[] = [
+  join(homedir(), ".ssh"),
+  join(homedir(), ".gnupg"),
+  join(homedir(), ".aws"),
+  join(homedir(), ".kube"),
+  join(homedir(), ".docker"),
+  join(homedir(), ".config", "gh"),
+  join(homedir(), ".config", "gcloud"),
+  join(homedir(), ".azure"),
+  join(homedir(), ".git-credentials"),
+  join(homedir(), ".netrc"),
+  join(homedir(), ".npmrc"),
+  join(homedir(), ".pypirc"),
+];
+
+function tryRealpath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function isInsideOrEqual(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return (
+    rel === "" ||
+    (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`))
+  );
+}
+
+function appendMaskArgs(
+  args: string[],
+  maskPath: string,
+  targetDir: string,
+  shouldFilter: boolean,
+): void {
+  const linkStat = lstatSync(maskPath, { throwIfNoEntry: false });
+  if (shouldFilter && linkStat === undefined) return;
+  let targetStat = linkStat;
+  if (linkStat?.isSymbolicLink()) {
+    try {
+      targetStat = statSync(maskPath);
+    } catch {
+      targetStat = undefined;
+    }
+  }
+  const addMount = (mountPath: string, isFile: boolean) => {
+    if (isFile) {
+      args.push("--ro-bind", "/dev/null", mountPath);
+    } else {
+      args.push("--tmpfs", mountPath);
+    }
+  };
+  if (linkStat?.isSymbolicLink()) {
+    const resolvedMask = tryRealpath(maskPath);
+    if (
+      resolvedMask !== undefined &&
+      resolvedMask !== maskPath &&
+      !isInsideOrEqual(targetDir, resolvedMask)
+    ) {
+      addMount(resolvedMask, targetStat?.isFile() ?? false);
+    }
+    return;
+  }
+  addMount(maskPath, targetStat?.isFile() ?? false);
+}
+
+export function isOsPermissionError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+    return true;
+  }
+  const message = errorMessage(error);
+  return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted)\b/i.test(
+    message,
+  );
+}
+
+export type BwrapProbeResult =
+  | { available: true; path: string }
+  | {
+      available: false;
+      reason: "unsupported" | "missing" | "permission";
+      path?: string;
+      error?: unknown;
+    };
+
+export function probeBwrapAvailability(binaryName = "bwrap"): BwrapProbeResult {
+  if (process.platform !== "linux") {
+    return { available: false, reason: "unsupported" };
+  }
+  if (isAbsolute(binaryName)) {
+    try {
+      const stat = statSync(binaryName);
+      if (stat.isFile()) {
+        accessSync(binaryName, constants.X_OK);
+        return { available: true, path: binaryName };
+      }
+      return { available: false, reason: "missing", path: binaryName };
+    } catch (error) {
+      if (isOsPermissionError(error)) {
+        return {
+          available: false,
+          reason: "permission",
+          path: binaryName,
+          error,
+        };
+      }
+      return { available: false, reason: "missing", path: binaryName, error };
+    }
+  }
+  const pathEnv = process.env.PATH ?? "";
+  const dirs = pathEnv.split(delimiter);
+  let permissionIssue: { path: string; error: unknown } | undefined;
+  for (const dir of dirs) {
+    if (!dir) continue;
+    const candidate = join(dir, binaryName);
+    try {
+      const stat = statSync(candidate);
+      if (stat.isFile()) {
+        accessSync(candidate, constants.X_OK);
+        return { available: true, path: candidate };
+      }
+    } catch (error) {
+      if (isOsPermissionError(error) && !permissionIssue) {
+        permissionIssue = { path: candidate, error };
+      }
+    }
+  }
+  if (permissionIssue) {
+    return {
+      available: false,
+      reason: "permission",
+      path: permissionIssue.path,
+      error: permissionIssue.error,
+    };
+  }
+  return { available: false, reason: "missing" };
+}
+
+export function isBwrapAvailable(binaryName = "bwrap"): boolean {
+  return probeBwrapAvailability(binaryName).available;
+}
+
+export function assertBwrapAvailable(binaryName = "bwrap"): void {
+  const probe = probeBwrapAvailability(binaryName);
+  if (probe.available) return;
+  if (probe.reason === "permission") {
+    const code = (probe.error as NodeJS.ErrnoException | undefined)?.code;
+    const detail = probe.error !== undefined ? errorMessage(probe.error) : "";
+    throw new Error(
+      `Bubblewrap sandbox is required, but '${probe.path ?? binaryName}' cannot be accessed (${code ?? "OS permission"} denied — check chmod +x and directory permissions): ${detail}`,
+    );
+  }
+  if (probe.reason === "unsupported") {
+    throw new Error(
+      "Bubblewrap sandbox is required, but Linux namespaces are required on this host",
+    );
+  }
+  throw new Error(
+    `Bubblewrap sandbox is required but '${binaryName}' was not found on PATH`,
+  );
+}
+
+export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
+  const resolvedTarget = resolve(
+    options.workspace ?? options.cwd ?? process.cwd(),
+  );
+  const targetDir = tryRealpath(resolvedTarget) ?? resolvedTarget;
+  const args: string[] = [
+    "--ro-bind",
+    "/",
+    "/",
+    "--dev",
+    "/dev",
+    "--proc",
+    "/proc",
+    "--tmpfs",
+    "/tmp",
+    "--bind",
+    targetDir,
+    targetDir,
+  ];
+
+  const candidateMasks = options.maskPaths ?? [...DEFAULT_MASK_PATHS];
+  const shouldFilter =
+    options.filterExisting ?? options.maskPaths === undefined;
+
+  for (const maskPath of candidateMasks) {
+    appendMaskArgs(args, maskPath, targetDir, shouldFilter);
+  }
+
+  for (const writablePath of options.writablePaths ?? []) {
+    if (writablePath) {
+      args.push("--bind", writablePath, writablePath);
+    }
+  }
+
+  const isOffline = options.offline ?? options.network === false;
+  if (isOffline) {
+    args.push("--unshare-net");
+  }
+
+  return args;
+}
+
+export function wrapSandboxCommand(
+  command: string,
+  args: string[] = [],
+  options: SandboxOptions = {},
+): WrappedSandboxCommand {
+  const binary = options.bwrapBinary ?? "bwrap";
+  assertBwrapAvailable(binary);
+
+  const targetDir = options.workspace ?? options.cwd;
+  if (targetDir) {
+    try {
+      statSync(targetDir);
+    } catch (error) {
+      if (isOsPermissionError(error)) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        const detail = errorMessage(error);
+        throw new Error(
+          `${command} failed: OS permission denied accessing working directory ${targetDir} (${code ?? "permission"}): ${detail}`,
+        );
+      }
+      throw new Error(
+        `${command} failed: working directory does not exist: ${targetDir}`,
+      );
+    }
+  }
+
+  const sandboxArgs = buildSandboxArgs(options);
+  return {
+    command: binary,
+    args: [...sandboxArgs, "--", command, ...args],
+  };
+}
 
 export interface SandboxConfig {
   readonly enabled: boolean;

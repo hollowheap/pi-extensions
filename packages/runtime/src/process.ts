@@ -1,13 +1,16 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import {
+  constants,
+  accessSync,
   chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
   openSync,
   readFileSync,
+  statSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { abortableDelay } from "./abort.js";
 import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
 
@@ -89,17 +92,57 @@ function isStaleProcessIdentity(pid: number, startTime?: number): boolean {
   return isProcessAlive(pid) && !isProcessAlive(pid, startTime);
 }
 
+function isJsRuntimeBinary(commandPath: string): boolean {
+  return /^(node|nodejs|bun)(\.exe)?$/i.test(basename(commandPath));
+}
+
+function findNodeOnPath(pathEnv = process.env.PATH ?? ""): string | undefined {
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) continue;
+    for (const name of ["node", "nodejs"]) {
+      const candidate = join(dir, name);
+      try {
+        if (statSync(candidate).isFile()) {
+          accessSync(candidate, constants.X_OK);
+          return candidate;
+        }
+      } catch {
+        // Ignore inaccessible or missing PATH entries.
+      }
+    }
+  }
+  return undefined;
+}
+
+export function resolveJsRuntimeCommand(
+  command: string,
+  env?: NodeJS.ProcessEnv,
+): { command: string; env?: NodeJS.ProcessEnv } {
+  if (command !== process.execPath || isJsRuntimeBinary(command)) {
+    return { command, env };
+  }
+  const nodeBinary = findNodeOnPath(env?.PATH ?? process.env.PATH);
+  if (nodeBinary !== undefined) {
+    return { command: nodeBinary, env };
+  }
+  return {
+    command,
+    env: { ...(env ?? process.env), BUN_BE_BUN: "1" },
+  };
+}
+
 export function spawnDetachedProcess(
   options: SpawnDetachedOptions,
 ): DetachedProcess {
-  let spawnCommand = options.command;
+  const runtime = resolveJsRuntimeCommand(options.command, options.env);
+  let spawnCommand = runtime.command;
   let spawnArgs = [...(options.args ?? [])];
   if (options.sandbox) {
     const sandboxOpts: SandboxOptions =
       typeof options.sandbox === "object"
         ? { ...options.sandbox, cwd: options.sandbox.cwd ?? options.cwd }
         : { cwd: options.cwd };
-    const wrapped = wrapSandboxCommand(options.command, spawnArgs, sandboxOpts);
+    const wrapped = wrapSandboxCommand(spawnCommand, spawnArgs, sandboxOpts);
     spawnCommand = wrapped.command;
     spawnArgs = wrapped.args;
   }
@@ -109,7 +152,7 @@ export function spawnDetachedProcess(
     chmodSync(options.logPath, 0o600);
     const child = spawn(spawnCommand, spawnArgs, {
       cwd: options.cwd,
-      env: options.env,
+      env: runtime.env,
       detached: true,
       stdio: ["ignore", logFd, logFd],
     });

@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { USAGE_ENTRY_TYPE, getSessionUsage } from "@hollowheap/core/usage";
+import { describe, expect, it, vi } from "vitest";
+import { classifyToolCall } from "../src/classifier.js";
 import {
   TOOL_TAGS,
   isPassthroughTaskCall,
@@ -57,5 +62,67 @@ describe("policy targets", () => {
     expect(isPassthroughTaskCall("task", { action: "cancel" })).toBe(false);
     expect(isPassthroughTaskCall("task", { action: "start" })).toBe(false);
     expect(isPassthroughTaskCall("bash", { action: "list" })).toBe(false);
+  });
+
+  it("honors decide.json classifier model via getModelOfType and records usage", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "policy-classifier-"));
+    writeFileSync(
+      join(dir, "decide.json"),
+      JSON.stringify({ model: "custom/classifier-v1" }),
+    );
+    const getModelOfType = vi.fn(() => ({
+      provider: "custom",
+      id: "classifier-v1",
+    }));
+    const classify = vi.fn().mockResolvedValue({
+      stopReason: "stop",
+      answers: { answer: { choice: "block" } },
+      usage: {
+        input: 20,
+        output: 4,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: { total: 0.002 },
+      },
+    });
+    const sessionManager = {
+      getBranch: () => [],
+      appendCustomEntry: vi.fn(),
+    };
+    const appendEntry = vi.fn();
+    const emitEvent = vi.fn();
+
+    const verdict = await classifyToolCall(
+      {
+        type: "tool_call",
+        toolCallId: "tc-1",
+        toolName: "read",
+        input: { path: "src/index.ts" },
+      } as never,
+      "read",
+      {
+        sessionManager,
+        modelRegistry: { getModelOfType, classify },
+      } as never,
+      { agentDir: dir, appendEntry, emitEvent },
+    );
+
+    expect(getModelOfType).toHaveBeenCalledWith(
+      "classifier",
+      "custom",
+      "classifier-v1",
+    );
+    expect(verdict).toEqual({ kind: "block" });
+    expect(getSessionUsage(sessionManager)).toEqual(
+      expect.objectContaining({
+        totalTokens: 24,
+        totalCost: 0.002,
+      }),
+    );
+    expect(appendEntry).toHaveBeenCalledWith(
+      USAGE_ENTRY_TYPE,
+      expect.objectContaining({ totalCost: 0.002 }),
+    );
+    expect(emitEvent).toHaveBeenCalledWith("usage:refresh", undefined);
   });
 });

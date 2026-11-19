@@ -1,3 +1,4 @@
+import { messageCost } from "./pricing.js";
 import { updateSessionSnapshot } from "./snapshot.js";
 import { appendCustomEntry, readBranchEntries } from "./state.js";
 
@@ -382,4 +383,66 @@ export function restoreSessionUsage(
   const restored = extractLatestUsage(entries);
   setSessionUsage(manager, restored);
   return restored;
+}
+
+export interface RecordAuxiliaryUsageOptions {
+  sessionManager?: unknown;
+  context?: unknown;
+  modelId: string;
+  model?: unknown;
+  usage: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    cost?: { total?: number };
+  };
+  appendEntry?: (customType: string, data: unknown) => void;
+  emitEvent?: (event: string, data?: unknown) => void;
+}
+
+export function recordAuxiliaryUsage(options: RecordAuxiliaryUsageOptions): {
+  cost: number;
+  cumulative: CumulativeUsage;
+} {
+  const sessionManager = options.sessionManager as
+    | UsageSessionManager
+    | undefined;
+  const current =
+    ownerKey(sessionManager) !== undefined && sessionManager !== undefined
+      ? restoreSessionUsage(sessionManager)
+      : getSessionUsage(options.context);
+  const cost = messageCost(
+    { usage: options.usage, model: options.modelId },
+    options.model ?? options.modelId,
+  );
+  const next = recordTurnUsage(
+    current,
+    {
+      input: options.usage.input,
+      output: options.usage.output,
+      cacheRead: options.usage.cacheRead,
+      cacheWrite: options.usage.cacheWrite,
+    },
+    cost,
+    options.modelId,
+  );
+
+  if (ownerKey(sessionManager) !== undefined && sessionManager !== undefined) {
+    setSessionUsage(sessionManager, next);
+    persistUsage(sessionManager, next);
+  } else if (ownerKey(options.context) !== undefined) {
+    setSessionUsage(options.context, next);
+  }
+
+  if (typeof options.appendEntry === "function") {
+    try {
+      options.appendEntry(USAGE_ENTRY_TYPE, next);
+    } catch {
+      // Ignore persistence errors when recording auxiliary usage.
+    }
+  }
+  options.emitEvent?.("usage:refresh", undefined);
+
+  return { cost, cumulative: next };
 }
