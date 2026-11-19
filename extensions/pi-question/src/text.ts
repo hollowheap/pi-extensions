@@ -44,10 +44,10 @@ export function deleteBeforeCaret(
 export function dialogOptions(
   ctx: ExtensionContext,
   lockOptions: QuestionDialogOptions,
-): ExtensionUIDialogOptions & { switchPrompt?: boolean } {
+): ExtensionUIDialogOptions & { overlay?: boolean } {
   return {
     signal: lockOptions.signal,
     timeout: lockOptions.timeoutMs,
-    ...(canOverlay(ctx) ? { switchPrompt: true } : {}),
+    ...(canOverlay(ctx) ? { overlay: false } : {}),
   };
 }

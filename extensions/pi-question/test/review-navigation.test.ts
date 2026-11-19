@@ -1,12 +1,20 @@
+import { CURSOR_MARKER, isFocusable } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { askQuestions } from "../src/index.js";
 
 interface Component {
   render(width: number): string[];
+  invalidate(): void;
   handleInput(data: string): void;
 }
 
-function createFlow(questions: Array<{ prompt: string; mode: "free" }>) {
+function createFlow(
+  questions: Array<{
+    prompt: string;
+    mode: "free" | "single" | "multi";
+    options?: string[];
+  }>,
+) {
   const components: Component[] = [];
   const custom = vi.fn(
     (
@@ -16,6 +24,7 @@ function createFlow(questions: Array<{ prompt: string; mode: "free" }>) {
         keys: unknown,
         done: (value: unknown) => void,
       ) => Component,
+      _options?: unknown,
     ) =>
       new Promise<unknown>((resolve) => {
         const component = factory(
@@ -53,23 +62,24 @@ describe("question navigation", () => {
     ]);
 
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
-    await type(flow.components[0], "alpha");
-    flow.components[0]?.handleInput("\r");
+    expect(flow.custom).toHaveBeenCalledWith(expect.any(Function), {
+      overlay: false,
+    });
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+    await type(dialog, "alpha");
+    dialog.handleInput("\r");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
-    await type(flow.components[1], "beta");
-    flow.components[1]?.handleInput("\r");
+    await type(dialog, "beta");
+    dialog.handleInput("\r");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
-    const review = flow.components[2];
-    if (review === undefined) throw new Error("missing review component");
-    const rendered = review.render(80).join("\n");
+    const rendered = dialog.render(80).join("\n");
     expect(rendered).toContain("Review");
     expect(rendered).toContain("Edit");
     expect(rendered).toContain("Confirm");
     expect(rendered).toContain("Cancel");
 
-    review.handleInput("\r");
+    dialog.handleInput("\r");
     const result = await flow.pending;
     expect(result?.cancelled).not.toBe(true);
     expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
@@ -117,31 +127,24 @@ describe("question navigation", () => {
     ]);
 
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
-    await type(flow.components[0], "alpha");
-    flow.components[0]?.handleInput("\r");
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+    await type(dialog, "alpha");
+    dialog.handleInput("\r");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
-    await type(flow.components[1], "beta");
-    flow.components[1]?.handleInput("\r");
+    await type(dialog, "beta");
+    dialog.handleInput("\r");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
-    const review = flow.components[2];
-    if (review === undefined) throw new Error("missing review component");
-    review.handleInput("\x1b[D");
-    review.handleInput("\r");
+    dialog.handleInput("\x1b[D");
+    dialog.handleInput("\r");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(3));
-    const edit = flow.components[3];
-    if (edit === undefined) throw new Error("missing edit component");
-    await type(edit, "ALPHA");
-    edit.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("First?");
+    await type(dialog, "ALPHA");
+    dialog.handleInput("\r");
+    dialog.handleInput("\t");
 
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(4));
-    const reviewAgain = flow.components[4];
-    if (reviewAgain === undefined)
-      throw new Error("missing repeated review component");
-    expect(reviewAgain.render(80).join("\n")).toContain("ALPHA");
-    reviewAgain.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("ALPHA");
+    dialog.handleInput("\r");
 
     const result = await flow.pending;
     expect(result?.[0]).toMatchObject({ mode: "free", value: "ALPHA" });
@@ -154,17 +157,15 @@ describe("question navigation", () => {
       { prompt: "Second?", mode: "free" },
     ]);
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
-    await type(flow.components[0], "alpha");
-    flow.components[0]?.handleInput("\r");
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
-    await type(flow.components[1], "beta");
-    flow.components[1]?.handleInput("\r");
-    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(2));
-    const review = flow.components[2];
-    if (review === undefined) throw new Error("missing review component");
-    review.handleInput("\x1b[D");
-    review.handleInput("\x1b[C");
-    review.handleInput("\r");
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+    await type(dialog, "alpha");
+    dialog.handleInput("\r");
+    await type(dialog, "beta");
+    dialog.handleInput("\r");
+    dialog.handleInput("\x1b[D");
+    dialog.handleInput("\x1b[C");
+    dialog.handleInput("\r");
 
     const result = await flow.pending;
     expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
@@ -204,5 +205,188 @@ describe("question navigation", () => {
     const result = await flow.pending;
     expect(result?.cancelled).toBe(true);
     expect(result?.[0]).toMatchObject({ mode: "free", value: "alpha" });
+  });
+
+  it("switches between question tabs and Review with Tab and Shift+Tab while preserving draft state", async () => {
+    const flow = createFlow([
+      { prompt: "First?", mode: "free" },
+      { prompt: "Pick one?", mode: "single", options: ["One", "Two"] },
+      { prompt: "Pick many?", mode: "multi", options: ["X", "Y"] },
+    ]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+
+    expect(dialog.render(80).join("\n")).toContain("[Q1]");
+    expect(dialog.render(80).join("\n")).toContain("Tab / Shift+Tab");
+
+    await type(dialog, "draft-1");
+    dialog.handleInput("\t");
+    expect(dialog.render(80).join("\n")).toContain("[Q2]");
+    expect(dialog.render(80).join("\n")).toContain("Pick one?");
+
+    dialog.handleInput("\x1b[Z");
+    expect(dialog.render(80).join("\n")).toContain("[Q1]");
+    expect(dialog.render(80).join("\n")).toContain("draft-1");
+
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("[Q2]");
+
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("[Q3]");
+
+    dialog.handleInput(" ");
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("[Review]");
+
+    dialog.handleInput("\r");
+    const result = await flow.pending;
+    expect(result?.cancelled).not.toBe(true);
+    expect(result?.[0]).toEqual({ mode: "free", value: "draft-1" });
+    expect(result?.[1]).toEqual({ mode: "single", value: "Two" });
+    expect(result?.[2]).toEqual({
+      mode: "multi",
+      selected: ["X"],
+      writeIn: undefined,
+    });
+  });
+
+  it("cancels a tabbed multi-question flow on Escape", async () => {
+    const flow = createFlow([
+      { prompt: "First?", mode: "single", options: ["A"] },
+      { prompt: "Second?", mode: "free" },
+    ]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    flow.components[0]?.handleInput("\x1b");
+
+    const result = await flow.pending;
+    expect(result?.cancelled).toBe(true);
+  });
+
+  it("forwards Focusable state to the active tab editor for CURSOR_MARKER", async () => {
+    const flow = createFlow([
+      { prompt: "Free?", mode: "free" },
+      { prompt: "Pick?", mode: "single", options: ["A"] },
+    ]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+    expect(isFocusable(dialog)).toBe(true);
+    if (!isFocusable(dialog)) throw new Error("expected focusable dialog");
+
+    dialog.focused = true;
+    expect(dialog.render(80).join("\n")).toContain(CURSOR_MARKER);
+
+    dialog.handleInput("\t");
+    expect(dialog.render(80).join("\n")).not.toContain(CURSOR_MARKER);
+
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain(CURSOR_MARKER);
+
+    dialog.handleInput("\x03");
+    const result = await flow.pending;
+    expect(result?.cancelled).toBe(true);
+  });
+
+  it("sorts tabbed questions by page and skips disabled conditional tabs on Tab/Shift+Tab", async () => {
+    const flow = createFlow([
+      {
+        prompt: "Follow-up?",
+        mode: "free",
+        page: 2,
+        condition: "answer2 == 'yes'",
+      } as never,
+      {
+        prompt: "Enable follow-up?",
+        mode: "single",
+        options: ["no", "yes"],
+        page: 1,
+      } as never,
+    ]);
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    const dialog = flow.components[0];
+    if (dialog === undefined) throw new Error("missing dialog component");
+
+    expect(dialog.render(80).join("\n")).toContain("Enable follow-up?");
+    dialog.handleInput("\t");
+    expect(dialog.render(80).join("\n")).toContain("[Review]");
+    dialog.handleInput("\x1b[Z");
+    expect(dialog.render(80).join("\n")).toContain("Enable follow-up?");
+
+    dialog.handleInput("\x1b[B");
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("Follow-up?");
+
+    await type(dialog, "details");
+    dialog.handleInput("\r");
+    expect(dialog.render(80).join("\n")).toContain("[Review]");
+    dialog.handleInput("\r");
+
+    const result = await flow.pending;
+    expect(result?.cancelled).not.toBe(true);
+    expect(result?.[0]).toEqual({ mode: "free", value: "details" });
+    expect(result?.[1]).toEqual({ mode: "single", value: "yes" });
+  });
+
+  it("cancels non-tabbed review on Ctrl+C and AbortSignal", async () => {
+    const flow = createFlow([{ prompt: "Pick or write", mode: "free" }]);
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
+    await type(flow.components[0], "alpha");
+    flow.components[0]?.handleInput("\r");
+
+    await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(1));
+    flow.components[1]?.handleInput("\x03");
+    const ctrlCResult = await flow.pending;
+    expect(ctrlCResult?.cancelled).toBe(true);
+
+    const abort = new AbortController();
+    const components: Component[] = [];
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keys: unknown,
+          done: (value: unknown) => void,
+        ) => Component,
+      ) =>
+        new Promise<unknown>((resolve) => {
+          const component = factory(
+            { requestRender: vi.fn() },
+            { fg: (_t: string, text: string) => text, bold: (t: string) => t },
+            {},
+            resolve,
+          );
+          components.push(component);
+        }),
+    );
+    const ctx = {
+      mode: "tui",
+      hasUI: true,
+      sessionManager: {},
+      ui: { select: vi.fn(), input: vi.fn(), custom },
+    };
+    const pending = askQuestions(
+      [{ prompt: "One", mode: "free" }] as never,
+      ctx as never,
+      { signal: abort.signal },
+    );
+    await vi.waitFor(() => expect(components.length).toBe(1));
+    await type(components[0], "alpha");
+    components[0]?.handleInput("\r");
+
+    await vi.waitFor(() => expect(components.length).toBe(2));
+    abort.abort();
+    const abortedResult = await pending;
+    expect(abortedResult?.cancelled).toBe(true);
   });
 });
