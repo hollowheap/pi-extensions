@@ -1,11 +1,17 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   findProjectAgentConfigFile,
   loadAgentConfig,
+  showAgentSettings,
 } from "../src/settings.js";
+
+const mockShowSettingsDialog = vi.hoisted(() => vi.fn());
+vi.mock("@hollowheap/pi-ui/settings", () => ({
+  showSettingsDialog: mockShowSettingsDialog,
+}));
 
 let baseDir: string;
 let agentDir: string;
@@ -183,5 +189,54 @@ describe("loadAgentConfig", () => {
 
     const found = findProjectAgentConfigFile(projectDir);
     expect(found).toBe(join(workspaceRoot, ".pi", "agent.json"));
+  });
+});
+
+describe("showAgentSettings", () => {
+  beforeEach(() => {
+    mockShowSettingsDialog.mockReset();
+  });
+
+  it("maps 'default' and 'none' currentDefault values to (default)", async () => {
+    mockShowSettingsDialog.mockResolvedValue(undefined);
+    const ctx = { hasUI: true, ui: { notify: vi.fn() } } as never;
+
+    for (const alias of ["default", "DEFAULT", "none", "None"]) {
+      mockShowSettingsDialog.mockClear();
+      await showAgentSettings(ctx, {
+        agents: [{ name: "scout" }],
+        currentDefault: alias,
+        onSave: vi.fn(),
+      });
+      const call = mockShowSettingsDialog.mock.calls[0]?.[0];
+      expect(call.items[0].currentValue).toBe("(default)");
+      expect(call.header()).toEqual(["Default: (default)", ""]);
+    }
+  });
+
+  it("keeps the previous UI value and returns false when onSave throws", async () => {
+    const notifySpy = vi.fn();
+    const ctx = { hasUI: true, ui: { notify: notifySpy } } as never;
+    let headerAfterFailure: string[] = [];
+
+    mockShowSettingsDialog.mockImplementation(async (opts) => {
+      opts.onChange("defaultAgent", "scout");
+      headerAfterFailure = opts.header();
+    });
+
+    const saved = await showAgentSettings(ctx, {
+      agents: [{ name: "scout" }],
+      currentDefault: undefined,
+      onSave: () => {
+        throw new Error("disk full");
+      },
+    });
+
+    expect(saved).toBe(false);
+    expect(headerAfterFailure).toEqual(["Default: (default)", ""]);
+    expect(notifySpy).toHaveBeenCalledWith(
+      expect.stringContaining("disk full"),
+      "error",
+    );
   });
 });

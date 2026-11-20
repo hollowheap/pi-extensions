@@ -65,8 +65,8 @@ function parseConfigFile(
   }
 
   const record = parsed as Record<string, unknown>;
-  const hasDefault = "default" in record;
-  const hasDefaultAgent = "defaultAgent" in record;
+  const hasDefault = Object.hasOwn(record, "default");
+  const hasDefaultAgent = Object.hasOwn(record, "defaultAgent");
   if (!hasDefault && !hasDefaultAgent) {
     return {};
   }
@@ -104,7 +104,7 @@ export function loadAgentConfig(
   }
 
   let effectiveDefault = userConfig?.default;
-  if (projectConfig !== undefined && "default" in projectConfig) {
+  if (projectConfig !== undefined && Object.hasOwn(projectConfig, "default")) {
     effectiveDefault = projectConfig.default;
   }
 
@@ -146,7 +146,15 @@ export async function showAgentSettings(
   options: ShowAgentSettingsOptions,
 ): Promise<boolean> {
   let saved = false;
-  let value = options.currentDefault ?? NO_DEFAULT;
+  const rawDefault = options.currentDefault?.trim();
+  const normalizedDefault =
+    rawDefault === undefined ||
+    rawDefault === "" ||
+    rawDefault.toLowerCase() === "default" ||
+    rawDefault.toLowerCase() === "none"
+      ? NO_DEFAULT
+      : rawDefault;
+  let value = normalizedDefault;
   const items: SettingItem[] = [
     {
       id: "defaultAgent",
@@ -162,9 +170,9 @@ export async function showAgentSettings(
     items,
     header: () => [`Default: ${value}`, ""],
     onChange: (_id, next) => {
-      value = next;
       try {
-        options.onSave(value === NO_DEFAULT ? undefined : value);
+        options.onSave(next === NO_DEFAULT ? undefined : next);
+        value = next;
         saved = true;
       } catch (error) {
         notify(

@@ -272,7 +272,8 @@ describe("pi-agent extension", () => {
     );
     expect(forkedPi.setLabel).toHaveBeenCalledWith("msg-1", "agent: scout");
     expect(forkedPi.setSessionName).not.toHaveBeenCalled();
-    expect(ctx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
+    expect(forkCtx.ui.setStatus).toHaveBeenCalledWith("agent", "scout");
     expect(forkCtx.ui.setTitle).not.toHaveBeenCalled();
     expect(forkedPi.events.emit).toHaveBeenCalledWith("mode:changed", {
       mode: "plan",
@@ -1378,5 +1379,187 @@ describe("pi-agent extension", () => {
     expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
       name: null,
     });
+  });
+
+  it("aborts switchAndFork without mutating status when ctx.fork is cancelled", async () => {
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "msg-1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    });
+    ctx.fork = vi.fn(async () => ({ cancelled: true })) as never;
+
+    const cmd = pi.getCommand("agent");
+    await cmd.handler("scout", ctx as never);
+
+    expect(ctx.fork).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.setStatus).not.toHaveBeenCalled();
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.setActiveTools).not.toHaveBeenCalled();
+  });
+
+  it("captures pre-fork baseActiveTools so /agent default restores them after fork", async () => {
+    const tools = [
+      { name: "read", exposure: "direct" },
+      { name: "edit", exposure: "direct" },
+      { name: "bash", exposure: "direct" },
+      { name: "grep", exposure: "direct" },
+    ];
+    let parentActive = ["read", "edit", "bash"];
+    const pi = createMockPi();
+    pi.getAllTools = vi.fn(() => tools);
+    pi.getActiveTools = vi.fn(() => [...parentActive]);
+    pi.setActiveTools = vi.fn((next: string[]) => {
+      parentActive = [...next];
+    });
+    createAgentExtension()(pi as never);
+
+    let forkedActive = ["read", "edit", "bash", "grep"];
+    const forkedPi = createMockPi();
+    forkedPi.getAllTools = vi.fn(() => tools);
+    forkedPi.getActiveTools = vi.fn(() => [...forkedActive]);
+    forkedPi.setActiveTools = vi.fn((next: string[]) => {
+      forkedActive = [...next];
+    });
+    createAgentExtension()(forkedPi as never);
+
+    const ctx = createMockContext();
+    ctx.branch.push({
+      id: "msg-1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    });
+    const forkCtx = createMockContext({ branch: ctx.branch });
+    ctx.fork = vi.fn(async (_id, opts) => {
+      await Promise.all(
+        forkedPi.emit("session_start", { reason: "fork" }, forkCtx),
+      );
+      await opts?.withSession?.(forkCtx);
+      return { cancelled: false };
+    }) as never;
+
+    await pi.getCommand("agent").handler("scout", ctx as never);
+    expect(forkedActive).toEqual(["read", "grep"]);
+
+    await forkedPi.getCommand("agent").handler("default", forkCtx as never);
+    expect(forkedActive).toEqual(["read", "edit", "bash"]);
+  });
+
+  it("clears activeAgent and baseActiveTools on session_shutdown and clears baseActiveTools on applyDefault", async () => {
+    const tools = [
+      { name: "read", exposure: "direct" },
+      { name: "edit", exposure: "direct" },
+      { name: "bash", exposure: "direct" },
+      { name: "grep", exposure: "direct" },
+    ];
+    let liveTools = ["read", "edit"];
+    const pi = createMockPi();
+    pi.getAllTools = vi.fn(() => tools);
+    pi.getActiveTools = vi.fn(() => [...liveTools]);
+    pi.setActiveTools = vi.fn((next: string[]) => {
+      liveTools = [...next];
+    });
+    createAgentExtension()(pi as never);
+
+    const ctx = createMockContext();
+    const cmd = pi.getCommand("agent");
+
+    await cmd.handler("scout", ctx as never);
+    expect(liveTools).toEqual(["read", "grep"]);
+
+    await cmd.handler("default", ctx as never);
+    expect(liveTools).toEqual(["read", "edit"]);
+
+    // Enable another tool while on default; next switch should capture the new base set.
+    liveTools = ["read", "edit", "bash"];
+    await cmd.handler("scout", ctx as never);
+    expect(liveTools).toEqual(["read", "grep"]);
+
+    await cmd.handler("default", ctx as never);
+    expect(liveTools).toEqual(["read", "edit", "bash"]);
+
+    // Switch again, then shut down; activeAgent and baseActiveTools must be cleared.
+    await cmd.handler("scout", ctx as never);
+    pi.emit("session_shutdown");
+    pi.appendEntry.mockClear();
+    pi.emit("session_compact", {}, ctx);
+    expect(pi.appendEntry).toHaveBeenCalledWith(ACTIVE_AGENT_TYPE, {
+      name: null,
+    });
+  });
+
+  it("updates agent snapshot with resolved mode and notifies on enterMode error during interactive switch", async () => {
+    const customDir = mkdtempSync(join(tmpdir(), "pi-agent-bad-mode-"));
+    writeAgent(
+      join(customDir, "agents"),
+      "broken",
+      "name: broken\ndescription: Agent with unknown mode\nmode: nonexistent-mode",
+    );
+    const originalEnv = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = customDir;
+    try {
+      const pi = createMockPi();
+      createAgentExtension()(pi as never);
+      const ctx = createMockContext();
+
+      await pi.getCommand("agent").handler("broken", ctx as never);
+
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        expect.stringContaining("Mode error:"),
+        "error",
+      );
+      expect(getSessionSnapshot(ctx.sessionManager).agent).toEqual(
+        expect.objectContaining({
+          name: "broken",
+          mode: "manual",
+        }),
+      );
+    } finally {
+      if (originalEnv === undefined) {
+        Reflect.deleteProperty(process.env, "PI_CODING_AGENT_DIR");
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalEnv;
+      }
+      rmSync(customDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads model overrides from getEntries when getBranch is unavailable on restore and session_compact", async () => {
+    const pi = createMockPi();
+    createAgentExtension()(pi as never);
+
+    const entries = [
+      {
+        type: "custom",
+        customType: ACTIVE_AGENT_TYPE,
+        data: { name: "scout" },
+      },
+      {
+        type: "model_change",
+        provider: "anthropic",
+        modelId: "claude-sonnet",
+      },
+    ];
+    const ctx = createMockContext();
+    ctx.sessionManager = {
+      getEntries: () => entries,
+    } as never;
+
+    await Promise.all(pi.emit("session_start", { reason: "startup" }, ctx));
+    expect(pi.setModel).not.toHaveBeenCalled();
+
+    pi.appendEntry.mockClear();
+    pi.emit("session_compact", {}, ctx);
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      ACTIVE_AGENT_TYPE,
+      expect.objectContaining({
+        name: "scout",
+        modelOverride: true,
+      }),
+    );
   });
 });

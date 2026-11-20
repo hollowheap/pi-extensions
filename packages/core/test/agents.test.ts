@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatAgentRosterSection, renderAgentRoster } from "../src/agents.js";
+import {
+  formatAgentRosterSection,
+  renderAgentRoster,
+  resolveAgentName,
+} from "../src/agents.js";
 
 describe("renderAgentRoster", () => {
   it("renders name, description, and the subagent spawn call", () => {
@@ -40,5 +44,23 @@ describe("formatAgentRosterSection", () => {
     expect(section.startsWith("<agents>\n")).toBe(true);
     expect(section.endsWith("\n</agents>")).toBe(true);
     expect(section).toContain("- scout: Fast recon");
+  });
+});
+
+describe("resolveAgentName", () => {
+  const agents = [
+    { name: "scout", description: "Fast recon" },
+    { name: "Researcher", description: "Deep research" },
+  ];
+
+  it("matches agent names case-insensitively with whitespace trimming", () => {
+    expect(resolveAgentName("  SCOUT ", agents)?.name).toBe("scout");
+    expect(resolveAgentName("researcher", agents)?.name).toBe("Researcher");
+  });
+
+  it("returns undefined for default, none, and unknown names", () => {
+    expect(resolveAgentName("default", agents)).toBeUndefined();
+    expect(resolveAgentName("NONE", agents)).toBeUndefined();
+    expect(resolveAgentName("missing", agents)).toBeUndefined();
   });
 });

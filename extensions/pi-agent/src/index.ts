@@ -153,7 +153,7 @@ function hasSessionModelOverride(
   persist?: boolean,
 ): boolean {
   if (persist) return false;
-  const entries = readSessionBranch(sessionManager);
+  const entries = readSessionBranch(sessionManager, true);
   const { lastAgentIndex, lastModelChangeIndex, lastAgentOverride } =
     findOverrideState(entries);
   return lastAgentOverride || lastModelChangeIndex > lastAgentIndex;
@@ -495,6 +495,25 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
 
       emitAgentStatus(ctx, statusline.publish, agent.name);
 
+      let resolvedMode = ctx.sessionManager
+        ? session(ctx.sessionManager).mode
+        : undefined;
+      if (agent.mode && ctx.sessionManager && options.preserveMode !== true) {
+        const result = enterMode(ctx.sessionManager, agent.mode, {
+          persist: false,
+        });
+        const error = result.diagnostic ?? result.veto;
+        if (error && (options.notify || options.persist)) {
+          notify(ctx, `Mode error: ${error}`, "error");
+        }
+        if (error === undefined) {
+          resolvedMode = result.mode;
+          piApi.events?.emit?.("mode:changed", { mode: result.mode });
+        } else {
+          resolvedMode = session(ctx.sessionManager).mode;
+        }
+      }
+
       if (ctx.sessionManager) {
         updateSessionSnapshot(ctx.sessionManager, "agent", {
           name: agent.name,
@@ -503,27 +522,11 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           ...(preservedThinking !== undefined
             ? { thinking: preservedThinking }
             : { thinking: agent.thinking }),
-          mode:
-            options.preserveMode === true
-              ? session(ctx.sessionManager).mode
-              : agent.mode,
+          mode: resolvedMode,
           tools: agent.tools,
           skills: agent.skills,
           updatedAt: Date.now(),
         });
-      }
-
-      if (agent.mode && ctx.sessionManager && options.preserveMode !== true) {
-        const result = enterMode(ctx.sessionManager, agent.mode, {
-          persist: false,
-        });
-        const error = result.diagnostic ?? result.veto;
-        if (error && options.notify) {
-          notify(ctx, `Mode error: ${error}`, "error");
-        }
-        if (error === undefined) {
-          piApi.events?.emit?.("mode:changed", { mode: result.mode });
-        }
       }
 
       const skipModel = hasSessionModelOverride(
@@ -567,6 +570,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
       }
 
       restoreBaseTools(piApi, baseActiveTools);
+      baseActiveTools = undefined;
 
       if (options.notify) {
         notify(ctx, "Reset to default agent", "info");
@@ -584,11 +588,12 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
           (entry as { message?: { role?: string } }).message?.role === "user",
       );
 
-      hostUi(ctx)?.setStatus?.("agent", agent.name);
-
       if (hasHistory && branch.length > 0 && typeof ctx.fork === "function") {
         const lastEntry = branch[branch.length - 1];
         let forkCtx: ExtensionCommandContext | undefined;
+        if (activeAgent === undefined && baseActiveTools === undefined) {
+          captureBaseActiveTools(pi);
+        }
         // ctx.fork invalidates this `pi`; the replacement instance applies
         // the agent from its own session_start (reason "fork").
         pendingForkSlot[PENDING_FORK] = {
@@ -598,12 +603,15 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
             baseActiveTools === undefined ? undefined : [...baseActiveTools],
         };
         try {
-          await ctx.fork(lastEntry.id, {
+          const result = await ctx.fork(lastEntry.id, {
             position: "at",
             withSession: async (replacedCtx) => {
               forkCtx = replacedCtx;
             },
           });
+          if (result?.cancelled === true) {
+            return;
+          }
           if (forkCtx) {
             return;
           }
@@ -731,7 +739,7 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
     pi.on("session_tree", (_event, ctx) => restore(ctx));
 
     pi.on("session_compact", (_event, ctx) => {
-      const entries = readSessionBranch(ctx?.sessionManager);
+      const entries = readSessionBranch(ctx?.sessionManager, true);
       const { lastAgentIndex, lastModelChangeIndex, lastAgentOverride } =
         findOverrideState(entries);
       // Compaction re-appends the agent entry behind existing model changes,
@@ -756,6 +764,8 @@ export function createAgentExtension(): (pi: ExtensionAPI) => void {
     });
 
     pi.on("session_shutdown", () => {
+      activeAgent = undefined;
+      baseActiveTools = undefined;
       statusline.publish("");
     });
 
