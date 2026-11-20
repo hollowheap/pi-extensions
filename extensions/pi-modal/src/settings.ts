@@ -56,6 +56,8 @@ function applyTuiSetting(
       break;
     case "overlaySurface":
       next.overlaySurface = value as OverlaySurfaceMode;
+      next.panel.surface = value as OverlaySurfaceMode;
+      next.panel.style = undefined;
       break;
     case "loadingIndicator":
       next.loadingIndicator = value as LoadingIndicatorStyle;
@@ -229,17 +231,6 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
           currentValue: String(config.panel.enabled),
           values: ["false", "true"],
         },
-        ...(config.panel.enabled
-          ? [
-              {
-                id: "panel.surface",
-                label: "Panel surface",
-                description: "Background surface fill for panels",
-                currentValue: config.panel.surface ?? config.overlaySurface,
-                values: [...OVERLAY_SURFACE_MODES],
-              },
-            ]
-          : []),
         {
           id: "panel.accentStripe",
           label: "Panel accent stripe",
@@ -343,11 +334,11 @@ export async function showTuiSettings(
       onChange?.(next);
       if (
         id === "borderStyle" ||
+        id === "overlaySurface" ||
         id === "modeIndicator" ||
         id === "toolVerbosity" ||
         id === "thinkingVerbosity" ||
-        id === "panel.enabled" ||
-        id === "panel.surface"
+        id === "panel.enabled"
       ) {
         tui.invalidate();
       }

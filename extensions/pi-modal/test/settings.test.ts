@@ -190,24 +190,14 @@ describe("showTuiSettings", () => {
       const panelTab = component.render(80).join("\n");
       expect(panelTab).toContain("\x1b[7m Panel \x1b[27m");
       expect(panelTab).toContain("Enable panel customization");
-      expect(panelTab).not.toContain("Panel style");
-      expect(panelTab).not.toContain("Panel border style");
-      expect(panelTab).toContain("Panel surface");
+      expect(panelTab).toContain("Panel accent stripe");
+      expect(panelTab).toContain("Panel outcome badges");
+      expect(panelTab).toContain("Panel spinner");
 
-      // Toggle panel.enabled off -> borderStyle & surface hide
       component.handleInput("\r");
       expect(getActiveTuiConfig().panel.enabled).toBe(false);
-      const panelOff = component.render(80).join("\n");
-      expect(panelOff).toContain("\x1b[7m Panel \x1b[27m");
-      expect(panelOff).not.toContain("Panel border style");
-      expect(panelOff).not.toContain("Panel surface");
-
-      // Toggle panel.enabled back on -> borderStyle & surface reappear
       component.handleInput("\r");
       expect(getActiveTuiConfig().panel.enabled).toBe(true);
-      const panelOn = component.render(80).join("\n");
-      expect(panelOn).not.toContain("Panel border style");
-      expect(panelOn).toContain("Panel surface");
 
       component.handleInput("\x1b[Z");
       expect(component.render(80).join("\n")).toContain(
