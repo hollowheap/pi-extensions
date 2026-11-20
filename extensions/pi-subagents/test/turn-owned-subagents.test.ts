@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSubagentsExtension } from "../src/index.js";
 
+const mocks = vi.hoisted(() => ({
+  abortSubagent: vi.fn(async () => undefined),
+}));
+
+vi.mock("../src/runner.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/runner.js")>()),
+  abortSubagent: mocks.abortSubagent,
+}));
+
 function register(listSubagents = vi.fn(async () => [])) {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const pi = {
@@ -66,5 +75,58 @@ describe("subagent turn ownership", () => {
     handlers.turn_start?.({}, ctx);
     handlers.turn_end?.({}, ctx);
     await vi.waitFor(() => expect(listSubagents).toHaveBeenCalled());
+  });
+
+  it("turn end leaves children of another parent session running", async () => {
+    mocks.abortSubagent.mockClear();
+    const cwd = "/tmp/draw-subagents";
+    const child = (id: string, parentSession?: string) => ({
+      id,
+      ...(parentSession === undefined ? {} : { parentSession }),
+      status: "running",
+      project: cwd,
+      startedAt: Date.now() + 1_000,
+    });
+    const { handlers } = register(
+      vi.fn(
+        async () =>
+          [
+            child("owner-child", "owner"),
+            child("other-child", "other"),
+            child("legacy-child"),
+          ] as never,
+      ),
+    );
+    const ctx = { cwd, sessionManager: { getSessionId: () => "owner" } };
+    handlers.turn_start?.({}, ctx);
+    handlers.turn_end?.({}, ctx);
+    await vi.waitFor(() =>
+      expect(mocks.abortSubagent).toHaveBeenCalledWith(cwd, "owner-child"),
+    );
+    expect(mocks.abortSubagent).not.toHaveBeenCalledWith(cwd, "other-child");
+    expect(mocks.abortSubagent).not.toHaveBeenCalledWith(cwd, "legacy-child");
+  });
+
+  it("turn end without a session id leaves children running", async () => {
+    mocks.abortSubagent.mockClear();
+    const cwd = "/tmp/draw-subagents";
+    const { handlers } = register(
+      vi.fn(
+        async () =>
+          [
+            {
+              id: "child",
+              parentSession: "owner",
+              status: "running",
+              project: cwd,
+              startedAt: Date.now() + 1_000,
+            },
+          ] as never,
+      ),
+    );
+    handlers.turn_start?.({}, { cwd });
+    handlers.turn_end?.({}, { cwd });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mocks.abortSubagent).not.toHaveBeenCalled();
   });
 });

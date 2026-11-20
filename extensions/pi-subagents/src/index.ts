@@ -414,8 +414,9 @@ export function createSubagentsExtension(
 
     pi.on("turn_end", (_event, ctx) => {
       const startedAt = turnStartedAt;
+      const parentSession = ctx?.sessionManager?.getSessionId?.();
       turnStartedAt = undefined;
-      if (startedAt === undefined) return;
+      if (startedAt === undefined || parentSession === undefined) return;
       void (async () => {
         try {
           const dir = resolveAgentDir();
@@ -423,6 +424,7 @@ export function createSubagentsExtension(
             (state) =>
               (state.status === "running" || state.status === "starting") &&
               state.startedAt >= startedAt &&
+              state.parentSession === parentSession &&
               isInProject(state, ctx?.cwd),
           );
           if (scoped.length === 0) return;
