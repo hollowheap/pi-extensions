@@ -5,7 +5,7 @@ import type {
   ToolRenderResultOptions,
   ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
-import { toolOutputDisplay } from "@hollowheap/tui/tool-output";
+import { toolOutputDisplay } from "@hollowheap/ui/tool-output";
 
 type ToolRenderContext = Parameters<
   NonNullable<ToolRenderers["renderCall"]>
@@ -27,9 +27,9 @@ import {
   framePanelLines,
   isPanelSurfaceActive,
   resolvePanelFrameLayout,
-} from "@hollowheap/tui/frame";
-import { createWorkingIndicator } from "@hollowheap/tui/spinner";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+} from "@hollowheap/ui/frame";
+import { createWorkingIndicator } from "@hollowheap/ui/spinner";
+import { getActiveTuiConfig } from "@hollowheap/ui/state";
 export {
   type PanelFrameLayout,
   type PanelStateToken,
@@ -37,8 +37,8 @@ export {
   getPanelInnerWidth,
   isPanelSurfaceActive,
   resolvePanelFrameLayout,
-} from "@hollowheap/tui/frame";
-export { stripBackgroundSgr } from "@hollowheap/tui/surface";
+} from "@hollowheap/ui/frame";
+export { stripBackgroundSgr } from "@hollowheap/ui/surface";
 
 const FALLBACK_SPINNER_FRAMES = [
   "⠋",

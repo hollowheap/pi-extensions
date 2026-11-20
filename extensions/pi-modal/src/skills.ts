@@ -11,7 +11,7 @@ import type {
   AutocompleteSuggestions,
 } from "@earendil-works/pi-tui";
 import { hostUi } from "@hollowheap/pi-ui/host";
-import { applyTokenCompletion } from "@hollowheap/tui/autocomplete";
+import { applyTokenCompletion } from "@hollowheap/ui/autocomplete";
 
 export interface SkillCommandLike {
   name: string;

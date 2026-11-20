@@ -12,7 +12,7 @@ import { session, setCwd, withPromptLock } from "@hollowheap/core";
 import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
-import { resetActiveTuiConfig } from "@hollowheap/tui/state";
+import { resetActiveTuiConfig } from "@hollowheap/ui/state";
 
 vi.mock("@hollowheap/core/prompt-lock", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();

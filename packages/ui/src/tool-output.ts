@@ -6,7 +6,7 @@ import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import type { ToolVerbosity } from "@hollowheap/core/tui-config";
 import { getActiveTuiConfig } from "./state.js";
 
-const OUTPUT_POLICY = Symbol.for("@hollowheap/tui/tool-output-policy");
+const OUTPUT_POLICY = Symbol.for("@hollowheap/ui/tool-output-policy");
 
 export function toolOutputDisplay(
   verbosity: ToolVerbosity | undefined,

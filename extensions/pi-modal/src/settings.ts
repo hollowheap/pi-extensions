@@ -27,7 +27,7 @@ import {
   type SettingsTab,
   showTabbedSettingsDialog,
 } from "@hollowheap/pi-ui/settings";
-import { getActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/tui/state";
+import { getActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
 import type { EditorMode, ModalConfig } from "./keymap.js";
 
 function applyTuiSetting(

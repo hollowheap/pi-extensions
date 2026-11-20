@@ -12,7 +12,7 @@ import {
   subscribeSessionSnapshot,
 } from "@hollowheap/core/snapshot";
 import { canOverlay, showDialog } from "@hollowheap/pi-ui/host";
-import { boxFrame } from "@hollowheap/tui/frame";
+import { boxFrame } from "@hollowheap/ui/frame";
 import {
   DASHBOARD_OVERLAY_ACTIONS,
   type StateRenderInput,

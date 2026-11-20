@@ -209,7 +209,7 @@ interface WidgetState {
   visible: Map<string, boolean>;
 }
 
-const WIDGET_STATE_KEY = Symbol.for("@hollowheap/tui/widgets");
+const WIDGET_STATE_KEY = Symbol.for("@hollowheap/ui/widgets");
 
 function widgetState(): WidgetState {
   const store = globalThis as Record<symbol, WidgetState | undefined>;

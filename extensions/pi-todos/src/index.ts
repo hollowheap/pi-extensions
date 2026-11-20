@@ -16,13 +16,13 @@ import {
   notify,
   showInfoPopup,
 } from "@hollowheap/pi-ui/host";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   formatTodoWidget,
   mountWidgetProviders,
   registerWidgetProvider,
   toggleWidgets as toggleRegisteredWidgets,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 import { Type } from "typebox";
 import {
   type Todo,

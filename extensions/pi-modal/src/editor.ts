@@ -21,11 +21,8 @@ import type {
   OverlaySurfaceMode,
   TuiConfig,
 } from "@hollowheap/core/tui-config";
-import {
-  getActiveTuiConfig,
-  getHostOutputPadding,
-} from "@hollowheap/tui/state";
-import { paintSurfaceLine } from "@hollowheap/tui/surface";
+import { getActiveTuiConfig, getHostOutputPadding } from "@hollowheap/ui/state";
+import { paintSurfaceLine } from "@hollowheap/ui/surface";
 import {
   type EditorMode,
   type ModalConfig,

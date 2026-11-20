@@ -8,13 +8,13 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { createStatuslinePublisher } from "@hollowheap/core/statusline";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   type WidgetTaskStateItem,
   formatTaskWidget,
   mountWidgetProviders,
   registerWidgetProvider,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 import { taskAlertTracker } from "./alerts.js";
 import { type TaskRecord, readTaskLog, taskLogPath } from "./registry.js";
 import { reconcileAllTasks } from "./runner.js";

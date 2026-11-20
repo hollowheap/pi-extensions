@@ -1,4 +1,4 @@
-import { boxFrame } from "@hollowheap/tui/frame";
+import { boxFrame } from "@hollowheap/ui/frame";
 import { describe, expect, it, vi } from "vitest";
 import { confirmDialog, selectDialog } from "../src/host.js";
 

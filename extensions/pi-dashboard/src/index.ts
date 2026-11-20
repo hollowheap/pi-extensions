@@ -13,7 +13,7 @@ import {
 } from "@hollowheap/core/snapshot";
 import { effectiveCwd } from "@hollowheap/core/state";
 import { hostUi, notify } from "@hollowheap/pi-ui/host";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
 import {

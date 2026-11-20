@@ -5,7 +5,7 @@ import {
   normalizeTuiConfig,
 } from "@hollowheap/core/tui-config";
 
-const STATE_KEY = Symbol.for("@hollowheap/tui/state");
+const STATE_KEY = Symbol.for("@hollowheap/ui/state");
 
 type TuiConfigListener = (config: TuiConfig) => void;
 

@@ -3,7 +3,7 @@ import {
   stripTerminalSequences,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { crushWorkingIndicator } from "@hollowheap/tui/spinner";
+import { crushWorkingIndicator } from "@hollowheap/ui/spinner";
 import { describe, expect, it } from "vitest";
 
 const theme = {

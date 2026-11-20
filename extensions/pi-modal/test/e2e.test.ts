@@ -24,7 +24,7 @@ import {
   bindHostOutputPadding,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "../src/editor.js";
 import { framePanelLines } from "../src/panel.js";

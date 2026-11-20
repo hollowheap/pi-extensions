@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resetActiveTuiConfig } from "@hollowheap/tui/state";
+import { resetActiveTuiConfig } from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { showTuiSettings } from "../src/settings.js";
 

@@ -1,14 +1,11 @@
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import {
-  resetActiveTuiConfig,
-  setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
 import {
   formatSubagentWidget,
   formatTaskWidget,
   mountWidgetProviders,
   registerWidgetProvider,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 

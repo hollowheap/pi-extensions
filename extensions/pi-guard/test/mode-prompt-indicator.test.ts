@@ -6,7 +6,7 @@ import {
   getActiveTuiConfig,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 

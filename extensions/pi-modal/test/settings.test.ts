@@ -12,10 +12,7 @@ import {
   DEFAULT_TUI_CONFIG,
   getTuiConfigPath,
 } from "@hollowheap/core/tui-config";
-import {
-  getActiveTuiConfig,
-  resetActiveTuiConfig,
-} from "@hollowheap/tui/state";
+import { getActiveTuiConfig, resetActiveTuiConfig } from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatTuiStatus, showTuiSettings } from "../src/settings.js";
 

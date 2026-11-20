@@ -14,8 +14,8 @@ import {
   type FrameOptions,
   boxFrame,
   getFrameInnerWidth,
-} from "@hollowheap/tui/frame";
-import { TabbedContent } from "@hollowheap/tui/tabs";
+} from "@hollowheap/ui/frame";
+import { TabbedContent } from "@hollowheap/ui/tabs";
 import { canOverlay, notify, showDialog } from "./host.js";
 
 export function settingsListTheme(

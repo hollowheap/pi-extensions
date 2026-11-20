@@ -18,14 +18,14 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   bindHostOutputPadding,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
-import { paintSurfaceLine } from "@hollowheap/tui/surface";
-import { TabbedContent } from "@hollowheap/tui/tabs";
+} from "@hollowheap/ui/state";
+import { paintSurfaceLine } from "@hollowheap/ui/surface";
+import { TabbedContent } from "@hollowheap/ui/tabs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const RESIZE_STEPS = [
@@ -159,7 +159,7 @@ function createSampleTuiExtension(): ExtensionFactory {
   };
 }
 
-describe("packages/tui sample extension E2E", () => {
+describe("packages/ui sample extension E2E", () => {
   const tempDirs: string[] = [];
 
   function makeTempDir(): string {

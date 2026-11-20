@@ -5,7 +5,7 @@ import {
   bindHostOutputPadding,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { showCodeViewer } from "../src/viewer.js";
 

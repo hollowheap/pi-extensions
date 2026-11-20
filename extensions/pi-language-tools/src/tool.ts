@@ -22,7 +22,7 @@ import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
 import { notify } from "@hollowheap/pi-ui/host";
 import { clampMaxResults } from "@hollowheap/runtime/exec";
-import { markdownTheme } from "@hollowheap/tui/markdown";
+import { markdownTheme } from "@hollowheap/ui/markdown";
 import { Type } from "typebox";
 import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
 import {

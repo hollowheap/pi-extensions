@@ -5,11 +5,8 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { getBorderChars } from "@hollowheap/core/border";
-import {
-  getActiveTuiConfig,
-  getHostOutputPadding,
-} from "@hollowheap/tui/state";
-import { paintSurfaceLine } from "@hollowheap/tui/surface";
+import { getActiveTuiConfig, getHostOutputPadding } from "@hollowheap/ui/state";
+import { paintSurfaceLine } from "@hollowheap/ui/surface";
 import { hostUi, showDialog } from "./host.js";
 
 export async function showCodeViewer(

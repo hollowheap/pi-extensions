@@ -9,13 +9,13 @@ import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
 import { createStatuslinePublisher } from "@hollowheap/core/statusline";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
-import { escapeMarkdownInline } from "@hollowheap/tui/thinking";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import {
   formatSubagentWidget,
   mountWidgetProviders,
   registerWidgetProvider,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 import type { AgentConfig } from "./agents.js";
 import { subagentAlertTracker } from "./alerts.js";
 import {

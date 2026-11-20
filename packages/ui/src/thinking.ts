@@ -229,9 +229,9 @@ export function createThinkingShimmerAnimator(
 type MarkdownTransformer = Parameters<
   ExtensionAPI["registerMarkdownTransformer"]
 >[0];
-const THINKING_VISIBILITY = Symbol.for("@hollowheap/tui/thinking-visibility");
+const THINKING_VISIBILITY = Symbol.for("@hollowheap/ui/thinking-visibility");
 const STYLED_THINKING_MARKDOWN = Symbol.for(
-  "@hollowheap/tui/styled-thinking-markdown",
+  "@hollowheap/ui/styled-thinking-markdown",
 );
 
 function styleThinkingMarkdownChild(

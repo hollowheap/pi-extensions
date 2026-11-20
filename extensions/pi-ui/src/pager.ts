@@ -6,12 +6,12 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
-import { markdownTheme } from "@hollowheap/tui/markdown";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { markdownTheme } from "@hollowheap/ui/markdown";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { canOverlay, hostUi, notify, showDialog } from "./host.js";
 
 export interface MarkdownPagerOptions {

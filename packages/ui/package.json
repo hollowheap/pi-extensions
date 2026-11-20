@@ -1,5 +1,5 @@
 {
-  "name": "@hollowheap/tui",
+  "name": "@hollowheap/ui",
   "version": "0.3.0",
   "type": "module",
   "description": "Shared host-agnostic TUI primitives: frames, markdown, tabs, surfaces, spinners, and widgets",

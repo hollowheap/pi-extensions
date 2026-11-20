@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { showMarkdownPager } from "@hollowheap/pi-ui/pager";
-import { escapeMarkdownInline } from "@hollowheap/tui/thinking";
+import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import { type SubagentState, subagentDisplayName } from "./state.js";
 
 export function formatChildTranscript(jsonl: string): string {

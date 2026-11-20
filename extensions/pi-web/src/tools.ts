@@ -22,7 +22,7 @@ import {
 } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry } from "@hollowheap/core/state";
-import { markdownTheme } from "@hollowheap/tui/markdown";
+import { markdownTheme } from "@hollowheap/ui/markdown";
 import { Type } from "typebox";
 import {
   type MediaPreview,

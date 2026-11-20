@@ -1,5 +1,5 @@
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import type { WidgetTodo } from "@hollowheap/tui/widget";
+import type { WidgetTodo } from "@hollowheap/ui/widget";
 
 export type TodoPriority = "high" | "medium" | "low";
 
@@ -154,12 +154,12 @@ export type {
   WidgetFormatOptions as FormatTodoWidgetOptions,
   WidgetSubagentStateItem as SubagentStateItem,
   WidgetTaskStateItem as TaskStateItem,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 export {
   formatSubagentWidget,
   formatTaskWidget,
   formatTodoWidget,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 
 export function formatTodoConfirmation(
   todos: readonly Todo[],

@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { scopedAbortSignal, watchAbort } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 
 type PromptContext = Pick<ExtensionContext, "ui" | "mode" | "signal">;
 type OverlayContext = Pick<ExtensionContext, "ui" | "mode">;

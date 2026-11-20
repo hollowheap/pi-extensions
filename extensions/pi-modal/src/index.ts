@@ -11,13 +11,13 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
-import { createWorkingIndicator } from "@hollowheap/tui/spinner";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { createWorkingIndicator } from "@hollowheap/ui/spinner";
 import {
   bindHostOutputPadding,
   getActiveTuiConfig,
   loadAndActivateTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import {
   type ThinkingShimmerAnimator,
   createThinkingShimmerAnimator,
@@ -26,11 +26,11 @@ import {
   installThinkingVisibility,
   renderThinkingShimmerFrame,
   stripMarkdownInline,
-} from "@hollowheap/tui/thinking";
+} from "@hollowheap/ui/thinking";
 import {
   codemodePreview,
   withToolOutputDisplay,
-} from "@hollowheap/tui/tool-output";
+} from "@hollowheap/ui/tool-output";
 import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./settings.js";
 

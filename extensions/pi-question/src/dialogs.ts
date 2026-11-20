@@ -25,12 +25,12 @@ import {
   scopedAbortSignal,
   watchAbort,
 } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   type DialogTab,
   TabbedContent,
   formatSelectedLabel,
-} from "@hollowheap/tui/tabs";
+} from "@hollowheap/ui/tabs";
 import {
   DONE_LABEL,
   type Question,

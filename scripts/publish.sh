@@ -4,7 +4,7 @@ set -euo pipefail
 packages=(
   @hollowheap/runtime
   @hollowheap/core
-  @hollowheap/tui
+  @hollowheap/ui
   @hollowheap/policy
   @hollowheap/pi-dashboard
   @hollowheap/pi-decide

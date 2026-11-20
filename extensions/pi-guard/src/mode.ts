@@ -19,8 +19,8 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readPersistedMode, session } from "@hollowheap/core/state";
 import { canOverlay, hostUi } from "@hollowheap/pi-ui/host";
 import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import { isKnownMode, modesPath, readDefaultMode } from "./settings.js";
 import { guardNotify, guardWarn } from "./state.js";
 

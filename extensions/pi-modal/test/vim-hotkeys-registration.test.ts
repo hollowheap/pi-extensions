@@ -1,10 +1,7 @@
 import { InteractiveMode, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import {
-  resetActiveTuiConfig,
-  setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 import {

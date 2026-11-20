@@ -7,7 +7,7 @@ import {
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { formatDollarCost } from "@hollowheap/core/pricing";
 import { confirmDialog, notify } from "@hollowheap/pi-ui/host";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { messageEntryIds } from "./compaction.js";
 import {
   MEMORY_CLEAR_TYPE,

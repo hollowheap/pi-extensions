@@ -22,7 +22,7 @@ import {
 } from "@hollowheap/core/statusline";
 import { extractLatestUsage } from "@hollowheap/core/usage";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   type GitDiffState,
   type TokenTotals,

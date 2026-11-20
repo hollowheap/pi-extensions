@@ -8,7 +8,7 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
 import { hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   type WebSettings,
   loadWebConfig,

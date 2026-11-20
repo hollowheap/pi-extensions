@@ -3,7 +3,7 @@ import {
   formatTaskWidget,
   mountWidgetProviders,
   registerWidgetProvider,
-} from "@hollowheap/tui/widget";
+} from "@hollowheap/ui/widget";
 import { describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
 

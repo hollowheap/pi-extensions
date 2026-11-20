@@ -29,7 +29,7 @@ import {
   isOsPermissionError,
   probeBwrapAvailability,
 } from "@hollowheap/runtime/sandbox";
-import { prefixCompletions } from "@hollowheap/tui/autocomplete";
+import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   type HookPayload,
   type SessionHookPayload,

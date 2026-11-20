@@ -1,8 +1,5 @@
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
-import {
-  resetActiveTuiConfig,
-  setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { showFuzzyPicker } from "../src/picker.js";
 

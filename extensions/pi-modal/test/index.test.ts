@@ -21,7 +21,7 @@ import {
   getActiveTuiConfig,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "../src/editor.js";
 import extension from "../src/index.js";

@@ -10,11 +10,11 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { canOverlay, hostUi, showDialog } from "./host.js";
 
 export interface FuzzyPickerItem extends SelectItem {

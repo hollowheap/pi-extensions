@@ -20,7 +20,7 @@ import {
   Spacer,
   Text,
 } from "@earendil-works/pi-tui";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import {
   type PanelStateToken,
   framePanelLines,

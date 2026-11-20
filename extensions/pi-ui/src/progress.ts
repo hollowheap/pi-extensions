@@ -10,12 +10,12 @@ import type { BorderStyle } from "@hollowheap/core/border";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import { watchAbort } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
-import { createWorkingIndicator } from "@hollowheap/tui/spinner";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { createWorkingIndicator } from "@hollowheap/ui/spinner";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { canOverlay, hostUi, showDialog } from "./host.js";
 
 export type CancellableProgressResult<T> =

@@ -11,7 +11,7 @@ import {
   getActiveTuiConfig,
   resetActiveTuiConfig,
   setActiveTuiConfig,
-} from "@hollowheap/tui/state";
+} from "@hollowheap/ui/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installSkillPanel } from "../src/skill-panel.js";
 import { formatSkillBlock, handleSkillInput } from "../src/skills.js";

@@ -4,7 +4,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, type Container, Spacer } from "@earendil-works/pi-tui";
-import { getActiveTuiConfig } from "@hollowheap/tui/state";
+import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import { type ModalConfig, resolveEffectiveKeymaps } from "./keymap.js";
 import {
   framePanelLines,
