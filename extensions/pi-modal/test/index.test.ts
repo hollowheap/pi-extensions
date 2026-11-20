@@ -617,7 +617,7 @@ describe("ModalEditor modal behavior", () => {
     const lines = editor.render(80);
     expect(lines.length).toBeGreaterThanOrEqual(4);
     expect(lines[0]).toContain("╭");
-    expect(lines[1]).toContain("❯ line1");
+    expect(lines[1]).toContain("▎ line1");
     expect(lines[2]).toContain("│ line2");
   });
 
@@ -677,7 +677,7 @@ describe("ModalEditor modal behavior", () => {
 
     expect(top.startsWith(color("╭"))).toBe(true);
     expect(top.endsWith(color("╮"))).toBe(true);
-    expect(content.startsWith("❯ ")).toBe(true);
+    expect(content.startsWith("▎ ")).toBe(true);
     expect(content.endsWith(color("│"))).toBe(true);
     expect(content).toContain("hello");
     expect(bottom.startsWith(color("╰"))).toBe(true);
@@ -694,7 +694,7 @@ describe("ModalEditor modal behavior", () => {
       { initialText: "hello" },
     );
     const lines = editor.render(20).map(stripCursorMarkers);
-    expect(lines[1]).toContain("❯ hello");
+    expect(lines[1]).toContain("▎ hello");
     expect(lines[1]).not.toContain("│");
     expect(lines[0]).not.toContain("╭");
     expect(lines.at(-1)).toContain("INSERT");
@@ -1772,9 +1772,9 @@ describe("TUI config, /ui command, and panel integration", () => {
     });
     const monoDashedRaw = editor.render(40);
     const monoDashed = monoDashedRaw.map(stripTerminalSequences);
-    expect(monoDashed[0]).toContain("┌┈┈");
+    expect(monoDashed[0]).toContain("┌┄┄");
     expect(monoDashedRaw[0]).not.toContain("\x1b[36m");
-    expect(monoDashed.at(-1)).toContain("┈┈ NORMAL ┘");
+    expect(monoDashed.at(-1)).toContain("┄┄ NORMAL ┘");
 
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,

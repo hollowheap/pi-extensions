@@ -194,7 +194,7 @@ describe("pi-modal E2E", () => {
       const narrowRows = surfaceEditor
         .render(30)
         .map((line) => stripTerminalSequences(stripCursorMarkers(line)));
-      expect(narrowRows.some((row) => row.startsWith("  ❯ "))).toBe(true);
+      expect(narrowRows.some((row) => row.startsWith("█ "))).toBe(true);
       for (const row of narrowRows) {
         expect(visibleWidth(row)).toBeLessThanOrEqual(30);
       }

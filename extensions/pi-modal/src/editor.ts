@@ -17,10 +17,9 @@ import {
 import { errorMessage } from "@hollowheap/core/format";
 
 import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
-import {
-  DEFAULT_TUI_CONFIG,
-  type OverlaySurfaceMode,
-  type TuiConfig,
+import type {
+  OverlaySurfaceMode,
+  TuiConfig,
 } from "@hollowheap/core/tui-config";
 import {
   getActiveTuiConfig,
@@ -60,7 +59,7 @@ function countGraphemes(text: string): number {
 
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
-  private promptChar = "❯";
+  private customPromptChar: string | undefined;
   private explicitBorderStyle: BorderStyle | undefined;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
@@ -103,7 +102,7 @@ export class ModalEditor extends CustomEditor {
     this.modeTheme = modeTheme;
     this.keymaps = resolveEffectiveKeymaps(config);
     if (config?.promptChar && [...config.promptChar].length === 1) {
-      this.promptChar = config.promptChar;
+      this.customPromptChar = config.promptChar;
     }
     if (config?.borderStyle) {
       this.explicitBorderStyle = config.borderStyle;
@@ -118,7 +117,8 @@ export class ModalEditor extends CustomEditor {
   }
 
   getPromptChar(): string {
-    return this.promptChar;
+    if (this.customPromptChar !== undefined) return this.customPromptChar;
+    return this.mode === "insert" ? "▎" : "█";
   }
 
   getMode(): EditorMode {
@@ -760,12 +760,9 @@ export class ModalEditor extends CustomEditor {
       panelEnabled && this.isSurfaceActive(surface, config.colored);
     const sharedBorderStyle: BorderStyle = !panelEnabled
       ? "none"
-      : config.panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle ||
-          config.panel.style !== undefined
-        ? config.panel.borderStyle
-        : config.borderStyle;
+      : panel.borderStyle;
     const borderStyle = this.explicitBorderStyle ?? sharedBorderStyle;
-    const promptPrefix = `${this.promptChar} `;
+    const promptPrefix = `${this.getPromptChar()} `;
     const promptWidth = visibleWidth(promptPrefix);
     const borderEnabled =
       panelEnabled && borderStyle !== "none" && targetWidth >= promptWidth + 2;
@@ -826,32 +823,34 @@ export class ModalEditor extends CustomEditor {
     hiddenLineCount: number,
   ): string {
     const targetWidth = this.renderSnapshot?.width ?? width;
-    const {
-      config,
-      hostPad,
-      panelEnabled,
-      surfaceActive,
-      borderStyle,
-      borderEnabled,
-    } = this.getRenderSnapshot(targetWidth);
+    const { config, panelEnabled, surfaceActive, borderStyle, borderEnabled } =
+      this.getRenderSnapshot(targetWidth);
+    const showModeIndicator = config.modeIndicator !== false;
     const isBash = this.getText().trimStart().startsWith("!");
     const badge = formatEditorModeBadge(this.mode, isBash);
     const label = ` ${badge} `;
     if (!panelEnabled) {
       const base = super.renderBottomBorder(targetWidth, hiddenLineCount);
-      const line = fitRightLabel(base, targetWidth, label);
+      const line = showModeIndicator
+        ? fitRightLabel(base, targetWidth, label)
+        : base;
       this.lastBottomBorder = line;
       return line;
     }
     if (!borderEnabled) {
+      const innerWidth = targetWidth - 2;
+      if (innerWidth > 0) {
+        const inner = " ".repeat(innerWidth);
+        const line = ` ${showModeIndicator ? fitRightLabel(inner, innerWidth, label) : inner} `;
+        this.lastBottomBorder = line;
+        return line;
+      }
       const base = stripTerminalSequences(
         super.renderBottomBorder(targetWidth, hiddenLineCount),
       ).replaceAll("─", " ");
-      const pad = resolveBorderlessPad(targetWidth - 1, hostPad, surfaceActive);
-      const rightInset = Math.max(0, pad - 1);
-      const line =
-        fitRightLabel(base, Math.max(0, targetWidth - rightInset), label) +
-        " ".repeat(rightInset);
+      const line = showModeIndicator
+        ? fitRightLabel(base, targetWidth, label)
+        : base;
       this.lastBottomBorder = line;
       return line;
     }
@@ -868,7 +867,7 @@ export class ModalEditor extends CustomEditor {
         : "";
     const line =
       paint(borderChars.bottomLeft) +
-      fitRightLabel(inner, innerWidth, label) +
+      (showModeIndicator ? fitRightLabel(inner, innerWidth, label) : inner) +
       paint(borderChars.bottomRight);
     this.lastBottomBorder = line;
     return line;
@@ -886,7 +885,6 @@ export class ModalEditor extends CustomEditor {
     }
     const {
       config,
-      hostPad,
       surface,
       surfaceActive,
       borderStyle,
@@ -897,13 +895,11 @@ export class ModalEditor extends CustomEditor {
     const { colored } = config;
     const paint = this.borderPaint(colored, surfaceActive);
     const borderChars = borderEnabled ? getBorderChars(borderStyle) : null;
-    const borderRightPad = borderEnabled && width >= promptWidth + 3 ? 1 : 0;
-    const borderlessPad = !borderEnabled
-      ? resolveBorderlessPad(width - promptWidth - 1, hostPad, surfaceActive)
-      : 0;
-    const contentWidth = borderEnabled
+    const hasBorderSpace = width >= promptWidth + 2;
+    const borderRightPad = hasBorderSpace && width >= promptWidth + 3 ? 1 : 0;
+    const contentWidth = hasBorderSpace
       ? Math.max(1, width - promptWidth - 1 - borderRightPad)
-      : Math.max(1, width - promptWidth - 2 * borderlessPad);
+      : Math.max(1, width - promptWidth);
     const paddingX = Math.min(
       this.getPaddingX(),
       Math.max(0, Math.floor((width - 1) / 2)),
@@ -939,30 +935,36 @@ export class ModalEditor extends CustomEditor {
     if (this.mode === "visual" && this.selectionAnchor) {
       const sel = this.resolveSelection();
       if (sel) {
-        const contentLines = lastContentIdx - firstContentIdx + 1;
-        const cursor = this.getCursor();
-        const scrollOffset = Math.max(0, cursor.line - (contentLines - 1));
         const pad = this.getPaddingX();
+        const logicalLines = this.getLines();
+        const visualRows = lines.slice(firstContentIdx, lastContentIdx + 1);
+        const mapping = mapVisualLinesToLogical(visualRows, logicalLines, pad);
 
-        for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
-          const logicalLineIdx = scrollOffset + (idx - firstContentIdx);
-          if (
-            logicalLineIdx < sel.start.line ||
-            logicalLineIdx > sel.end.line
-          ) {
+        for (let offsetIdx = 0; offsetIdx < mapping.length; offsetIdx++) {
+          const entry = mapping[offsetIdx];
+          if (!entry) continue;
+          const { logicalLine, startCol, endCol } = entry;
+          if (logicalLine < sel.start.line || logicalLine > sel.end.line) {
             continue;
           }
-          const currentLineText = this.getLines()[logicalLineIdx] ?? "";
-          const selStartCol =
-            logicalLineIdx === sel.start.line ? sel.start.col : 0;
-          const selEndCol =
-            logicalLineIdx === sel.end.line
-              ? sel.end.col
-              : Math.max(0, currentLineText.length - 1);
-          lines[idx] = highlightLineSelection(
-            lines[idx] ?? "",
-            pad + selStartCol,
-            pad + selEndCol,
+          const logicalText = logicalLines[logicalLine] ?? "";
+          const lineSelStart =
+            logicalLine === sel.start.line ? sel.start.col : 0;
+          const lineSelEndExclusive =
+            logicalLine === sel.end.line
+              ? getGraphemeEnd(logicalText, sel.end.col)
+              : logicalText.length;
+          const ovStart = Math.max(startCol, lineSelStart);
+          const ovEnd = Math.min(endCol, lineSelEndExclusive);
+          if (ovStart >= ovEnd) continue;
+          const dispStart = visibleWidth(logicalText.slice(startCol, ovStart));
+          const dispEnd = visibleWidth(logicalText.slice(startCol, ovEnd)) - 1;
+          if (dispEnd < dispStart) continue;
+          const rowIdx = firstContentIdx + offsetIdx;
+          lines[rowIdx] = highlightLineSelection(
+            lines[rowIdx] ?? "",
+            pad + dispStart,
+            pad + dispEnd,
           );
         }
       }
@@ -975,36 +977,21 @@ export class ModalEditor extends CustomEditor {
         const gutter = idx === firstContentIdx ? promptPrefix : `${vertical} `;
         lines[idx] = gutter + (lines[idx] ?? "") + rightPad + vertical;
       }
-    } else {
-      const edgePad = " ".repeat(borderlessPad);
+    } else if (hasBorderSpace) {
+      const rightPad = " ".repeat(borderRightPad);
       for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
         const gutter = idx === firstContentIdx ? promptPrefix : indent;
-        const row = edgePad + gutter + (lines[idx] ?? "") + edgePad;
+        lines[idx] = `${gutter}${lines[idx] ?? ""}${rightPad} `;
+      }
+    } else {
+      for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
+        const gutter = idx === firstContentIdx ? promptPrefix : indent;
+        const row = gutter + (lines[idx] ?? "");
         lines[idx] =
           width <= promptWidth ? truncateToWidth(row, width, "") : row;
       }
     }
     if (surfaceActive) {
-      const verticalPad = Math.max(0, Math.floor(hostPad));
-      if (verticalPad > 0) {
-        const topPadCount = borderEnabled
-          ? verticalPad
-          : Math.max(0, verticalPad - 1);
-        const emptyRow =
-          borderEnabled && borderChars
-            ? `${paint(borderChars.vertical)}${" ".repeat(Math.max(0, width - 2))}${paint(borderChars.vertical)}`
-            : " ".repeat(width);
-        const paddedLines = [
-          lines[0] ?? "",
-          ...Array<string>(topPadCount).fill(emptyRow),
-          ...lines.slice(firstContentIdx, bottomIndex),
-          ...Array<string>(verticalPad).fill(emptyRow),
-          ...lines.slice(bottomIndex),
-        ];
-        return paddedLines.map((row) =>
-          paintSurfaceLine(row, width, this.modeTheme, surface, colored),
-        );
-      }
       return lines.map((row) =>
         paintSurfaceLine(row, width, this.modeTheme, surface, colored),
       );
@@ -1013,13 +1000,74 @@ export class ModalEditor extends CustomEditor {
   }
 }
 
-function resolveBorderlessPad(
-  availableWidth: number,
-  hostPad: number,
-  surfaceActive: boolean,
-): number {
-  const desired = surfaceActive ? hostPad + 1 : hostPad;
-  return Math.min(desired, Math.max(0, Math.floor(availableWidth / 2)));
+function stripCursorMarkers(line: string): string {
+  let result = "";
+  for (let index = 0; index < line.length; index++) {
+    if (line.startsWith("\x1b_pi:", index)) {
+      const end = line.indexOf("\x07", index);
+      if (end !== -1) {
+        index = end;
+        continue;
+      }
+    }
+    result += line[index];
+  }
+  return result;
+}
+
+function mapVisualLinesToLogical(
+  visualRows: readonly string[],
+  logicalLines: readonly string[],
+  pad: number,
+): Array<{ logicalLine: number; startCol: number; endCol: number }> {
+  const result: Array<{
+    logicalLine: number;
+    startCol: number;
+    endCol: number;
+  }> = [];
+  let logicalLine = 0;
+  let offset = 0;
+
+  for (const row of visualRows) {
+    if (logicalLine >= logicalLines.length) break;
+    const plain = stripTerminalSequences(stripCursorMarkers(row));
+    const withoutLeftPad = plain.slice(pad);
+    const trimmed = withoutLeftPad.trimEnd();
+    const text = logicalLines[logicalLine] ?? "";
+
+    if (text.length === 0) {
+      result.push({ logicalLine, startCol: 0, endCol: 0 });
+      logicalLine++;
+      offset = 0;
+      continue;
+    }
+
+    let startCol = offset;
+    if (
+      startCol > 0 &&
+      trimmed.length > 0 &&
+      !text.startsWith(trimmed, startCol)
+    ) {
+      while (startCol < text.length && text[startCol] === " ") {
+        startCol++;
+      }
+    }
+
+    const matchLen =
+      trimmed.length > 0 && text.startsWith(trimmed, startCol)
+        ? trimmed.length
+        : Math.min(withoutLeftPad.length, Math.max(0, text.length - startCol));
+    const endCol = Math.min(text.length, startCol + matchLen);
+    result.push({ logicalLine, startCol, endCol });
+    offset = endCol;
+
+    if (offset >= text.length || text.slice(offset).trim().length === 0) {
+      logicalLine++;
+      offset = 0;
+    }
+  }
+
+  return result;
 }
 
 function printableKey(data: string): string | undefined {
@@ -1043,6 +1091,10 @@ function fitRightLabel(line: string, width: number, label: string): string {
   return `${prefix}\x1b[0m${" ".repeat(pad)}${text}`;
 }
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", {
+  granularity: "grapheme",
+});
+
 function highlightLineSelection(
   line: string,
   selStartCol: number,
@@ -1054,6 +1106,14 @@ function highlightLineSelection(
   let visibleCol = 0;
   let inSelection = false;
   let selectedBuffer = "";
+
+  const flushSelection = () => {
+    if (inSelection) {
+      result += `\x1b[7m${selectedBuffer}\x1b[27m`;
+      selectedBuffer = "";
+      inSelection = false;
+    }
+  };
 
   let i = 0;
   while (i < line.length) {
@@ -1101,31 +1161,36 @@ function highlightLineSelection(
       continue;
     }
 
-    const char = line[i] ?? "";
-    const charWidth = visibleWidth(char);
-    const isSelected = visibleCol >= selStartCol && visibleCol <= selEndCol;
-
-    if (isSelected) {
-      if (!inSelection) {
-        inSelection = true;
-      }
-      selectedBuffer += char;
-    } else {
-      if (inSelection) {
-        result += `\x1b[7m${selectedBuffer}\x1b[27m`;
-        selectedBuffer = "";
-        inSelection = false;
-      }
-      result += char;
+    let textEnd = i;
+    while (textEnd < line.length && line.charCodeAt(textEnd) !== 27) {
+      textEnd++;
     }
+    const textRun = line.slice(i, textEnd);
+    i = textEnd;
 
-    visibleCol += charWidth;
-    i++;
+    for (const { segment: grapheme } of GRAPHEME_SEGMENTER.segment(textRun)) {
+      const graphemeWidth = visibleWidth(grapheme);
+      const graphemeEndCol = visibleCol + Math.max(0, graphemeWidth - 1);
+      const isSelected =
+        graphemeWidth > 0
+          ? visibleCol <= selEndCol && graphemeEndCol >= selStartCol
+          : inSelection;
+
+      if (isSelected) {
+        if (!inSelection) {
+          inSelection = true;
+        }
+        selectedBuffer += grapheme;
+      } else {
+        flushSelection();
+        result += grapheme;
+      }
+
+      visibleCol += graphemeWidth;
+    }
   }
 
-  if (inSelection && selectedBuffer.length > 0) {
-    result += `\x1b[7m${selectedBuffer}\x1b[27m`;
-  }
+  flushSelection();
 
   return result;
 }

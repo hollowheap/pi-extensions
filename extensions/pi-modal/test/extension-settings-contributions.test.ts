@@ -69,7 +69,7 @@ describe("/ui settings tabs", () => {
 
     try {
       const rendered = env.component()?.render(80).join("\n") ?? "";
-      expect(rendered).toContain("[Appearance]");
+      expect(rendered).toContain("\x1b[7m Appearance \x1b[27m");
       expect(rendered).toContain("Mode indicator");
 
       env.component()?.handleInput("\x1b[B");
@@ -100,26 +100,26 @@ describe("/ui settings tabs", () => {
 
     try {
       const appearanceView = env.component()?.render(80).join("\n") ?? "";
-      expect(appearanceView).toContain("[Appearance]");
+      expect(appearanceView).toContain("\x1b[7m Appearance \x1b[27m");
       expect(appearanceView).not.toContain("Statusline");
       expect(appearanceView).not.toContain("Dashboard");
 
       // Shift+Tab wraps directly to Panel tab
       env.component()?.handleInput("\x1b[Z");
       const panelView = env.component()?.render(80).join("\n") ?? "";
-      expect(panelView).toContain("[Panel]");
+      expect(panelView).toContain("\x1b[7m Panel \x1b[27m");
       expect(panelView).toContain("Enable panel customization");
       expect(panelView).not.toContain("Panel style");
 
       // Shift+Tab goes to Loading tab
       env.component()?.handleInput("\x1b[Z");
       const loadingView = env.component()?.render(80).join("\n") ?? "";
-      expect(loadingView).toContain("[Loading]");
+      expect(loadingView).toContain("\x1b[7m Loading \x1b[27m");
 
       // Shift+Tab goes to Verbosity tab
       env.component()?.handleInput("\x1b[Z");
       const verbosityView = env.component()?.render(80).join("\n") ?? "";
-      expect(verbosityView).toContain("[Verbosity]");
+      expect(verbosityView).toContain("\x1b[7m Verbosity \x1b[27m");
 
       expect(existsSync(join(dir, "statusline.json"))).toBe(false);
       expect(existsSync(join(dir, "dashboard.json"))).toBe(false);

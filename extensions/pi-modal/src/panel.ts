@@ -12,14 +12,15 @@ type ToolRenderContext = Parameters<
 >[2];
 import type { Component } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import type {
-  CustomToolVerb,
-  LoadingIndicatorStyle,
-  OverlaySurfaceMode,
-  PanelConfig,
-  ToolVerbPack,
-  ToolVerbosity,
-  TuiConfig,
+import {
+  type CustomToolVerb,
+  DEFAULT_TUI_CONFIG,
+  type LoadingIndicatorStyle,
+  type OverlaySurfaceMode,
+  type PanelConfig,
+  type ToolVerbPack,
+  type ToolVerbosity,
+  type TuiConfig,
 } from "@hollowheap/core/tui-config";
 import {
   type PanelStateToken,
@@ -114,9 +115,15 @@ export type PanelRenderConfig = PanelConfig & {
 };
 
 export function panelRenderConfig(config: TuiConfig): PanelRenderConfig {
-  const { panel, overlaySurface, toolVerbosity, verbPack } = config;
+  const { panel, borderStyle, overlaySurface, toolVerbosity, verbPack } =
+    config;
   return {
     ...panel,
+    borderStyle:
+      panel.style !== undefined ||
+      panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle
+        ? panel.borderStyle
+        : borderStyle,
     verbPack,
     toolVerbosity,
     surface:

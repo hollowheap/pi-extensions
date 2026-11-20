@@ -5,10 +5,14 @@ import { BORDER_STYLES, type BorderStyle } from "@hollowheap/core/border";
 import { errorMessage } from "@hollowheap/core/format";
 import { isRecord } from "@hollowheap/core/records";
 import {
+  LOADING_INDICATOR_COLORS,
   LOADING_INDICATOR_STYLES,
+  type LoadingIndicatorColor,
   type LoadingIndicatorStyle,
   OVERLAY_SURFACE_MODES,
   type OverlaySurfaceMode,
+  SHIMMER_SPEEDS,
+  type ShimmerSpeed,
   THINKING_VERBOSITY_MODES,
   TOOL_VERBOSITY_MODES,
   TOOL_VERB_PACKS,
@@ -56,6 +60,12 @@ function applyTuiSetting(
     case "loadingIndicator":
       next.loadingIndicator = value as LoadingIndicatorStyle;
       break;
+    case "loadingIndicatorColor":
+      next.loadingIndicatorColor = value as LoadingIndicatorColor;
+      break;
+    case "loadingIndicatorFade":
+      next.loadingIndicatorFade = value === "true";
+      break;
     case "markdownRender":
       next.markdownRender = value === "true";
       break;
@@ -64,6 +74,9 @@ function applyTuiSetting(
       break;
     case "thinkingAnimate":
       next.thinkingAnimate = value === "true";
+      break;
+    case "shimmerSpeed":
+      next.shimmerSpeed = value as ShimmerSpeed;
       break;
     case "toolVerbosity":
       next.toolVerbosity = value as ToolVerbosity;
@@ -103,7 +116,7 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
         {
           id: "borderStyle",
           label: "Border style",
-          description: "Frame border style for overlays and editor",
+          description: "Frame border style for overlays, panels, and editor",
           currentValue: config.borderStyle,
           values: [...BORDER_STYLES],
         },
@@ -177,11 +190,32 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
           values: [...LOADING_INDICATOR_STYLES],
         },
         {
+          id: "loadingIndicatorColor",
+          label: "Loading color",
+          description: "Color palette or theme token for loading indicators",
+          currentValue: config.loadingIndicatorColor,
+          values: [...LOADING_INDICATOR_COLORS],
+        },
+        {
+          id: "loadingIndicatorFade",
+          label: "Loading fade",
+          description: "Fade loading indicator brightness in and out",
+          currentValue: String(config.loadingIndicatorFade),
+          values: ["true", "false"],
+        },
+        {
           id: "thinkingAnimate",
           label: "Thinking shimmer",
           description: "Animate scrolling color sweep across one-line thinking",
           currentValue: String(config.thinkingAnimate),
           values: ["true", "false"],
+        },
+        {
+          id: "shimmerSpeed",
+          label: "Shimmer speed",
+          description: "Speed of the thinking shimmer highlight sweep",
+          currentValue: config.shimmerSpeed,
+          values: [...SHIMMER_SPEEDS],
         },
       ],
     },
@@ -197,13 +231,6 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
         },
         ...(config.panel.enabled
           ? [
-              {
-                id: "panel.borderStyle",
-                label: "Panel border style",
-                description: "Border style used when rendering framed panels",
-                currentValue: config.panel.borderStyle,
-                values: [...BORDER_STYLES],
-              },
               {
                 id: "panel.surface",
                 label: "Panel surface",
@@ -246,9 +273,12 @@ export function formatTuiStatus(config: TuiConfig): string {
     `modeIndicator=${config.modeIndicator ?? true}`,
     `overlaySurface=${config.overlaySurface}`,
     `loadingIndicator=${config.loadingIndicator}`,
+    `loadingIndicatorColor=${config.loadingIndicatorColor}`,
+    `loadingIndicatorFade=${config.loadingIndicatorFade}`,
     `markdownRender=${config.markdownRender}`,
     `thinkingVerbosity=${config.thinkingVerbosity}`,
     `thinkingAnimate=${config.thinkingAnimate}`,
+    `shimmerSpeed=${config.shimmerSpeed}`,
     `toolVerbosity=${config.toolVerbosity ?? "medium"}`,
     `verbPack=${config.verbPack}`,
     `panel.enabled=${config.panel.enabled}`,
@@ -312,10 +342,11 @@ export async function showTuiSettings(
       if (!res.ok) notify(ctx, res.error, "error");
       onChange?.(next);
       if (
+        id === "borderStyle" ||
+        id === "modeIndicator" ||
         id === "toolVerbosity" ||
         id === "thinkingVerbosity" ||
         id === "panel.enabled" ||
-        id === "panel.borderStyle" ||
         id === "panel.surface"
       ) {
         tui.invalidate();
@@ -418,7 +449,7 @@ export function loadModalConfig(
       config.borderStyleExplicit = true;
     } else {
       onDiagnostic?.(
-        'borderStyle must be "rounded", "sharp", "square", "double", "dashed", or "none"; using rounded',
+        'borderStyle must be "rounded", "sharp", "square", "double", "dashed", "dotted", or "none"; using rounded',
       );
     }
   }

@@ -92,9 +92,12 @@ describe("showTuiSettings", () => {
     expect(status).toContain("borderStyle=rounded");
     expect(status).toContain("colored=true");
     expect(status).toContain("loadingIndicator=crush");
+    expect(status).toContain("loadingIndicatorColor=gradient");
+    expect(status).toContain("loadingIndicatorFade=true");
     expect(status).toContain("markdownRender=true");
     expect(status).toContain("thinkingVerbosity=verbose");
     expect(status).toContain("thinkingAnimate=true");
+    expect(status).toContain("shimmerSpeed=normal");
     expect(status).toContain("toolVerbosity=medium");
     expect(status).toContain("panel.enabled=true");
   });
@@ -144,14 +147,14 @@ describe("showTuiSettings", () => {
 
     try {
       const appearance = component.render(80).join("\n");
-      expect(appearance).toContain("[Appearance]");
+      expect(appearance).toContain("\x1b[7m Appearance \x1b[27m");
       expect(appearance).toContain("Mode indicator");
       expect(appearance).not.toContain("Thinking verbosity");
       expect(appearance).not.toContain("Tool verbosity");
 
       component.handleInput("\t");
       const verbosity = component.render(80).join("\n");
-      expect(verbosity).toContain("[Verbosity]");
+      expect(verbosity).toContain("\x1b[7m Verbosity \x1b[27m");
       expect(verbosity).toContain("Thinking verbosity");
       expect(verbosity).toMatch(/Tool verbosity\s+medium/);
       expect(verbosity).not.toContain("Border style");
@@ -176,23 +179,26 @@ describe("showTuiSettings", () => {
 
       component.handleInput("\t");
       const loading = component.render(80).join("\n");
-      expect(loading).toContain("[Loading]");
+      expect(loading).toContain("\x1b[7m Loading \x1b[27m");
       expect(loading).toContain("Loading indicator");
+      expect(loading).toContain("Loading color");
+      expect(loading).toContain("Loading fade");
+      expect(loading).toContain("Shimmer speed");
       expect(loading).not.toContain("Enable panel customization");
 
       component.handleInput("\t");
       const panelTab = component.render(80).join("\n");
-      expect(panelTab).toContain("[Panel]");
+      expect(panelTab).toContain("\x1b[7m Panel \x1b[27m");
       expect(panelTab).toContain("Enable panel customization");
       expect(panelTab).not.toContain("Panel style");
-      expect(panelTab).toContain("Panel border style");
+      expect(panelTab).not.toContain("Panel border style");
       expect(panelTab).toContain("Panel surface");
 
       // Toggle panel.enabled off -> borderStyle & surface hide
       component.handleInput("\r");
       expect(getActiveTuiConfig().panel.enabled).toBe(false);
       const panelOff = component.render(80).join("\n");
-      expect(panelOff).toContain("[Panel]");
+      expect(panelOff).toContain("\x1b[7m Panel \x1b[27m");
       expect(panelOff).not.toContain("Panel border style");
       expect(panelOff).not.toContain("Panel surface");
 
@@ -200,15 +206,21 @@ describe("showTuiSettings", () => {
       component.handleInput("\r");
       expect(getActiveTuiConfig().panel.enabled).toBe(true);
       const panelOn = component.render(80).join("\n");
-      expect(panelOn).toContain("Panel border style");
+      expect(panelOn).not.toContain("Panel border style");
       expect(panelOn).toContain("Panel surface");
 
       component.handleInput("\x1b[Z");
-      expect(component.render(80).join("\n")).toContain("[Loading]");
+      expect(component.render(80).join("\n")).toContain(
+        "\x1b[7m Loading \x1b[27m",
+      );
       component.handleInput("\x1b[Z");
-      expect(component.render(80).join("\n")).toContain("[Verbosity]");
+      expect(component.render(80).join("\n")).toContain(
+        "\x1b[7m Verbosity \x1b[27m",
+      );
       component.handleInput("\x1b[Z");
-      expect(component.render(80).join("\n")).toContain("[Appearance]");
+      expect(component.render(80).join("\n")).toContain(
+        "\x1b[7m Appearance \x1b[27m",
+      );
     } finally {
       component.handleInput("\x1b");
       await pending;

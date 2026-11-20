@@ -60,7 +60,38 @@ describe("prompt prefix and rounded corners", () => {
 
   it("every border style maps to glyphs and unknown styles default to rounded", () => {
     expect(getBorderChars("double").topLeft).toBe("╔");
+    expect(getBorderChars("dashed")).toMatchObject({
+      topLeft: "┌",
+      topRight: "┐",
+      bottomLeft: "└",
+      bottomRight: "┘",
+      horizontal: "┄",
+      vertical: "┆",
+    });
+    expect(getBorderChars("dotted")).toMatchObject({
+      topLeft: "┌",
+      topRight: "┐",
+      bottomLeft: "└",
+      bottomRight: "┘",
+      horizontal: "┈",
+      vertical: "┊",
+    });
     expect(getBorderChars("none").topLeft).toBe("");
     expect(getBorderChars("mystery")).toEqual(getBorderChars("rounded"));
+  });
+
+  it("renders a line prompt in insert mode and a block prompt in normal mode unless promptChar is configured", () => {
+    const editor = new ModalEditor(
+      {
+        requestRender: vi.fn(),
+        terminal: { rows: 24, columns: 80, write: vi.fn() },
+      } as never,
+      { borderColor: (s: string) => s, selectList: {} } as never,
+      { matches: vi.fn(() => false) } as never,
+      { initialMode: "insert" },
+    );
+    expect(editor.getPromptChar()).toBe("▎");
+    editor.setMode("normal");
+    expect(editor.getPromptChar()).toBe("█");
   });
 });

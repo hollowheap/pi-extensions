@@ -20,10 +20,10 @@ import {
   loadAndActivateTuiConfig,
 } from "@hollowheap/tui/state";
 import {
-  SHIMMER_BASE_INTERVAL_MS,
   type ThinkingShimmerAnimator,
   createThinkingShimmerAnimator,
   formatThinkingMarkdown,
+  getShimmerIntervalMs,
   installThinkingVisibility,
   renderThinkingShimmerFrame,
   stripMarkdownInline,
@@ -86,6 +86,10 @@ function installLoaderIndicatorPatch(): void {
           cfg.loadingIndicator,
           loaderIndicatorTheme,
           cfg.colored,
+          {
+            color: cfg.loadingIndicatorColor,
+            fade: cfg.loadingIndicatorFade,
+          },
         );
         if (custom !== undefined) {
           original.call(this, custom);
@@ -165,6 +169,10 @@ export default function (pi: ExtensionAPI): void {
         cfg.loadingIndicator,
         hostUi(ctx).theme,
         cfg.colored,
+        {
+          color: cfg.loadingIndicatorColor,
+          fade: cfg.loadingIndicatorFade,
+        },
       ),
     );
   };
@@ -231,9 +239,12 @@ export default function (pi: ExtensionAPI): void {
       ) {
         const stripped = stripMarkdownInline(line);
         if (typeof activeTui?.requestRender === "function") {
-          shimmerAnimator ??= createThinkingShimmerAnimator({
-            requestRender: (force) => activeTui?.requestRender?.(force),
-          });
+          shimmerAnimator ??= createThinkingShimmerAnimator(
+            {
+              requestRender: (force) => activeTui?.requestRender?.(force),
+            },
+            { speed: cfg.shimmerSpeed },
+          );
           return shimmerAnimator.frame(
             stripped,
             hostUi(activeCtx)?.theme,
@@ -244,7 +255,7 @@ export default function (pi: ExtensionAPI): void {
         shimmerAnimator = undefined;
         return renderThinkingShimmerFrame(
           stripped,
-          Math.floor(Date.now() / SHIMMER_BASE_INTERVAL_MS),
+          Math.floor(Date.now() / getShimmerIntervalMs(cfg.shimmerSpeed)),
           hostUi(activeCtx)?.theme,
           true,
         );
@@ -256,9 +267,14 @@ export default function (pi: ExtensionAPI): void {
     return cfg.markdownRender ? normalizeAgentMarkdown(markdown) : markdown;
   };
   if (typeof pi.registerMarkdownTransformer === "function") {
-    installThinkingVisibility(transformMarkdown);
+    installThinkingVisibility(transformMarkdown, getTheme);
     pi.registerMarkdownTransformer(transformMarkdown);
   }
+
+  pi.events?.on?.("tui:config-changed", () => {
+    activeEditor?.invalidate();
+    activeTui?.requestRender?.(true);
+  });
 
   const TUI_SUBCOMMANDS = ["settings", "status"] as const;
   pi.registerCommand("ui", {

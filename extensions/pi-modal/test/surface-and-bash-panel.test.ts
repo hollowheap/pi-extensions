@@ -85,13 +85,13 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       initialText: "0123456789ABCDEF",
     });
     const rows = editor.render(20).map(stripCursorMarkers);
-    expect(stripTerminalSequences(rows[1] ?? "")).toBe("❯ 0123456789ABCDEF │");
+    expect(stripTerminalSequences(rows[1] ?? "")).toBe("▎ 0123456789ABCDEF │");
     for (const row of rows) {
       expect(visibleWidth(row)).toBe(20);
     }
   });
 
-  it("applies symmetric left and right padding in borderless transparent mode", () => {
+  it("preserves border-width space padding in borderless transparent mode", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "none",
@@ -102,7 +102,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       const editor = createEditor({ initialText: "hello" });
       const rows = editor.render(20).map(stripCursorMarkers);
       expect(stripTerminalSequences(rows[1] ?? "")).toBe(
-        " ❯ hello            ",
+        "▎ hello             ",
       );
       for (const row of rows) {
         expect(visibleWidth(row)).toBe(20);
@@ -112,7 +112,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
     }
   });
 
-  it("preserves rounded borders and paints every row in surface mode", () => {
+  it("preserves rounded borders and paints every row in surface mode without vertical outputPad rows", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "rounded",
@@ -132,7 +132,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
         modeTheme,
       });
       const rows = editor.render(20).map(stripCursorMarkers);
-      expect(rows).toHaveLength(5);
+      expect(rows).toHaveLength(3);
       for (const row of rows) {
         expect(row.startsWith("<bg:customMessageBg>")).toBe(true);
         expect(row.endsWith("</bg>")).toBe(true);
@@ -146,20 +146,12 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       );
       expect(topPlain.startsWith("╭")).toBe(true);
       expect(topPlain.endsWith("╮")).toBe(true);
-      const topPadPlain = stripTerminalSequences(
+      const contentPlain = stripTerminalSequences(
         rows[1].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
-      expect(topPadPlain).toBe("│                  │");
-      const contentPlain = stripTerminalSequences(
-        rows[2].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
-      );
-      expect(contentPlain).toBe("❯ hello            │");
-      const bottomPadPlain = stripTerminalSequences(
-        rows[3].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
-      );
-      expect(bottomPadPlain).toBe("│                  │");
+      expect(contentPlain).toBe("▎ hello            │");
       const bottomPlain = stripTerminalSequences(
-        rows[4].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
+        rows[2].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
       expect(bottomPlain.startsWith("╰")).toBe(true);
       expect(bottomPlain.endsWith("╯")).toBe(true);
@@ -260,7 +252,10 @@ describe("installBashPanel", () => {
     bang.appendOutput("hi");
     bang.setComplete(0, false);
 
-    const bangLines = bang.render(30).map(stripTerminalSequences);
+    const bangRaw = bang.render(45);
+    expect(bangRaw.some((line) => line.includes("[border:╭"))).toBe(true);
+    expect(bangRaw.some((line) => line.includes("[bashMode:"))).toBe(false);
+    const bangLines = bangRaw.map(stripTerminalSequences);
     expect(bangLines.some((line) => line.includes("╭"))).toBe(true);
     expect(bangLines.some((line) => line.includes("╰"))).toBe(true);
     expect(bangLines.some((line) => line.includes("$ echo hi"))).toBe(true);
@@ -346,7 +341,10 @@ describe("installBashPanel", () => {
     );
     doubleBangSurface.appendOutput("secret");
     doubleBangSurface.setComplete(0, false);
-    const doubleBangSurfaceRaw = doubleBangSurface.render(40);
+    const doubleBangSurfaceRaw = doubleBangSurface.render(60);
+    expect(
+      doubleBangSurfaceRaw.some((line) => line.includes("[borderAccent:╭")),
+    ).toBe(true);
     expect(
       doubleBangSurfaceRaw.some((line) =>
         line.includes("<bg:customMessageBg>"),
@@ -463,7 +461,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .map(stripCursorMarkers)
       .map(stripTerminalSequences);
     expect(doubleRows[0]?.startsWith("╔")).toBe(true);
-    expect(doubleRows[1]?.startsWith("❯ shared style")).toBe(true);
+    expect(doubleRows[1]?.startsWith("▎ shared style")).toBe(true);
     expect(doubleRows[2]?.startsWith("╚")).toBe(true);
 
     setActiveTuiConfig({
@@ -534,11 +532,9 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const plainLines = rawLines.map(stripTerminalSequences);
     expect(plainLines[0]).toBe(`╭${"─".repeat(32)}╮`);
-    expect(plainLines[1]).toBe(`│${" ".repeat(32)}│`);
-    expect(plainLines[2]?.startsWith("❯ Hello world")).toBe(true);
-    expect(plainLines[2]?.endsWith(" │")).toBe(true);
-    expect(plainLines[3]?.startsWith("│ Second line")).toBe(true);
-    expect(plainLines.at(-2)).toBe(`│${" ".repeat(32)}│`);
+    expect(plainLines[1]?.startsWith("❯ Hello world")).toBe(true);
+    expect(plainLines[1]?.endsWith(" │")).toBe(true);
+    expect(plainLines[2]?.startsWith("│ Second line")).toBe(true);
     expect(plainLines.at(-1)).toContain(" Prompted ─╯");
 
     // Steered via markSteeredUserMessage + playful verb pack
@@ -557,7 +553,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     const steeredMsg = new UserMessageComponent("Steer me now", undefined, 1);
     const steeredPlain = steeredMsg.render(34).map(stripTerminalSequences);
     expect(steeredPlain[0]?.startsWith("┌")).toBe(true);
-    expect(steeredPlain[2]?.startsWith("» Steer me now")).toBe(true);
+    expect(steeredPlain[1]?.startsWith("» Steer me now")).toBe(true);
     expect(steeredPlain.at(-1)).toContain(" Nudged ─┘");
 
     // Terse verb pack for both prompt and steered property
@@ -618,7 +614,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const branchCollapsed = branch.render(44).map(stripTerminalSequences);
     expect(branchCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(branchCollapsed[2]?.startsWith("│ [branch]")).toBe(true);
+    expect(branchCollapsed[1]?.startsWith("│ [branch]")).toBe(true);
     expect(branchCollapsed.some((l) => l.includes("│ Branch summary ("))).toBe(
       true,
     );
@@ -639,7 +635,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .render(44)
       .map(stripTerminalSequences);
     expect(compactionCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(compactionCollapsed[2]?.startsWith("│ [compaction]")).toBe(true);
+    expect(compactionCollapsed[1]?.startsWith("│ [compaction]")).toBe(true);
     expect(compactionCollapsed.some((l) => l.includes("Compacted from"))).toBe(
       true,
     );
@@ -669,10 +665,45 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .map(stripTerminalSequences)
       .filter((l) => l.trim().length > 0);
     expect(customLines[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(customLines[2]?.startsWith("│ [notice]")).toBe(true);
+    expect(customLines[1]?.startsWith("│ [notice]")).toBe(true);
     expect(
       customLines.some((l) => l.startsWith("│ Custom extension body")),
     ).toBe(true);
     expect(customLines.at(-1)).toBe(`└${"─".repeat(42)}┘`);
+  });
+
+  it("hides and shows the ModalEditor mode indicator when modeIndicator is toggled", () => {
+    const mockTheme = {
+      fg: (_token: string, text: string) => text,
+      bg: (_token: string, text: string) => text,
+      bold: (text: string) => text,
+      getBashModeBorderColor: () => (text: string) => text,
+    } as never;
+    const editor = new ModalEditor(
+      {
+        requestRender: vi.fn(),
+        terminal: { rows: 24, columns: 80 },
+      } as never,
+      { borderColor: (text: string) => text, selectList: {} } as never,
+      { matches: () => false } as never,
+      { enabled: true, initialMode: "normal", promptChar: "❯" },
+      undefined,
+      mockTheme,
+    );
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      modeIndicator: true,
+    });
+    const shown = editor.render(40).map(stripTerminalSequences).join("\n");
+    expect(shown).toContain("NORMAL");
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      modeIndicator: false,
+    });
+    editor.invalidate();
+    const hidden = editor.render(40).map(stripTerminalSequences).join("\n");
+    expect(hidden).not.toContain("NORMAL");
   });
 });

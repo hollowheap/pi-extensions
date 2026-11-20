@@ -960,11 +960,17 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
       const savedPad = Reflect.get(this, "outputPad");
       const savedColorKey = Reflect.get(this, "colorKey");
       const surfaceActive = isPanelSurfaceActive(panel.surface, config.colored);
+      const overrideColorKey =
+        savedColorKey === "bashMode"
+          ? "accent"
+          : surfaceActive && savedColorKey === "dim"
+            ? "text"
+            : undefined;
       if (typeof savedPad === "number") {
         Reflect.set(this, "outputPad", 0);
       }
-      if (surfaceActive && savedColorKey === "dim") {
-        Reflect.set(this, "colorKey", "text");
+      if (overrideColorKey !== undefined) {
+        Reflect.set(this, "colorKey", overrideColorKey);
       }
       try {
         original.call(this);
@@ -972,7 +978,7 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
         if (typeof savedPad === "number") {
           Reflect.set(this, "outputPad", savedPad);
         }
-        if (surfaceActive && savedColorKey === "dim") {
+        if (overrideColorKey !== undefined) {
           Reflect.set(this, "colorKey", savedColorKey);
         }
       }
@@ -1024,12 +1030,17 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
                   Reflect.set(this, "outputPad", currentPad);
                 }
               }
+              const liveSurfaceActive = isPanelSurfaceActive(
+                livePanel.surface,
+                liveConfig.colored,
+              );
               return framePanelLines(lines, width, theme, {
                 mode: livePanel.mode,
                 borderStyle: livePanel.borderStyle,
                 accentStripe: livePanel.accentStripe,
                 outputPad: pad,
                 stateToken,
+                borderToken: liveSurfaceActive ? "borderAccent" : "border",
                 includeTop: true,
                 includeBottom: true,
                 colored: liveConfig.colored,
