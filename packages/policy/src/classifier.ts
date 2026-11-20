@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type {
   ExtensionContext,
   ToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { parseJsonObject } from "@hollowheap/core/config";
+import {
+  ensureDefaultDecideConfig as ensureCoreDefaultDecideConfig,
+  loadDecideConfig,
+} from "@hollowheap/core/classifier";
 import { errorMessage } from "@hollowheap/core/format";
 import { isRecord } from "@hollowheap/core/records";
 import type { Tag } from "@hollowheap/core/types";
@@ -22,59 +23,27 @@ export interface ClassifyToolCallOptions {
   emitEvent?: (event: string, data?: unknown) => void;
 }
 
-export function ensureDefaultDecideConfig(agentDir?: string): void {
-  let dir = agentDir;
-  if (dir === undefined) {
-    try {
-      dir = getAgentDir();
-    } catch {
-      return;
-    }
-  }
-  if (!dir) return;
-  const decidePath = join(dir, "decide.json");
-  const legacyPath = join(dir, "classifier.json");
-  if (existsSync(decidePath) || existsSync(legacyPath)) return;
+function resolveAgentDir(agentDir: string | undefined): string | undefined {
+  if (agentDir !== undefined) return agentDir || undefined;
   try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(decidePath, "{}\n", { flag: "wx", mode: 0o600 });
+    return getAgentDir() || undefined;
   } catch {
-    // Best-effort; ignore EEXIST or read-only directories.
+    return undefined;
   }
+}
+
+export function ensureDefaultDecideConfig(agentDir?: string): void {
+  const dir = resolveAgentDir(agentDir);
+  if (!dir) return;
+  ensureCoreDefaultDecideConfig(dir);
 }
 
 function readConfiguredClassifierModel(
   agentDir: string | undefined,
 ): string | undefined {
-  let dir = agentDir;
-  if (dir === undefined) {
-    try {
-      dir = getAgentDir();
-    } catch {
-      return undefined;
-    }
-  }
+  const dir = resolveAgentDir(agentDir);
   if (!dir) return undefined;
-
-  for (const name of ["decide.json", "classifier.json"]) {
-    const filePath = join(dir, name);
-    try {
-      const raw = readFileSync(filePath, "utf8");
-      const parsed = parseJsonObject(raw, filePath, []);
-      if (isRecord(parsed) && typeof parsed.model === "string") {
-        const trimmed = parsed.model.trim();
-        if (trimmed !== "" && trimmed.includes("/")) {
-          return trimmed;
-        }
-      }
-      return undefined;
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== "ENOENT") {
-        return undefined;
-      }
-    }
-  }
-  return undefined;
+  return loadDecideConfig(dir).model;
 }
 
 function hasPositiveUsage(usage: {
