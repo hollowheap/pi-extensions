@@ -218,31 +218,34 @@ describe("question navigation", () => {
     const dialog = flow.components[0];
     if (dialog === undefined) throw new Error("missing dialog component");
 
-    expect(dialog.render(80).join("\n")).toContain("[Q1]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Q1 \x1b[27m");
     expect(dialog.render(80).join("\n")).toContain("Tab / Shift+Tab");
 
     await type(dialog, "draft-1");
     dialog.handleInput("\t");
-    expect(dialog.render(80).join("\n")).toContain("[Q2]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Q2 \x1b[27m");
     expect(dialog.render(80).join("\n")).toContain("Pick one?");
 
     dialog.handleInput("\x1b[Z");
-    expect(dialog.render(80).join("\n")).toContain("[Q1]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Q1 \x1b[27m");
     expect(dialog.render(80).join("\n")).toContain("draft-1");
 
     dialog.handleInput("\r");
-    expect(dialog.render(80).join("\n")).toContain("[Q2]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Q2 \x1b[27m");
 
     dialog.handleInput("\x1b[B");
     dialog.handleInput("\r");
-    expect(dialog.render(80).join("\n")).toContain("[Q3]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Q3 \x1b[27m");
 
     dialog.handleInput(" ");
     dialog.handleInput("\x1b[B");
     dialog.handleInput("\x1b[B");
     dialog.handleInput("\x1b[B");
     dialog.handleInput("\r");
-    expect(dialog.render(80).join("\n")).toContain("[Review]");
+    const reviewRendered = dialog.render(80).join("\n");
+    expect(reviewRendered).toContain("\x1b[7m Review \x1b[27m");
+    expect(reviewRendered).toContain("\x1b[7m Confirm \x1b[27m");
+    expect(reviewRendered).not.toContain("[Confirm]");
 
     dialog.handleInput("\r");
     const result = await flow.pending;
@@ -318,7 +321,7 @@ describe("question navigation", () => {
 
     expect(dialog.render(80).join("\n")).toContain("Enable follow-up?");
     dialog.handleInput("\t");
-    expect(dialog.render(80).join("\n")).toContain("[Review]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Review \x1b[27m");
     dialog.handleInput("\x1b[Z");
     expect(dialog.render(80).join("\n")).toContain("Enable follow-up?");
 
@@ -328,7 +331,7 @@ describe("question navigation", () => {
 
     await type(dialog, "details");
     dialog.handleInput("\r");
-    expect(dialog.render(80).join("\n")).toContain("[Review]");
+    expect(dialog.render(80).join("\n")).toContain("\x1b[7m Review \x1b[27m");
     dialog.handleInput("\r");
 
     const result = await flow.pending;

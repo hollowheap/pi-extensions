@@ -274,7 +274,6 @@ export function formatTuiStatus(config: TuiConfig): string {
     `verbPack=${config.verbPack}`,
     `panel.enabled=${config.panel.enabled}`,
     `panel.borderStyle=${config.panel.borderStyle}`,
-    `panel.surface=${config.panel.surface ?? config.overlaySurface}`,
     `panel.accentStripe=${config.panel.accentStripe}`,
     `panel.outcomeBadges=${config.panel.outcomeBadges}`,
     `panel.reuseSpinner=${config.panel.reuseSpinner}`,

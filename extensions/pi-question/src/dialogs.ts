@@ -9,6 +9,7 @@ import {
   Text,
   isFocusable,
   matchesKey,
+  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
@@ -25,7 +26,11 @@ import {
   watchAbort,
 } from "@hollowheap/runtime/abort";
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/tui/frame";
-import { type DialogTab, TabbedContent } from "@hollowheap/tui/tabs";
+import {
+  type DialogTab,
+  TabbedContent,
+  formatSelectedLabel,
+} from "@hollowheap/tui/tabs";
 import {
   DONE_LABEL,
   type Question,
@@ -592,12 +597,11 @@ function createReviewComponent(
       }
       lines.push("");
       lines.push(
-        REVIEW_ACTIONS.map(
-          (action, index) =>
-            `${index === actionCursor ? "[" : " "}${action}${index === actionCursor ? "]" : " "}`,
+        REVIEW_ACTIONS.map((action, index) =>
+          formatSelectedLabel(action, index === actionCursor),
         ).join("   "),
       );
-      return lines.map((line) => line.slice(0, limit));
+      return lines.map((line) => truncateToWidth(line, limit, ""));
     },
     invalidate: () => {},
     handleInput(data: string): void {

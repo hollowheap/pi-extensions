@@ -894,10 +894,7 @@ describe("extension registration", () => {
     handlers.session_start?.({}, ctx);
     expect(ctx.ui.setWorkingIndicator).toHaveBeenCalledTimes(1);
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
-    expect(pi.registerShortcut.mock.calls.map(([name]) => name)).toEqual([
-      "ctrl+o",
-      "ctrl+t",
-    ]);
+    expect(pi.registerShortcut).not.toHaveBeenCalled();
   });
 
   it("installs the working indicator when the modal editor is disabled", () => {
