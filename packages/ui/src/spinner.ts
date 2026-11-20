@@ -160,7 +160,7 @@ function tintSimpleFrames(
 }
 
 type FixedSpinner = Exclude<LoadingIndicatorStyle, "host" | "crush">;
-const SPINNER_PRESETS = {
+export const SPINNER_PRESETS = {
   hidden: [[], 1000],
   claude: [["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"], 100],
   braille: [["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 80],

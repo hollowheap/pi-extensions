@@ -10,10 +10,12 @@ import {
   type MarkdownOptions,
   type MarkdownTheme,
   stripTerminalSequences,
+  truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 import { getActiveTuiConfig } from "./state.js";
+import { safeBold, safeFg } from "./theme.js";
 
 export { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 
@@ -45,10 +47,10 @@ export function markdownTheme(
   colored = getActiveTuiConfig().colored,
 ): MarkdownTheme {
   const fg = (token: ThemeColor, text: string) =>
-    colored ? theme.fg(token, text) : text;
+    safeFg(theme, token, text, colored);
   const codeBlock = (text: string) => fg("toolOutput", text);
   return {
-    heading: (text) => fg("accent", theme.bold(text)),
+    heading: (text) => fg("accent", safeBold(theme, text)),
     link: (text) => fg("accent", text),
     linkUrl: (text) => fg("dim", text),
     code: (text) => fg("toolOutput", text),
@@ -58,7 +60,7 @@ export function markdownTheme(
     quoteBorder: (text) => fg("border", text.replace(/│/g, "▎")),
     hr: (text) => fg("border", text),
     listBullet: (text) => fg("accent", text),
-    bold: (text) => theme.bold(text),
+    bold: (text) => safeBold(theme, text),
     italic: (text) => theme.italic(text),
     strikethrough: (text) => theme.strikethrough(text),
     underline: (text) => theme.underline(text),
@@ -142,7 +144,7 @@ function styleRenderedLines(
   colored: boolean,
 ): string[] {
   const fg = (token: ThemeColor, text: string) =>
-    colored ? theme.fg(token, text) : text;
+    safeFg(theme, token, text, colored);
   const out: string[] = [];
   let inCodeBlock = false;
   let activeCallout: CalloutStyle | null = null;
@@ -165,7 +167,7 @@ function styleRenderedLines(
 
     if (inCodeBlock) {
       const body = rawLine.startsWith("  ") ? rawLine.slice(2) : rawLine;
-      out.push(`${fg("border", "│ ")}${body}`);
+      out.push(truncateToWidth(`${fg("border", "│ ")}${body}`, width, ""));
       continue;
     }
 
@@ -179,7 +181,7 @@ function styleRenderedLines(
         : `${style.icon} ${style.title}`;
       activeCallout = style;
       out.push(
-        `${fg(style.color, "▎ ")}${fg(style.color, theme.bold(heading))}`,
+        `${fg(style.color, "▎ ")}${fg(style.color, safeBold(theme, heading))}`,
       );
       continue;
     }

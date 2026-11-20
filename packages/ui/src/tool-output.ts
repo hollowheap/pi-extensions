@@ -1,10 +1,27 @@
 import {
+  type Theme,
   ToolExecutionComponent,
   type ToolRenderers,
+  keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import type { ToolVerbosity } from "@hollowheap/core/tui-config";
 import { getActiveTuiConfig } from "./state.js";
+import { safeFg } from "./theme.js";
+
+export function formatExpandHint(
+  count: number,
+  noun: string,
+  theme?: Theme,
+): string {
+  let hint = "to expand";
+  try {
+    hint = keyHint("app.tools.expand", "to expand");
+  } catch {
+    hint = "[Space] to expand";
+  }
+  return `${safeFg(theme, "muted", `... (${count} more ${noun},`)} ${hint}${safeFg(theme, "muted", ")")}`;
+}
 
 const OUTPUT_POLICY = Symbol.for("@hollowheap/ui/tool-output-policy");
 

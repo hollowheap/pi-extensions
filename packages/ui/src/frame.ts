@@ -15,12 +15,14 @@ import type {
 } from "@hollowheap/core/tui-config";
 import { getActiveTuiConfig, getHostOutputPadding } from "./state.js";
 import { paintSurfaceLine, stripBackgroundSgr } from "./surface.js";
+import { safeBold, safeFg } from "./theme.js";
 
 export interface FrameOptions {
   borderStyle?: BorderStyle;
   overlaySurface?: OverlaySurfaceMode;
   colored?: boolean;
   paddingX?: number;
+  bottomHint?: string;
 }
 
 function isSurfaceActive(
@@ -89,15 +91,7 @@ export function boxFrame(
   const inset = " ".repeat(paddingX);
 
   const border = (value: string) =>
-    colored && typeof theme?.fg === "function"
-      ? theme.fg(surfaceActive ? "borderAccent" : "border", value)
-      : value;
-  const fg = (token: string, value: string) =>
-    colored && typeof theme?.fg === "function"
-      ? theme.fg(token as never, value)
-      : value;
-  const bold = (value: string) =>
-    typeof theme?.bold === "function" ? theme.bold(value) : value;
+    safeFg(theme, surfaceActive ? "borderAccent" : "border", value, colored);
 
   const chars =
     borderStyle === "none"
@@ -110,7 +104,9 @@ export function boxFrame(
           vertical: " ",
         }
       : getBorderChars(borderStyle);
-  const rawLabel = title ? ` ${fg("accent", bold(title))} ` : "";
+  const rawLabel = title
+    ? ` ${safeFg(theme, "accent", safeBold(theme, title), colored)} `
+    : "";
   const label = truncateToWidth(rawLabel, Math.max(0, safeWidth - 3), "");
   const labelWidth = visibleWidth(label);
   const topFill = Math.max(0, safeWidth - 3 - labelWidth);
@@ -118,9 +114,24 @@ export function boxFrame(
     border(`${chars.topLeft}${chars.horizontal}`) +
     label +
     border(`${chars.horizontal.repeat(topFill)}${chars.topRight}`);
-  const bottom = border(
-    `${chars.bottomLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.bottomRight}`,
-  );
+  let bottom: string;
+  if (options?.bottomHint) {
+    const rawHint = ` ${safeFg(theme, "dim", options.bottomHint, colored)} `;
+    const truncatedHint = truncateToWidth(
+      rawHint,
+      Math.max(0, safeWidth - 3),
+      "",
+    );
+    const bottomFill = Math.max(0, safeWidth - 3 - visibleWidth(truncatedHint));
+    bottom =
+      border(`${chars.bottomLeft}${chars.horizontal}`) +
+      truncatedHint +
+      border(`${chars.horizontal.repeat(bottomFill)}${chars.bottomRight}`);
+  } else {
+    bottom = border(
+      `${chars.bottomLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.bottomRight}`,
+    );
+  }
 
   const body = lines.map((line) => {
     const text = truncateToWidth(line, innerWidth, "");
@@ -183,9 +194,7 @@ function paintState(
   const ansi = surfaceActive ? undefined : stateAnsi(theme, token, colored);
   if (ansi !== undefined) return `${ansi}${value}\x1b[39m`;
   const fallback = STATE_FALLBACK_TOKEN[token];
-  return colored && typeof theme?.fg === "function"
-    ? theme.fg(fallback as never, value)
-    : value;
+  return safeFg(theme, fallback, value, colored);
 }
 
 export function isPanelSurfaceActive(
@@ -260,7 +269,11 @@ export function resolvePanelFrameLayout(
   };
 }
 
-function fitRightLabel(line: string, width: number, label: string): string {
+export function fitRightLabel(
+  line: string,
+  width: number,
+  label: string,
+): string {
   if (width <= 0) return "";
   const text = truncateToWidth(label, width, "");
   const labelWidth = visibleWidth(text);
@@ -372,9 +385,7 @@ export function framePanelLines(
   const labelPaint =
     options.borderToken !== undefined
       ? (value: string) =>
-          colored && typeof theme?.fg === "function"
-            ? theme.fg(options.borderToken as never, value)
-            : value
+          safeFg(theme, options.borderToken ?? "border", value, colored)
       : paint;
   const borderPaint = bordered ? labelPaint : (value: string) => value;
   const out: string[] = [];
