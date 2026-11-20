@@ -314,9 +314,16 @@ export function checkPathTrust(
     };
   }
 
-  // Check if inside any configured trusted root
+  // Check if inside any configured trusted root (including symlinks whose
+  // link path lives inside a trusted root, e.g. home-manager -> /nix/store).
+  const logicalTarget = isAbsolute(targetPath)
+    ? resolve(targetPath)
+    : resolve(workspaceRoot, targetPath);
   for (const root of trustedRoots) {
-    if (isSubpath(root, canonicalTarget, workspaceRoot)) {
+    if (
+      isSubpath(root, canonicalTarget, workspaceRoot) ||
+      isSubpath(root, logicalTarget, workspaceRoot)
+    ) {
       return {
         isOutsideWorkspace: true,
         isTrusted: true,
