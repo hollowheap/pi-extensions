@@ -14,7 +14,13 @@ describe("bubblewrap sandbox wrapping", () => {
       filterExisting: false,
       maskPaths: ["/home/u/.ssh"],
     });
-    expect(args.slice(0, 2)).toEqual(["--ro-bind", "/"]);
+    expect(args.slice(0, 5)).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
+      "--ro-bind",
+      "/",
+    ]);
     expect(args).toContain("--dev");
     expect(args).toContain("--proc");
     expect(args).toContain("--tmpfs");
@@ -26,7 +32,10 @@ describe("bubblewrap sandbox wrapping", () => {
 
   it("defaults bind the current directory and allow the network", () => {
     const args = buildSandboxArgs();
-    expect(args.slice(0, 9)).toEqual([
+    expect(args.slice(0, 12)).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
       "--ro-bind",
       "/",
       "/",

@@ -51,6 +51,9 @@ describe("buildSandboxArgs", () => {
     });
 
     expect(args).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
       "--ro-bind",
       "/",
       "/",
@@ -68,6 +71,18 @@ describe("buildSandboxArgs", () => {
       "--tmpfs",
       "/home/user/.gnupg",
     ]);
+  });
+
+  it("applies maskPaths after writablePaths so writable parents cannot expose masks", () => {
+    const args = buildSandboxArgs({
+      cwd: "/test/workspace",
+      writablePaths: ["/home/user"],
+      maskPaths: ["/home/user/.ssh"],
+      filterExisting: false,
+    });
+    expect(args.indexOf("/home/user")).toBeLessThan(
+      args.indexOf("/home/user/.ssh"),
+    );
   });
 
   it("prioritizes workspace option over cwd", () => {
@@ -157,6 +172,9 @@ describe("wrapSandboxCommand", () => {
 
     expect(wrapped.command).toBe("bwrap");
     expect(wrapped.args).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
       "--ro-bind",
       "/",
       "/",

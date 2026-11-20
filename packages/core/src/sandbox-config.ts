@@ -27,20 +27,27 @@ export interface WrappedSandboxCommand {
   args: string[];
 }
 
-export const DEFAULT_MASK_PATHS: readonly string[] = [
-  join(homedir(), ".ssh"),
-  join(homedir(), ".gnupg"),
-  join(homedir(), ".aws"),
-  join(homedir(), ".kube"),
-  join(homedir(), ".docker"),
-  join(homedir(), ".config", "gh"),
-  join(homedir(), ".config", "gcloud"),
-  join(homedir(), ".azure"),
-  join(homedir(), ".git-credentials"),
-  join(homedir(), ".netrc"),
-  join(homedir(), ".npmrc"),
-  join(homedir(), ".pypirc"),
+const DEFAULT_MASK_SEGMENTS: readonly (readonly string[])[] = [
+  [".ssh"],
+  [".gnupg"],
+  [".aws"],
+  [".kube"],
+  [".docker"],
+  [".config", "gh"],
+  [".config", "gcloud"],
+  [".azure"],
+  [".git-credentials"],
+  [".netrc"],
+  [".npmrc"],
+  [".pypirc"],
 ];
+
+function defaultMaskPaths(): string[] {
+  const home = homedir();
+  return DEFAULT_MASK_SEGMENTS.map((segments) => join(home, ...segments));
+}
+
+export const DEFAULT_MASK_PATHS: readonly string[] = defaultMaskPaths();
 
 function tryRealpath(path: string): string | undefined {
   try {
@@ -198,6 +205,9 @@ export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
   );
   const targetDir = tryRealpath(resolvedTarget) ?? resolvedTarget;
   const args: string[] = [
+    "--die-with-parent",
+    "--new-session",
+    "--unshare-pid",
     "--ro-bind",
     "/",
     "/",
@@ -212,18 +222,18 @@ export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
     targetDir,
   ];
 
-  const candidateMasks = options.maskPaths ?? [...DEFAULT_MASK_PATHS];
+  for (const writablePath of options.writablePaths ?? []) {
+    if (writablePath) {
+      args.push("--bind", writablePath, writablePath);
+    }
+  }
+
+  const candidateMasks = options.maskPaths ?? defaultMaskPaths();
   const shouldFilter =
     options.filterExisting ?? options.maskPaths === undefined;
 
   for (const maskPath of candidateMasks) {
     appendMaskArgs(args, maskPath, targetDir, shouldFilter);
-  }
-
-  for (const writablePath of options.writablePaths ?? []) {
-    if (writablePath) {
-      args.push("--bind", writablePath, writablePath);
-    }
   }
 
   const isOffline = options.offline ?? options.network === false;
