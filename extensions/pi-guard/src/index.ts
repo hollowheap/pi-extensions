@@ -1,8 +1,14 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  createBashToolDefinition,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import { ensureDefaultDecideConfig } from "@hollowheap/policy";
 import { createCommands } from "./commands.js";
 import { createToolHandlers } from "./decisions.js";
 import { registerBuiltins, registerModeCommands } from "./mode.js";
+import { createSandboxedBashOperations } from "./sandbox.js";
+import { loadGuardSandboxOptions } from "./settings.js";
 import {
   createGuardState,
   createRepublisher,
@@ -22,6 +28,19 @@ export default function (pi: ExtensionAPI): void {
 
   pi.events.on("tui:config-changed", republish);
   pi.events.on("mode:changed", republish);
+
+  const sandboxedBashOps = createSandboxedBashOperations(
+    () => loadGuardSandboxOptions(getAgentDir()),
+    () => getAgentDir(),
+  );
+  pi.registerTool?.(
+    createBashToolDefinition(process.cwd(), { operations: sandboxedBashOps }),
+  );
+  pi.on("user_bash", () =>
+    loadGuardSandboxOptions(getAgentDir())
+      ? { operations: sandboxedBashOps }
+      : undefined,
+  );
 
   pi.on("tool_call", tools.toolCall);
   pi.on("tool_result", tools.toolResult);
