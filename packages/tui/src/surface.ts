@@ -11,6 +11,7 @@ const SGR_HAZARD = new RegExp(
 const SGR_BARE_RESET = new RegExp(
   `${ESC}\\[(?:|;[0-9;:]*|[0-9;:]*;|[0-9;:]*;;[0-9;:]*)m`,
 );
+const SGR_DIM = new RegExp(`${ESC}\\[(?:[0-9;:]*[;:])?2(?:[;:][0-9;:]*)?m`);
 const LEADING_SGR = new RegExp(`^${ESC}\\[[0-9;:]+m`);
 
 /** Remove inherited background colors and restore the surface after full resets. */
@@ -18,7 +19,8 @@ export function stripBackgroundSgr(text: string, surfaceAnsi = ""): string {
   if (
     !text.includes(ESC) ||
     (!SGR_HAZARD.test(text) &&
-      (surfaceAnsi === "" || !SGR_BARE_RESET.test(text)))
+      (surfaceAnsi === "" ||
+        (!SGR_BARE_RESET.test(text) && !SGR_DIM.test(text))))
   ) {
     return text;
   }
@@ -40,7 +42,11 @@ export function stripBackgroundSgr(text: string, surfaceAnsi = ""): string {
               : 1;
         if (code !== 48) kept.push(...parts.slice(index, index + size));
         index += size - 1;
-      } else if ((code < 40 || code > 49) && (code < 100 || code > 107)) {
+      } else if (
+        (code < 40 || code > 49) &&
+        (code < 100 || code > 107) &&
+        !(surfaceAnsi !== "" && code === 2)
+      ) {
         kept.push(part);
         if (code === 0) resetBackground = true;
       }

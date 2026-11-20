@@ -94,7 +94,7 @@ export function boxFrame(
 
   const border = (value: string) =>
     colored && typeof theme?.fg === "function"
-      ? theme.fg("border", value)
+      ? theme.fg(surfaceActive ? "borderAccent" : "border", value)
       : value;
   const fg = (token: string, value: string) =>
     colored && typeof theme?.fg === "function"
@@ -199,8 +199,9 @@ function paintState(
   token: PanelStateToken,
   colored: boolean,
   value: string,
+  surfaceActive = false,
 ): string {
-  const ansi = stateAnsi(theme, token, colored);
+  const ansi = surfaceActive ? undefined : stateAnsi(theme, token, colored);
   if (ansi !== undefined) return `${ansi}${value}\x1b[39m`;
   const fallback = STATE_FALLBACK_TOKEN[token];
   return colored && typeof theme?.fg === "function"
@@ -256,21 +257,14 @@ export function resolvePanelFrameLayout(
 ): PanelFrameLayout {
   const safeWidth = Math.max(4, width);
   const colored = options.colored ?? true;
-  const surface =
-    options.mode === "background" &&
-    (!options.surface || options.surface === "transparent")
-      ? "surface"
-      : (options.surface ?? "transparent");
+  const surface = options.surface ?? "transparent";
   const surfaceActive = isPanelSurfaceActive(surface, colored);
-  const bordered =
-    options.mode !== "background" &&
-    options.borderStyle !== "none" &&
-    safeWidth >= 6;
+  const bordered = options.borderStyle !== "none" && safeWidth >= 6;
   const effectivePad =
     !bordered && surfaceActive ? options.outputPad + 1 : options.outputPad;
   const innerWidth = getPanelInnerWidth(
     safeWidth,
-    options.mode === "background" ? "none" : options.borderStyle,
+    options.borderStyle,
     options.accentStripe,
     options.outputPad,
     surface,
@@ -315,10 +309,17 @@ export function framePanelLines(
     bottomRightLabel?: string;
   },
 ): string[] {
-  const { safeWidth, colored, surface, bordered, effectivePad, innerWidth } =
-    resolvePanelFrameLayout(width, options);
+  const {
+    safeWidth,
+    colored,
+    surface,
+    surfaceActive,
+    bordered,
+    effectivePad,
+    innerWidth,
+  } = resolvePanelFrameLayout(width, options);
   const paint = (value: string) =>
-    paintState(theme, options.stateToken, colored, value);
+    paintState(theme, options.stateToken, colored, value, surfaceActive);
   const stripe = options.accentStripe ? paint("▎") : "";
   const content =
     surface === "transparent"

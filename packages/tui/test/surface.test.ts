@@ -98,4 +98,11 @@ describe("surface", () => {
       preFitted,
     );
   });
+
+  it("strips SGR dim when painting on a surface background and keeps it when transparent", () => {
+    expect(stripBackgroundSgr("\x1b[2mdim\x1b[0m")).toBe("\x1b[2mdim\x1b[0m");
+    expect(stripBackgroundSgr("\x1b[2mdim\x1b[0m", "\x1b[44m")).toBe(
+      "dim\x1b[0m\x1b[44m",
+    );
+  });
 });
