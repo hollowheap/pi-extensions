@@ -62,6 +62,37 @@ function hasPositiveUsage(usage: {
   );
 }
 
+export function hasAvailableClassifierModel(
+  ctx: ExtensionContext,
+  agentDir?: string,
+): boolean {
+  const registry = (ctx as { modelRegistry?: unknown }).modelRegistry as
+    | {
+        getModelOfType?: (...args: unknown[]) => unknown;
+        findOfType?: (...args: unknown[]) => unknown;
+        classify?: (...args: unknown[]) => Promise<unknown>;
+      }
+    | undefined;
+  if (typeof registry?.classify !== "function") return false;
+  const configured = readConfiguredClassifierModel(agentDir);
+  if (configured === undefined) return false;
+  const slash = configured.indexOf("/");
+  if (slash <= 0 || slash >= configured.length - 1) return false;
+  const provider = configured.slice(0, slash);
+  const id = configured.slice(slash + 1);
+  try {
+    const model =
+      typeof registry.getModelOfType === "function"
+        ? registry.getModelOfType("classifier", provider, id)
+        : typeof registry.findOfType === "function"
+          ? registry.findOfType("classifier", provider, id)
+          : undefined;
+    return model !== undefined && model !== null;
+  } catch {
+    return false;
+  }
+}
+
 export async function classifyToolCall(
   event: ToolCallEvent,
   tag: Tag | undefined,

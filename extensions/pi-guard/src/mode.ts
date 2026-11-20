@@ -18,7 +18,10 @@ import {
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readPersistedMode, session } from "@hollowheap/core/state";
 import { canOverlay, hostUi } from "@hollowheap/pi-ui/host";
-import { BUILTIN_MODE_LAYERS } from "@hollowheap/policy";
+import {
+  BUILTIN_MODE_LAYERS,
+  hasAvailableClassifierModel,
+} from "@hollowheap/policy";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import { isKnownMode, modesPath, readDefaultMode } from "./settings.js";
@@ -77,8 +80,12 @@ function switchMode(
     guardNotify(ctx, result.veto, "error");
     return;
   }
-  if (result.notices.length > 0) {
-    for (const notice of result.notices) {
+  const notices =
+    result.mode === "auto" && hasAvailableClassifierModel(ctx)
+      ? result.notices.filter((notice) => notice.level !== "warning")
+      : result.notices;
+  if (notices.length > 0) {
+    for (const notice of notices) {
       guardNotify(ctx, notice.text, notice.level);
     }
   } else {
