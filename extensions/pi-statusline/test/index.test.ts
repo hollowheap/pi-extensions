@@ -359,8 +359,8 @@ describe("pi-statusline extension", () => {
 
     await command.handler("working pulse", ctx);
     expect(ctx.ui.setWorkingIndicator).toHaveBeenLastCalledWith({
-      frames: ["●", "○"],
-      intervalMs: 400,
+      frames: ["∙", "•", "●", "◉", "●", "•"],
+      intervalMs: 120,
     });
 
     await command.handler("thinking reasoning", ctx);

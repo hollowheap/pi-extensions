@@ -9,7 +9,6 @@ import {
   type TUI,
   matchesKey,
   parseKey,
-  sliceByColumn,
   stripTerminalSequences,
   truncateToWidth,
   visibleWidth,
@@ -21,6 +20,8 @@ import type {
   OverlaySurfaceMode,
   TuiConfig,
 } from "@hollowheap/core/tui-config";
+import { fitRightLabel } from "@hollowheap/ui/frame";
+import { decodePrintableInput } from "@hollowheap/ui/input";
 import { getActiveTuiConfig, getHostOutputPadding } from "@hollowheap/ui/state";
 import { paintSurfaceLine } from "@hollowheap/ui/surface";
 import {
@@ -1068,7 +1069,8 @@ function mapVisualLinesToLogical(
 }
 
 function printableKey(data: string): string | undefined {
-  if (data.length === 1 && data.charCodeAt(0) >= 32) return data;
+  const decoded = decodePrintableInput(data);
+  if (decoded !== undefined) return decoded;
   const key = parseKey(data);
   if (key === undefined) {
     return data.length > 0 && data[0] !== "\x1b" ? data : undefined;
@@ -1076,16 +1078,6 @@ function printableKey(data: string): string | undefined {
   if (key.length === 1) return key;
   const shifted = /^shift\+([a-z])$/.exec(key);
   return shifted?.[1]?.toUpperCase();
-}
-
-function fitRightLabel(line: string, width: number, label: string): string {
-  if (width <= 0) return "";
-  const text = truncateToWidth(label, width, "");
-  const labelWidth = visibleWidth(text);
-  const prefixWidth = Math.max(0, width - labelWidth);
-  const prefix = sliceByColumn(line, 0, prefixWidth);
-  const pad = Math.max(0, prefixWidth - visibleWidth(prefix));
-  return `${prefix}\x1b[0m${" ".repeat(pad)}${text}`;
 }
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", {

@@ -1,7 +1,6 @@
 import {
   type ExtensionAPI,
   type ExtensionContext,
-  type Theme,
   defineTool,
   getAgentDir,
   keyHint,
@@ -9,7 +8,6 @@ import {
 import {
   Container,
   Image,
-  Markdown,
   Text,
   getCapabilities,
   hyperlink,
@@ -22,7 +20,8 @@ import {
 } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry } from "@hollowheap/core/state";
-import { markdownTheme } from "@hollowheap/ui/markdown";
+import { StyledMarkdown } from "@hollowheap/ui/markdown";
+import { formatExpandHint } from "@hollowheap/ui/tool-output";
 import { Type } from "typebox";
 import {
   type MediaPreview,
@@ -123,16 +122,6 @@ function linkedUrl(value: string): string {
 
 function markdownUrl(value: string): string {
   return isHttpUrl(value) ? `[${value}](${value})` : value;
-}
-
-function expandHint(theme: Theme, count: number, noun: string): string {
-  let hint = "to expand";
-  try {
-    hint = keyHint("app.tools.expand", "to expand");
-  } catch {
-    hint = "[Space] to expand";
-  }
-  return `${theme.fg("muted", `... (${count} more ${noun},`)} ${hint}${theme.fg("muted", ")")}`;
 }
 
 export interface WebSearchDeps {
@@ -388,15 +377,13 @@ export function createWebSearchTool(
         return text;
       }
 
-      return new Markdown(
+      return new StyledMarkdown(
         formatSearchMarkdown(
           details?.query ?? "",
           items,
           details?.truncated ?? false,
         ),
-        0,
-        0,
-        markdownTheme(theme),
+        theme,
       );
     },
     async execute(
@@ -533,7 +520,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
           : undefined;
       const url = safeFinalUrl || safeDetailsUrl || "web page";
       if (options.expanded) {
-        const markdown = new Markdown(
+        const markdown = new StyledMarkdown(
           `**Fetched** ${markdownUrl(url)}\n\n${formatFetchMarkdown(
             safeDetailsUrl ?? url,
             safeFinalUrl ?? url,
@@ -542,9 +529,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
             details?.truncated ?? false,
             details?.media ?? [],
           )}`,
-          0,
-          0,
-          markdownTheme(theme),
+          theme,
         );
         const previews = (details?.media ?? [])
           .filter((item) => item.kind === "image")
@@ -600,7 +585,7 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
       }
 
       if (remaining > 0) {
-        resLines.push(`  ${expandHint(theme, remaining, "lines")}`);
+        resLines.push(`  ${formatExpandHint(remaining, "lines", theme)}`);
       }
 
       text.setText(resLines.join("\n"));

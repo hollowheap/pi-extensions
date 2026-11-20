@@ -3,10 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type ExtensionAPI,
-  type Theme,
   defineTool,
   getAgentDir,
-  keyHint,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
@@ -26,6 +24,7 @@ import { appendSessionEntry, session } from "@hollowheap/core/state";
 import { notify } from "@hollowheap/pi-ui/host";
 import { isProcessAlive } from "@hollowheap/runtime/process";
 import { isOsPermissionError } from "@hollowheap/runtime/sandbox";
+import { formatExpandHint } from "@hollowheap/ui/tool-output";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import type { SessionAgentDefinition } from "./definitions.js";
@@ -242,16 +241,6 @@ function stateWithLog(
     ...(state.session !== undefined ? { session: state.session } : {}),
     log: log.trim() === "" ? "" : truncateText(log, "pi-subagents"),
   };
-}
-
-function expandHint(theme: Theme, count: number, noun: string): string {
-  let hint = "to expand";
-  try {
-    hint = keyHint("app.tools.expand", "to expand");
-  } catch {
-    hint = "[Space] to expand";
-  }
-  return `${theme.fg("muted", `... (${count} more ${noun},`)} ${hint}${theme.fg("muted", ")")}`;
 }
 
 function firstText(result: { content?: readonly unknown[] }): string {
@@ -490,7 +479,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         const hidden = logLines.length - displayed.length;
 
         if (hidden > 0) {
-          lines.push(`  ${expandHint(theme, hidden, "earlier log lines")}`);
+          lines.push(
+            `  ${formatExpandHint(hidden, "earlier log lines", theme)}`,
+          );
         }
         for (const l of displayed) {
           lines.push(`  ${theme.fg("toolOutput", sanitizeTerminalText(l))}`);

@@ -21,6 +21,7 @@ import {
   Text,
 } from "@earendil-works/pi-tui";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
+import { safeFg } from "@hollowheap/ui/theme";
 import {
   type PanelStateToken,
   framePanelLines,
@@ -113,7 +114,7 @@ function syncPanelEnabledOnRender<
   });
 }
 
-function renderPanelOrFallback(
+export function renderPanelOrFallback(
   lines: readonly string[],
   width: number,
   pad: number,
@@ -144,7 +145,10 @@ function renderPanelOrFallback(
   });
 }
 
-function getPanelOrFallbackInnerWidth(width: number, pad: number): number {
+export function getPanelOrFallbackInnerWidth(
+  width: number,
+  pad: number,
+): number {
   const config = getActiveTuiConfig();
   const panel = panelRenderConfig(config);
   if (!panel.enabled) {
@@ -279,8 +283,7 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
               const theme = patch.getTheme();
               const pad = outputPadMap.get(this) ?? 1;
               const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
-              const hintText =
-                config.colored && theme ? theme.fg("dim", hint) : hint;
+              const hintText = safeFg(theme, "dim", hint, config.colored);
               header.setText(`${names} (${hintText})`);
               const lines = [
                 ...header.render(innerWidth),
@@ -305,12 +308,32 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
   });
 }
 
-/** Frame BranchSummaryMessageComponent inside our shared panel with outputPad inside the border. */
-export function installBranchSummaryPanel(
+interface SummaryPanelTarget {
+  render(width: number): string[];
+  invalidate(): void;
+  clear(): void;
+  addChild(child: Component): void;
+  setPaddingX(paddingX: number): void;
+  setBgFn(bgFn: never): void;
+  setExpanded(expanded: boolean): void;
+}
+
+interface SummaryPanelSpec<M extends { summary?: string }> {
+  symbol: symbol;
+  badge: string;
+  formatHeading: (message: M) => string;
+  formatCollapsed: (message: M) => string;
+}
+
+function installSummaryPanel<
+  T extends SummaryPanelTarget,
+  M extends { summary?: string },
+>(
+  prototype: T,
   getTheme: () => Theme | undefined,
+  spec: SummaryPanelSpec<M>,
 ): void {
-  const prototype = BranchSummaryMessageComponent.prototype;
-  const installed = Reflect.get(prototype, BRANCH_SUMMARY_PANEL) as
+  const installed = Reflect.get(prototype, spec.symbol) as
     | { getTheme: typeof getTheme }
     | undefined;
   if (installed) {
@@ -320,275 +343,158 @@ export function installBranchSummaryPanel(
   const original = Reflect.get(prototype, "updateDisplay");
   if (typeof original !== "function") return;
   const patch = { getTheme };
-  const outputPadMap = new WeakMap<BranchSummaryMessageComponent, number>();
-  const hostPaddingYMap = new WeakMap<BranchSummaryMessageComponent, number>();
-  const hostBgFnMap = new WeakMap<BranchSummaryMessageComponent, unknown>();
-  Reflect.set(prototype, BRANCH_SUMMARY_PANEL, patch);
-  Reflect.set(
-    prototype,
-    "setOutputPad",
-    function (this: BranchSummaryMessageComponent, outputPad: number) {
-      outputPadMap.set(this, outputPad);
-      if (panelRenderConfig(getActiveTuiConfig()).enabled) {
-        this.setPaddingX(0);
-        Reflect.set(this, "paddingY", 0);
-      } else {
-        this.setPaddingX(outputPad);
-      }
-    },
-  );
-  Reflect.set(
-    prototype,
-    "updateDisplay",
-    function (this: BranchSummaryMessageComponent) {
-      const message = Reflect.get(this, "message") as
-        | { summary?: string }
-        | undefined;
-      const expanded = Reflect.get(this, "expanded");
-      const markdownTheme = Reflect.get(this, "markdownTheme") as
-        | MarkdownTheme
-        | undefined;
-      if (
-        !message ||
-        typeof message.summary !== "string" ||
-        typeof expanded !== "boolean" ||
-        !markdownTheme
-      ) {
-        original.call(this);
-        return;
-      }
-      if (!outputPadMap.has(this)) {
-        const boxPad = Reflect.get(this, "paddingX");
-        outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
-      }
-      if (!hostPaddingYMap.has(this)) {
-        const boxPadY = Reflect.get(this, "paddingY");
-        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
-      }
-      if (!hostBgFnMap.has(this)) {
-        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
-      }
-      if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
-        this.setPaddingX(outputPadMap.get(this) ?? 1);
-        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
-        this.setBgFn(hostBgFnMap.get(this) as never);
-        original.call(this);
-        return;
-      }
-      const summary = message.summary;
-      const shortcut = keyText("app.tools.expand") || "click";
-      const body = expanded
-        ? new Markdown(
-            `**Branch Summary**\n\n${summary}`,
-            0,
-            0,
-            markdownTheme,
-            {
-              color: (text) => {
-                const t = patch.getTheme();
-                return getActiveTuiConfig().colored &&
-                  typeof t?.fg === "function"
-                  ? t.fg("customMessageText" as never, text)
-                  : text;
-              },
-            },
-          )
-        : undefined;
-      const header = new Text("", 0, 0);
-      const collapsedLine = new Text("", 0, 0);
-
-      this.clear();
+  const outputPadMap = new WeakMap<T, number>();
+  const hostPaddingYMap = new WeakMap<T, number>();
+  const hostBgFnMap = new WeakMap<T, unknown>();
+  Reflect.set(prototype, spec.symbol, patch);
+  Reflect.set(prototype, "setOutputPad", function (this: T, outputPad: number) {
+    outputPadMap.set(this, outputPad);
+    if (panelRenderConfig(getActiveTuiConfig()).enabled) {
       this.setPaddingX(0);
       Reflect.set(this, "paddingY", 0);
-      this.setBgFn(undefined);
-      this.addChild(
-        new MouseRegion(
-          {
-            invalidate: () => body?.invalidate(),
-            render: (width) => {
-              const config = getActiveTuiConfig();
-              const theme = patch.getTheme();
-              const pad = outputPadMap.get(this) ?? 1;
-              const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
-              const fg = (token: string, val: string) =>
-                config.colored && typeof theme?.fg === "function"
-                  ? theme.fg(token as never, val)
-                  : val;
-              header.setText(
-                fg("customMessageLabel", "\x1b[1m[branch]\x1b[22m"),
+    } else {
+      this.setPaddingX(outputPad);
+    }
+  });
+  Reflect.set(prototype, "updateDisplay", function (this: T) {
+    const message = Reflect.get(this, "message") as M | undefined;
+    const expanded = Reflect.get(this, "expanded");
+    const markdownTheme = Reflect.get(this, "markdownTheme") as
+      | MarkdownTheme
+      | undefined;
+    if (
+      !message ||
+      typeof message.summary !== "string" ||
+      typeof expanded !== "boolean" ||
+      !markdownTheme
+    ) {
+      original.call(this);
+      return;
+    }
+    if (!outputPadMap.has(this)) {
+      const boxPad = Reflect.get(this, "paddingX");
+      outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
+    }
+    if (!hostPaddingYMap.has(this)) {
+      const boxPadY = Reflect.get(this, "paddingY");
+      hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
+    }
+    if (!hostBgFnMap.has(this)) {
+      hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
+    }
+    if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
+      this.setPaddingX(outputPadMap.get(this) ?? 1);
+      Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
+      this.setBgFn(hostBgFnMap.get(this) as never);
+      original.call(this);
+      return;
+    }
+    const summary = message.summary;
+    const shortcut = keyText("app.tools.expand") || "click";
+    const heading = spec.formatHeading(message);
+    const collapsedPrefix = spec.formatCollapsed(message);
+    const body = expanded
+      ? new Markdown(`**${heading}**\n\n${summary}`, 0, 0, markdownTheme, {
+          color: (text) =>
+            safeFg(
+              patch.getTheme(),
+              "customMessageText",
+              text,
+              getActiveTuiConfig().colored,
+            ),
+        })
+      : undefined;
+    const header = new Text("", 0, 0);
+    const collapsedLine = new Text("", 0, 0);
+
+    this.clear();
+    this.setPaddingX(0);
+    Reflect.set(this, "paddingY", 0);
+    this.setBgFn(undefined as never);
+    this.addChild(
+      new MouseRegion(
+        {
+          invalidate: () => body?.invalidate(),
+          render: (width) => {
+            const config = getActiveTuiConfig();
+            const theme = patch.getTheme();
+            const pad = outputPadMap.get(this) ?? 1;
+            const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
+            header.setText(
+              safeFg(
+                theme,
+                "customMessageLabel",
+                `\x1b[1m${spec.badge}\x1b[22m`,
+                config.colored,
+              ),
+            );
+            const lines = [...header.render(innerWidth), ""];
+            if (body) {
+              lines.push(...body.render(innerWidth));
+            } else {
+              collapsedLine.setText(
+                `${safeFg(theme, "customMessageText", `${collapsedPrefix} (`, config.colored)}${safeFg(theme, "dim", shortcut, config.colored)}${safeFg(theme, "customMessageText", " to expand)", config.colored)}`,
               );
-              const lines = [...header.render(innerWidth), ""];
-              if (body) {
-                lines.push(...body.render(innerWidth));
-              } else {
-                collapsedLine.setText(
-                  `${fg("customMessageText", "Branch summary (")}${fg("dim", shortcut)}${fg("customMessageText", " to expand)")}`,
-                );
-                lines.push(...collapsedLine.render(innerWidth));
-              }
-              return renderPanelOrFallback(lines, width, pad, theme);
-            },
+              lines.push(...collapsedLine.render(innerWidth));
+            }
+            return renderPanelOrFallback(lines, width, pad, theme);
           },
-          (event) => {
-            if (event.type !== "click" || event.button !== "left")
-              return undefined;
-            this.setExpanded(!expanded);
-            return { handled: true };
-          },
-        ),
-      );
-    },
-  );
+        },
+        (event) => {
+          if (event.type !== "click" || event.button !== "left")
+            return undefined;
+          this.setExpanded(!expanded);
+          return { handled: true };
+        },
+      ),
+    );
+  });
   syncPanelEnabledOnRender(prototype, (instance) => {
     const updateDisplay = Reflect.get(instance, "updateDisplay");
     if (typeof updateDisplay === "function") updateDisplay.call(instance);
   });
 }
 
+/** Frame BranchSummaryMessageComponent inside our shared panel with outputPad inside the border. */
+export function installBranchSummaryPanel(
+  getTheme: () => Theme | undefined,
+): void {
+  installSummaryPanel<BranchSummaryMessageComponent, { summary?: string }>(
+    BranchSummaryMessageComponent.prototype,
+    getTheme,
+    {
+      symbol: BRANCH_SUMMARY_PANEL,
+      badge: "[branch]",
+      formatHeading: () => "Branch Summary",
+      formatCollapsed: () => "Branch summary",
+    },
+  );
+}
+
 /** Frame CompactionSummaryMessageComponent inside our shared panel with outputPad inside the border. */
 export function installCompactionSummaryPanel(
   getTheme: () => Theme | undefined,
 ): void {
-  const prototype = CompactionSummaryMessageComponent.prototype;
-  const installed = Reflect.get(prototype, COMPACTION_SUMMARY_PANEL) as
-    | { getTheme: typeof getTheme }
-    | undefined;
-  if (installed) {
-    installed.getTheme = getTheme;
-    return;
-  }
-  const original = Reflect.get(prototype, "updateDisplay");
-  if (typeof original !== "function") return;
-  const patch = { getTheme };
-  const outputPadMap = new WeakMap<CompactionSummaryMessageComponent, number>();
-  const hostPaddingYMap = new WeakMap<
+  installSummaryPanel<
     CompactionSummaryMessageComponent,
-    number
-  >();
-  const hostBgFnMap = new WeakMap<CompactionSummaryMessageComponent, unknown>();
-  Reflect.set(prototype, COMPACTION_SUMMARY_PANEL, patch);
-  Reflect.set(
-    prototype,
-    "setOutputPad",
-    function (this: CompactionSummaryMessageComponent, outputPad: number) {
-      outputPadMap.set(this, outputPad);
-      if (panelRenderConfig(getActiveTuiConfig()).enabled) {
-        this.setPaddingX(0);
-        Reflect.set(this, "paddingY", 0);
-      } else {
-        this.setPaddingX(outputPad);
-      }
-    },
-  );
-  Reflect.set(
-    prototype,
-    "updateDisplay",
-    function (this: CompactionSummaryMessageComponent) {
-      const message = Reflect.get(this, "message") as
-        | { summary?: string; tokensBefore?: number }
-        | undefined;
-      const expanded = Reflect.get(this, "expanded");
-      const markdownTheme = Reflect.get(this, "markdownTheme") as
-        | MarkdownTheme
-        | undefined;
-      if (
-        !message ||
-        typeof message.summary !== "string" ||
-        typeof expanded !== "boolean" ||
-        !markdownTheme
-      ) {
-        original.call(this);
-        return;
-      }
-      if (!outputPadMap.has(this)) {
-        const boxPad = Reflect.get(this, "paddingX");
-        outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
-      }
-      if (!hostPaddingYMap.has(this)) {
-        const boxPadY = Reflect.get(this, "paddingY");
-        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
-      }
-      if (!hostBgFnMap.has(this)) {
-        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
-      }
-      if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
-        this.setPaddingX(outputPadMap.get(this) ?? 1);
-        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
-        this.setBgFn(hostBgFnMap.get(this) as never);
-        original.call(this);
-        return;
-      }
+    { summary?: string; tokensBefore?: number }
+  >(CompactionSummaryMessageComponent.prototype, getTheme, {
+    symbol: COMPACTION_SUMMARY_PANEL,
+    badge: "[compaction]",
+    formatHeading: (message) => {
       const tokenStr =
         typeof message.tokensBefore === "number"
           ? message.tokensBefore.toLocaleString()
           : "0";
-      const summary = message.summary;
-      const shortcut = keyText("app.tools.expand") || "click";
-      const body = expanded
-        ? new Markdown(
-            `**Compacted from ${tokenStr} tokens**\n\n${summary}`,
-            0,
-            0,
-            markdownTheme,
-            {
-              color: (text) => {
-                const t = patch.getTheme();
-                return getActiveTuiConfig().colored &&
-                  typeof t?.fg === "function"
-                  ? t.fg("customMessageText" as never, text)
-                  : text;
-              },
-            },
-          )
-        : undefined;
-      const header = new Text("", 0, 0);
-      const collapsedLine = new Text("", 0, 0);
-
-      this.clear();
-      this.setPaddingX(0);
-      Reflect.set(this, "paddingY", 0);
-      this.setBgFn(undefined);
-      this.addChild(
-        new MouseRegion(
-          {
-            invalidate: () => body?.invalidate(),
-            render: (width) => {
-              const config = getActiveTuiConfig();
-              const theme = patch.getTheme();
-              const pad = outputPadMap.get(this) ?? 1;
-              const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
-              const fg = (token: string, val: string) =>
-                config.colored && typeof theme?.fg === "function"
-                  ? theme.fg(token as never, val)
-                  : val;
-              header.setText(
-                fg("customMessageLabel", "\x1b[1m[compaction]\x1b[22m"),
-              );
-              const lines = [...header.render(innerWidth), ""];
-              if (body) {
-                lines.push(...body.render(innerWidth));
-              } else {
-                collapsedLine.setText(
-                  `${fg("customMessageText", `Compacted from ${tokenStr} tokens (`)}${fg("dim", shortcut)}${fg("customMessageText", " to expand)")}`,
-                );
-                lines.push(...collapsedLine.render(innerWidth));
-              }
-              return renderPanelOrFallback(lines, width, pad, theme);
-            },
-          },
-          (event) => {
-            if (event.type !== "click" || event.button !== "left")
-              return undefined;
-            this.setExpanded(!expanded);
-            return { handled: true };
-          },
-        ),
-      );
+      return `Compacted from ${tokenStr} tokens`;
     },
-  );
-  syncPanelEnabledOnRender(prototype, (instance) => {
-    const updateDisplay = Reflect.get(instance, "updateDisplay");
-    if (typeof updateDisplay === "function") updateDisplay.call(instance);
+    formatCollapsed: (message) => {
+      const tokenStr =
+        typeof message.tokensBefore === "number"
+          ? message.tokensBefore.toLocaleString()
+          : "0";
+      return `Compacted from ${tokenStr} tokens`;
+    },
   });
 }
 
@@ -662,12 +568,13 @@ export function installCustomMessagePanel(
 
     const header = new Text("", 0, 0);
     const body = new Markdown(text, 0, 0, markdownTheme, {
-      color: (val) => {
-        const t = patch.getTheme();
-        return getActiveTuiConfig().colored && typeof t?.fg === "function"
-          ? t.fg("customMessageText" as never, val)
-          : val;
-      },
+      color: (val) =>
+        safeFg(
+          patch.getTheme(),
+          "customMessageText",
+          val,
+          getActiveTuiConfig().colored,
+        ),
     });
 
     const panelChild: Component = {
@@ -689,13 +596,12 @@ export function installCustomMessagePanel(
         const pad = typeof currentPad === "number" ? currentPad : 1;
         const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
         const labelText = `[${message.customType ?? "custom"}]`;
-        const styledLabel =
-          liveConfig.colored && typeof theme?.fg === "function"
-            ? theme.fg(
-                "customMessageLabel" as never,
-                `\x1b[1m${labelText}\x1b[22m`,
-              )
-            : `\x1b[1m${labelText}\x1b[22m`;
+        const styledLabel = safeFg(
+          theme,
+          "customMessageLabel",
+          `\x1b[1m${labelText}\x1b[22m`,
+          liveConfig.colored,
+        );
         header.setText(styledLabel);
         const lines = [
           ...header.render(innerWidth),
@@ -794,12 +700,13 @@ export function installUserMessagePanel(
       0,
       markdownTheme,
       {
-        color: (content) => {
-          const t = patch.getTheme();
-          return getActiveTuiConfig().colored && typeof t?.fg === "function"
-            ? t.fg("userMessageText" as never, content)
-            : content;
-        },
+        color: (content) =>
+          safeFg(
+            patch.getTheme(),
+            "userMessageText",
+            content,
+            getActiveTuiConfig().colored,
+          ),
       },
       {
         preserveOrderedListMarkers: true,

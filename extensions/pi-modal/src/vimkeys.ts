@@ -6,12 +6,12 @@ import {
 import { type Component, type Container, Spacer } from "@earendil-works/pi-tui";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import { type ModalConfig, resolveEffectiveKeymaps } from "./keymap.js";
-import {
-  framePanelLines,
-  panelRenderConfig,
-  resolvePanelFrameLayout,
-} from "./panel.js";
+import { panelRenderConfig } from "./panel.js";
 import { loadModalConfig } from "./settings.js";
+import {
+  getPanelOrFallbackInnerWidth,
+  renderPanelOrFallback,
+} from "./skill-panel.js";
 
 const HOTKEYS_PANEL = Symbol.for("@hollowheap/pi-modal/hotkeys-panel");
 
@@ -241,39 +241,14 @@ export function installHotkeysPanel(
           }
         },
         render: (width: number) => {
-          const liveConfig = getActiveTuiConfig();
-          const livePanel = panelRenderConfig(liveConfig);
           const currentPad = Reflect.get(this, "outputPad");
           const pad = typeof currentPad === "number" ? currentPad : 1;
           const theme = patch.getTheme();
-          if (!livePanel.enabled) {
-            const inset = " ".repeat(pad);
-            return innerChildren
-              .flatMap((child) => child.render(Math.max(1, width - 2 * pad)))
-              .map((line) => `${inset}${line}`);
-          }
-          const { innerWidth } = resolvePanelFrameLayout(width, {
-            mode: livePanel.mode,
-            borderStyle: livePanel.borderStyle,
-            accentStripe: livePanel.accentStripe,
-            outputPad: pad,
-            colored: liveConfig.colored,
-            surface: livePanel.surface,
-          });
+          const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
           const lines = innerChildren.flatMap((child) =>
             child.render(innerWidth),
           );
-          return framePanelLines(lines, width, theme, {
-            mode: livePanel.mode,
-            borderStyle: livePanel.borderStyle,
-            accentStripe: livePanel.accentStripe,
-            outputPad: pad,
-            stateToken: "toolSuccessBg",
-            includeTop: true,
-            includeBottom: true,
-            colored: liveConfig.colored,
-            surface: livePanel.surface,
-          });
+          return renderPanelOrFallback(lines, width, pad, theme);
         },
       };
       chatContainer.addChild(panelComponent);

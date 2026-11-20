@@ -28,8 +28,12 @@ import {
   isPanelSurfaceActive,
   resolvePanelFrameLayout,
 } from "@hollowheap/ui/frame";
-import { createWorkingIndicator } from "@hollowheap/ui/spinner";
+import {
+  SPINNER_PRESETS,
+  createWorkingIndicator,
+} from "@hollowheap/ui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
+import { safeBold, safeFg } from "@hollowheap/ui/theme";
 export {
   type PanelFrameLayout,
   type PanelStateToken,
@@ -40,19 +44,6 @@ export {
 } from "@hollowheap/ui/frame";
 export { stripBackgroundSgr } from "@hollowheap/ui/surface";
 
-const FALLBACK_SPINNER_FRAMES = [
-  "⠋",
-  "⠙",
-  "⠹",
-  "⠸",
-  "⠼",
-  "⠴",
-  "⠦",
-  "⠧",
-  "⠇",
-  "⠏",
-] as const;
-const FALLBACK_SPINNER_INTERVAL_MS = 80;
 const FALLBACK_RESULT_PREVIEW_LINES = 10;
 const MAX_SPINNER_TIMER_MS = 10 * 60_000;
 
@@ -345,21 +336,6 @@ function normalizeInnerCallLines(
   return trimEdgeBlankLines(trimmed.slice(1));
 }
 
-function fg(
-  theme: Theme | undefined,
-  token: string,
-  value: string,
-  colored = true,
-): string {
-  return colored && typeof theme?.fg === "function"
-    ? theme.fg(token as never, value)
-    : value;
-}
-
-function bold(theme: Theme | undefined, value: string): string {
-  return typeof theme?.bold === "function" ? theme.bold(value) : value;
-}
-
 function extractResultText(result: AgentToolResult<unknown>): string {
   if (!Array.isArray(result.content)) return "";
   const validBlocks = result.content.filter(
@@ -383,12 +359,12 @@ function renderFallbackResultLines(
     ? rawLines
     : rawLines.slice(0, FALLBACK_RESULT_PREVIEW_LINES);
   const lines = visible.map((line) =>
-    fg(theme, "toolOutput", sanitizeTerminalText(line), colored),
+    safeFg(theme, "toolOutput", sanitizeTerminalText(line), colored),
   );
   const remaining = rawLines.length - visible.length;
   if (remaining > 0) {
     lines.push(
-      fg(
+      safeFg(
         theme,
         surfaceActive ? "text" : "muted",
         `... (${remaining} more lines)`,
@@ -426,8 +402,8 @@ function getSpinnerFrame(
     panelState.spinnerTheme = theme;
     panelState.spinnerKey = key;
     panelState.spinner = createWorkingIndicator(style, theme, colored) ?? {
-      frames: [...FALLBACK_SPINNER_FRAMES],
-      intervalMs: FALLBACK_SPINNER_INTERVAL_MS,
+      frames: [...SPINNER_PRESETS.braille[0]],
+      intervalMs: SPINNER_PRESETS.braille[1],
     };
   }
   const { frames, intervalMs } = panelState.spinner;
@@ -436,7 +412,7 @@ function getSpinnerFrame(
   const idx = tick % frames.length;
   const rawFrame = frames[idx] ?? frames[0] ?? "";
   const frame =
-    style === "host" ? fg(theme, "accent", rawFrame, colored) : rawFrame;
+    style === "host" ? safeFg(theme, "accent", rawFrame, colored) : rawFrame;
   return { frame, tick, intervalMs };
 }
 
@@ -630,25 +606,35 @@ export function wrapToolRenderer(
           }
 
           headerParts.push(
-            bold(theme, fg(theme, "toolTitle", verbLabel, ui.colored)),
+            safeBold(theme, safeFg(theme, "toolTitle", verbLabel, ui.colored)),
           );
 
           const summary = formatToolCallSummary(toolName, args);
           if (summary !== undefined) {
             headerParts.push(
-              fg(theme, surfaceActive ? "text" : "muted", summary, ui.colored),
+              safeFg(
+                theme,
+                surfaceActive ? "text" : "muted",
+                summary,
+                ui.colored,
+              ),
             );
           }
 
           if (!argumentsOnly && settled && cfg.outcomeBadges) {
             const badge = isError
-              ? fg(theme, "error", "✗", ui.colored)
-              : fg(theme, "success", "✓", ui.colored);
+              ? safeFg(theme, "error", "✗", ui.colored)
+              : safeFg(theme, "success", "✓", ui.colored);
             headerParts.push(badge);
             const duration = formatToolDuration(context.durationMs);
             if (duration !== undefined) {
               headerParts.push(
-                fg(theme, surfaceActive ? "text" : "dim", duration, ui.colored),
+                safeFg(
+                  theme,
+                  surfaceActive ? "text" : "dim",
+                  duration,
+                  ui.colored,
+                ),
               );
             }
           }

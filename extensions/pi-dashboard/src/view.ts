@@ -12,7 +12,7 @@ import {
   subscribeSessionSnapshot,
 } from "@hollowheap/core/snapshot";
 import { canOverlay, showDialog } from "@hollowheap/pi-ui/host";
-import { boxFrame } from "@hollowheap/ui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   DASHBOARD_OVERLAY_ACTIONS,
   type StateRenderInput,
@@ -117,7 +117,7 @@ export async function showDashboardOverlay(
 
       return {
         render(width: number): string[] {
-          const innerWidth = Math.max(20, width - 4);
+          const innerWidth = getFrameInnerWidth(width);
           const stateBase = options.getStateInput();
           const lines: string[] = [];
 

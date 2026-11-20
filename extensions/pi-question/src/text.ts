@@ -2,8 +2,8 @@ import type {
   ExtensionContext,
   ExtensionUIDialogOptions,
 } from "@earendil-works/pi-coding-agent";
-import { decodeKittyPrintable } from "@earendil-works/pi-tui";
 import { canOverlay } from "@hollowheap/pi-ui/host";
+import { decodePrintableInput } from "@hollowheap/ui/input";
 
 export interface QuestionDialogOptions {
   signal?: AbortSignal;
@@ -11,11 +11,7 @@ export interface QuestionDialogOptions {
 }
 
 export function printableKey(data: string): string | undefined {
-  const kitty = decodeKittyPrintable(data);
-  if (kitty !== undefined) return kitty;
-  if (data.length !== 1) return undefined;
-  const code = data.charCodeAt(0);
-  return code >= 32 && code !== 127 ? data : undefined;
+  return decodePrintableInput(data);
 }
 
 export function insertAtCaret(

@@ -8,6 +8,7 @@ import {
   type StatuslineTokenTotals,
   registerStatuslineProvider,
 } from "@hollowheap/core/statusline";
+import { SPINNER_PRESETS } from "@hollowheap/ui/spinner";
 import type { ComponentSpec } from "./settings.js";
 
 export type GitDiffSummary = StatuslineGitDiffSummary;
@@ -70,8 +71,6 @@ export function shortenPath(
   return `${prefix}/…/${parts.slice(-depth).join("/")}`;
 }
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
 const mode: ComponentFn = (spec, ctx) => {
   if (!ctx.busy) {
     return optString(spec, "idleText", "IDLE");
@@ -79,8 +78,8 @@ const mode: ComponentFn = (spec, ctx) => {
   const text = optString(spec, "workingText", "WORKING");
   const animate = optBool(spec, "animate", true);
   if (!animate) return text;
-  const frame =
-    SPINNER_FRAMES[Math.floor(Date.now() / 80) % SPINNER_FRAMES.length];
+  const [frames, intervalMs] = SPINNER_PRESETS.braille;
+  const frame = frames[Math.floor(Date.now() / intervalMs) % frames.length];
   return `${frame} ${text}`;
 };
 

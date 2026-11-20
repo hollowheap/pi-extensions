@@ -20,6 +20,7 @@ import {
   selectDialog,
   showDialog,
 } from "@hollowheap/pi-ui/host";
+import { selectListTheme } from "@hollowheap/pi-ui/picker";
 import {
   isAbortOrTimeout,
   scopedAbortSignal,
@@ -31,6 +32,7 @@ import {
   TabbedContent,
   formatSelectedLabel,
 } from "@hollowheap/ui/tabs";
+import { safeFg } from "@hollowheap/ui/theme";
 import {
   DONE_LABEL,
   type Question,
@@ -119,21 +121,13 @@ async function showLockedDialog<T>(
   }
 }
 
-function themeFg(
-  theme: Theme | undefined,
-  token: Parameters<Theme["fg"]>[0],
-  text: string,
-): string {
-  return typeof theme?.fg === "function" ? theme.fg(token, text) : text;
-}
-
 function createEditor(
   tui: TUI,
   theme: Theme | undefined,
   prefill: string | undefined,
   onSubmit: (value: string) => void,
 ): Editor {
-  const fg = (text: string) => themeFg(theme, "border", text);
+  const fg = (text: string) => safeFg(theme, "border", text);
   const editorTui = tui.terminal
     ? tui
     : ({ ...tui, terminal: { rows: 24, columns: 80 } } as TUI);
@@ -439,7 +433,7 @@ async function askWriteIn(
           },
           render(width: number): string[] {
             const innerWidth = getFrameInnerWidth(width);
-            const hint = themeFg(
+            const hint = safeFg(
               theme,
               "muted",
               "Enter submits • Esc clears • Esc again cancels",
@@ -662,7 +656,7 @@ function createFreeQuestionTab(
       editor.focused = value;
     },
     render(width: number): string[] {
-      const hint = themeFg(
+      const hint = safeFg(
         theme,
         "muted",
         "Enter submits • Esc clears • Esc again cancels",
@@ -702,13 +696,7 @@ function createSingleQuestionTab(
   const list = new SelectList(
     rows.map((value) => ({ value, label: sanitizeTerminalText(value) })),
     Math.max(1, Math.min(8, rows.length)),
-    {
-      selectedPrefix: (text) => themeFg(theme, "accent", text),
-      selectedText: (text) => themeFg(theme, "accent", text),
-      description: (text) => themeFg(theme, "muted", text),
-      scrollInfo: (text) => themeFg(theme, "dim", text),
-      noMatch: (text) => themeFg(theme, "muted", text),
-    },
+    selectListTheme(theme, true, "dim"),
   );
   let focused = false;
   let editingWriteIn = false;
@@ -740,7 +728,7 @@ function createSingleQuestionTab(
       const content = editingWriteIn
         ? [
             ...editor.render(Math.max(1, width)),
-            themeFg(theme, "muted", "Enter submits • Esc goes back"),
+            safeFg(theme, "muted", "Enter submits • Esc goes back"),
           ]
         : list.render(Math.max(1, width));
       return [sanitizeTerminalText(question.prompt), "", ...content];
@@ -887,7 +875,7 @@ async function askTabbedQuestions(
       });
 
       const tabbed = new TabbedContent(tabs, (label, active) => {
-        const colored = themeFg(theme, active ? "accent" : "muted", label);
+        const colored = safeFg(theme, active ? "accent" : "muted", label);
         return active && typeof theme?.bold === "function"
           ? theme.bold(colored)
           : colored;

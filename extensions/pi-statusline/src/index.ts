@@ -23,6 +23,7 @@ import {
 import { extractLatestUsage } from "@hollowheap/core/usage";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { SPINNER_PRESETS } from "@hollowheap/ui/spinner";
 import {
   type GitDiffState,
   type TokenTotals,
@@ -466,13 +467,13 @@ export default function (pi: ExtensionAPI) {
         if (preset === "default") hostUi(ctx).setWorkingIndicator();
         else if (preset === "pulse")
           hostUi(ctx).setWorkingIndicator({
-            frames: ["●", "○"],
-            intervalMs: 400,
+            frames: [...SPINNER_PRESETS.pulse[0]],
+            intervalMs: SPINNER_PRESETS.pulse[1],
           });
         else if (preset === "compact")
           hostUi(ctx).setWorkingIndicator({
-            frames: ["⠋", "⠙", "⠹", "⠸"],
-            intervalMs: 100,
+            frames: [...SPINNER_PRESETS.braille[0]],
+            intervalMs: SPINNER_PRESETS.braille[1],
           });
         else if (preset === "hidden")
           hostUi(ctx).setWorkingIndicator({ frames: [] });

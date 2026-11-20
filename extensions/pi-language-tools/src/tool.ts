@@ -5,7 +5,7 @@ import {
   defineTool,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { loadPermissions } from "@hollowheap/core/config";
 import {
   type ToolTextResult,
@@ -22,7 +22,7 @@ import { effectiveCwd } from "@hollowheap/core/state";
 import type { Rule } from "@hollowheap/core/types";
 import { notify } from "@hollowheap/pi-ui/host";
 import { clampMaxResults } from "@hollowheap/runtime/exec";
-import { markdownTheme } from "@hollowheap/ui/markdown";
+import { StyledMarkdown } from "@hollowheap/ui/markdown";
 import { Type } from "typebox";
 import type { LspClient, LspClientOptions, LspPosition } from "./lsp.js";
 import {
@@ -745,7 +745,7 @@ export function createLangTool(overrides: Partial<LangToolDeps> = {}) {
     renderResult(result, options, theme) {
       const text = resultText(result);
       if (options.expanded) {
-        return new Markdown(text, 0, 0, markdownTheme(theme));
+        return new StyledMarkdown(text, theme);
       }
       const lines = text.split("\n");
       const preview = lines.slice(0, 8).join("\n");
