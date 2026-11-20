@@ -6,6 +6,7 @@ import {
   parseSkillBlock,
 } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
+import { Key } from "@earendil-works/pi-tui";
 import { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
@@ -35,7 +36,11 @@ import { ModalEditor } from "./editor.js";
 import { loadModalConfig } from "./settings.js";
 
 import { panelRenderConfig, wrapToolRenderer } from "./panel.js";
-import { formatTuiStatus, showTuiSettings } from "./settings.js";
+import {
+  cycleTuiVerbosity,
+  formatTuiStatus,
+  showTuiSettings,
+} from "./settings.js";
 import {
   installBashPanel,
   installBranchSummaryPanel,
@@ -300,6 +305,31 @@ export default function (pi: ExtensionAPI): void {
       if (ctx.hasUI) {
         notify(ctx, "Usage: /ui [settings|status]", "error");
       }
+    },
+  });
+  const onVerbosityChange = (ctx: ExtensionContext, next: unknown) => {
+    shimmerAnimator?.dispose();
+    shimmerAnimator = undefined;
+    applyWorkingIndicator(ctx);
+    activeTui?.requestRender?.(true);
+    pi.events?.emit?.("tui:config-changed", next);
+  };
+  pi.registerShortcut?.(Key.ctrl("o"), {
+    description: "Cycle tool verbosity",
+    handler: (ctx) => {
+      activeCtx = ctx;
+      cycleTuiVerbosity("toolVerbosity", ctx, getAgentDir(), (next) =>
+        onVerbosityChange(ctx, next),
+      );
+    },
+  });
+  pi.registerShortcut?.(Key.ctrl("t"), {
+    description: "Cycle thinking verbosity",
+    handler: (ctx) => {
+      activeCtx = ctx;
+      cycleTuiVerbosity("thinkingVerbosity", ctx, getAgentDir(), (next) =>
+        onVerbosityChange(ctx, next),
+      );
     },
   });
   pi.on("tool_call", (event, ctx) => {

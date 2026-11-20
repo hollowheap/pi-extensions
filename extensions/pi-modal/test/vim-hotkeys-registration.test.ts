@@ -64,7 +64,7 @@ describe("vim keybind reference registration", () => {
     extension(pi as never);
 
     const shortcuts = pi.registerShortcut.mock.calls.map(([name]) => name);
-    expect(shortcuts).toEqual([]);
+    expect(shortcuts).toEqual(["ctrl+o", "ctrl+t"]);
 
     installHotkeysPanel(
       () => undefined,

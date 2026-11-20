@@ -9,8 +9,6 @@ import {
   type LoadingIndicatorStyle,
   OVERLAY_SURFACE_MODES,
   type OverlaySurfaceMode,
-  PANEL_STYLES,
-  type PanelStyle,
   THINKING_VERBOSITY_MODES,
   TOOL_VERBOSITY_MODES,
   TOOL_VERB_PACKS,
@@ -18,8 +16,6 @@ import {
   type ToolVerbPack,
   type ToolVerbosity,
   type TuiConfig,
-  applyPanelStyle,
-  getPanelStyle,
   updateTuiConfig,
 } from "@hollowheap/core/tui-config";
 import { canOverlay, notify } from "@hollowheap/pi-ui/host";
@@ -46,17 +42,7 @@ function applyTuiSetting(
     case "borderStyle":
       next.borderStyle = value as BorderStyle;
       next.panel.borderStyle = next.borderStyle;
-      if (next.panel.style !== undefined) {
-        next.panel = applyPanelStyle(
-          next.panel,
-          (BORDER_STYLES as readonly string[]).includes(
-            String(next.panel.style),
-          )
-            ? next.borderStyle
-            : next.panel.style,
-          next.borderStyle,
-        );
-      }
+      next.panel.style = undefined;
       break;
     case "colored":
       next.colored = value === "true";
@@ -85,30 +71,13 @@ function applyTuiSetting(
     case "panel.enabled":
       next.panel.enabled = value === "true";
       break;
-    case "panel.style": {
-      const style = value as PanelStyle;
-      next.panel = applyPanelStyle(next.panel, style, next.borderStyle);
-      if ((BORDER_STYLES as readonly string[]).includes(style)) {
-        next.borderStyle = style as BorderStyle;
-      }
-      break;
-    }
     case "panel.borderStyle":
       next.panel.borderStyle = value as BorderStyle;
-      if (
-        next.panel.style !== undefined &&
-        (BORDER_STYLES as readonly string[]).includes(String(next.panel.style))
-      ) {
-        next.panel.style = next.panel.borderStyle;
-      }
+      next.panel.style = undefined;
       break;
     case "panel.surface":
       next.panel.surface = value as OverlaySurfaceMode;
-      if (next.panel.surface !== "transparent") {
-        next.panel.style = next.panel.surface;
-      } else if (next.panel.mode === "box") {
-        next.panel.style = next.panel.borderStyle;
-      }
+      next.panel.style = undefined;
       break;
     case "panel.accentStripe":
       next.panel.accentStripe = value === "true";
@@ -221,20 +190,12 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
       items: [
         {
           id: "panel.enabled",
-          label: "Panel renderer",
+          label: "Enable panel customization",
           description: "Wrap tool calls in a configurable self-rendered panel",
           currentValue: String(config.panel.enabled),
           values: ["false", "true"],
         },
-        {
-          id: "panel.style",
-          label: "Panel style",
-          description:
-            "Border, themed box, or borderless surface for tool panels",
-          currentValue: getPanelStyle(config.panel),
-          values: [...PANEL_STYLES],
-        },
-        ...(config.panel.enabled && config.panel.mode !== "background"
+        ...(config.panel.enabled
           ? [
               {
                 id: "panel.borderStyle",
@@ -243,10 +204,6 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
                 currentValue: config.panel.borderStyle,
                 values: [...BORDER_STYLES],
               },
-            ]
-          : []),
-        ...(config.panel.enabled
-          ? [
               {
                 id: "panel.surface",
                 label: "Panel surface",
@@ -295,11 +252,40 @@ export function formatTuiStatus(config: TuiConfig): string {
     `toolVerbosity=${config.toolVerbosity ?? "medium"}`,
     `verbPack=${config.verbPack}`,
     `panel.enabled=${config.panel.enabled}`,
-    `panel.style=${getPanelStyle(config.panel)}`,
+    `panel.borderStyle=${config.panel.borderStyle}`,
+    `panel.surface=${config.panel.surface ?? config.overlaySurface}`,
     `panel.accentStripe=${config.panel.accentStripe}`,
     `panel.outcomeBadges=${config.panel.outcomeBadges}`,
     `panel.reuseSpinner=${config.panel.reuseSpinner}`,
   ].join(" · ");
+}
+
+export function cycleTuiVerbosity(
+  kind: "toolVerbosity" | "thinkingVerbosity",
+  ctx: ExtensionContext,
+  agentDir: string,
+  onChange?: (next: TuiConfig) => void,
+): string {
+  const current = getActiveTuiConfig();
+  const values: readonly string[] =
+    kind === "toolVerbosity" ? TOOL_VERBOSITY_MODES : THINKING_VERBOSITY_MODES;
+  const currentValue =
+    kind === "toolVerbosity"
+      ? (current.toolVerbosity ?? "medium")
+      : current.thinkingVerbosity;
+  const idx = values.indexOf(currentValue);
+  const nextValue = values[(idx + 1) % values.length] ?? values[0] ?? "medium";
+  const next = applyTuiSetting(current, kind, nextValue);
+  setActiveTuiConfig(next);
+  const res = updateTuiConfig(agentDir, () => next);
+  if (!res.ok) notify(ctx, res.error, "error");
+  onChange?.(next);
+  if (ctx.hasUI) {
+    const label =
+      kind === "toolVerbosity" ? "Tool verbosity" : "Thinking verbosity";
+    notify(ctx, `${label}: ${nextValue}`, "info");
+  }
+  return nextValue;
 }
 
 export async function showTuiSettings(
@@ -329,7 +315,6 @@ export async function showTuiSettings(
         id === "toolVerbosity" ||
         id === "thinkingVerbosity" ||
         id === "panel.enabled" ||
-        id === "panel.style" ||
         id === "panel.borderStyle" ||
         id === "panel.surface"
       ) {

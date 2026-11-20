@@ -896,7 +896,10 @@ describe("extension registration", () => {
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
     const commandNames = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commandNames).not.toContain("vimkeys");
-    expect(pi.registerShortcut).not.toHaveBeenCalled();
+    expect(pi.registerShortcut.mock.calls.map(([name]) => name)).toEqual([
+      "ctrl+o",
+      "ctrl+t",
+    ]);
   });
 
   it("installs the working indicator when the modal editor is disabled", () => {
