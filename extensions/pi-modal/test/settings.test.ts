@@ -178,8 +178,32 @@ describe("showTuiSettings", () => {
       const loading = component.render(80).join("\n");
       expect(loading).toContain("[Loading]");
       expect(loading).toContain("Loading indicator");
-      expect(loading).toContain("Panel renderer");
+      expect(loading).not.toContain("Panel renderer");
 
+      component.handleInput("\t");
+      const panelTab = component.render(80).join("\n");
+      expect(panelTab).toContain("[Panel]");
+      expect(panelTab).toContain("Panel renderer");
+      expect(panelTab).toContain("Panel border style");
+      expect(panelTab).toContain("Panel surface");
+
+      // Toggle panel.enabled off -> borderStyle & surface hide
+      component.handleInput("\r");
+      expect(getActiveTuiConfig().panel.enabled).toBe(false);
+      const panelOff = component.render(80).join("\n");
+      expect(panelOff).toContain("[Panel]");
+      expect(panelOff).not.toContain("Panel border style");
+      expect(panelOff).not.toContain("Panel surface");
+
+      // Toggle panel.enabled back on -> borderStyle & surface reappear
+      component.handleInput("\r");
+      expect(getActiveTuiConfig().panel.enabled).toBe(true);
+      const panelOn = component.render(80).join("\n");
+      expect(panelOn).toContain("Panel border style");
+      expect(panelOn).toContain("Panel surface");
+
+      component.handleInput("\x1b[Z");
+      expect(component.render(80).join("\n")).toContain("[Loading]");
       component.handleInput("\x1b[Z");
       expect(component.render(80).join("\n")).toContain("[Verbosity]");
       component.handleInput("\x1b[Z");

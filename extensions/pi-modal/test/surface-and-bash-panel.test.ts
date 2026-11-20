@@ -112,7 +112,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
     }
   });
 
-  it("neglects borders, adds outputPad + 1 symmetric padding, and paints every row in surface mode", () => {
+  it("preserves rounded borders and paints every row in surface mode", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "rounded",
@@ -139,19 +139,22 @@ describe("ModalEditor surface style and symmetric right padding", () => {
         const plain = stripTerminalSequences(
           row.replace("<bg:customMessageBg>", "").replace("</bg>", ""),
         );
-        expect(plain).not.toContain("╭");
-        expect(plain).not.toContain("│");
-        expect(plain).not.toContain("╰");
         expect(visibleWidth(plain)).toBe(20);
       }
+      const topPlain = stripTerminalSequences(
+        rows[0].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
+      );
+      expect(topPlain.startsWith("╭")).toBe(true);
+      expect(topPlain.endsWith("╮")).toBe(true);
       const contentPlain = stripTerminalSequences(
         rows[1].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
-      expect(contentPlain).toBe("  ❯ hello           ");
+      expect(contentPlain).toBe("❯ hello            │");
       const bottomPlain = stripTerminalSequences(
         rows[2].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
-      expect(bottomPlain.endsWith(" INSERT  ")).toBe(true);
+      expect(bottomPlain.startsWith("╰")).toBe(true);
+      expect(bottomPlain.endsWith("╯")).toBe(true);
     } finally {
       release();
     }
@@ -278,14 +281,17 @@ describe("installBashPanel", () => {
       },
     });
     bang.invalidate();
-    const surfaceRaw = bang.render(30);
+    const surfaceRaw = bang.render(60);
     expect(
       surfaceRaw.some((line) => line.includes("<bg:customMessageBg>")),
     ).toBe(true);
     expect(
+      surfaceRaw.map(stripTerminalSequences).some((line) => line.includes("╭")),
+    ).toBe(true);
+    expect(
       surfaceRaw
         .map(stripTerminalSequences)
-        .some((line) => line.includes("  $ echo hi")),
+        .some((line) => line.includes("$ echo hi")),
     ).toBe(true);
 
     setActiveTuiConfig({
@@ -299,6 +305,18 @@ describe("installBashPanel", () => {
     const hostLines = bang.render(30).map(stripTerminalSequences);
     expect(hostLines.some((line) => line.includes("╭"))).toBe(false);
     expect(hostLines.some((line) => line.startsWith("─"))).toBe(true);
+
+    // Toggling panel.enabled back on re-frames the component automatically on render
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
+        enabled: true,
+        borderStyle: "rounded",
+      },
+    });
+    const reFramedLines = bang.render(30).map(stripTerminalSequences);
+    expect(reFramedLines.some((line) => line.includes("╭"))).toBe(true);
   });
 
   it("aligns running loader without double-padding and avoids double-padding in collapsed !expanded state", () => {
@@ -470,9 +488,11 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const plainLines = rawLines.map(stripTerminalSequences);
     expect(plainLines[0]).toBe(`╭${"─".repeat(32)}╮`);
-    expect(plainLines[1]?.startsWith("❯ Hello world")).toBe(true);
-    expect(plainLines[1]?.endsWith(" │")).toBe(true);
-    expect(plainLines[2]?.startsWith("│ Second line")).toBe(true);
+    expect(plainLines[1]).toBe(`│${" ".repeat(32)}│`);
+    expect(plainLines[2]?.startsWith("❯ Hello world")).toBe(true);
+    expect(plainLines[2]?.endsWith(" │")).toBe(true);
+    expect(plainLines[3]?.startsWith("│ Second line")).toBe(true);
+    expect(plainLines.at(-2)).toBe(`│${" ".repeat(32)}│`);
     expect(plainLines.at(-1)).toContain(" Prompted ─╯");
 
     // Steered via markSteeredUserMessage + playful verb pack
@@ -491,7 +511,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     const steeredMsg = new UserMessageComponent("Steer me now", undefined, 1);
     const steeredPlain = steeredMsg.render(34).map(stripTerminalSequences);
     expect(steeredPlain[0]?.startsWith("┌")).toBe(true);
-    expect(steeredPlain[1]?.startsWith("» Steer me now")).toBe(true);
+    expect(steeredPlain[2]?.startsWith("» Steer me now")).toBe(true);
     expect(steeredPlain.at(-1)).toContain(" Nudged ─┘");
 
     // Terse verb pack for both prompt and steered property
@@ -552,7 +572,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const branchCollapsed = branch.render(44).map(stripTerminalSequences);
     expect(branchCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(branchCollapsed[1]?.startsWith("│ [branch]")).toBe(true);
+    expect(branchCollapsed[2]?.startsWith("│ [branch]")).toBe(true);
     expect(branchCollapsed.some((l) => l.includes("│ Branch summary ("))).toBe(
       true,
     );
@@ -573,7 +593,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .render(44)
       .map(stripTerminalSequences);
     expect(compactionCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(compactionCollapsed[1]?.startsWith("│ [compaction]")).toBe(true);
+    expect(compactionCollapsed[2]?.startsWith("│ [compaction]")).toBe(true);
     expect(compactionCollapsed.some((l) => l.includes("Compacted from"))).toBe(
       true,
     );
@@ -603,7 +623,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .map(stripTerminalSequences)
       .filter((l) => l.trim().length > 0);
     expect(customLines[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(customLines[1]?.startsWith("│ [notice]")).toBe(true);
+    expect(customLines[2]?.startsWith("│ [notice]")).toBe(true);
     expect(
       customLines.some((l) => l.startsWith("│ Custom extension body")),
     ).toBe(true);

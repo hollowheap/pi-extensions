@@ -85,6 +85,33 @@ function consumeSteeredUserMessage(text: string): boolean {
   return false;
 }
 
+function syncPanelEnabledOnRender<
+  T extends { render(width: number): string[]; invalidate(): void },
+>(
+  prototype: T,
+  syncMethod: (instance: T) => void,
+  postProcess?: (lines: string[]) => string[],
+): void {
+  const renderedPanelState = new WeakMap<T, boolean>();
+  const originalRender = Reflect.get(prototype, "render") as
+    | ((this: T, width: number) => string[])
+    | undefined;
+  if (typeof originalRender !== "function") return;
+  Reflect.set(prototype, "render", function (this: T, width: number): string[] {
+    const enabled = panelRenderConfig(getActiveTuiConfig()).enabled;
+    const prev = renderedPanelState.get(this);
+    if (prev !== undefined && prev !== enabled) {
+      renderedPanelState.set(this, enabled);
+      syncMethod(this);
+      this.invalidate();
+    } else if (prev === undefined) {
+      renderedPanelState.set(this, enabled);
+    }
+    const lines = originalRender.call(this, width);
+    return postProcess ? postProcess(lines) : lines;
+  });
+}
+
 function renderPanelOrFallback(
   lines: readonly string[],
   width: number,
@@ -162,14 +189,23 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
   const patch = { getTheme };
   const groups = new WeakMap<ParsedSkillBlock, ParsedSkillBlock[]>();
   const outputPadMap = new WeakMap<SkillInvocationMessageComponent, number>();
+  const hostPaddingYMap = new WeakMap<
+    SkillInvocationMessageComponent,
+    number
+  >();
+  const hostBgFnMap = new WeakMap<SkillInvocationMessageComponent, unknown>();
   Reflect.set(prototype, SKILL_PANEL, patch);
   Reflect.set(
     prototype,
     "setOutputPad",
     function (this: SkillInvocationMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
-      this.setPaddingX(0);
-      Reflect.set(this, "paddingY", 0);
+      if (panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(0);
+        Reflect.set(this, "paddingY", 0);
+      } else {
+        this.setPaddingX(outputPad);
+      }
     },
   );
   Reflect.set(
@@ -191,6 +227,21 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
       if (!outputPadMap.has(this)) {
         const boxPad = Reflect.get(this, "paddingX");
         outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
+      }
+      if (!hostPaddingYMap.has(this)) {
+        const boxPadY = Reflect.get(this, "paddingY");
+        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
+      }
+      if (!hostBgFnMap.has(this)) {
+        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
+      }
+
+      if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(outputPadMap.get(this) ?? 1);
+        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
+        this.setBgFn(hostBgFnMap.get(this) as never);
+        original.call(this);
+        return;
       }
 
       let blocks = groups.get(first);
@@ -247,6 +298,10 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
       );
     },
   );
+  syncPanelEnabledOnRender(prototype, (instance) => {
+    const updateDisplay = Reflect.get(instance, "updateDisplay");
+    if (typeof updateDisplay === "function") updateDisplay.call(instance);
+  });
 }
 
 /** Frame BranchSummaryMessageComponent inside our shared panel with outputPad inside the border. */
@@ -265,14 +320,20 @@ export function installBranchSummaryPanel(
   if (typeof original !== "function") return;
   const patch = { getTheme };
   const outputPadMap = new WeakMap<BranchSummaryMessageComponent, number>();
+  const hostPaddingYMap = new WeakMap<BranchSummaryMessageComponent, number>();
+  const hostBgFnMap = new WeakMap<BranchSummaryMessageComponent, unknown>();
   Reflect.set(prototype, BRANCH_SUMMARY_PANEL, patch);
   Reflect.set(
     prototype,
     "setOutputPad",
     function (this: BranchSummaryMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
-      this.setPaddingX(0);
-      Reflect.set(this, "paddingY", 0);
+      if (panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(0);
+        Reflect.set(this, "paddingY", 0);
+      } else {
+        this.setPaddingX(outputPad);
+      }
     },
   );
   Reflect.set(
@@ -298,6 +359,20 @@ export function installBranchSummaryPanel(
       if (!outputPadMap.has(this)) {
         const boxPad = Reflect.get(this, "paddingX");
         outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
+      }
+      if (!hostPaddingYMap.has(this)) {
+        const boxPadY = Reflect.get(this, "paddingY");
+        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
+      }
+      if (!hostBgFnMap.has(this)) {
+        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
+      }
+      if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(outputPadMap.get(this) ?? 1);
+        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
+        this.setBgFn(hostBgFnMap.get(this) as never);
+        original.call(this);
+        return;
       }
       const summary = message.summary;
       const shortcut = keyText("app.tools.expand") || "click";
@@ -363,6 +438,10 @@ export function installBranchSummaryPanel(
       );
     },
   );
+  syncPanelEnabledOnRender(prototype, (instance) => {
+    const updateDisplay = Reflect.get(instance, "updateDisplay");
+    if (typeof updateDisplay === "function") updateDisplay.call(instance);
+  });
 }
 
 /** Frame CompactionSummaryMessageComponent inside our shared panel with outputPad inside the border. */
@@ -381,14 +460,23 @@ export function installCompactionSummaryPanel(
   if (typeof original !== "function") return;
   const patch = { getTheme };
   const outputPadMap = new WeakMap<CompactionSummaryMessageComponent, number>();
+  const hostPaddingYMap = new WeakMap<
+    CompactionSummaryMessageComponent,
+    number
+  >();
+  const hostBgFnMap = new WeakMap<CompactionSummaryMessageComponent, unknown>();
   Reflect.set(prototype, COMPACTION_SUMMARY_PANEL, patch);
   Reflect.set(
     prototype,
     "setOutputPad",
     function (this: CompactionSummaryMessageComponent, outputPad: number) {
       outputPadMap.set(this, outputPad);
-      this.setPaddingX(0);
-      Reflect.set(this, "paddingY", 0);
+      if (panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(0);
+        Reflect.set(this, "paddingY", 0);
+      } else {
+        this.setPaddingX(outputPad);
+      }
     },
   );
   Reflect.set(
@@ -414,6 +502,20 @@ export function installCompactionSummaryPanel(
       if (!outputPadMap.has(this)) {
         const boxPad = Reflect.get(this, "paddingX");
         outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
+      }
+      if (!hostPaddingYMap.has(this)) {
+        const boxPadY = Reflect.get(this, "paddingY");
+        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
+      }
+      if (!hostBgFnMap.has(this)) {
+        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
+      }
+      if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
+        this.setPaddingX(outputPadMap.get(this) ?? 1);
+        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
+        this.setBgFn(hostBgFnMap.get(this) as never);
+        original.call(this);
+        return;
       }
       const tokenStr =
         typeof message.tokensBefore === "number"
@@ -483,6 +585,10 @@ export function installCompactionSummaryPanel(
       );
     },
   );
+  syncPanelEnabledOnRender(prototype, (instance) => {
+    const updateDisplay = Reflect.get(instance, "updateDisplay");
+    if (typeof updateDisplay === "function") updateDisplay.call(instance);
+  });
 }
 
 /** Frame default CustomMessageComponent fallback inside our shared panel with outputPad inside the border. */
@@ -600,6 +706,10 @@ export function installCustomMessagePanel(
 
     panelChildMap.set(this, panelChild);
     this.addChild(panelChild);
+  });
+  syncPanelEnabledOnRender(prototype, (instance) => {
+    const rebuild = Reflect.get(instance, "rebuild");
+    if (typeof rebuild === "function") rebuild.call(instance);
   });
 }
 
@@ -745,29 +855,28 @@ export function installUserMessagePanel(
     });
   });
 
-  const originalRender = Reflect.get(prototype, "render");
-  if (typeof originalRender === "function") {
-    Reflect.set(
-      prototype,
-      "render",
-      function (this: UserMessageComponent, width: number): string[] {
-        const lines = originalRender.call(this, width) as string[];
-        if (lines.length === 0) return lines;
-        if (!lines[0]?.startsWith(OSC133_ZONE_START)) {
-          lines[0] = OSC133_ZONE_START + (lines[0] ?? "");
-        }
-        const lastIdx = lines.length - 1;
-        const zoneEnd = OSC133_ZONE_END + OSC133_ZONE_FINAL;
-        if (
-          !lines[lastIdx]?.startsWith(zoneEnd) &&
-          !lines[lastIdx]?.includes(zoneEnd)
-        ) {
-          lines[lastIdx] = zoneEnd + (lines[lastIdx] ?? "");
-        }
-        return lines;
-      },
-    );
-  }
+  syncPanelEnabledOnRender(
+    prototype,
+    (instance) => {
+      const rebuild = Reflect.get(instance, "rebuild");
+      if (typeof rebuild === "function") rebuild.call(instance);
+    },
+    (lines) => {
+      if (lines.length === 0) return lines;
+      if (!lines[0]?.startsWith(OSC133_ZONE_START)) {
+        lines[0] = OSC133_ZONE_START + (lines[0] ?? "");
+      }
+      const lastIdx = lines.length - 1;
+      const zoneEnd = OSC133_ZONE_END + OSC133_ZONE_FINAL;
+      if (
+        !lines[lastIdx]?.startsWith(zoneEnd) &&
+        !lines[lastIdx]?.includes(zoneEnd)
+      ) {
+        lines[lastIdx] = zoneEnd + (lines[lastIdx] ?? "");
+      }
+      return lines;
+    },
+  );
 }
 
 function setLoaderPaddingX(
@@ -925,4 +1034,8 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
       attachChildrenIfChanged(this, panelChildren);
     },
   );
+  syncPanelEnabledOnRender(prototype, (instance) => {
+    const updateDisplay = Reflect.get(instance, "updateDisplay");
+    if (typeof updateDisplay === "function") updateDisplay.call(instance);
+  });
 }

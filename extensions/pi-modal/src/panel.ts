@@ -125,6 +125,35 @@ export function panelRenderConfig(config: TuiConfig): PanelRenderConfig {
   };
 }
 
+const ESC = String.fromCharCode(27);
+const CODEMODE_NESTED_CALL_RE = new RegExp(
+  `^((?:${ESC}\\[[0-9;:]*m|\\s)*(?:[✓✗•▸▪\\-*]|\\.\\.\\.)(?:${ESC}\\[[0-9;:]*m|\\s)+)([a-z][a-z0-9_-]*)(?=(?:${ESC}\\[[0-9;:]*m)*[\\s(:]|$)`,
+);
+
+function applyCodemodeVerbPack(
+  lines: readonly string[],
+  cfg: PanelRenderConfig,
+): string[] {
+  if (cfg.toolVerbosity === "low") return [...lines];
+  const pack = VERB_PACKS[cfg.verbPack] ?? VERB_PACKS.standard;
+  return lines.map((line) =>
+    line.replace(
+      CODEMODE_NESTED_CALL_RE,
+      (match, prefix: string, nestedTool: string) => {
+        const isKnown =
+          Object.hasOwn(pack, nestedTool) ||
+          Boolean(
+            cfg.customVerbs && Object.hasOwn(cfg.customVerbs, nestedTool),
+          );
+        if (!isKnown) return match;
+        const verb = resolveToolVerb(nestedTool, cfg);
+        const label = prefix.includes("...") ? verb.active : verb.settled;
+        return `${prefix}${label}`;
+      },
+    ),
+  );
+}
+
 /** Resolve active/settled verb labels for a tool using custom overrides, packs, or fallback. */
 export function resolveToolVerb(
   toolName: string,
@@ -700,9 +729,13 @@ export function wrapToolRenderer(
 
       const computeLines = (innerWidth: number): string[] => {
         if (hideOutput) return [];
+        const cfg = getConfig();
         if (innerResult) {
           try {
-            return trimEdgeBlankLines(innerResult.render(innerWidth));
+            const rendered = trimEdgeBlankLines(innerResult.render(innerWidth));
+            return toolName === "codemode"
+              ? applyCodemodeVerbPack(rendered, cfg)
+              : rendered;
           } catch {
             // Fall through to safe text extraction inside the frame.
           }

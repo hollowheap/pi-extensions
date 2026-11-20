@@ -190,9 +190,9 @@ describe("wrapToolRenderer", () => {
     const frame0 = comp.render(50);
     expect(frame0[0]?.startsWith("╔")).toBe(true);
     expect(frame0[0]?.endsWith("╗")).toBe(true);
-    expect(frame0[1]).toContain("▎");
-    expect(frame0[1]).toContain("Sculpting...");
-    expect(frame0[1]).toContain("src/app.ts");
+    expect(frame0[2]).toContain("▎");
+    expect(frame0[2]).toContain("Sculpting...");
+    expect(frame0[2]).toContain("src/app.ts");
     expect(frame0.at(-1)?.startsWith("╚")).toBe(true);
     for (const line of frame0) {
       expect(visibleWidth(line)).toBe(50);
@@ -200,15 +200,15 @@ describe("wrapToolRenderer", () => {
 
     clock = 150;
     const frame1 = comp.render(50);
-    expect(stripTerminalSequences(frame1[1] ?? "")).not.toBe(
-      stripTerminalSequences(frame0[1] ?? ""),
+    expect(stripTerminalSequences(frame1[2] ?? "")).not.toBe(
+      stripTerminalSequences(frame0[2] ?? ""),
     );
 
     comp.invalidate?.();
     clock = 300;
     const frame2 = comp.render(50);
-    expect(stripTerminalSequences(frame2[1] ?? "")).not.toBe(
-      stripTerminalSequences(frame1[1] ?? ""),
+    expect(stripTerminalSequences(frame2[2] ?? "")).not.toBe(
+      stripTerminalSequences(frame1[2] ?? ""),
     );
   });
 
@@ -382,10 +382,10 @@ describe("wrapToolRenderer", () => {
     ];
 
     expect(lines[0]?.startsWith("╭")).toBe(true);
-    expect(lines[1]).toContain("Ran");
-    expect(lines[1]).toContain("✓");
-    expect(lines[1]).toContain("1.4s");
-    expect(lines[2]).toContain("ok");
+    expect(lines[2]).toContain("Ran");
+    expect(lines[2]).toContain("✓");
+    expect(lines[2]).toContain("1.4s");
+    expect(lines[3]).toContain("ok");
     expect(lines.at(-1)?.startsWith("╰")).toBe(true);
     // Only one top and one bottom border for unified call+result box.
     expect(lines.filter((l) => l.startsWith("╭"))).toHaveLength(1);
@@ -419,12 +419,12 @@ describe("wrapToolRenderer", () => {
       outputPad: 1,
     });
     const lines = comp?.render(50) ?? [];
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("Read");
-    expect(lines[0]).toContain("✗");
-    expect(lines[0]).toContain("25ms");
-    expect(lines[0]).not.toContain("╭");
-    expect(lines[0]).not.toContain("▎");
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain("Read");
+    expect(lines[1]).toContain("✗");
+    expect(lines[1]).toContain("25ms");
+    expect(lines[1]).not.toContain("╭");
+    expect(lines[1]).not.toContain("▎");
   });
 
   it("preserves codemode expanded: true when wrapped in panel", () => {
@@ -564,13 +564,65 @@ describe("wrapToolRenderer", () => {
     expect(combined.filter((l) => l.startsWith("╰"))).toHaveLength(1);
     const plain = combined.map((l) => stripTerminalSequences(l));
     // Header uses verb badge, redundant inner "codemode" line is omitted
-    expect(plain[1]).toContain("Executed");
-    expect(plain[1]).toContain("✓");
-    expect(plain[1]).toContain("120ms");
+    expect(plain[2]).toContain("Executed");
+    expect(plain[2]).toContain("✓");
+    expect(plain[2]).toContain("120ms");
     expect(plain.some((l) => /^│▎\s*codemode\s*│$/.test(l))).toBe(false);
     expect(plain.some((l) => l.includes("return 42;"))).toBe(true);
     expect(plain.some((l) => l.includes("result: 42"))).toBe(true);
-    expect(plain.at(-2)).toContain("Took 120ms");
+    expect(plain.at(-3)).toContain("Took 120ms");
+  });
+
+  it("applies configured verbPack to nested tool calls rendered inside codemode", () => {
+    const base = {
+      renderCall: () => ({
+        render: () => ["codemode", "read('foo.ts')"],
+        invalidate: vi.fn(),
+      }),
+      renderResult: () => ({
+        render: () => ["  ✓ read foo.ts", "  ✗ bash ls"],
+        invalidate: vi.fn(),
+      }),
+    };
+    const renderer = wrapToolRenderer("codemode", base, () =>
+      makeConfig({ verbPack: "playful" }),
+    );
+    const state = {};
+    const ctx = {
+      args: { code: "read('foo.ts')" },
+      toolCallId: "cm-verb",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state,
+      cwd: "/tmp",
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: false,
+      expanded: false,
+      showImages: false,
+      isError: false,
+      durationMs: 40,
+      outputPad: 1,
+    };
+
+    const callComp = renderer.renderCall?.(
+      { code: "read('foo.ts')" },
+      mockTheme,
+      ctx,
+    );
+    const resComp = renderer.renderResult?.(
+      { content: [{ type: "text", text: "ok" }], details: {} },
+      { expanded: false, isPartial: false },
+      mockTheme,
+      ctx,
+    );
+    const combined = [
+      ...(callComp?.render(60) ?? []),
+      ...(resComp?.render(60) ?? []),
+    ].map((l) => stripTerminalSequences(l));
+    expect(combined.some((l) => l.includes("Woven"))).toBe(true);
+    expect(combined.some((l) => l.includes("✓ Perused foo.ts"))).toBe(true);
+    expect(combined.some((l) => l.includes("✗ Conjured ls"))).toBe(true);
   });
 
   it("reads header error badge consistently from result.isError even when context.isError is false", () => {
@@ -613,7 +665,7 @@ describe("wrapToolRenderer", () => {
       ...(callComp?.render(50) ?? []),
       ...(resComp?.render(50) ?? []),
     ];
-    expect(lines[1]).toContain("✗");
+    expect(lines[2]).toContain("✗");
   });
 
   it("paints the border and stripe with the pending, success, and error state colors", () => {
@@ -682,7 +734,7 @@ describe("wrapToolRenderer", () => {
     expect(stripTerminalSequences(joined)).toContain("dark");
   });
 
-  it("paints the full panel surface borderlessly with outputPad + 1 padding", () => {
+  it("paints the full panel surface while preserving rounded borders", () => {
     const base = {
       renderCall: vi.fn(() => ({
         render: () => ["\x1b[31mline 1\x1b[0m"],
@@ -709,10 +761,10 @@ describe("wrapToolRenderer", () => {
       outputPad: 0,
     } as never);
     const lines = comp?.render(50) ?? [];
-    expect(lines.join("\n")).not.toContain("╭");
-    expect(lines.join("\n")).not.toContain("╰");
+    expect(lines.join("\n")).toContain("╭");
+    expect(lines.join("\n")).toContain("╰");
     expect(lines.find((line) => line.includes("line 1"))).toContain(
-      "▎ \x1b[31mline 1\x1b[0m\x1b[44m",
+      "│▎\x1b[31mline 1\x1b[0m\x1b[44m",
     );
     expect(
       lines.every(
@@ -725,7 +777,7 @@ describe("wrapToolRenderer", () => {
     } as never);
     const paddedLines = paddedComp?.render(50) ?? [];
     expect(paddedLines.find((line) => line.includes("line 1"))).toContain(
-      "▎  \x1b[31mline 1\x1b[0m\x1b[44m",
+      "│▎ \x1b[31mline 1\x1b[0m\x1b[44m",
     );
   });
 
@@ -809,7 +861,7 @@ describe("wrapToolRenderer", () => {
       makeCtx(),
     );
     const out0 = call0?.render(50) ?? [];
-    expect(out0[2]).toContain("\x1b[32mline 1\x1b[39m\x1b[0m");
+    expect(out0[3]).toContain("\x1b[32mline 1\x1b[39m\x1b[0m");
 
     clock = 150;
     tick = 1;
@@ -820,13 +872,13 @@ describe("wrapToolRenderer", () => {
     );
     const out1 = call1?.render(50) ?? [];
     // Header line stays identical while bottom timer line updates.
-    expect(out1[1]).toBe(out0[1]);
-    expect(stripTerminalSequences(out1.at(-2) ?? "")).toContain("Elapsed 1s");
+    expect(out1[2]).toBe(out0[2]);
+    expect(stripTerminalSequences(out1.at(-3) ?? "")).toContain("Elapsed 1s");
 
     currentCfg = makeConfig({ borderStyle: "none", verbPack: "playful" });
     const out2 = call1?.render(50) ?? [];
     expect(out2[0]?.startsWith("╭")).toBe(false);
-    expect(stripTerminalSequences(out2[0] ?? "")).toContain("Conjuring...");
+    expect(stripTerminalSequences(out2[1] ?? "")).toContain("Conjuring...");
   });
 });
 

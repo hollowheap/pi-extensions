@@ -80,6 +80,7 @@ export class ModalEditor extends CustomEditor {
         width: number;
         config: TuiConfig;
         hostPad: number;
+        panelEnabled: boolean;
         surface: OverlaySurfaceMode;
         surfaceActive: boolean;
         borderStyle: BorderStyle;
@@ -748,32 +749,34 @@ export class ModalEditor extends CustomEditor {
     const config = getActiveTuiConfig();
     const hostPad = getHostOutputPadding() ?? 0;
     const panel = panelRenderConfig(config);
-    const surface: OverlaySurfaceMode =
-      panel.mode === "background" &&
-      (!panel.surface || panel.surface === "transparent")
+    const panelEnabled =
+      panel.enabled || this.explicitBorderStyle !== undefined;
+    const surface: OverlaySurfaceMode = !panelEnabled
+      ? "transparent"
+      : panel.mode === "background" &&
+          (!panel.surface || panel.surface === "transparent")
         ? "surface"
         : (panel.surface ?? config.overlaySurface);
-    const surfaceActive = this.isSurfaceActive(surface, config.colored);
-    const sharedBorderStyle: BorderStyle =
-      config.panel.mode === "background"
+    const surfaceActive =
+      panelEnabled && this.isSurfaceActive(surface, config.colored);
+    const sharedBorderStyle: BorderStyle = !panelEnabled
+      ? "none"
+      : config.panel.mode === "background"
         ? "none"
         : config.panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle ||
             config.panel.style !== undefined
           ? config.panel.borderStyle
           : config.borderStyle;
-    const borderStyle = surfaceActive
-      ? "none"
-      : (this.explicitBorderStyle ?? sharedBorderStyle);
+    const borderStyle = this.explicitBorderStyle ?? sharedBorderStyle;
     const promptPrefix = `${this.promptChar} `;
     const promptWidth = visibleWidth(promptPrefix);
     const borderEnabled =
-      !surfaceActive &&
-      borderStyle !== "none" &&
-      targetWidth >= promptWidth + 2;
+      panelEnabled && borderStyle !== "none" && targetWidth >= promptWidth + 2;
     return {
       width: targetWidth,
       config,
       hostPad,
+      panelEnabled,
       surface,
       surfaceActive,
       borderStyle,
@@ -795,8 +798,11 @@ export class ModalEditor extends CustomEditor {
     hiddenLineCount: number,
   ): string {
     const targetWidth = this.renderSnapshot?.width ?? width;
-    const { config, borderStyle, borderEnabled } =
+    const { config, panelEnabled, borderStyle, borderEnabled } =
       this.getRenderSnapshot(targetWidth);
+    if (!panelEnabled) {
+      return super.renderTopBorder(targetWidth, hiddenLineCount);
+    }
     if (!borderEnabled) {
       const raw = super.renderTopBorder(targetWidth, hiddenLineCount);
       return (config.colored ? raw : stripTerminalSequences(raw)).replaceAll(
@@ -823,11 +829,23 @@ export class ModalEditor extends CustomEditor {
     hiddenLineCount: number,
   ): string {
     const targetWidth = this.renderSnapshot?.width ?? width;
-    const { config, hostPad, surfaceActive, borderStyle, borderEnabled } =
-      this.getRenderSnapshot(targetWidth);
+    const {
+      config,
+      hostPad,
+      panelEnabled,
+      surfaceActive,
+      borderStyle,
+      borderEnabled,
+    } = this.getRenderSnapshot(targetWidth);
     const isBash = this.getText().trimStart().startsWith("!");
     const badge = formatEditorModeBadge(this.mode, isBash);
     const label = ` ${badge} `;
+    if (!panelEnabled) {
+      const base = super.renderBottomBorder(targetWidth, hiddenLineCount);
+      const line = fitRightLabel(base, targetWidth, label);
+      this.lastBottomBorder = line;
+      return line;
+    }
     if (!borderEnabled) {
       const base = stripTerminalSequences(
         super.renderBottomBorder(targetWidth, hiddenLineCount),
@@ -861,6 +879,14 @@ export class ModalEditor extends CustomEditor {
 
   override render(width: number): string[] {
     const snapshot = this.getRenderSnapshot(width);
+    if (!snapshot.panelEnabled) {
+      this.renderSnapshot = snapshot;
+      try {
+        return super.render(width);
+      } finally {
+        this.renderSnapshot = undefined;
+      }
+    }
     const {
       config,
       hostPad,

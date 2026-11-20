@@ -93,6 +93,23 @@ function applyTuiSetting(
       }
       break;
     }
+    case "panel.borderStyle":
+      next.panel.borderStyle = value as BorderStyle;
+      if (
+        next.panel.style !== undefined &&
+        (BORDER_STYLES as readonly string[]).includes(String(next.panel.style))
+      ) {
+        next.panel.style = next.panel.borderStyle;
+      }
+      break;
+    case "panel.surface":
+      next.panel.surface = value as OverlaySurfaceMode;
+      if (next.panel.surface !== "transparent") {
+        next.panel.style = next.panel.surface;
+      } else if (next.panel.mode === "box") {
+        next.panel.style = next.panel.borderStyle;
+      }
+      break;
     case "panel.accentStripe":
       next.panel.accentStripe = value === "true";
       break;
@@ -197,6 +214,11 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
           currentValue: String(config.thinkingAnimate),
           values: ["true", "false"],
         },
+      ],
+    },
+    {
+      label: "Panel",
+      items: [
         {
           id: "panel.enabled",
           label: "Panel renderer",
@@ -212,6 +234,28 @@ function buildSettingTabs(config: TuiConfig): SettingsTab[] {
           currentValue: getPanelStyle(config.panel),
           values: [...PANEL_STYLES],
         },
+        ...(config.panel.enabled && config.panel.mode !== "background"
+          ? [
+              {
+                id: "panel.borderStyle",
+                label: "Panel border style",
+                description: "Border style used when rendering framed panels",
+                currentValue: config.panel.borderStyle,
+                values: [...BORDER_STYLES],
+              },
+            ]
+          : []),
+        ...(config.panel.enabled
+          ? [
+              {
+                id: "panel.surface",
+                label: "Panel surface",
+                description: "Background surface fill for panels",
+                currentValue: config.panel.surface ?? config.overlaySurface,
+                values: [...OVERLAY_SURFACE_MODES],
+              },
+            ]
+          : []),
         {
           id: "panel.accentStripe",
           label: "Panel accent stripe",
@@ -270,7 +314,7 @@ export async function showTuiSettings(
   await showTabbedSettingsDialog({
     ctx,
     title: "TUI settings",
-    tabs: buildSettingTabs(getActiveTuiConfig()),
+    tabs: () => buildSettingTabs(getActiveTuiConfig()),
     listHeight: 6,
     promptLock: true,
     colored: () => getActiveTuiConfig().colored,
@@ -284,7 +328,10 @@ export async function showTuiSettings(
       if (
         id === "toolVerbosity" ||
         id === "thinkingVerbosity" ||
-        id === "panel.style"
+        id === "panel.enabled" ||
+        id === "panel.style" ||
+        id === "panel.borderStyle" ||
+        id === "panel.surface"
       ) {
         tui.invalidate();
       }

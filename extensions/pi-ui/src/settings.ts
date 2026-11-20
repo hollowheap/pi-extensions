@@ -169,7 +169,7 @@ export interface SettingsTab {
 export interface TabbedSettingsDialogOptions {
   ctx: ExtensionContext;
   title: string;
-  tabs: readonly SettingsTab[];
+  tabs: readonly SettingsTab[] | (() => readonly SettingsTab[]);
   listHeight?: number;
   onChange: (id: string, value: string, list: SettingsList, tui: TUI) => void;
   onClose?: () => void;
@@ -190,29 +190,56 @@ export async function showTabbedSettingsDialog(
     build: (tui, theme, finish) => {
       const isColored = options.colored ?? (() => true);
       const listTheme = settingsListTheme(theme, isColored);
-      const tabLists = options.tabs.map(
-        (tab) =>
-          new SettingsList(
-            [...tab.items],
-            options.listHeight ?? 6,
-            listTheme,
-            (id, value) => {
-              options.onChange(id, value, tabLists[tabs.activeIndex], tui);
-              tui.requestRender();
-            },
-            finish,
-            { enableSearch: true },
-          ),
-      );
-      const tabs = new TabbedContent(
-        options.tabs.map((tab, index) => ({
-          label: tab.label,
-          content: tabLists[index],
-        })),
-        (label, active) =>
-          isColored() ? theme.fg(active ? "accent" : "muted", label) : label,
-      );
-      const offsetY = options.mouseOffsetY ?? (tabLists.length > 1 ? 4 : 1);
+      const resolveTabs = () =>
+        typeof options.tabs === "function" ? options.tabs() : options.tabs;
+
+      let tabLists: SettingsList[] = [];
+      let tabs: TabbedContent;
+      let offsetY = options.mouseOffsetY ?? 1;
+
+      const buildContent = (activeIndex = 0, selectedId?: string) => {
+        const currentTabs = resolveTabs();
+        tabLists = currentTabs.map(
+          (tab) =>
+            new SettingsList(
+              [...tab.items],
+              options.listHeight ?? 6,
+              listTheme,
+              (id, value) => {
+                const currentActive = tabs.activeIndex;
+                options.onChange(id, value, tabLists[currentActive], tui);
+                if (typeof options.tabs === "function") {
+                  buildContent(currentActive, id);
+                }
+                tui.requestRender();
+              },
+              finish,
+              { enableSearch: true },
+            ),
+        );
+        tabs = new TabbedContent(
+          currentTabs.map((tab, index) => ({
+            label: tab.label,
+            content: tabLists[index],
+          })),
+          (label, active) =>
+            isColored() ? theme.fg(active ? "accent" : "muted", label) : label,
+        );
+        tabs.setActiveIndex(activeIndex);
+        if (selectedId !== undefined) {
+          const activeTab = currentTabs[tabs.activeIndex];
+          const activeList = tabLists[tabs.activeIndex];
+          const nextIdx = activeTab?.items.findIndex(
+            (item) => item.id === selectedId,
+          );
+          if (activeList && nextIdx !== undefined && nextIdx >= 0) {
+            Reflect.set(activeList, "selectedIndex", nextIdx);
+          }
+        }
+        offsetY = options.mouseOffsetY ?? (tabLists.length > 1 ? 4 : 1);
+      };
+
+      buildContent();
       let offsetX = 2;
 
       return {

@@ -104,11 +104,16 @@ describe("/ui settings tabs", () => {
       expect(appearanceView).not.toContain("Statusline");
       expect(appearanceView).not.toContain("Dashboard");
 
-      // Shift+Tab wraps directly to Loading tab
+      // Shift+Tab wraps directly to Panel tab
+      env.component()?.handleInput("\x1b[Z");
+      const panelView = env.component()?.render(80).join("\n") ?? "";
+      expect(panelView).toContain("[Panel]");
+      expect(panelView).toContain("Panel style");
+
+      // Shift+Tab goes to Loading tab
       env.component()?.handleInput("\x1b[Z");
       const loadingView = env.component()?.render(80).join("\n") ?? "";
       expect(loadingView).toContain("[Loading]");
-      expect(loadingView).toContain("Panel style");
 
       // Shift+Tab goes to Verbosity tab
       env.component()?.handleInput("\x1b[Z");

@@ -105,19 +105,21 @@ describe("skill invocation panels", () => {
       .render(40)
       .map((line) => stripTerminalSequences(line));
 
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(5);
     expect(lines[0]).toBe(`┌${"─".repeat(38)}┐`);
-    expect(lines[1]?.startsWith("│ $alpha (")).toBe(true);
-    expect(lines[1]?.endsWith("│")).toBe(true);
-    expect(lines[2]).toBe(`└${"─".repeat(38)}┘`);
+    expect(lines[1]).toBe(`│${" ".repeat(38)}│`);
+    expect(lines[2]?.startsWith("│ $alpha (")).toBe(true);
+    expect(lines[2]?.endsWith("│")).toBe(true);
+    expect(lines[3]).toBe(`│${" ".repeat(38)}│`);
+    expect(lines[4]).toBe(`└${"─".repeat(38)}┘`);
 
     component.setOutputPad(1);
     const afterSetPad = component
       .render(40)
       .map((line) => stripTerminalSequences(line));
-    expect(afterSetPad).toHaveLength(3);
+    expect(afterSetPad).toHaveLength(5);
     expect(afterSetPad[0]).toBe(`┌${"─".repeat(38)}┐`);
-    expect(afterSetPad[1]?.startsWith("│ $alpha (")).toBe(true);
+    expect(afterSetPad[2]?.startsWith("│ $alpha (")).toBe(true);
   });
 });
 
