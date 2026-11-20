@@ -11,6 +11,7 @@ let exited = false;
 let aborting = false;
 
 const log = fs.createWriteStream(config.logPath, { flags: "a", mode: 0o600 });
+log.on("error", () => {});
 try {
   fs.chmodSync(config.logPath, 0o600);
 } catch {}
@@ -19,6 +20,22 @@ function writeLog(message) {
   try {
     log.write(`${message}\n`);
   } catch {}
+}
+
+function flushLogAndExit(fallbackMs = 250) {
+  let done = false;
+  const exit = () => {
+    if (done) return;
+    done = true;
+    process.exit(0);
+  };
+  const fallback = setTimeout(exit, fallbackMs);
+  fallback.unref?.();
+  try {
+    log.end(exit);
+  } catch {
+    exit();
+  }
 }
 
 function readStartTime(pid) {
@@ -111,7 +128,9 @@ function update(patch) {
 
 if (readState().status === "cancelled") {
   writeLog("cancelled before child start");
-  process.exit(0);
+  await new Promise(() => {
+    flushLogAndExit();
+  });
 }
 
 const inheritedEnv = Object.assign({}, process.env);
@@ -285,13 +304,12 @@ function finish(status, code) {
       finishedAt: Date.now(),
     });
   }
-  log.end();
   closeServer();
   const exitNow = () => {
     if (isChildGroupAlive()) {
       signalChildGroup("SIGKILL");
     }
-    setTimeout(() => process.exit(0), 25);
+    flushLogAndExit();
   };
   if (!isChildGroupAlive()) {
     exitNow();
@@ -312,7 +330,7 @@ child.on("error", (error) => {
   writeLog(String(error?.message ? error.message : error));
   finish("failed", null);
 });
-child.on("exit", (code) => {
+child.on("close", (code) => {
   finish(code === 0 ? "completed" : "failed", code);
 });
 

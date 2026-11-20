@@ -136,6 +136,7 @@ export function createSubagentsExtension(
 
     let ticker: ReturnType<typeof setInterval> | undefined;
     let emitting = false;
+    let disposed = false;
     let lastCtx: ExtensionContext | undefined;
     let lastStates: Array<{
       id: string;
@@ -146,7 +147,7 @@ export function createSubagentsExtension(
     let widgetSubagents: SubagentStateEventItem[] = [];
     let sessionAgents = new Map<string, AgentConfig>();
 
-    registerWidgetProvider({
+    const disposeWidgetProvider = registerWidgetProvider({
       name: "subagents",
       label: "Subagents",
       render: (width) =>
@@ -249,11 +250,12 @@ export function createSubagentsExtension(
     };
 
     const emitSubagentsState = async (): Promise<SubagentStateEventItem[]> => {
-      if (emitting) return [];
+      if (emitting || disposed) return [];
       emitting = true;
       try {
         const dir = resolveAgentDir();
         const all = await list(dir);
+        if (disposed) return [];
         void subagentWorkspaceTracker.cleanupTerminal(all, (id) => {
           clearSubagentWorkspace(dir, id);
         });
@@ -301,6 +303,7 @@ export function createSubagentsExtension(
         }
         return items;
       } catch {
+        if (disposed) return [];
         widgetSubagents = [];
         updateUI();
         publishStatusline(0);
@@ -472,8 +475,7 @@ export function createSubagentsExtension(
       handler: async (args, ctx) => {
         lastCtx = ctx;
         const parts = args.trim().split(/\s+/).filter(Boolean);
-        const action = parts[0];
-        const lowerAction = action?.toLowerCase();
+        const lowerAction = parts[0]?.toLowerCase();
         const id = parts[1];
         const agentDir = resolveAgentDir();
         if (lowerAction === "settings") {
@@ -511,7 +513,7 @@ export function createSubagentsExtension(
           });
           return;
         }
-        if (!action || (action === "view" && !id)) {
+        if (!lowerAction || (lowerAction === "view" && !id)) {
           await pickSubagent(ctx);
 
           return;
@@ -526,12 +528,12 @@ export function createSubagentsExtension(
           }
           return;
         }
-        if (action === "view") {
+        if (lowerAction === "view") {
           const raw = parts.includes("raw");
           await openSubagentLog(ctx, id, undefined, raw);
           return;
         }
-        if (action === "pause") {
+        if (lowerAction === "pause") {
           try {
             const current = await attachSubagent(agentDir, id);
             if (current === undefined || !isInProject(current, ctx.cwd)) {
@@ -547,7 +549,7 @@ export function createSubagentsExtension(
           void emitSubagentsState();
           return;
         }
-        if (action === "resume") {
+        if (lowerAction === "resume") {
           const result = await tool.execute(
             "command",
             { action: "resume", id },
@@ -567,7 +569,7 @@ export function createSubagentsExtension(
           }
           return;
         }
-        if (action === "steer") {
+        if (lowerAction === "steer") {
           const message = parts.slice(2).join(" ").trim();
           if (!message) {
             if (ctx.hasUI)
@@ -599,9 +601,14 @@ export function createSubagentsExtension(
     });
 
     pi.on("session_shutdown", () => {
+      disposed = true;
       stopTicker();
       lastActiveCount = 0;
       statusline.publish("");
+      statusline.dispose();
+      disposeWidgetProvider();
+      lastCtx = undefined;
+      turnStartedAt = undefined;
       lastStates = [];
       widgetSubagents = [];
       sessionAgents = new Map();

@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url";
 import { abortableDelay } from "@hollowheap/runtime/abort";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
-  cancelProcessGroup,
   isProcessAlive,
   isSocketConnectable,
   readProcStartTime,
@@ -224,8 +223,22 @@ export async function startSubagent(
       ) ?? started
     );
   } catch (error) {
-    if (runner !== undefined) {
-      await cancelProcessGroup(runner.pid, runner.startTime, 150);
+    const latest = store.read(id);
+    const groups = [
+      ...(runner !== undefined
+        ? [{ pid: runner.pid, startTime: runner.startTime }]
+        : []),
+      ...(latest?.pid !== undefined
+        ? [{ pid: latest.pid, startTime: latest.startTime }]
+        : []),
+    ];
+    if (groups.length > 0) {
+      await terminateProcessGroups(groups, { graceMs: 150 });
+    }
+    try {
+      rmSync(socketPath, { force: true });
+    } catch {
+      // Best-effort cleanup of any stale control socket.
     }
     try {
       store.updateIf(id, (current) => current.status !== "cancelled", {
@@ -423,7 +436,9 @@ export async function reconcileSubagent(
     store.updateIf(
       state.id,
       (current) =>
-        current.status === "running" || current.status === "starting",
+        (current.status === "running" || current.status === "starting") &&
+        current.attempt === state.attempt &&
+        current.startedAt === state.startedAt,
       { status: "failed", finishedAt: Date.now(), exitCode: null },
     ) ?? state
   );

@@ -16,6 +16,7 @@ import {
 import { isPermissionError } from "@hollowheap/core/config";
 import {
   errorMessage,
+  sanitizeTerminalText,
   toolErrorResult,
   toolTextResult,
   truncateText,
@@ -337,28 +338,34 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         context?.lastComponent instanceof Text
           ? context.lastComponent
           : new Text("", 0, 0);
-      const action = args?.action ?? "subagent";
+      const rawAction = args?.action ?? "subagent";
+      const action = sanitizeTerminalText(rawAction);
       let line = `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("accent", action)}`;
-      if (action === "define" || action === "delete") {
+      if (rawAction === "define" || rawAction === "delete") {
         const name = args?.name ?? args?.agent;
-        if (name) line += ` ${theme.fg("toolTitle", name)}`;
-        if (action === "define" && args?.systemPrompt) {
+        if (name)
+          line += ` ${theme.fg("toolTitle", sanitizeTerminalText(name))}`;
+        if (rawAction === "define" && args?.systemPrompt) {
           line += ` ${theme.fg("muted", `${args.systemPrompt.length} chars`)}`;
         }
-      } else if (action === "start") {
-        if (args?.agent) line += ` ${theme.fg("toolTitle", args.agent)}`;
+      } else if (rawAction === "start") {
+        if (args?.agent) {
+          line += ` ${theme.fg("toolTitle", sanitizeTerminalText(args.agent))}`;
+        }
         if (args?.task) {
+          const safeTask = sanitizeTerminalText(args.task);
           const taskSummary =
-            args.task.length > 60 ? `${args.task.slice(0, 57)}...` : args.task;
+            safeTask.length > 60 ? `${safeTask.slice(0, 57)}...` : safeTask;
           line += ` ${theme.fg("muted", `"${taskSummary}"`)}`;
         }
       } else if (args?.id) {
-        line += ` ${theme.fg("dim", `@${args.id}`)}`;
-        if (action === "send" && args?.message) {
+        line += ` ${theme.fg("dim", `@${sanitizeTerminalText(args.id)}`)}`;
+        if (rawAction === "send" && args?.message) {
+          const safeMessage = sanitizeTerminalText(args.message);
           const msg =
-            args.message.length > 40
-              ? `${args.message.slice(0, 37)}...`
-              : args.message;
+            safeMessage.length > 40
+              ? `${safeMessage.slice(0, 37)}...`
+              : safeMessage;
           line += ` ${theme.fg("muted", `"${msg}"`)}`;
         }
       }
@@ -376,7 +383,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         text.setText(
           theme.fg(
             "error",
-            textOutput !== "" ? textOutput : "Subagent action failed",
+            textOutput !== ""
+              ? sanitizeTerminalText(textOutput)
+              : "Subagent action failed",
           ),
         );
         return text;
@@ -384,14 +393,14 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
 
       if (typeof details.defined === "string") {
         text.setText(
-          `${theme.fg("success", "✓")} ${theme.fg("muted", "session agent")} ${theme.fg("toolTitle", details.defined)}`,
+          `${theme.fg("success", "✓")} ${theme.fg("muted", "session agent")} ${theme.fg("toolTitle", sanitizeTerminalText(details.defined))}`,
         );
         return text;
       }
 
       if (typeof details.deleted === "string") {
         text.setText(
-          `${theme.fg("success", "✓")} ${theme.fg("muted", "removed session agent")} ${theme.fg("toolTitle", details.deleted)}`,
+          `${theme.fg("success", "✓")} ${theme.fg("muted", "removed session agent")} ${theme.fg("toolTitle", sanitizeTerminalText(details.deleted))}`,
         );
         return text;
       }
@@ -417,17 +426,21 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
             a.status === "running"
               ? theme.fg("warning", "●")
               : theme.fg("success", "✓");
-          const name = subagentDisplayName({
-            model: a.model,
-            agent: a.agent,
-            task: a.task ?? "",
-          });
-          const model = a.model ? ` ${theme.fg("dim", `(${a.model})`)}` : "";
+          const name = sanitizeTerminalText(
+            subagentDisplayName({
+              model: a.model,
+              agent: a.agent,
+              task: a.task ?? "",
+            }),
+          );
+          const model = a.model
+            ? ` ${theme.fg("dim", `(${sanitizeTerminalText(a.model)})`)}`
+            : "";
           const location = a.workspace
-            ? ` ${theme.fg("dim", a.workspace)}`
+            ? ` ${theme.fg("dim", sanitizeTerminalText(a.workspace))}`
             : "";
           lines.push(
-            `  ${icon} ${theme.fg("accent", `[${a.status}]`)} ${theme.fg("toolTitle", name)}${model}${location}`,
+            `  ${icon} ${theme.fg("accent", `[${sanitizeTerminalText(a.status)}]`)} ${theme.fg("toolTitle", name)}${model}${location}`,
           );
         }
         text.setText(lines.join("\n"));
@@ -435,6 +448,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       }
 
       const status = String(details.status ?? "");
+      const safeStatus = sanitizeTerminalText(status);
       const agent = String(details.agent ?? "");
       const exitCode = details.exitCode;
       const log = typeof details.log === "string" ? details.log : "";
@@ -450,12 +464,19 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         icon = theme.fg("muted", "⊘");
       }
 
-      let header = `${icon} ${theme.fg("accent", `[${status}]`)} ${theme.fg("toolTitle", subagentDisplayName({ model: typeof details.model === "string" ? details.model : undefined, agent, task: typeof details.task === "string" ? details.task : "" }))}`;
+      const displayName = sanitizeTerminalText(
+        subagentDisplayName({
+          model: typeof details.model === "string" ? details.model : undefined,
+          agent,
+          task: typeof details.task === "string" ? details.task : "",
+        }),
+      );
+      let header = `${icon} ${theme.fg("accent", `[${safeStatus}]`)} ${theme.fg("toolTitle", displayName)}`;
       if (typeof details.model === "string") {
-        header += ` ${theme.fg("dim", `(${details.model})`)}`;
+        header += ` ${theme.fg("dim", `(${sanitizeTerminalText(details.model)})`)}`;
       }
       if (typeof details.workspace === "string") {
-        header += ` ${theme.fg("dim", details.workspace)}`;
+        header += ` ${theme.fg("dim", sanitizeTerminalText(details.workspace))}`;
       }
       if (exitCode !== undefined) {
         header += ` ${theme.fg("dim", `(exit ${exitCode})`)}`;
@@ -472,7 +493,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           lines.push(`  ${expandHint(theme, hidden, "earlier log lines")}`);
         }
         for (const l of displayed) {
-          lines.push(`  ${theme.fg("toolOutput", l)}`);
+          lines.push(`  ${theme.fg("toolOutput", sanitizeTerminalText(l))}`);
         }
       }
 
@@ -957,6 +978,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               });
             } catch (error) {
               await abortSubagent(agentDir, id).catch(() => {});
+              options.onSubagentsChange?.();
               throw error;
             }
           }
