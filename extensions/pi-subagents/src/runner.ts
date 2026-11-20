@@ -140,11 +140,15 @@ export async function startSubagent(
     let childCommand = options.command;
     let childArgs = [...(options.args ?? [])];
     if (effectiveSandbox) {
-      const writablePaths: string[] = [];
+      const resolvedAgentDir = resolve(options.agentDir);
+      mkdirSync(resolvedAgentDir, { recursive: true, mode: 0o700 });
+      const writablePaths: string[] = [resolvedAgentDir];
       if (options.sessionPath !== undefined) {
         const sessionDir = dirname(resolve(options.cwd, options.sessionPath));
         mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
-        writablePaths.push(sessionDir);
+        if (sessionDir !== resolvedAgentDir) {
+          writablePaths.push(sessionDir);
+        }
       }
       const sandboxOpts: SandboxOptions =
         typeof effectiveSandbox === "object"
