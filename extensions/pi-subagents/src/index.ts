@@ -415,11 +415,20 @@ export function createSubagentsExtension(
       turnStartedAt = Date.now();
     });
 
-    pi.on("turn_end", (_event, ctx) => {
+    pi.on("turn_end", (event, ctx) => {
       const startedAt = turnStartedAt;
       const parentSession = ctx?.sessionManager?.getSessionId?.();
       turnStartedAt = undefined;
-      if (startedAt === undefined || parentSession === undefined) return;
+      const stopReason = (
+        event as { message?: { stopReason?: unknown } } | undefined
+      )?.message?.stopReason;
+      const aborted =
+        stopReason === "aborted" ||
+        (ctx as { signal?: { aborted?: boolean } } | undefined)?.signal
+          ?.aborted === true;
+      if (!aborted || startedAt === undefined || parentSession === undefined) {
+        return;
+      }
       void (async () => {
         try {
           const dir = resolveAgentDir();

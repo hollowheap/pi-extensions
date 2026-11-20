@@ -65,7 +65,30 @@ describe("subagent turn ownership", () => {
     expect(listSubagents).not.toHaveBeenCalled();
   });
 
-  it("a turn end after a turn start scans turn-scoped children", async () => {
+  it("a normal turn end leaves background subagents running", async () => {
+    mocks.abortSubagent.mockClear();
+    const listSubagents = vi.fn(async () => [
+      {
+        id: "bg-child",
+        parentSession: "parent",
+        status: "running",
+        project: "/tmp/draw-subagents",
+        startedAt: Date.now() + 1_000,
+      },
+    ]);
+    const { handlers } = register(listSubagents);
+    const ctx = {
+      cwd: "/tmp/draw-subagents",
+      sessionManager: { getSessionId: () => "parent" },
+    };
+    handlers.turn_start?.({}, ctx);
+    handlers.turn_end?.({ message: { stopReason: "toolUse" } }, ctx);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(listSubagents).not.toHaveBeenCalled();
+    expect(mocks.abortSubagent).not.toHaveBeenCalled();
+  });
+
+  it("an aborted turn end after a turn start scans turn-scoped children", async () => {
     const listSubagents = vi.fn(async () => []);
     const { handlers } = register(listSubagents);
     const ctx = {
@@ -73,7 +96,7 @@ describe("subagent turn ownership", () => {
       sessionManager: { getSessionId: () => "parent" },
     };
     handlers.turn_start?.({}, ctx);
-    handlers.turn_end?.({}, ctx);
+    handlers.turn_end?.({ message: { stopReason: "aborted" } }, ctx);
     await vi.waitFor(() => expect(listSubagents).toHaveBeenCalled());
   });
 
@@ -99,7 +122,7 @@ describe("subagent turn ownership", () => {
     );
     const ctx = { cwd, sessionManager: { getSessionId: () => "owner" } };
     handlers.turn_start?.({}, ctx);
-    handlers.turn_end?.({}, ctx);
+    handlers.turn_end?.({ message: { stopReason: "aborted" } }, ctx);
     await vi.waitFor(() =>
       expect(mocks.abortSubagent).toHaveBeenCalledWith(cwd, "owner-child"),
     );
