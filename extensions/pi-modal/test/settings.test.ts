@@ -178,12 +178,13 @@ describe("showTuiSettings", () => {
       const loading = component.render(80).join("\n");
       expect(loading).toContain("[Loading]");
       expect(loading).toContain("Loading indicator");
-      expect(loading).not.toContain("Panel renderer");
+      expect(loading).not.toContain("Enable panel customization");
 
       component.handleInput("\t");
       const panelTab = component.render(80).join("\n");
       expect(panelTab).toContain("[Panel]");
-      expect(panelTab).toContain("Panel renderer");
+      expect(panelTab).toContain("Enable panel customization");
+      expect(panelTab).not.toContain("Panel style");
       expect(panelTab).toContain("Panel border style");
       expect(panelTab).toContain("Panel surface");
 

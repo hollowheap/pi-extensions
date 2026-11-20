@@ -132,7 +132,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
         modeTheme,
       });
       const rows = editor.render(20).map(stripCursorMarkers);
-      expect(rows).toHaveLength(3);
+      expect(rows).toHaveLength(5);
       for (const row of rows) {
         expect(row.startsWith("<bg:customMessageBg>")).toBe(true);
         expect(row.endsWith("</bg>")).toBe(true);
@@ -146,12 +146,20 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       );
       expect(topPlain.startsWith("╭")).toBe(true);
       expect(topPlain.endsWith("╮")).toBe(true);
-      const contentPlain = stripTerminalSequences(
+      const topPadPlain = stripTerminalSequences(
         rows[1].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
-      expect(contentPlain).toBe("❯ hello            │");
-      const bottomPlain = stripTerminalSequences(
+      expect(topPadPlain).toBe("│                  │");
+      const contentPlain = stripTerminalSequences(
         rows[2].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
+      );
+      expect(contentPlain).toBe("❯ hello            │");
+      const bottomPadPlain = stripTerminalSequences(
+        rows[3].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
+      );
+      expect(bottomPadPlain).toBe("│                  │");
+      const bottomPlain = stripTerminalSequences(
+        rows[4].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
       expect(bottomPlain.startsWith("╰")).toBe(true);
       expect(bottomPlain.endsWith("╯")).toBe(true);
@@ -317,6 +325,43 @@ describe("installBashPanel", () => {
     });
     const reFramedLines = bang.render(30).map(stripTerminalSequences);
     expect(reFramedLines.some((line) => line.includes("╭"))).toBe(true);
+
+    // !! (excludeFromContext = true) redraws with surface + border and avoids dim header on surface
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      overlaySurface: "surface",
+      colored: true,
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
+        enabled: true,
+        borderStyle: "rounded",
+        surface: "surface",
+      },
+    });
+    const doubleBangSurface = new BashExecutionComponent(
+      "echo secret",
+      ui,
+      true,
+      1,
+    );
+    doubleBangSurface.appendOutput("secret");
+    doubleBangSurface.setComplete(0, false);
+    const doubleBangSurfaceRaw = doubleBangSurface.render(40);
+    expect(
+      doubleBangSurfaceRaw.some((line) =>
+        line.includes("<bg:customMessageBg>"),
+      ),
+    ).toBe(true);
+    expect(
+      doubleBangSurfaceRaw
+        .map(stripTerminalSequences)
+        .some((line) => line.includes("╭")),
+    ).toBe(true);
+    expect(
+      doubleBangSurfaceRaw
+        .map(stripTerminalSequences)
+        .some((line) => line.includes("$ echo secret")),
+    ).toBe(true);
   });
 
   it("aligns running loader without double-padding and avoids double-padding in collapsed !expanded state", () => {
@@ -440,7 +485,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       ...DEFAULT_TUI_CONFIG,
       panel: {
         ...DEFAULT_TUI_CONFIG.panel,
-        mode: "background",
+        borderStyle: "none",
+        surface: "surface",
       },
     });
     const bgRows = editor

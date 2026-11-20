@@ -24,6 +24,7 @@ import type {
 import {
   type PanelStateToken,
   framePanelLines,
+  isPanelSurfaceActive,
   resolvePanelFrameLayout,
 } from "@hollowheap/tui/frame";
 import { createWorkingIndicator } from "@hollowheap/tui/spinner";
@@ -366,6 +367,7 @@ function renderFallbackResultLines(
   options: ToolRenderResultOptions,
   theme: Theme | undefined,
   colored = true,
+  surfaceActive = false,
 ): string[] {
   const output = extractResultText(result);
   if (!output) return [];
@@ -378,7 +380,14 @@ function renderFallbackResultLines(
   );
   const remaining = rawLines.length - visible.length;
   if (remaining > 0) {
-    lines.push(fg(theme, "muted", `... (${remaining} more lines)`, colored));
+    lines.push(
+      fg(
+        theme,
+        surfaceActive ? "text" : "muted",
+        `... (${remaining} more lines)`,
+        colored,
+      ),
+    );
   }
   return lines;
 }
@@ -563,7 +572,7 @@ export function wrapToolRenderer(
             : isError
               ? "toolErrorBg"
               : "toolSuccessBg";
-          const { innerWidth } = resolvePanelFrameLayout(width, {
+          const { innerWidth, surfaceActive } = resolvePanelFrameLayout(width, {
             mode: cfg.mode,
             borderStyle: cfg.borderStyle,
             accentStripe: cfg.accentStripe,
@@ -619,7 +628,9 @@ export function wrapToolRenderer(
 
           const summary = formatToolCallSummary(toolName, args);
           if (summary !== undefined) {
-            headerParts.push(fg(theme, "muted", summary, ui.colored));
+            headerParts.push(
+              fg(theme, surfaceActive ? "text" : "muted", summary, ui.colored),
+            );
           }
 
           if (!argumentsOnly && settled && cfg.outcomeBadges) {
@@ -629,7 +640,9 @@ export function wrapToolRenderer(
             headerParts.push(badge);
             const duration = formatToolDuration(context.durationMs);
             if (duration !== undefined) {
-              headerParts.push(fg(theme, "dim", duration, ui.colored));
+              headerParts.push(
+                fg(theme, surfaceActive ? "text" : "dim", duration, ui.colored),
+              );
             }
           }
 
@@ -740,12 +753,14 @@ export function wrapToolRenderer(
             // Fall through to safe text extraction inside the frame.
           }
         }
+        const ui = getUi();
         return trimEdgeBlankLines(
           renderFallbackResultLines(
             result,
             effectiveOptions,
             theme,
-            getUi().colored,
+            ui.colored,
+            isPanelSurfaceActive(cfg.surface, ui.colored),
           ),
         );
       };

@@ -726,7 +726,7 @@ describe("wrapToolRenderer", () => {
       durationMs: 5,
       outputPad: 1,
     });
-    const joined = (comp?.render(50) ?? []).join("\n");
+    const joined = (comp?.render(80) ?? []).join("\n");
     expect(joined).not.toContain("\x1b[42m");
     expect(joined).not.toContain("\x1b[49m");
     expect(joined).not.toContain("\x1b[48;5;236m");
@@ -788,21 +788,27 @@ describe("wrapToolRenderer", () => {
         invalidate: () => undefined,
       })),
     };
-    const cfg = makeConfig({ mode: "background", accentStripe: false });
+    const cfg = makeConfig({ borderStyle: "none", accentStripe: false });
     const wrapped = wrapToolRenderer("bash", base, () => ({
       ...cfg,
       surface: "surface",
     }));
     const theme = {
-      fg: (_token: string, value: string) => value,
+      fg: (token: string, value: string) => `[${token}:${value}]`,
       bold: (value: string) => value,
       bg: (_token: string, value: string) => `\x1b[44m${value}\x1b[49m`,
     } as never;
-    const comp = wrapped.renderCall?.({} as never, theme, {} as never);
-    const joined = (comp?.render(50) ?? []).join("\n");
+    const comp = wrapped.renderCall?.({ command: "echo hi" } as never, theme, {
+      durationMs: 42,
+    } as never);
+    const joined = (comp?.render(80) ?? []).join("\n");
     expect(joined).toContain("\x1b[44m");
     expect(joined).not.toContain("╭");
     expect(joined).not.toContain("╰");
+    expect(joined).toContain("[text:echo hi]");
+    expect(joined).toContain("[text:42ms]");
+    expect(joined).not.toContain("[muted:");
+    expect(joined).not.toContain("[dim:");
     expect(stripTerminalSequences(joined)).toContain("line 1");
   });
 

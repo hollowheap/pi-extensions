@@ -710,6 +710,7 @@ export class ModalEditor extends CustomEditor {
 
   private borderPaint(
     colored = getActiveTuiConfig().colored,
+    surfaceActive = false,
   ): (text: string) => string {
     if (!colored) {
       return (text) => text;
@@ -727,7 +728,8 @@ export class ModalEditor extends CustomEditor {
       case "visual":
         return (text) => appTheme.fg("warning", text);
       default:
-        return (text) => appTheme.fg("border", text);
+        return (text) =>
+          appTheme.fg(surfaceActive ? "borderAccent" : "border", text);
     }
   }
 
@@ -753,20 +755,15 @@ export class ModalEditor extends CustomEditor {
       panel.enabled || this.explicitBorderStyle !== undefined;
     const surface: OverlaySurfaceMode = !panelEnabled
       ? "transparent"
-      : panel.mode === "background" &&
-          (!panel.surface || panel.surface === "transparent")
-        ? "surface"
-        : (panel.surface ?? config.overlaySurface);
+      : (panel.surface ?? config.overlaySurface);
     const surfaceActive =
       panelEnabled && this.isSurfaceActive(surface, config.colored);
     const sharedBorderStyle: BorderStyle = !panelEnabled
       ? "none"
-      : config.panel.mode === "background"
-        ? "none"
-        : config.panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle ||
-            config.panel.style !== undefined
-          ? config.panel.borderStyle
-          : config.borderStyle;
+      : config.panel.borderStyle !== DEFAULT_TUI_CONFIG.panel.borderStyle ||
+          config.panel.style !== undefined
+        ? config.panel.borderStyle
+        : config.borderStyle;
     const borderStyle = this.explicitBorderStyle ?? sharedBorderStyle;
     const promptPrefix = `${this.promptChar} `;
     const promptWidth = visibleWidth(promptPrefix);
@@ -798,7 +795,7 @@ export class ModalEditor extends CustomEditor {
     hiddenLineCount: number,
   ): string {
     const targetWidth = this.renderSnapshot?.width ?? width;
-    const { config, panelEnabled, borderStyle, borderEnabled } =
+    const { config, panelEnabled, surfaceActive, borderStyle, borderEnabled } =
       this.getRenderSnapshot(targetWidth);
     if (!panelEnabled) {
       return super.renderTopBorder(targetWidth, hiddenLineCount);
@@ -810,7 +807,7 @@ export class ModalEditor extends CustomEditor {
         " ",
       );
     }
-    const paint = this.borderPaint(config.colored);
+    const paint = this.borderPaint(config.colored, surfaceActive);
     const borderChars = getBorderChars(borderStyle);
     const innerWidth = targetWidth - 2;
     const inner =
@@ -858,7 +855,7 @@ export class ModalEditor extends CustomEditor {
       this.lastBottomBorder = line;
       return line;
     }
-    const paint = this.borderPaint(config.colored);
+    const paint = this.borderPaint(config.colored, surfaceActive);
     const borderChars = getBorderChars(borderStyle);
     const innerWidth = targetWidth - 2;
     const inner =
@@ -898,7 +895,7 @@ export class ModalEditor extends CustomEditor {
       borderEnabled,
     } = snapshot;
     const { colored } = config;
-    const paint = this.borderPaint(colored);
+    const paint = this.borderPaint(colored, surfaceActive);
     const borderChars = borderEnabled ? getBorderChars(borderStyle) : null;
     const borderRightPad = borderEnabled && width >= promptWidth + 3 ? 1 : 0;
     const borderlessPad = !borderEnabled
@@ -988,6 +985,26 @@ export class ModalEditor extends CustomEditor {
       }
     }
     if (surfaceActive) {
+      const verticalPad = Math.max(0, Math.floor(hostPad));
+      if (verticalPad > 0) {
+        const topPadCount = borderEnabled
+          ? verticalPad
+          : Math.max(0, verticalPad - 1);
+        const emptyRow =
+          borderEnabled && borderChars
+            ? `${paint(borderChars.vertical)}${" ".repeat(Math.max(0, width - 2))}${paint(borderChars.vertical)}`
+            : " ".repeat(width);
+        const paddedLines = [
+          lines[0] ?? "",
+          ...Array<string>(topPadCount).fill(emptyRow),
+          ...lines.slice(firstContentIdx, bottomIndex),
+          ...Array<string>(verticalPad).fill(emptyRow),
+          ...lines.slice(bottomIndex),
+        ];
+        return paddedLines.map((row) =>
+          paintSurfaceLine(row, width, this.modeTheme, surface, colored),
+        );
+      }
       return lines.map((row) =>
         paintSurfaceLine(row, width, this.modeTheme, surface, colored),
       );

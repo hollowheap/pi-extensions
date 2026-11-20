@@ -24,6 +24,7 @@ import { getActiveTuiConfig } from "@hollowheap/tui/state";
 import {
   type PanelStateToken,
   framePanelLines,
+  isPanelSurfaceActive,
   panelRenderConfig,
   resolvePanelFrameLayout,
   resolveToolVerb,
@@ -957,14 +958,22 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
 
       setLoaderPaddingX(this, 0);
       const savedPad = Reflect.get(this, "outputPad");
+      const savedColorKey = Reflect.get(this, "colorKey");
+      const surfaceActive = isPanelSurfaceActive(panel.surface, config.colored);
       if (typeof savedPad === "number") {
         Reflect.set(this, "outputPad", 0);
+      }
+      if (surfaceActive && savedColorKey === "dim") {
+        Reflect.set(this, "colorKey", "text");
       }
       try {
         original.call(this);
       } finally {
         if (typeof savedPad === "number") {
           Reflect.set(this, "outputPad", savedPad);
+        }
+        if (surfaceActive && savedColorKey === "dim") {
+          Reflect.set(this, "colorKey", savedColorKey);
         }
       }
 
