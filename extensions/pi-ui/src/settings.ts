@@ -241,11 +241,14 @@ export async function showTabbedSettingsDialog(
 
       buildContent();
       let offsetX = 2;
+      let frameOffsetY = 1;
 
       return {
         render(width: number): string[] {
           const frameOpts = options.frameOptions?.();
           offsetX = frameOffsetX(width, frameOpts);
+          frameOffsetY =
+            frameOpts?.borderStyle === "none" ? (options.title ? 1 : 0) : 1;
           const innerWidth = getFrameInnerWidth(
             width,
             frameOpts?.borderStyle,
@@ -265,6 +268,21 @@ export async function showTabbedSettingsDialog(
           tabs.handleInput(data);
         },
         handleMouse(event: TuiMouseEvent) {
+          if (
+            tabLists.length > 1 &&
+            event.y >= frameOffsetY &&
+            event.y < offsetY
+          ) {
+            const tabResult = tabs.handleMouse({
+              ...event,
+              x: event.x - offsetX,
+              y: event.y - frameOffsetY,
+            });
+            if (tabResult?.handled) {
+              tui.requestRender();
+              return tabResult;
+            }
+          }
           if (event.y < offsetY) return undefined;
           const activeList = tabLists[tabs.activeIndex];
           if (!activeList) return undefined;

@@ -327,16 +327,36 @@ describe("showTabbedSettingsDialog", () => {
     });
 
     await vi.waitFor(() => expect(component).toBeDefined());
-    expect(component?.render(60).join("\n")).toContain("[First]");
+    expect(component?.render(60).join("\n")).toContain(
+      "\x1b[7m First \x1b[27m",
+    );
 
     component?.handleInput("\t");
-    expect(component?.render(60).join("\n")).toContain("[Second]");
+    expect(component?.render(60).join("\n")).toContain(
+      "\x1b[7m Second \x1b[27m",
+    );
     component?.handleInput("\r");
     expect(onChange).toHaveBeenCalledWith(
       "second-opt",
       "y",
       expect.anything(),
       expect.anything(),
+    );
+
+    // Clicking the First tab header switches back to tab 0
+    const tabClick = component?.handleMouse({
+      type: "click",
+      button: "left",
+      x: 3,
+      y: 1,
+      screenX: 3,
+      screenY: 1,
+      width: 60,
+      height: 12,
+    } as never);
+    expect(tabClick).toEqual({ handled: true });
+    expect(component?.render(60).join("\n")).toContain(
+      "\x1b[7m First \x1b[27m",
     );
 
     expect(() =>
