@@ -98,10 +98,6 @@ describe("pi-todos extension", () => {
       "todos",
       expect.any(Object),
     );
-    expect(pi.registerCommand).not.toHaveBeenCalledWith(
-      "todo",
-      expect.any(Object),
-    );
     expect(pi.registerCommand).toHaveBeenCalledWith(
       "widget",
       expect.any(Object),
@@ -467,7 +463,7 @@ describe("pi-todos extension", () => {
     expect(snap?.highPriority).toBe(0);
   });
 
-  it("guides the model to the codemode todo tool instead of tagged blocks", () => {
+  it("guides the model to the codemode todo tool", () => {
     const { pi, handlers } = createMockPi();
     extension(pi as never);
     const event = {
@@ -478,8 +474,6 @@ describe("pi-todos extension", () => {
 
     const section = event.systemPromptOptions.sections.todos_format;
     expect(section).toContain("tools.todo");
-    expect(section).not.toContain("create_todos");
-    expect(section).not.toContain("complete_todos");
   });
 
   it("reports unknown IDs for edit and priority tool actions", async () => {

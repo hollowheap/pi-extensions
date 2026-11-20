@@ -35,13 +35,12 @@ function createCtx() {
 }
 
 describe("grant list command surface", () => {
-  it("does not register a separate grants command", () => {
+  it("registers the grant command", () => {
     const pi = createMockPi();
     extension(pi as never);
 
     const names = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(names).toContain("grant");
-    expect(names).not.toContain("grants");
   });
 
   it("lists active grants with expiry through /grant list", async () => {

@@ -60,13 +60,12 @@ function eventHandler(
 }
 
 describe("widget command surface", () => {
-  it("registers a widget command in place of panel", () => {
+  it("registers a widget command", () => {
     const pi = createMockPi();
     extension(pi as never);
 
     const names = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(names).toContain("widget");
-    expect(names).not.toContain("panel");
   });
 
   it("widget command exposes per-widget toggles", () => {

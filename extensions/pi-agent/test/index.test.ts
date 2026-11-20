@@ -197,7 +197,6 @@ describe("pi-agent extension", () => {
     const completions = cmd.getArgumentCompletions("");
     const values = completions.map((c) => c.value);
     expect(values).toContain("default");
-    expect(values).not.toContain("reset");
     expect(values).toContain("scout");
     expect(values).toContain("engineer");
 

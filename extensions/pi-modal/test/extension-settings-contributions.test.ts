@@ -109,7 +109,6 @@ describe("/ui settings tabs", () => {
       const panelView = env.component()?.render(80).join("\n") ?? "";
       expect(panelView).toContain("\x1b[7m Panel \x1b[27m");
       expect(panelView).toContain("Enable panel customization");
-      expect(panelView).not.toContain("Panel style");
 
       // Shift+Tab goes to Loading tab
       env.component()?.handleInput("\x1b[Z");

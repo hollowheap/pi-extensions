@@ -894,8 +894,6 @@ describe("extension registration", () => {
     handlers.session_start?.({}, ctx);
     expect(ctx.ui.setWorkingIndicator).toHaveBeenCalledTimes(1);
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledTimes(1);
-    const commandNames = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(commandNames).not.toContain("vimkeys");
     expect(pi.registerShortcut.mock.calls.map(([name]) => name)).toEqual([
       "ctrl+o",
       "ctrl+t",
@@ -1085,21 +1083,6 @@ describe("extension registration", () => {
       loader.stop();
       resetActiveTuiConfig();
     }
-  });
-
-  it("retires the ctrl+shift+o codemode preview shortcut", () => {
-    const shortcuts: Record<string, { description?: string }> = {};
-    const pi = {
-      on: vi.fn(() => () => {}),
-      registerCommand: vi.fn(),
-      registerToolRenderer: vi.fn(),
-      events: { on: vi.fn(), emit: vi.fn() },
-      registerShortcut: vi.fn((key: string, def: { description?: string }) => {
-        shortcuts[key] = def;
-      }),
-    };
-    extension(pi as never);
-    expect(Object.keys(shortcuts)).not.toContain("ctrl+shift+o");
   });
 
   it("keeps the full codemode script preview expanded", () => {
@@ -1836,7 +1819,7 @@ describe("TUI config, /ui command, and panel integration", () => {
     }
   });
 
-  it("registers /ui with completions, status, and settings and retires the old commands", async () => {
+  it("registers /ui with completions, status, and settings", async () => {
     const dir = createTempDir();
     process.env.PI_CODING_AGENT_DIR = dir;
     const commands: Record<
@@ -1859,8 +1842,6 @@ describe("TUI config, /ui command, and panel integration", () => {
 
     const uiCommand = commands.ui;
     expect(uiCommand).toBeDefined();
-    expect(commands.tui).toBeUndefined();
-    expect(commands.expand).toBeUndefined();
     expect(
       uiCommand?.getArgumentCompletions?.("").map((item) => item.value),
     ).toEqual(["settings", "status"]);

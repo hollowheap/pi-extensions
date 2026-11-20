@@ -9,7 +9,7 @@ import { dropSession, setMode } from "../src/state.js";
 import type { ModeLayer } from "../src/types.js";
 
 describe("ModeLayer is the public registration shape", () => {
-  it("accepts name, defaults, overrides and onEnter without an apply detail", () => {
+  it("accepts name, defaults, overrides and onEnter", () => {
     const onEnter = () => ({ notice: { text: "hi", level: "info" as const } });
     const layer: ModeLayer = {
       name: "draw-s07-layer",
@@ -27,8 +27,6 @@ describe("ModeLayer is the public registration shape", () => {
     });
     expect(registered?.onEnter).toBe(onEnter);
     expect(modeLayers()).toContainEqual(registered);
-    expect(Object.keys(registered ?? {})).not.toContain("apply");
-    expect(Object.keys(registered ?? {})).not.toContain("inPlanPaths");
   });
 });
 

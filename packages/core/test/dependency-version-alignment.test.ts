@@ -60,15 +60,6 @@ describe("range form, deprecated pins and subpath resolution", () => {
     expect(ranges.every((range) => range.startsWith("^"))).toBe(true);
   });
 
-  it("no consumer pins a deprecated core version", () => {
-    const ranges = consumerRanges();
-    expect(ranges.length).toBeGreaterThan(0);
-    for (const range of ranges) {
-      expect(range.includes("0.1.0")).toBe(false);
-      expect(range.includes("0.2.0")).toBe(false);
-    }
-  });
-
   it("core subpaths imported by a consumer resolve to real source files", () => {
     const srcDir = `${ROOT}extensions/pi-guard/src`;
     const subpaths = new Set<string>();

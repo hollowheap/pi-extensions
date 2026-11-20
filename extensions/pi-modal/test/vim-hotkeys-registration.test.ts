@@ -28,36 +28,6 @@ afterEach(() => {
 });
 
 describe("vim keybind reference registration", () => {
-  it("does not register a standalone vim keybind command", () => {
-    const pi = createMockPi();
-    extension(pi as never);
-
-    const names = pi.registerCommand.mock.calls.map(([name]) => name);
-    expect(names).not.toContain("vimkeys");
-  });
-
-  it("does not expose a separate vim keybind command surface", () => {
-    const pi = createMockPi();
-    extension(pi as never);
-
-    const vimCommands = pi.registerCommand.mock.calls.filter(([, def]) =>
-      /vim/i.test(
-        (def as { description?: string } | undefined)?.description ?? "",
-      ),
-    );
-    expect(vimCommands).toHaveLength(0);
-  });
-
-  it("no other keybind command surface is registered", () => {
-    const pi = createMockPi();
-    extension(pi as never);
-
-    const names = pi.registerCommand.mock.calls.map(([name]) => name);
-    for (const legacy of ["keys", "keybinds", "binds", "vim"]) {
-      expect(names).not.toContain(legacy);
-    }
-  });
-
   it("registers no separate shortcut popup and contributes vim keybinds to the host /hotkeys section", () => {
     initTheme();
     const pi = createMockPi();

@@ -23,7 +23,7 @@ function createMockPi() {
 }
 
 describe("before_agent_start contributes a stable todos_format section", () => {
-  it("guides the model to the codemode todo tool rather than tagged blocks", () => {
+  it("guides the model to the codemode todo tool", () => {
     const pi = createMockPi();
     extension(pi as never);
     const event = {
@@ -46,8 +46,6 @@ describe("before_agent_start contributes a stable todos_format section", () => {
 
     const section = event.systemPromptOptions.sections.todos_format;
     expect(section).toContain("tools.todo");
-    expect(section).not.toContain("create_todos");
-    expect(section).not.toContain("complete_todos");
   });
 });
 

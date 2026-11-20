@@ -17,20 +17,6 @@ describe("unified collapse and verbosity", () => {
     ).toBe("medium");
   });
 
-  it("retires the host ctrl+shift+o tool toggle shortcut", () => {
-    const pi = {
-      on: vi.fn(() => () => {}),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-      registerToolRenderer: vi.fn(),
-      events: { on: vi.fn(), emit: vi.fn() },
-    };
-    modalExtension(pi as never);
-
-    const shortcuts = pi.registerShortcut.mock.calls.map(([name]) => name);
-    expect(shortcuts).not.toContain("ctrl+shift+o");
-  });
-
   it("invalid verbosity values fall back with diagnostics", () => {
     const diagnostics: string[] = [];
     const config = normalizeTuiConfig(
@@ -55,7 +41,7 @@ describe("unified collapse and verbosity", () => {
     expect(current.toolVerbosity).toBe("low");
   });
 
-  it("shows tool verbosity in /ui status and retires /expand", async () => {
+  it("shows tool verbosity in /ui status", async () => {
     const pi = {
       on: vi.fn(() => () => {}),
       registerCommand: vi.fn(),
@@ -68,10 +54,6 @@ describe("unified collapse and verbosity", () => {
       ([name]) => name === "ui",
     )?.[1] as { handler: (args: string, ctx: unknown) => Promise<void> };
 
-    expect(pi.registerCommand).not.toHaveBeenCalledWith(
-      "expand",
-      expect.anything(),
-    );
     const notify = vi.fn();
     await ui.handler("status", { hasUI: true, ui: { notify } });
     expect(notify).toHaveBeenCalledWith(

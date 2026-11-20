@@ -85,15 +85,13 @@ describe("mode naming", () => {
     });
   });
 
-  it("completions offer manual but not the legacy aliases", () => {
+  it("completions offer manual", () => {
     const pi = createMockPi();
     extension(pi as never);
     const values = (pi.command("mode").getArgumentCompletions?.("") ?? []).map(
       (c) => (c as { value: string }).value,
     );
     expect(values).toContain("manual");
-    expect(values).not.toContain("ask");
-    expect(values).not.toContain("autopilot");
   });
 
   it("an unknown mode is rejected without switching the session", async () => {

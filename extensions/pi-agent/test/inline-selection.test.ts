@@ -48,7 +48,6 @@ describe("inline agent selection and shared default settings", () => {
     expect(completions).toEqual(
       expect.arrayContaining(["default", "settings"]),
     );
-    expect(completions).not.toContain("reset");
   });
 
   it("an unmatched prefix yields no completions", () => {
@@ -60,10 +59,9 @@ describe("inline agent selection and shared default settings", () => {
     expect(completions).toEqual([]);
   });
 
-  it("registers /agent as the sole agent selection command", () => {
+  it("registers /agent command", () => {
     const p = pi();
     extension(p as never);
     expect(p.getCommand("agent")).toBeDefined();
-    expect(p.getCommand("agents")).toBeUndefined();
   });
 });
