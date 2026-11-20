@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJsonObject } from "@hollowheap/core/config";
 import { errorMessage } from "@hollowheap/core/format";
@@ -77,6 +77,19 @@ function parseCacheTtlMs(value: unknown, diagnostics: string[]): number {
   }
   diagnostics.push('"cacheTtlMs" must be between 0 and 3600000; using 600000');
   return DEFAULT_CACHE_TTL_MS;
+}
+
+export function ensureDefaultDecideConfig(agentDir: string): void {
+  if (!agentDir) return;
+  const decidePath = join(agentDir, CONFIG_FILE_NAME);
+  const legacyPath = join(agentDir, LEGACY_CONFIG_FILE_NAME);
+  if (existsSync(decidePath) || existsSync(legacyPath)) return;
+  try {
+    mkdirSync(agentDir, { recursive: true, mode: 0o700 });
+    writeFileSync(decidePath, "{}\n", { flag: "wx", mode: 0o600 });
+  } catch {
+    // Best-effort; ignore EEXIST or read-only directories.
+  }
 }
 
 export function loadDecideConfig(

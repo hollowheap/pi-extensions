@@ -11,7 +11,7 @@ import {
   persistDecideStats,
   restoreDecideStats,
 } from "./decide.js";
-import { loadDecideConfig } from "./settings.js";
+import { ensureDefaultDecideConfig, loadDecideConfig } from "./settings.js";
 
 function restoreStats(ctx: ExtensionContext): void {
   const sessionManager = ctx.sessionManager;
@@ -22,8 +22,10 @@ function restoreStats(ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI): void {
+  const agentDir = getAgentDir();
+  ensureDefaultDecideConfig(agentDir);
   const diagnostics: string[] = [];
-  loadDecideConfig(getAgentDir(), (message) => diagnostics.push(message));
+  loadDecideConfig(agentDir, (message) => diagnostics.push(message));
   pi.registerTool(createDecideTool(pi));
 
   let reported = false;

@@ -1,8 +1,13 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { enterMode } from "@hollowheap/core/modes";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function capturedGuard() {
   let toolCall:
@@ -31,11 +36,22 @@ function capturedGuard() {
   return { toolCall, pi };
 }
 
-function baseCtx(agentDir: string, classify: unknown) {
+function baseCtx(
+  agentDir: string,
+  classify: unknown,
+  options: { decideModel?: string | null } = {},
+) {
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
   writeFileSync(
     join(agentDir, "permissions.json"),
     JSON.stringify({ rules: ["allow edit *", "allow read *"] }),
   );
+  if (options.decideModel !== null) {
+    writeFileSync(
+      join(agentDir, "decide.json"),
+      JSON.stringify({ model: options.decideModel ?? "typesafe/jev-latest" }),
+    );
+  }
   return {
     cwd: agentDir,
     sessionManager: { getBranch: vi.fn(() => []) },
@@ -350,5 +366,68 @@ describe("classifier guard layer", () => {
     expect((result as { reason?: unknown } | undefined)?.reason).not.toMatch(
       /classifier/,
     );
+  });
+
+  it("classifies subagent start with its target summary and falls back to auto mode on classifier failure", async () => {
+    const { toolCall } = capturedGuard();
+    const classify = vi.fn().mockResolvedValue({
+      stopReason: "error",
+      errorMessage: "timeout",
+    });
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+      findOfType: vi.fn(() => ({ id: "classifier/test" })),
+      classify,
+    });
+    enterMode(ctx.sessionManager, "auto");
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t-auto-subagent",
+        toolName: "subagent",
+        input: { action: "start", agent: "scout", task: "inspect" },
+      },
+      ctx,
+    );
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(classify.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          tool: "subagent",
+          tag: "shell",
+          summary: "subagent scout",
+        }),
+      }),
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it("writes a default empty decide.json on first load and skips classification when unconfigured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "g-"));
+    vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+    const { toolCall } = capturedGuard();
+    expect(readFileSync(join(dir, "decide.json"), "utf8")).toBe("{}\n");
+    const classify = vi.fn().mockResolvedValue({
+      stopReason: "stop",
+      answers: { answer: "block" },
+    });
+    const ctx = baseCtx(
+      dir,
+      {
+        findOfType: vi.fn(() => ({ id: "classifier/test" })),
+        classify,
+      },
+      { decideModel: null },
+    );
+    const result = await toolCall?.(
+      {
+        type: "tool_call",
+        toolCallId: "t-unconfigured",
+        toolName: "read",
+        input: { path: "x" },
+      },
+      ctx,
+    );
+    expect(classify).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 });

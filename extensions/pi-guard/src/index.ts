@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ensureDefaultDecideConfig } from "@hollowheap/policy";
 import { createCommands } from "./commands.js";
 import { createToolHandlers } from "./decisions.js";
 import { registerBuiltins, registerModeCommands } from "./mode.js";
@@ -11,6 +12,7 @@ import {
 export { AUDIT_TYPE, formatModeBadge } from "./state.js";
 
 export default function (pi: ExtensionAPI): void {
+  ensureDefaultDecideConfig();
   registerBuiltins();
   const state = createGuardState(pi.events);
   const tools = createToolHandlers(pi, state);

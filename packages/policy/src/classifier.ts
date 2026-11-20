@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   ExtensionContext,
@@ -10,7 +10,7 @@ import { errorMessage } from "@hollowheap/core/format";
 import { isRecord } from "@hollowheap/core/records";
 import type { Tag } from "@hollowheap/core/types";
 import { recordAuxiliaryUsage } from "@hollowheap/core/usage";
-import { readToolTarget } from "./targets.js";
+import { readCommandArg, readToolTarget } from "./targets.js";
 
 export type ClassifierVerdict =
   | { kind: "block" }
@@ -20,6 +20,27 @@ export interface ClassifyToolCallOptions {
   agentDir?: string;
   appendEntry?: (customType: string, data: unknown) => void;
   emitEvent?: (event: string, data?: unknown) => void;
+}
+
+export function ensureDefaultDecideConfig(agentDir?: string): void {
+  let dir = agentDir;
+  if (dir === undefined) {
+    try {
+      dir = getAgentDir();
+    } catch {
+      return;
+    }
+  }
+  if (!dir) return;
+  const decidePath = join(dir, "decide.json");
+  const legacyPath = join(dir, "classifier.json");
+  if (existsSync(decidePath) || existsSync(legacyPath)) return;
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(decidePath, "{}\n", { flag: "wx", mode: 0o600 });
+  } catch {
+    // Best-effort; ignore EEXIST or read-only directories.
+  }
 }
 
 function readConfiguredClassifierModel(
@@ -93,29 +114,21 @@ export async function classifyToolCall(
     return undefined;
   }
 
+  const configured = readConfiguredClassifierModel(options.agentDir);
+  if (configured === undefined) return undefined;
+
+  const slash = configured.indexOf("/");
+  if (slash <= 0 || slash >= configured.length - 1) return undefined;
+  const provider = configured.slice(0, slash);
+  const id = configured.slice(slash + 1);
+
   let model: unknown;
-  let modelId = "typesafe/jev-latest";
+  let modelId = configured;
   try {
-    const configured = readConfiguredClassifierModel(options.agentDir);
-    if (
-      configured !== undefined &&
-      typeof registry.getModelOfType === "function"
-    ) {
-      const slash = configured.indexOf("/");
-      if (slash > 0 && slash < configured.length - 1) {
-        const provider = configured.slice(0, slash);
-        const id = configured.slice(slash + 1);
-        model = registry.getModelOfType("classifier", provider, id);
-        if (model !== undefined && model !== null) {
-          modelId = configured;
-        }
-      }
-    }
-    if (
-      (model === undefined || model === null) &&
-      typeof registry.findOfType === "function"
-    ) {
-      model = registry.findOfType("classifier", "typesafe", "jev-latest");
+    if (typeof registry.getModelOfType === "function") {
+      model = registry.getModelOfType("classifier", provider, id);
+    } else if (typeof registry.findOfType === "function") {
+      model = registry.findOfType("classifier", provider, id);
     }
   } catch (error) {
     return {
@@ -138,7 +151,12 @@ export async function classifyToolCall(
         : model.id.trim();
   }
 
-  const target = readToolTarget(event.toolName, event.input) ?? event.toolName;
+  const rawTarget =
+    tag === "shell"
+      ? readCommandArg(event.input)
+      : readToolTarget(event.toolName, event.input);
+  const target =
+    rawTarget !== undefined && rawTarget !== "" ? rawTarget : event.toolName;
   const payload = {
     state: {
       tool: event.toolName,
