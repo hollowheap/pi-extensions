@@ -96,6 +96,10 @@ function stripLeadingAnsiAndText(line: string, plainPrefix: string): string {
   while (line[i] === "\x1b" && line[i + 1] === "[") {
     const end = line.indexOf("m", i + 2);
     if (end === -1) break;
+    const params = line.slice(i + 2, end);
+    if (params !== "" && params !== "0" && params !== "39" && params !== "49") {
+      break;
+    }
     i = end + 1;
   }
   return line.slice(i);
@@ -219,16 +223,19 @@ export function renderMarkdown(
   const paddingX = options.paddingX ?? 0;
   const paddingY = options.paddingY ?? 0;
   const normalized = normalizeAgentMarkdown(markdown);
+  const contentWidth = Math.max(1, width - paddingX * 2);
   const rawLines = new Markdown(
     normalized,
-    paddingX,
+    0,
     paddingY,
     markdownTheme(theme, colored),
     options.defaultTextStyle,
     options.markdownOptions,
-  ).render(width);
-  const contentWidth = Math.max(1, width - paddingX * 2);
-  return styleRenderedLines(rawLines, contentWidth, theme, colored);
+  ).render(contentWidth);
+  const styled = styleRenderedLines(rawLines, contentWidth, theme, colored);
+  if (paddingX <= 0) return styled;
+  const pad = " ".repeat(paddingX);
+  return styled.map((line) => `${pad}${line}`);
 }
 
 export class StyledMarkdown implements Component {

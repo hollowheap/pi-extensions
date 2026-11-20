@@ -1,7 +1,7 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
 import { afterEach, describe, expect, it } from "vitest";
-import { boxFrame, getFrameInnerWidth } from "../src/frame.js";
+import { boxFrame, framePanelLines, getFrameInnerWidth } from "../src/frame.js";
 import {
   bindHostOutputPadding,
   resetActiveTuiConfig,
@@ -39,8 +39,20 @@ describe("boxFrame", () => {
     const dashedLines = boxFrame(["hello"], 20, mockTheme, undefined, {
       borderStyle: "dashed",
     });
-    expect(dashedLines[0]).toContain("┈");
-    expect(dashedLines[1]?.startsWith("┊")).toBe(true);
+    expect(dashedLines[0]?.startsWith("┌┄")).toBe(true);
+    expect(dashedLines[0]?.endsWith("┐")).toBe(true);
+    expect(dashedLines[1]?.startsWith("┆")).toBe(true);
+    expect(dashedLines[2]?.startsWith("└┄")).toBe(true);
+    expect(dashedLines[2]?.endsWith("┘")).toBe(true);
+
+    const dottedLines = boxFrame(["hello"], 20, mockTheme, undefined, {
+      borderStyle: "dotted",
+    });
+    expect(dottedLines[0]?.startsWith("┌┈")).toBe(true);
+    expect(dottedLines[0]?.endsWith("┐")).toBe(true);
+    expect(dottedLines[1]?.startsWith("┊")).toBe(true);
+    expect(dottedLines[2]?.startsWith("└┈")).toBe(true);
+    expect(dottedLines[2]?.endsWith("┘")).toBe(true);
   });
 
   it("handles none border and surface styles with borderless host padding + 1", () => {
@@ -58,13 +70,13 @@ describe("boxFrame", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "rounded",
-      overlaySurface: "contrast",
+      overlaySurface: "surface",
     });
     const lines = boxFrame(["row"], 12, mockTheme);
     expect(lines).toEqual([
-      "[bg:selectedBg]╭──────────╮[/bg]",
-      "[bg:selectedBg]│ row      │[/bg]",
-      "[bg:selectedBg]╰──────────╯[/bg]",
+      "[bg:customMessageBg]╭──────────╮[/bg]",
+      "[bg:customMessageBg]│ row      │[/bg]",
+      "[bg:customMessageBg]╰──────────╯[/bg]",
     ]);
     expect(getFrameInnerWidth(12)).toBe(8);
 
@@ -72,9 +84,9 @@ describe("boxFrame", () => {
     try {
       expect(getFrameInnerWidth(12)).toBe(8);
       expect(boxFrame(["row"], 12, mockTheme)).toEqual([
-        "[bg:selectedBg]╭──────────╮[/bg]",
-        "[bg:selectedBg]│ row      │[/bg]",
-        "[bg:selectedBg]╰──────────╯[/bg]",
+        "[bg:customMessageBg]╭──────────╮[/bg]",
+        "[bg:customMessageBg]│ row      │[/bg]",
+        "[bg:customMessageBg]╰──────────╯[/bg]",
       ]);
     } finally {
       restore();
@@ -83,7 +95,7 @@ describe("boxFrame", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
       borderStyle: "sharp",
-      overlaySurface: "contrast",
+      overlaySurface: "surface",
       colored: false,
     });
     const uncolored = boxFrame(["row"], 12, mockTheme);
@@ -106,4 +118,51 @@ it("uses Pi's output padding for the box and its content width", () => {
   } finally {
     restore();
   }
+});
+
+describe("framePanelLines", () => {
+  it("keeps outputPad horizontal only without adding vertical padding rows", () => {
+    const lines = framePanelLines(["hello"], 16, mockTheme, {
+      borderStyle: "rounded",
+      accentStripe: false,
+      outputPad: 1,
+      stateToken: "toolSuccessBg",
+      includeTop: true,
+      includeBottom: true,
+      colored: false,
+    });
+    expect(lines).toEqual([
+      "╭──────────────╮",
+      "│ hello        │",
+      "╰──────────────╯",
+    ]);
+  });
+
+  it("preserves border-width padding with spaces when borderStyle is none", () => {
+    const bordered = framePanelLines(["hello"], 16, mockTheme, {
+      borderStyle: "rounded",
+      accentStripe: false,
+      outputPad: 1,
+      stateToken: "toolSuccessBg",
+      includeTop: true,
+      includeBottom: true,
+      colored: false,
+    });
+    const borderless = framePanelLines(["hello"], 16, mockTheme, {
+      borderStyle: "none",
+      accentStripe: false,
+      outputPad: 1,
+      stateToken: "toolSuccessBg",
+      includeTop: true,
+      includeBottom: true,
+      colored: false,
+    });
+    expect(borderless).toHaveLength(bordered.length);
+    expect(borderless).toEqual([
+      " ".repeat(16),
+      "  hello         ",
+      " ".repeat(16),
+    ]);
+    for (const line of borderless) expect(visibleWidth(line)).toBe(16);
+  });
 });

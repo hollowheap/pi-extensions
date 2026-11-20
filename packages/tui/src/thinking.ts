@@ -1,15 +1,21 @@
 import {
   AssistantMessageComponent,
   type ExtensionAPI,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+  type DefaultTextStyle,
+  Markdown,
+  type MarkdownOptions,
+  MouseRegion,
   foregroundAnsi,
   mixColors,
   rgbColor,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import type { TuiConfig } from "@hollowheap/core/tui-config";
+import type { ShimmerSpeed, TuiConfig } from "@hollowheap/core/tui-config";
+import { renderMarkdown } from "./markdown.js";
 import { isWorkingTheme } from "./spinner.js";
 import { getActiveTuiConfig } from "./state.js";
 
@@ -17,6 +23,17 @@ const RESET_FG = "\x1b[39m";
 const DEFAULT_SHIMMER_BAND = 10;
 /** Base shimmer frame interval; the sweep accelerates with line length. */
 export const SHIMMER_BASE_INTERVAL_MS = 45;
+export const SHIMMER_SPEED_INTERVALS_MS: Readonly<
+  Record<ShimmerSpeed, number>
+> = {
+  slow: 80,
+  normal: SHIMMER_BASE_INTERVAL_MS,
+  fast: 24,
+};
+
+export function getShimmerIntervalMs(speed: ShimmerSpeed = "normal"): number {
+  return SHIMMER_SPEED_INTERVALS_MS[speed] ?? SHIMMER_BASE_INTERVAL_MS;
+}
 const SHIMMER_ACCELERATION_CHARS = 60;
 const MAX_SHIMMER_SPEED = 6;
 
@@ -180,11 +197,11 @@ export interface ThinkingShimmerAnimator {
  */
 export function createThinkingShimmerAnimator(
   target: ThinkingShimmerRedrawTarget | undefined,
-  options?: { intervalMs?: number },
+  options?: { intervalMs?: number; speed?: ShimmerSpeed },
 ): ThinkingShimmerAnimator {
   const intervalMs = Math.max(
     1,
-    options?.intervalMs ?? SHIMMER_BASE_INTERVAL_MS,
+    options?.intervalMs ?? getShimmerIntervalMs(options?.speed),
   );
   let step = 0;
   let disposed = false;
@@ -213,23 +230,78 @@ type MarkdownTransformer = Parameters<
   ExtensionAPI["registerMarkdownTransformer"]
 >[0];
 const THINKING_VISIBILITY = Symbol.for("@hollowheap/tui/thinking-visibility");
+const STYLED_THINKING_MARKDOWN = Symbol.for(
+  "@hollowheap/tui/styled-thinking-markdown",
+);
+
+function styleThinkingMarkdownChild(
+  child: Markdown,
+  getTheme: () => Theme | undefined,
+): void {
+  if (Reflect.get(child, STYLED_THINKING_MARKDOWN) === true) return;
+  Reflect.set(child, STYLED_THINKING_MARKDOWN, true);
+  const originalRender = child.render.bind(child);
+  child.render = (width: number): string[] => {
+    const cfg = getActiveTuiConfig();
+    const theme = getTheme();
+    const isOneLine =
+      cfg.thinkingVerbosity === "medium" || cfg.thinkingVerbosity === "minimal";
+    if (!cfg.markdownRender || isOneLine || !theme) {
+      return originalRender(width);
+    }
+    const rawText = Reflect.get(child, "text");
+    if (typeof rawText !== "string") {
+      return originalRender(width);
+    }
+    const paddingX = Reflect.get(child, "paddingX");
+    const paddingY = Reflect.get(child, "paddingY");
+    const defaultTextStyle = Reflect.get(child, "defaultTextStyle") as
+      | DefaultTextStyle
+      | undefined;
+    const markdownOptions = Reflect.get(child, "markdownOptions") as
+      | MarkdownOptions
+      | undefined;
+    const safePaddingX = typeof paddingX === "number" ? paddingX : 0;
+    const safePaddingY = typeof paddingY === "number" ? paddingY : 0;
+    const contentWidth = Math.max(1, width - safePaddingX * 2);
+    const transformed =
+      typeof markdownOptions?.transform === "function"
+        ? markdownOptions.transform(rawText, contentWidth)
+        : rawText;
+    if (transformed === "") return [];
+    return renderMarkdown(transformed, width, theme, {
+      colored: cfg.colored,
+      paddingX: safePaddingX,
+      paddingY: safePaddingY,
+      defaultTextStyle,
+    });
+  };
+}
 
 /** Apply our display preference before Pi chooses its native thinking component. */
 export function installThinkingVisibility(
   transformer: MarkdownTransformer,
+  getTheme?: () => Theme | undefined,
 ): void {
   const prototype = AssistantMessageComponent.prototype;
   const registered = Reflect.get(prototype, THINKING_VISIBILITY) as
-    | WeakSet<MarkdownTransformer>
+    | {
+        transformers: WeakSet<MarkdownTransformer>;
+        getTheme: () => Theme | undefined;
+      }
     | undefined;
   if (registered) {
-    registered.add(transformer);
+    registered.transformers.add(transformer);
+    if (getTheme) registered.getTheme = getTheme;
     return;
   }
 
-  const transformers = new WeakSet([transformer]);
+  const state = {
+    transformers: new WeakSet([transformer]),
+    getTheme: getTheme ?? (() => undefined),
+  };
   Reflect.defineProperty(prototype, THINKING_VISIBILITY, {
-    value: transformers,
+    value: state,
   });
   const updateContent = prototype.updateContent;
   prototype.updateContent = function (message, streaming) {
@@ -242,7 +314,7 @@ export function installThinkingVisibility(
     if (
       typeof hostHidden !== "boolean" ||
       !Array.isArray(activeTransformers) ||
-      !activeTransformers.some((fn) => transformers.has(fn)) ||
+      !activeTransformers.some((fn) => state.transformers.has(fn)) ||
       !(overrides instanceof Map)
     ) {
       updateContent.call(this, message, streaming);
@@ -261,6 +333,22 @@ export function installThinkingVisibility(
       updateContent.call(this, message, streaming);
     } finally {
       Reflect.set(this, "hideThinkingBlock", hostHidden);
+    }
+
+    const contentContainer = Reflect.get(this, "contentContainer") as
+      | { children?: unknown[] }
+      | undefined;
+    if (!Array.isArray(contentContainer?.children)) return;
+    for (const child of contentContainer.children) {
+      if (!(child instanceof MouseRegion)) continue;
+      const inner = Reflect.get(child, "child");
+      if (!(inner instanceof Markdown)) continue;
+      const style = Reflect.get(inner, "defaultTextStyle") as
+        | DefaultTextStyle
+        | undefined;
+      if (style?.italic === true) {
+        styleThinkingMarkdownChild(inner, () => state.getTheme());
+      }
     }
   };
 }

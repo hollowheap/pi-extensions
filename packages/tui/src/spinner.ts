@@ -1,5 +1,8 @@
 import { type Color, foregroundAnsi, mixColors } from "@earendil-works/pi-tui";
-import type { LoadingIndicatorStyle } from "@hollowheap/core/tui-config";
+import type {
+  LoadingIndicatorColor,
+  LoadingIndicatorStyle,
+} from "@hollowheap/core/tui-config";
 
 const GLYPHS = "0123456789abcdef~!@#$%^&*";
 const COLUMNS = 8;
@@ -46,6 +49,11 @@ export interface WorkingIndicatorFrames {
   intervalMs: number;
 }
 
+export interface WorkingIndicatorOptions {
+  color?: LoadingIndicatorColor;
+  fade?: boolean;
+}
+
 /** Check whether an object provides the color tokens required by dynamic gradient indicators. */
 export function isWorkingTheme(theme: unknown): theme is WorkingTheme {
   if (typeof theme !== "object" || theme === null) return false;
@@ -73,11 +81,26 @@ function sampleGradient(stops: readonly Color[], position: number): Color {
   return mixColors(from, to, scaled - Math.floor(scaled));
 }
 
+function resolveIndicatorColor(
+  theme: WorkingTheme,
+  stops: readonly Color[],
+  position: number,
+  colorMode: LoadingIndicatorColor,
+): Color {
+  if (colorMode === "gradient") {
+    return sampleGradient(stops, position);
+  }
+  return theme.colors[colorMode] ?? theme.colors.accent;
+}
+
 export function crushWorkingIndicator(
   theme: WorkingTheme,
   colored = true,
+  options?: WorkingIndicatorOptions,
 ): WorkingIndicatorFrames {
   const mode = theme.getColorMode();
+  const colorMode = options?.color ?? "gradient";
+  const fade = options?.fade ?? true;
   const stops = GRADIENT_TOKENS.map((token) => theme.colors[token]);
   const frames = Array.from({ length: FRAME_COUNT }, (_, frame) => {
     // Cosine breath from 0 to 1 and back over ~1.6s.
@@ -90,15 +113,15 @@ export function crushWorkingIndicator(
         text += glyph;
         continue;
       }
-      const gradient = sampleGradient(
+      const target = resolveIndicatorColor(
+        theme,
         stops,
         position + (column / (COLUMNS - 1)) * 0.5,
+        colorMode,
       );
-      const color = mixColors(
-        theme.colors.muted,
-        gradient,
-        0.35 + 0.65 * breath,
-      );
+      const color = fade
+        ? mixColors(theme.colors.muted, target, 0.35 + 0.65 * breath)
+        : target;
       text += `${foregroundAnsi(color, mode)}${glyph}`;
     }
     return colored ? `${text}${RESET_FG}` : text;
@@ -111,18 +134,26 @@ function tintSimpleFrames(
   intervalMs: number,
   theme: unknown,
   colored: boolean,
+  options?: WorkingIndicatorOptions,
 ): WorkingIndicatorFrames {
   if (!colored || !isWorkingTheme(theme)) {
     return { frames: [...glyphs], intervalMs };
   }
   const mode = theme.getColorMode();
+  const colorMode = options?.color ?? "gradient";
+  const fade = options?.fade ?? true;
   const stops = [
     theme.colors.accent,
     theme.colors.borderAccent,
     theme.colors.thinkingText,
   ] as const;
   const frames = glyphs.map((frame, index) => {
-    const color = sampleGradient(stops, index / Math.max(1, glyphs.length));
+    const position = index / Math.max(1, glyphs.length);
+    const target = resolveIndicatorColor(theme, stops, position, colorMode);
+    const breath = (1 - Math.cos(position * Math.PI * 2)) / 2;
+    const color = fade
+      ? mixColors(theme.colors.muted, target, 0.25 + 0.75 * breath)
+      : target;
     return `${foregroundAnsi(color, mode)}${frame}${RESET_FG}`;
   });
   return { frames, intervalMs };
@@ -131,6 +162,7 @@ function tintSimpleFrames(
 type FixedSpinner = Exclude<LoadingIndicatorStyle, "host" | "crush">;
 const SPINNER_PRESETS = {
   hidden: [[], 1000],
+  claude: [["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"], 100],
   braille: [["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 80],
   pulse: [["∙", "•", "●", "◉", "●", "•"], 120],
   arc: [["◜", "◠", "◝", "◞", "◡", "◟"], 100],
@@ -161,15 +193,18 @@ export function createWorkingIndicator(
   style: LoadingIndicatorStyle,
   theme?: unknown,
   colored = true,
+  options?: WorkingIndicatorOptions,
 ): WorkingIndicatorFrames | undefined {
   if (style === "host") return undefined;
 
   if (Object.hasOwn(SPINNER_PRESETS, style)) {
     const [frames, intervalMs] = SPINNER_PRESETS[style as FixedSpinner];
-    return tintSimpleFrames(frames, intervalMs, theme, colored);
+    return tintSimpleFrames(frames, intervalMs, theme, colored, options);
   }
 
-  if (isWorkingTheme(theme)) return crushWorkingIndicator(theme, colored);
+  if (isWorkingTheme(theme)) {
+    return crushWorkingIndicator(theme, colored, options);
+  }
   const [frames, intervalMs] = SPINNER_PRESETS.braille;
-  return tintSimpleFrames(frames, intervalMs, theme, colored);
+  return tintSimpleFrames(frames, intervalMs, theme, colored, options);
 }

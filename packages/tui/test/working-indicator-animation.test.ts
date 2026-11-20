@@ -17,9 +17,23 @@ describe("animated working indicator", () => {
     expect(createWorkingIndicator("host", undefined, false)).toBeUndefined();
     const hidden = createWorkingIndicator("hidden", undefined, false);
     const pulse = createWorkingIndicator("pulse", undefined, false);
+    const claude = createWorkingIndicator("claude", undefined, false);
     expect(hidden?.intervalMs).toBe(1_000);
     expect(pulse?.intervalMs).toBe(120);
     expect(pulse?.frames).toEqual(["∙", "•", "●", "◉", "●", "•"]);
+    expect(claude?.intervalMs).toBe(100);
+    expect(claude?.frames).toEqual([
+      "·",
+      "✢",
+      "✳",
+      "✶",
+      "✻",
+      "✽",
+      "✻",
+      "✶",
+      "✳",
+      "✢",
+    ]);
   });
 
   it("an unknown style falls back to braille frames", () => {

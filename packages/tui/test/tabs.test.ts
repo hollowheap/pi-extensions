@@ -66,4 +66,38 @@ describe("TabbedContent", () => {
     tabbed.focused = false;
     expect(first.content.focused).toBe(false);
   });
+
+  it("renders active tab with inverted fg/bg instead of square brackets and switches tabs on mouse click", () => {
+    const tabbed = new TabbedContent([
+      makeFocusableTab("One"),
+      makeFocusableTab("Two"),
+      makeFocusableTab("Three"),
+    ]);
+
+    const initial = tabbed.render(40);
+    expect(initial[0]).toContain("\x1b[7m One \x1b[27m");
+    expect(initial[0]).not.toContain("[One]");
+
+    // " One " is cols 0..4, sep "  " is 5..6, "Two" is cols 7..9
+    expect(
+      tabbed.handleMouse({
+        type: "click",
+        button: "left",
+        x: 8,
+        y: 0,
+        screenX: 8,
+        screenY: 0,
+        width: 40,
+        height: 10,
+      } as never),
+    ).toEqual({ handled: true });
+    expect(tabbed.activeIndex).toBe(1);
+
+    const second = tabbed.render(40);
+    expect(second[0]).toContain("\x1b[7m Two \x1b[27m");
+
+    // SGR mouse click on "Three" (1-based col/row): "One" (0..2), "  " (3..4), " Two " (5..9), "  " (10..11), "Three" (12..16)
+    tabbed.handleInput("\x1b[<0;14;1M");
+    expect(tabbed.activeIndex).toBe(2);
+  });
 });

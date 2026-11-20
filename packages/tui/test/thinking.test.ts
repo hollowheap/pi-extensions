@@ -1,13 +1,22 @@
 import {
+  AssistantMessageComponent,
+  initTheme,
+} from "@earendil-works/pi-coding-agent";
+import {
   rgbColor,
   stripTerminalSequences,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "../src/state.js";
 import {
   SHIMMER_BASE_INTERVAL_MS,
+  SHIMMER_SPEED_INTERVALS_MS,
   createThinkingShimmerAnimator,
   formatOneLineThinkingText,
+  getShimmerIntervalMs,
+  installThinkingVisibility,
   renderThinkingShimmerFrame,
   shimmerSpeed,
   stripMarkdownInline,
@@ -64,6 +73,39 @@ describe("thinking display helpers", () => {
     expect(shimmerSpeed(10_000)).toBe(6);
   });
 
+  it("maps 3-level shimmer speed settings to intervals and drives animator cadence", () => {
+    expect(getShimmerIntervalMs("slow")).toBe(SHIMMER_SPEED_INTERVALS_MS.slow);
+    expect(getShimmerIntervalMs("normal")).toBe(SHIMMER_BASE_INTERVAL_MS);
+    expect(getShimmerIntervalMs("fast")).toBe(SHIMMER_SPEED_INTERVALS_MS.fast);
+    expect(SHIMMER_SPEED_INTERVALS_MS.slow).toBeGreaterThan(
+      SHIMMER_SPEED_INTERVALS_MS.normal,
+    );
+    expect(SHIMMER_SPEED_INTERVALS_MS.normal).toBeGreaterThan(
+      SHIMMER_SPEED_INTERVALS_MS.fast,
+    );
+
+    vi.useFakeTimers();
+    try {
+      const slowRender = vi.fn();
+      const fastRender = vi.fn();
+      const slow = createThinkingShimmerAnimator(
+        { requestRender: slowRender },
+        { speed: "slow" },
+      );
+      const fast = createThinkingShimmerAnimator(
+        { requestRender: fastRender },
+        { speed: "fast" },
+      );
+      vi.advanceTimersByTime(SHIMMER_SPEED_INTERVALS_MS.slow);
+      expect(slow.step).toBe(1);
+      expect(fast.step).toBeGreaterThan(slow.step);
+      slow.dispose();
+      fast.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("animator advances frames and drives redraws until disposed", () => {
     vi.useFakeTimers();
     try {
@@ -99,5 +141,69 @@ describe("thinking display helpers", () => {
     ).toBe("Inspecting border and clip in editor now");
     expect(stripMarkdownInline("snake_case stays")).toBe("snake_case stays");
     expect(stripMarkdownInline("*emphasis* text")).toBe("emphasis text");
+  });
+});
+
+describe("installThinkingVisibility styled markdown", () => {
+  afterEach(() => {
+    resetActiveTuiConfig();
+  });
+
+  it("renders expanded thinking steps with render-markdown.nvim-style code fences and bullets", () => {
+    initTheme();
+    const mockTheme = {
+      fg: (_token: string, text: string) => text,
+      bold: (text: string) => text,
+      italic: (text: string) => text,
+      strikethrough: (text: string) => text,
+      underline: (text: string) => text,
+    } as never;
+    const transformer = (md: string) => md;
+    installThinkingVisibility(transformer, () => mockTheme);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      markdownRender: true,
+      thinkingVerbosity: "high",
+      colored: false,
+    });
+
+    const component = new AssistantMessageComponent(
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "- step one\n\n```ts\nconst x = 1;\n```",
+          },
+        ],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: "claude-3-5-sonnet",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: Date.now(),
+      },
+      false,
+      undefined,
+      undefined,
+      1,
+      [transformer],
+    );
+
+    const rendered = component
+      .render(50)
+      .map(stripTerminalSequences)
+      .join("\n");
+    expect(rendered).toContain("● step one");
+    expect(rendered).toContain("╭─ ts");
+    expect(rendered).toContain("│ const x = 1;");
+    expect(rendered).toContain("╰──");
   });
 });

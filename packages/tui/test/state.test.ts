@@ -113,7 +113,7 @@ describe("tui state", () => {
     );
     expect(diagnostics).toEqual([]);
     expect(loaded.borderStyle).toBe("square");
-    expect(loaded.overlaySurface).toBe("contrast");
+    expect(loaded.overlaySurface).toBe("surface");
     expect(getActiveTuiConfig()).toEqual(loaded);
   });
 

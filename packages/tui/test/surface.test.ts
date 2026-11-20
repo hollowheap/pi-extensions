@@ -17,7 +17,6 @@ describe("surface", () => {
     expect(getSurfaceBgToken("transparent")).toBeUndefined();
     expect(getSurfaceBgToken("surface")).toBe("customMessageBg");
     expect(getSurfaceBgToken("card")).toBe("userMessageBg");
-    expect(getSurfaceBgToken("contrast")).toBe("selectedBg");
   });
 
   it("pads to width and wraps with theme.bg when surface token is active", () => {
@@ -31,8 +30,8 @@ describe("surface", () => {
     expect(bg).toHaveBeenCalledWith("userMessageBg", "hi    ");
     expect(card).toBe("[userMessageBg:hi    ]");
 
-    const truncated = paintSurfaceLine("hello world", 5, theme, "contrast");
-    expect(stripTerminalSequences(truncated)).toBe("[selectedBg:hello]");
+    const truncated = paintSurfaceLine("hello world", 5, theme, "surface");
+    expect(stripTerminalSequences(truncated)).toBe("[customMessageBg:hello]");
     expect(visibleWidth("hello")).toBe(5);
   });
 

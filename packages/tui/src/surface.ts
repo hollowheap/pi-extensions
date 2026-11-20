@@ -65,8 +65,6 @@ export function getSurfaceBgToken(
       return "customMessageBg";
     case "card":
       return "userMessageBg";
-    case "contrast":
-      return "selectedBg";
     default:
       return undefined;
   }

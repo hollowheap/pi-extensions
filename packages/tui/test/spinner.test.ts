@@ -47,4 +47,44 @@ describe("crushWorkingIndicator", () => {
     expect(monoBars?.frames).toHaveLength(14);
     expect(monoBars?.frames[0]).toBe("▁▂▃▄");
   });
+
+  it("supports the claude popping preset and color/fade options", () => {
+    const claudeMono = createWorkingIndicator("claude", theme, false);
+    expect(claudeMono?.intervalMs).toBe(100);
+    expect(claudeMono?.frames).toEqual([
+      "·",
+      "✢",
+      "✳",
+      "✶",
+      "✻",
+      "✽",
+      "✻",
+      "✶",
+      "✳",
+      "✢",
+    ]);
+
+    const claudeFade = createWorkingIndicator("claude", theme, true, {
+      color: "accent",
+      fade: true,
+    });
+    const claudeSolid = createWorkingIndicator("claude", theme, true, {
+      color: "accent",
+      fade: false,
+    });
+    expect(claudeFade?.frames).toHaveLength(10);
+    expect(claudeFade?.frames[0]).not.toBe(claudeSolid?.frames[0]);
+    expect(stripTerminalSequences(claudeFade?.frames[5] ?? "")).toBe("✽");
+    expect(claudeFade?.frames[5]).toBe(claudeSolid?.frames[5]);
+
+    const crushSolid = createWorkingIndicator("crush", theme, true, {
+      color: "success",
+      fade: false,
+    });
+    const crushFade = createWorkingIndicator("crush", theme, true, {
+      color: "success",
+      fade: true,
+    });
+    expect(crushSolid?.frames[0]).not.toBe(crushFade?.frames[0]);
+  });
 });
