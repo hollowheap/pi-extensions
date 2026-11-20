@@ -41,7 +41,13 @@ describe("codemode web tools and free pricing", () => {
     const fetch = createWebFetchTool();
     expect(search.name).toBe("web_search");
     expect(fetch.name).toBe("web_fetch");
-    expect(search.parameters.required).toContain("query");
-    expect(fetch.parameters.required).toContain("url");
+    const searchObject = search.parameters.anyOf.find(
+      (schema: { type?: string }) => schema.type === "object",
+    ) as { required?: string[] } | undefined;
+    const fetchObject = fetch.parameters.anyOf.find(
+      (schema: { type?: string }) => schema.type === "object",
+    ) as { required?: string[] } | undefined;
+    expect(searchObject?.required).toContain("query");
+    expect(fetchObject?.required).toContain("url");
   });
 });

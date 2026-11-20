@@ -21,10 +21,21 @@ describe("pi-web registers exactly web_search and web_fetch", () => {
     expect(names).toEqual(["web_search", "web_fetch"]);
     const [search, fetch] = pi.registerTool.mock.calls.map(
       ([tool]) =>
-        tool as { parameters: { properties?: Record<string, unknown> } },
+        tool as {
+          parameters: {
+            anyOf: Array<{
+              type?: string;
+              properties?: Record<string, unknown>;
+            }>;
+          };
+        },
     );
-    expect(search.parameters.properties).toHaveProperty("query");
-    expect(fetch.parameters.properties).toHaveProperty("url");
+    expect(
+      search.parameters.anyOf.find((s) => s.type === "object")?.properties,
+    ).toHaveProperty("query");
+    expect(
+      fetch.parameters.anyOf.find((s) => s.type === "object")?.properties,
+    ).toHaveProperty("url");
   });
 
   it("registers the web command and session lifecycle hooks", () => {

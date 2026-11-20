@@ -13,15 +13,19 @@ describe("both web tools declare codemode exposure", () => {
     expect(search.name).toBe("web_search");
     expect(fetch.name).toBe("web_fetch");
     const searchParams = search.parameters as {
-      properties: Record<string, unknown>;
+      anyOf: Array<{ type?: string; properties?: Record<string, unknown> }>;
     };
     const fetchParams = fetch.parameters as {
-      properties: Record<string, unknown>;
+      anyOf: Array<{ type?: string; properties?: Record<string, unknown> }>;
     };
-    expect(searchParams.properties).toHaveProperty("query");
-    expect(searchParams.properties).toHaveProperty("max_results");
-    expect(fetchParams.properties).toHaveProperty("url");
-    expect(fetchParams.properties).toHaveProperty("max_chars");
+    expect(searchParams.anyOf.some((s) => s.type === "string")).toBe(true);
+    expect(fetchParams.anyOf.some((s) => s.type === "string")).toBe(true);
+    const searchObject = searchParams.anyOf.find((s) => s.type === "object");
+    const fetchObject = fetchParams.anyOf.find((s) => s.type === "object");
+    expect(searchObject?.properties).toHaveProperty("query");
+    expect(searchObject?.properties).toHaveProperty("max_results");
+    expect(fetchObject?.properties).toHaveProperty("url");
+    expect(fetchObject?.properties).toHaveProperty("max_chars");
   });
 
   it("returns an error result for empty query and url", async () => {

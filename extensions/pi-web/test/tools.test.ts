@@ -827,4 +827,45 @@ describe("tool renderers", () => {
       setCapabilities(previous);
     }
   });
+
+  it("accepts bare string shorthands for web_search and web_fetch", async () => {
+    const search = vi.fn().mockResolvedValue([searchResult(0)]);
+    const searchTool = createWebSearchTool({ search });
+    const searchRes = await searchTool.execute(
+      "1",
+      "pi coding agent",
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "pi coding agent",
+        maxResults: SEARCH_DEFAULT_RESULTS,
+      }),
+    );
+    expect(textOf(searchRes)).toContain("1. [t0](https://example.com/0)");
+
+    const fetch = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      finalUrl: "https://example.com",
+      contentType: "text/html",
+      content: "Hello bare fetch",
+      links: [],
+      media: [],
+      truncated: false,
+    });
+    const fetchTool = createWebFetchTool({ fetch });
+    const fetchRes = await fetchTool.execute(
+      "2",
+      "https://example.com",
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com" }),
+    );
+    expect(textOf(fetchRes)).toContain("Hello bare fetch");
+  });
 });

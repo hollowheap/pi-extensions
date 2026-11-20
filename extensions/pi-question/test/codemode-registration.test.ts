@@ -63,10 +63,18 @@ describe("lifecycle, schema, and handler seams", () => {
   it("the registered tool declares a question parameter schema", () => {
     const { pi } = piWithTools();
     const tool = pi.registerTool.mock.calls[0]?.[0] as {
-      parameters?: { properties?: Record<string, unknown> };
+      parameters?: {
+        anyOf?: Array<{
+          type?: string;
+          properties?: Record<string, unknown>;
+        }>;
+      };
     };
-    expect(tool.parameters?.properties?.questions).toBeDefined();
-    expect(tool.parameters?.properties?.prompt).toBeDefined();
+    const variants = tool.parameters?.anyOf ?? [];
+    expect(variants.some((v) => v.type === "array")).toBe(true);
+    const objVariant = variants.find((v) => v.type === "object");
+    expect(objVariant?.properties?.questions).toBeDefined();
+    expect(objVariant?.properties?.prompt).toBeDefined();
   });
 
   it("session_tree restores state without touching active tools", () => {

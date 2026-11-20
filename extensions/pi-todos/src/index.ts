@@ -119,47 +119,59 @@ export function createTodoTool(
     exposure: "codemode",
     promptGuidelines: [
       "Use tools.todo via codemode to track multi-step execution plans: create tasks before complex multi-step work, update status/complete as steps finish.",
-      "todo is codemode-only: call it as tools.todo({...}) inside a codemode script, never as a direct top-level tool.",
+      'todo is codemode-only: call it as tools.todo(["step 1", "step 2"]), tools.todo("list"), or tools.todo({...}) inside a codemode script, never as a direct top-level tool.',
     ],
-    parameters: Type.Object({
-      action: Type.Union([
-        Type.Literal("create"),
-        Type.Literal("complete"),
-        Type.Literal("delete"),
-        Type.Literal("list"),
-        Type.Literal("edit"),
-        Type.Literal("priority"),
-      ]),
-      tasks: Type.Optional(
-        Type.Array(Type.String(), {
-          description: "Task descriptions for create action.",
-        }),
-      ),
-      text: Type.Optional(
-        Type.String({
-          description: "Single task description for create or edit action.",
-        }),
-      ),
-      ids: Type.Optional(
-        Type.Array(Type.Integer({ minimum: 1 }), {
-          description: "Task IDs for complete or delete action.",
-        }),
-      ),
-      id: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          description:
-            "Single task ID for complete, delete, edit, or priority action.",
-        }),
-      ),
-      priority: Type.Optional(
-        Type.Union(
-          [Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")],
-          { description: "Priority level for priority action." },
+    parameters: Type.Union([
+      Type.Literal("list", { description: "List all todos shorthand." }),
+      Type.Array(Type.String(), {
+        description: "Task descriptions to create shorthand.",
+      }),
+      Type.Object({
+        action: Type.Union([
+          Type.Literal("create"),
+          Type.Literal("complete"),
+          Type.Literal("delete"),
+          Type.Literal("list"),
+          Type.Literal("edit"),
+          Type.Literal("priority"),
+        ]),
+        tasks: Type.Optional(
+          Type.Array(Type.String(), {
+            description: "Task descriptions for create action.",
+          }),
         ),
-      ),
-    }),
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+        text: Type.Optional(
+          Type.String({
+            description: "Single task description for create or edit action.",
+          }),
+        ),
+        ids: Type.Optional(
+          Type.Array(Type.Integer({ minimum: 1 }), {
+            description: "Task IDs for complete or delete action.",
+          }),
+        ),
+        id: Type.Optional(
+          Type.Integer({
+            minimum: 1,
+            description:
+              "Single task ID for complete, delete, edit, or priority action.",
+          }),
+        ),
+        priority: Type.Optional(
+          Type.Union(
+            [Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")],
+            { description: "Priority level for priority action." },
+          ),
+        ),
+      }),
+    ]),
+    async execute(_id, rawParams, _signal, _onUpdate, ctx) {
+      const params =
+        rawParams === "list"
+          ? { action: "list" as const }
+          : Array.isArray(rawParams)
+            ? { action: "create" as const, tasks: rawParams }
+            : rawParams;
       const current = getState();
       if (params.action === "list") {
         return toolTextResult(formatTodoList(current.todos), {

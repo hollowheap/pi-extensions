@@ -314,19 +314,34 @@ export function createWebSearchTool(
     description:
       "Search the web for current docs and results. Returns title, url, and snippet.",
     exposure: "codemode",
-    parameters: Type.Object({
-      query: Type.String({ minLength: 1 }),
-      max_results: Type.Optional(Type.Integer({ minimum: 1 })),
-    }),
+    promptGuidelines: [
+      'web_search is codemode-only: call it as tools.web_search("query") or tools.web_search({ query, max_results }) inside a codemode script.',
+    ],
+    parameters: Type.Union([
+      Type.String({ minLength: 1, description: "Search query shorthand." }),
+      Type.Object({
+        query: Type.String({ minLength: 1 }),
+        max_results: Type.Optional(Type.Integer({ minimum: 1 })),
+      }),
+    ]),
     renderCall(args, theme, context) {
       const text =
         context?.lastComponent instanceof Text
           ? context.lastComponent
           : new Text("", 0, 0);
-      const query = typeof args?.query === "string" ? args.query : "";
+      const query =
+        typeof args === "string"
+          ? args
+          : typeof args?.query === "string"
+            ? args.query
+            : "";
+      const maxResults =
+        typeof args === "object" && args !== null
+          ? args.max_results
+          : undefined;
       let line = `${theme.fg("toolTitle", theme.bold("web_search"))} ${theme.fg("accent", JSON.stringify(query))}`;
-      if (args?.max_results !== undefined) {
-        line += ` ${theme.fg("muted", `(limit ${args.max_results})`)}`;
+      if (maxResults !== undefined) {
+        line += ` ${theme.fg("muted", `(limit ${maxResults})`)}`;
       }
       text.setText(line);
       return text;
@@ -388,16 +403,20 @@ export function createWebSearchTool(
     },
     async execute(
       _toolCallId,
-      params: { query: string; max_results?: number },
+      params: string | { query: string; max_results?: number },
       signal?: AbortSignal,
       _onUpdate?: unknown,
       ctx?: ExtensionContext,
     ) {
-      const query = typeof params.query === "string" ? params.query.trim() : "";
+      const normalized =
+        typeof params === "string" ? { query: params } : params;
+      const query =
+        typeof normalized.query === "string" ? normalized.query.trim() : "";
       if (query === "") return errorResult("web_search", "query is required");
       if (
-        params.max_results !== undefined &&
-        (!Number.isInteger(params.max_results) || params.max_results < 1)
+        normalized.max_results !== undefined &&
+        (!Number.isInteger(normalized.max_results) ||
+          normalized.max_results < 1)
       ) {
         return errorResult(
           "web_search",
@@ -405,7 +424,7 @@ export function createWebSearchTool(
         );
       }
       const limit = Math.min(
-        params.max_results ?? SEARCH_DEFAULT_RESULTS,
+        normalized.max_results ?? SEARCH_DEFAULT_RESULTS,
         SEARCH_MAX_RESULTS,
       );
       try {
@@ -460,20 +479,33 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
     description:
       "Fetch a web page and return readable text, links, and media metadata.",
     exposure: "codemode",
-    parameters: Type.Object({
-      url: Type.String({ minLength: 1 }),
-      max_chars: Type.Optional(Type.Integer({ minimum: 1 })),
-    }),
+    promptGuidelines: [
+      'web_fetch is codemode-only: call it as tools.web_fetch("https://...") or tools.web_fetch({ url, max_chars }) inside a codemode script.',
+    ],
+    parameters: Type.Union([
+      Type.String({ minLength: 1, description: "URL to fetch shorthand." }),
+      Type.Object({
+        url: Type.String({ minLength: 1 }),
+        max_chars: Type.Optional(Type.Integer({ minimum: 1 })),
+      }),
+    ]),
     renderCall(args, theme, context) {
       const text =
         context?.lastComponent instanceof Text
           ? context.lastComponent
           : new Text("", 0, 0);
-      const url =
-        typeof args?.url === "string" ? sanitizeTerminalText(args.url) : "";
+      const rawUrl =
+        typeof args === "string"
+          ? args
+          : typeof args?.url === "string"
+            ? args.url
+            : "";
+      const url = sanitizeTerminalText(rawUrl);
+      const maxChars =
+        typeof args === "object" && args !== null ? args.max_chars : undefined;
       let line = `${theme.fg("toolTitle", theme.bold("web_fetch"))} ${theme.fg("accent", url)}`;
-      if (args?.max_chars !== undefined) {
-        line += ` ${theme.fg("muted", `(max ${args.max_chars} chars)`)}`;
+      if (maxChars !== undefined) {
+        line += ` ${theme.fg("muted", `(max ${maxChars} chars)`)}`;
       }
       text.setText(line);
       return text;
@@ -593,21 +625,23 @@ export function createWebFetchTool(deps: WebFetchDeps = {}, pi?: ExtensionAPI) {
     },
     async execute(
       _toolCallId,
-      params: { url: string; max_chars?: number },
+      params: string | { url: string; max_chars?: number },
       signal?: AbortSignal,
       _onUpdate?: unknown,
       ctx?: ExtensionContext,
     ) {
-      const url = typeof params.url === "string" ? params.url.trim() : "";
+      const normalized = typeof params === "string" ? { url: params } : params;
+      const url =
+        typeof normalized.url === "string" ? normalized.url.trim() : "";
       if (url === "") return errorResult("web_fetch", "url is required");
       if (
-        params.max_chars !== undefined &&
-        (!Number.isInteger(params.max_chars) || params.max_chars < 1)
+        normalized.max_chars !== undefined &&
+        (!Number.isInteger(normalized.max_chars) || normalized.max_chars < 1)
       ) {
         return errorResult("web_fetch", "max_chars must be a positive integer");
       }
       const limit = Math.min(
-        params.max_chars ?? FETCH_DEFAULT_CHARS,
+        normalized.max_chars ?? FETCH_DEFAULT_CHARS,
         FETCH_MAX_CHARS,
       );
       try {

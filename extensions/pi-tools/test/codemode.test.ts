@@ -166,4 +166,32 @@ describe("codemode utilities", () => {
     expect(reachesTools("batch", "read")).toEqual([]);
     expect(reachesTools("batch", { tool: "read" })).toEqual(["read"]);
   });
+
+  it("accepts a bare call array for batch and a bare string for compact_context", async () => {
+    const { execute, executeTool, reachesTools, compact, emit } = setup();
+    executeTool
+      .mockResolvedValueOnce(outcome("read", "alpha"))
+      .mockResolvedValueOnce(outcome("grep", "beta"));
+
+    const calls = [
+      { tool: "read", args: { path: "a.ts" } },
+      { tool: "grep", args: { pattern: "foo" } },
+    ];
+    expect(reachesTools("batch", calls)).toEqual(["read", "grep"]);
+
+    const batchRes = await execute("batch", calls);
+    expect(batchRes.structuredContent).toEqual({
+      results: [
+        { tool: "read", status: "ok", value: "alpha" },
+        { tool: "grep", status: "ok", value: "beta" },
+      ],
+    });
+
+    const compactRes = await execute("compact_context", "Keep auth decisions");
+    expect(compactRes.structuredContent).toEqual({ status: "queued" });
+    emit("agent_settled", { aborted: false });
+    expect(compact).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ customInstructions: "Keep auth decisions" }),
+    );
+  });
 });

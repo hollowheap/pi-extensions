@@ -190,13 +190,21 @@ describe("pi-web extension", () => {
     expect(pi.setActiveTools).not.toHaveBeenCalled();
 
     const search = pi.registerTool.mock.calls[0][0] as {
-      parameters: { properties?: Record<string, unknown> };
+      parameters: {
+        anyOf: Array<{ type?: string; properties?: Record<string, unknown> }>;
+      };
     };
     const fetch = pi.registerTool.mock.calls[1][0] as {
-      parameters: { properties?: Record<string, unknown> };
+      parameters: {
+        anyOf: Array<{ type?: string; properties?: Record<string, unknown> }>;
+      };
     };
-    expect(search.parameters.properties).toHaveProperty("query");
-    expect(fetch.parameters.properties).toHaveProperty("url");
+    expect(
+      search.parameters.anyOf.find((s) => s.type === "object")?.properties,
+    ).toHaveProperty("query");
+    expect(
+      fetch.parameters.anyOf.find((s) => s.type === "object")?.properties,
+    ).toHaveProperty("url");
   });
 
   it("persists WEB_HISTORY_TYPE on web_search/web_fetch and publishes snapshot", async () => {

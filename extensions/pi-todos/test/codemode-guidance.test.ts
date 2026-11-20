@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import extension from "../src/index.js";
+import extension, { createTodoTool } from "../src/index.js";
+import { emptyTodoState } from "../src/todos.js";
 
 function createMockPi() {
   const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> =
@@ -109,5 +110,43 @@ describe("gating, missing options, and lifecycle seams", () => {
     handlers.session_start?.({}, ctx);
 
     expect(setActiveTools).toHaveBeenCalledWith(["bash", "codemode"]);
+  });
+
+  it("accepts bare array create and bare 'list' shorthands on the todo tool", async () => {
+    let state = emptyTodoState();
+    const tool = createTodoTool(
+      () => state,
+      (next) => {
+        state = next;
+      },
+    );
+
+    const created = await tool.execute(
+      "1",
+      ["First task", "Second task"],
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect((created.content as Array<{ text: string }>)[0].text).toContain(
+      "First task",
+    );
+    expect((created.content as Array<{ text: string }>)[0].text).toContain(
+      "Second task",
+    );
+
+    const listed = await tool.execute(
+      "2",
+      "list",
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect((listed.content as Array<{ text: string }>)[0].text).toContain(
+      "First task",
+    );
+    expect((listed.content as Array<{ text: string }>)[0].text).toContain(
+      "Second task",
+    );
   });
 });

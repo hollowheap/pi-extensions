@@ -19,13 +19,14 @@ const concurrency = Type.Optional(
   Type.Integer({ minimum: 1, maximum: MAX_CONCURRENCY }),
 );
 
+const batchCall = Type.Object({ tool: toolName, args: toolArgs });
+const batchCallList = Type.Array(batchCall, boundedArray);
+
 const batchParameters = Type.Union([
+  batchCallList,
   Type.Object(
     {
-      calls: Type.Array(
-        Type.Object({ tool: toolName, args: toolArgs }),
-        boundedArray,
-      ),
+      calls: batchCallList,
       concurrency,
     },
     { additionalProperties: false },
@@ -94,11 +95,16 @@ const batch = defineTool({
   name: "batch",
   label: "Batch",
   description:
-    "Run up to 32 independent tool calls. Use { tool, args: [...] } for repeated calls to one tool or { calls: [{ tool, args }, ...] } for mixed tools. Returns one result per call in input order. Concurrency defaults to 4 and can be set from 1 to 8. Tool names are raw names from discovery.",
+    "Run up to 32 independent tool calls. Pass [{ tool, args }, ...] directly, { calls: [{ tool, args }, ...] } for mixed tools with options, or { tool, args: [...] } for repeated calls to one tool. Returns one result per call in input order. Concurrency defaults to 4 and can be set from 1 to 8. Tool names are raw names from discovery.",
   exposure: "codemode",
   parameters: batchParameters,
   outputSchema: Type.Object({ results: Type.Array(batchResult) }),
   reachesTools: (input) => {
+    if (Array.isArray(input)) {
+      return input.flatMap((call) =>
+        typeof call?.tool === "string" ? [call.tool] : [],
+      );
+    }
     if (typeof input !== "object" || input === null) return [];
     if (typeof input.tool === "string") return [input.tool];
     return Array.isArray(input.calls)
@@ -108,16 +114,20 @@ const batch = defineTool({
       : [];
   },
   async execute(_id, params, signal, _update, ctx) {
-    const calls =
-      "calls" in params
+    const calls = Array.isArray(params)
+      ? params
+      : "calls" in params
         ? params.calls
         : params.args.map((args) => ({ tool: params.tool, args }));
     const results: BatchResult[] = calls.map(({ tool }) => ({
       tool,
       status: "cancelled",
     }));
+    const requestedConcurrency = Array.isArray(params)
+      ? undefined
+      : params.concurrency;
     const limit = Math.min(
-      params.concurrency ?? DEFAULT_CONCURRENCY,
+      requestedConcurrency ?? DEFAULT_CONCURRENCY,
       calls.length,
     );
     let nextIndex = 0;
@@ -154,9 +164,15 @@ export function registerCodemodeTools(pi: ExtensionAPI) {
       description:
         "Request session-context compaction after the current agent run settles. Use optional instructions to name details the summary should retain. The tool returns a request status immediately.",
       exposure: "codemode",
-      parameters: Type.Object({
-        instructions: Type.Optional(Type.String({ maxLength: 4000 })),
-      }),
+      parameters: Type.Union([
+        Type.String({
+          maxLength: 4000,
+          description: "Compaction instructions shorthand.",
+        }),
+        Type.Object({
+          instructions: Type.Optional(Type.String({ maxLength: 4000 })),
+        }),
+      ]),
       outputSchema: Type.Object({
         status: Type.Union([
           Type.Literal("queued"),
@@ -164,7 +180,9 @@ export function registerCodemodeTools(pi: ExtensionAPI) {
           Type.Literal("cancelled"),
         ]),
       }),
-      async execute(_id, { instructions }, signal, _update, ctx) {
+      async execute(_id, params, signal, _update, ctx) {
+        const instructions =
+          typeof params === "string" ? params : params.instructions;
         if (!ctx.sessionManager) {
           return {
             content: [

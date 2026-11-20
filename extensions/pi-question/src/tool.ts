@@ -12,6 +12,41 @@ import {
   getQuestionSessionState,
 } from "./session.js";
 
+const QuestionItemSchema = Type.Union([
+  Type.String({ minLength: 1, description: "Question prompt text" }),
+  Type.Object({
+    prompt: Type.String({
+      minLength: 1,
+      description: "Question prompt text",
+    }),
+    options: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Available choices. If omitted or empty, asks for free-text input.",
+      }),
+    ),
+    multi: Type.Optional(
+      Type.Boolean({
+        description: "True to allow selecting multiple options.",
+      }),
+    ),
+    page: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: "Optional page number for multi-page questionnaires.",
+      }),
+    ),
+    condition: Type.Optional(
+      Type.String({
+        description:
+          "Optional condition expression (e.g. \"answer1 == 'Yes'\").",
+      }),
+    ),
+  }),
+]);
+
+const QuestionListSchema = Type.Array(QuestionItemSchema);
+
 export function createQuestionTool(pi?: ExtensionAPI) {
   return defineTool({
     name: "question",
@@ -21,60 +56,27 @@ export function createQuestionTool(pi?: ExtensionAPI) {
     exposure: "codemode",
     promptGuidelines: [
       "Use tools.question via codemode when you need clarification, user preferences, or decisions between alternatives instead of making blind assumptions.",
-      "question is codemode-only: call it as tools.question({...}) inside a codemode script, never as a direct top-level tool.",
+      "question is codemode-only: call it as tools.question([...]) or tools.question({ prompt, options }) inside a codemode script, never as a direct top-level tool.",
     ],
-    parameters: Type.Object({
-      questions: Type.Optional(
-        Type.Array(
-          Type.Union([
-            Type.String({ minLength: 1, description: "Question prompt text" }),
-            Type.Object({
-              prompt: Type.String({
-                minLength: 1,
-                description: "Question prompt text",
-              }),
-              options: Type.Optional(
-                Type.Array(Type.String(), {
-                  description:
-                    "Available choices. If omitted or empty, asks for free-text input.",
-                }),
-              ),
-              multi: Type.Optional(
-                Type.Boolean({
-                  description: "True to allow selecting multiple options.",
-                }),
-              ),
-              page: Type.Optional(
-                Type.Integer({
-                  minimum: 1,
-                  description:
-                    "Optional page number for multi-page questionnaires.",
-                }),
-              ),
-              condition: Type.Optional(
-                Type.String({
-                  description:
-                    "Optional condition expression (e.g. \"answer1 == 'Yes'\").",
-                }),
-              ),
-            }),
-          ]),
+    parameters: Type.Union([
+      QuestionListSchema,
+      Type.Object({
+        questions: Type.Optional(QuestionListSchema),
+        prompt: Type.Optional(
+          Type.String({ description: "Single question prompt shorthand." }),
         ),
-      ),
-      prompt: Type.Optional(
-        Type.String({ description: "Single question prompt shorthand." }),
-      ),
-      options: Type.Optional(
-        Type.Array(Type.String(), {
-          description: "Options for single question shorthand.",
-        }),
-      ),
-      multi: Type.Optional(
-        Type.Boolean({
-          description: "Multi-select flag for single question shorthand.",
-        }),
-      ),
-    }),
+        options: Type.Optional(
+          Type.Array(Type.String(), {
+            description: "Options for single question shorthand.",
+          }),
+        ),
+        multi: Type.Optional(
+          Type.Boolean({
+            description: "Multi-select flag for single question shorthand.",
+          }),
+        ),
+      }),
+    ]),
     async execute(_id, params, signal, _onUpdate, ctx) {
       if (!ctx.hasUI || ctx.mode === "print" || ctx.mode === "json") {
         return toolTextResult(
@@ -83,17 +85,18 @@ export function createQuestionTool(pi?: ExtensionAPI) {
         );
       }
 
-      const rawQuestions =
-        params.questions ??
-        (params.prompt
-          ? [
-              {
-                prompt: params.prompt,
-                options: params.options,
-                multi: params.multi,
-              },
-            ]
-          : []);
+      const rawQuestions = Array.isArray(params)
+        ? params
+        : (params.questions ??
+          (params.prompt
+            ? [
+                {
+                  prompt: params.prompt,
+                  options: params.options,
+                  multi: params.multi,
+                },
+              ]
+            : []));
 
       if (rawQuestions.length === 0) {
         return toolTextResult("Error: No question prompt provided.", {
