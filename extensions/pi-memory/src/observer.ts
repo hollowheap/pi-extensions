@@ -30,6 +30,7 @@ export interface ObserveOptions {
 
 const MAX_OBSERVATION_CHARS = 500;
 const MAX_RESPONSE_TOKENS = 4096;
+const MAX_REASONING_RESPONSE_TOKENS = 8192;
 
 function parseJson(text: string): unknown {
   const trimmed = text
@@ -175,7 +176,9 @@ export async function observeConversation(
       ],
     },
     {
-      maxTokens: MAX_RESPONSE_TOKENS,
+      maxTokens: (options.model as { reasoning?: unknown }).reasoning
+        ? MAX_REASONING_RESPONSE_TOKENS
+        : MAX_RESPONSE_TOKENS,
       ...reasoningOptions,
       signal: options.signal,
       cacheRetention: "none",

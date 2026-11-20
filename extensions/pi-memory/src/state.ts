@@ -232,6 +232,26 @@ function recordUsage(
   };
 }
 
+function assistantOutputTokens(
+  entry: ReturnType<typeof pendingMessageEntries>[number],
+  serializedPart: string,
+): number {
+  const message = entry.message as {
+    role?: unknown;
+    usage?: { output?: unknown };
+  };
+  if (message.role !== "assistant") return 0;
+  const reported = message.usage?.output;
+  if (
+    typeof reported === "number" &&
+    Number.isFinite(reported) &&
+    reported > 0
+  ) {
+    return Math.trunc(reported);
+  }
+  return Math.ceil(serializedPart.length / 4);
+}
+
 function serializePending(
   pending: ReturnType<typeof pendingMessageEntries>,
   maxChars: number,
@@ -244,6 +264,8 @@ function serializePending(
   const entries: ReturnType<typeof pendingMessageEntries> = [];
   let text = "";
   let totalChars = 0;
+  let outputTokens = 0;
+  let hasAssistant = false;
   let chunkFull = false;
   for (const entry of pending) {
     const part = serializeConversation(convertToLlm([entry.message]));
@@ -252,6 +274,10 @@ function serializePending(
       continue;
     }
     totalChars += totalChars === 0 ? part.length : part.length + 2;
+    if ((entry.message as { role?: unknown }).role === "assistant") {
+      hasAssistant = true;
+      outputTokens += assistantOutputTokens(entry, part);
+    }
     if (!chunkFull) {
       const addition = text === "" ? part : `\n\n${part}`;
       if (text !== "" && text.length + addition.length > maxChars) {
@@ -265,11 +291,18 @@ function serializePending(
         }
       }
     }
-    if (chunkFull && Math.ceil(totalChars / 4) >= observeAfterTokens) {
+    const checkpointTokens = hasAssistant
+      ? outputTokens
+      : Math.ceil(totalChars / 4);
+    if (chunkFull && checkpointTokens >= observeAfterTokens) {
       break;
     }
   }
-  return { text, entries, tokens: Math.ceil(totalChars / 4) };
+  return {
+    text,
+    entries,
+    tokens: hasAssistant ? outputTokens : Math.ceil(totalChars / 4),
+  };
 }
 
 export async function maybeObserve(
