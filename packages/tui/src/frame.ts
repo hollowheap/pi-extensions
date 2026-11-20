@@ -36,7 +36,7 @@ function framePadding(
   paddingX?: number,
   surfaceActive = false,
 ): number {
-  if (surfaceActive) {
+  if (borderStyle === "none" && surfaceActive) {
     return paddingX ?? (getHostOutputPadding() ?? 0) + 1;
   }
   if (borderStyle !== "none" && width < 5) return 0;
@@ -62,11 +62,10 @@ export function getFrameInnerWidth(
 ): number {
   const safeWidth = Math.max(4, width);
   const surfaceActive = isSurfaceActive(overlaySurface, colored);
-  const effectiveBorder = surfaceActive ? "none" : borderStyle;
   return computeInnerWidth(
     safeWidth,
-    effectiveBorder,
-    framePadding(width, effectiveBorder, paddingX, surfaceActive),
+    borderStyle,
+    framePadding(width, borderStyle, paddingX, surfaceActive),
   );
 }
 
@@ -83,9 +82,7 @@ export function boxFrame(
   const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
   const colored = options?.colored ?? active.colored;
   const surfaceActive = isSurfaceActive(overlaySurface, colored);
-  const borderStyle = surfaceActive
-    ? "none"
-    : (options?.borderStyle ?? active.borderStyle);
+  const borderStyle = options?.borderStyle ?? active.borderStyle;
   const paddingX = framePadding(
     safeWidth,
     borderStyle,
@@ -228,8 +225,8 @@ export function getPanelInnerWidth(
 ): number {
   const safeWidth = Math.max(4, width);
   const surfaceActive = isPanelSurfaceActive(surface, colored);
-  const bordered = !surfaceActive && borderStyle !== "none" && safeWidth >= 6;
-  const effectivePad = surfaceActive ? outputPad + 1 : outputPad;
+  const bordered = borderStyle !== "none" && safeWidth >= 6;
+  const effectivePad = !bordered && surfaceActive ? outputPad + 1 : outputPad;
   return Math.max(
     1,
     safeWidth - (bordered ? 2 : 0) - (accentStripe ? 1 : 0) - 2 * effectivePad,
@@ -266,18 +263,14 @@ export function resolvePanelFrameLayout(
       : (options.surface ?? "transparent");
   const surfaceActive = isPanelSurfaceActive(surface, colored);
   const bordered =
-    !surfaceActive &&
     options.mode !== "background" &&
     options.borderStyle !== "none" &&
     safeWidth >= 6;
-  const effectivePad = surfaceActive
-    ? options.outputPad + 1
-    : options.outputPad;
+  const effectivePad =
+    !bordered && surfaceActive ? options.outputPad + 1 : options.outputPad;
   const innerWidth = getPanelInnerWidth(
     safeWidth,
-    options.mode === "background" || surfaceActive
-      ? "none"
-      : options.borderStyle,
+    options.mode === "background" ? "none" : options.borderStyle,
     options.accentStripe,
     options.outputPad,
     surface,
@@ -343,8 +336,20 @@ export function framePanelLines(
     return truncateToWidth(safeLine, Math.max(1, targetWidth), "", bordered);
   };
 
+  const verticalPad = Math.max(0, Math.floor(options.outputPad));
+
   if (!bordered) {
-    const rows = content.map((line, index) => {
+    const emptyRowRaw = `${stripe}${inset}${" ".repeat(innerWidth)}${inset}`;
+    const emptyRow =
+      surface === "transparent"
+        ? emptyRowRaw
+        : paintSurfaceLine(emptyRowRaw, safeWidth, theme, surface, colored);
+    const rows: string[] = [];
+    if (options.includeTop && verticalPad > 0) {
+      for (let i = 0; i < verticalPad; i++) rows.push(emptyRow);
+    }
+    for (let index = 0; index < content.length; index++) {
+      const line = content[index] ?? "";
       const prefix =
         firstPrefix !== undefined
           ? index === 0
@@ -353,10 +358,15 @@ export function framePanelLines(
           : "";
       const availWidth = Math.max(1, innerWidth - firstPrefixWidth);
       const row = `${stripe}${inset}${prefix}${fitLineWidth(availWidth, line)}${inset}`;
-      return surface === "transparent"
-        ? row
-        : paintSurfaceLine(row, safeWidth, theme, surface, colored);
-    });
+      rows.push(
+        surface === "transparent"
+          ? row
+          : paintSurfaceLine(row, safeWidth, theme, surface, colored),
+      );
+    }
+    if (options.includeBottom && verticalPad > 0) {
+      for (let i = 0; i < verticalPad; i++) rows.push(emptyRow);
+    }
     if (options.includeBottom && options.bottomRightLabel) {
       const rightInset = Math.max(0, effectivePad - 1);
       const base = " ".repeat(safeWidth);
@@ -390,6 +400,11 @@ export function framePanelLines(
   const leftEdge = borderPaint(chars.vertical) + stripe + inset;
   const rightEdge = inset + borderPaint(chars.vertical);
   const normalLeftWidth = 1 + (options.accentStripe ? 1 : 0) + effectivePad;
+  const emptyInnerRow = `${leftEdge}${" ".repeat(innerWidth)}${rightEdge}`;
+
+  if (options.includeTop && verticalPad > 0) {
+    for (let i = 0; i < verticalPad; i++) out.push(emptyInnerRow);
+  }
 
   for (let index = 0; index < content.length; index++) {
     const line = content[index] ?? "";
@@ -404,6 +419,10 @@ export function framePanelLines(
     } else {
       out.push(`${leftEdge}${fitLineWidth(innerWidth, line)}${rightEdge}`);
     }
+  }
+
+  if (options.includeBottom && verticalPad > 0) {
+    for (let i = 0; i < verticalPad; i++) out.push(emptyInnerRow);
   }
 
   if (options.includeBottom) {

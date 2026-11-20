@@ -54,21 +54,27 @@ describe("boxFrame", () => {
     expect(lines[2]).toBe("[bg:userMessageBg] beta           [/bg]");
   });
 
-  it("neglects borders and increases horizontal padding by 1 when surface style is active", () => {
+  it("preserves borders and paints surface background when surface style is active", () => {
     setActiveTuiConfig({
       ...DEFAULT_TUI_CONFIG,
-      borderStyle: "sharp",
+      borderStyle: "rounded",
       overlaySurface: "contrast",
     });
     const lines = boxFrame(["row"], 12, mockTheme);
-    expect(lines).toEqual(["[bg:selectedBg] row        [/bg]"]);
-    expect(getFrameInnerWidth(12)).toBe(10);
+    expect(lines).toEqual([
+      "[bg:selectedBg]╭──────────╮[/bg]",
+      "[bg:selectedBg]│ row      │[/bg]",
+      "[bg:selectedBg]╰──────────╯[/bg]",
+    ]);
+    expect(getFrameInnerWidth(12)).toBe(8);
 
     const restore = bindHostOutputPadding(() => 1);
     try {
       expect(getFrameInnerWidth(12)).toBe(8);
       expect(boxFrame(["row"], 12, mockTheme)).toEqual([
-        "[bg:selectedBg]  row       [/bg]",
+        "[bg:selectedBg]╭──────────╮[/bg]",
+        "[bg:selectedBg]│ row      │[/bg]",
+        "[bg:selectedBg]╰──────────╯[/bg]",
       ]);
     } finally {
       restore();
