@@ -471,9 +471,99 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         header += ` ${theme.fg("dim", `(exit ${exitCode})`)}`;
       }
 
+      function formatSubagentLogLines(log: string): string[] {
+        const out: string[] = [];
+        let lastError: string | undefined;
+        for (const rawLine of log.split("\n")) {
+          const trimmed = rawLine.trim();
+          if (!trimmed) continue;
+          if (!trimmed.startsWith("{")) {
+            out.push(trimmed);
+            continue;
+          }
+          let parsed: Record<string, unknown>;
+          try {
+            const value: unknown = JSON.parse(trimmed);
+            if (
+              typeof value !== "object" ||
+              value === null ||
+              Array.isArray(value)
+            ) {
+              out.push(trimmed);
+              continue;
+            }
+            parsed = value as Record<string, unknown>;
+          } catch {
+            out.push(trimmed);
+            continue;
+          }
+          const type = parsed.type;
+          if (typeof type !== "string") {
+            out.push(trimmed);
+            continue;
+          }
+          if (
+            type === "tool_execution_start" &&
+            typeof parsed.toolName === "string"
+          ) {
+            out.push(`→ ${parsed.toolName}`);
+            continue;
+          }
+          if (
+            type === "auto_retry_end" &&
+            typeof parsed.finalError === "string"
+          ) {
+            if (parsed.finalError !== lastError) {
+              lastError = parsed.finalError;
+              out.push(`Error: ${parsed.finalError}`);
+            }
+            continue;
+          }
+          if (
+            type === "message_end" &&
+            typeof parsed.message === "object" &&
+            parsed.message !== null
+          ) {
+            const msg = parsed.message as {
+              role?: unknown;
+              content?: unknown;
+              errorMessage?: unknown;
+            };
+            if (
+              typeof msg.errorMessage === "string" &&
+              msg.errorMessage !== lastError
+            ) {
+              lastError = msg.errorMessage;
+              out.push(`Error: ${msg.errorMessage}`);
+            }
+            if (msg.role === "assistant" && Array.isArray(msg.content)) {
+              for (const block of msg.content) {
+                if (typeof block !== "object" || block === null) continue;
+                const b = block as {
+                  type?: unknown;
+                  text?: unknown;
+                  name?: unknown;
+                };
+                if (b.type === "text" && typeof b.text === "string") {
+                  for (const line of b.text.split("\n")) {
+                    if (line.trim()) out.push(line);
+                  }
+                } else if (
+                  b.type === "toolCall" &&
+                  typeof b.name === "string"
+                ) {
+                  out.push(`→ ${b.name}`);
+                }
+              }
+            }
+          }
+        }
+        return out;
+      }
+
       const lines: string[] = [header];
       if (log.trim().length > 0) {
-        const logLines = log.split("\n").filter((l) => l.trim().length > 0);
+        const logLines = formatSubagentLogLines(log);
         const maxLines = options.expanded ? logLines.length : 6;
         const displayed = logLines.slice(-maxLines);
         const hidden = logLines.length - displayed.length;
