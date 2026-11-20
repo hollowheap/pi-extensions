@@ -16,6 +16,7 @@ import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
+import { safeFg } from "@hollowheap/ui/theme";
 import { canOverlay, hostUi, showDialog } from "./host.js";
 
 export type CancellableProgressResult<T> =
@@ -47,7 +48,7 @@ function progressComponent(
     );
   };
   const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-    getActiveTuiConfig().colored ? getTheme().fg(token, text) : text;
+    safeFg(getTheme(), token, text, getActiveTuiConfig().colored);
   const loader = new CancellableLoader(
     tui,
     (text) => fg("accent", text),

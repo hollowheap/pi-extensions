@@ -1,20 +1,25 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionContext,
+  Theme,
+  ThemeColor,
+} from "@earendil-works/pi-coding-agent";
 import {
   Key,
   type SelectItem,
   SelectList,
   type SelectListTheme,
   type TuiMouseEvent,
-  decodeKittyPrintable,
   fuzzyFilter,
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { decodePrintableInput } from "@hollowheap/ui/input";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
+import { safeBold, safeFg } from "@hollowheap/ui/theme";
 import { canOverlay, hostUi, showDialog } from "./host.js";
 
 export interface FuzzyPickerItem extends SelectItem {
@@ -36,76 +41,20 @@ export interface FuzzyPickerOptions {
   onCancel?: () => void;
 }
 
-function selectTheme(theme: Theme, colored: boolean): SelectListTheme {
-  const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-    colored ? theme.fg(token, text) : text;
+export function selectListTheme(
+  theme: Theme | undefined,
+  colored = true,
+  scrollToken: ThemeColor = "muted",
+): SelectListTheme {
+  const fg = (token: ThemeColor, text: string) =>
+    safeFg(theme, token, text, colored);
   return {
     selectedPrefix: (text) => fg("accent", text),
     selectedText: (text) => fg("accent", text),
     description: (text) => fg("muted", text),
-    scrollInfo: (text) => fg("muted", text),
+    scrollInfo: (text) => fg(scrollToken, text),
     noMatch: (text) => fg("muted", text),
   };
-}
-
-const PASTE_START = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
-const MODIFY_OTHER_KEYS_PREFIX = "\x1b[27;";
-const MODIFY_OTHER_KEYS_ARGS = /^\d+;\d+$/;
-const MODIFIER_SHIFT = 1;
-const LOCK_MASK = 64 + 128;
-
-function decodeModifyOtherKeysPrintable(data: string): string | undefined {
-  if (!data.startsWith(MODIFY_OTHER_KEYS_PREFIX) || !data.endsWith("~")) {
-    return undefined;
-  }
-  const args = data.slice(MODIFY_OTHER_KEYS_PREFIX.length, -1);
-  if (!MODIFY_OTHER_KEYS_ARGS.test(args)) return undefined;
-  const [modifierArg, codepointArg] = args.split(";");
-  const modifier = Number.parseInt(modifierArg ?? "", 10) - 1;
-  if (
-    !Number.isFinite(modifier) ||
-    (modifier & ~LOCK_MASK & ~MODIFIER_SHIFT) !== 0
-  ) {
-    return undefined;
-  }
-  const codepoint = Number.parseInt(codepointArg ?? "", 10);
-  if (!Number.isFinite(codepoint) || codepoint < 32) return undefined;
-  try {
-    return String.fromCodePoint(codepoint);
-  } catch {
-    return undefined;
-  }
-}
-
-function printablePayload(data: string): string | undefined {
-  let payload: string;
-  if (data.startsWith(PASTE_START)) {
-    const end = data.indexOf(PASTE_END, PASTE_START.length);
-    if (end === -1) return undefined;
-    payload = data.slice(PASTE_START.length, end);
-  } else {
-    const kitty = decodeKittyPrintable(data);
-    if (kitty !== undefined) {
-      payload = kitty;
-    } else {
-      const other = decodeModifyOtherKeysPrintable(data);
-      if (other !== undefined) {
-        payload = other;
-      } else if (data.length === 1) {
-        payload = data;
-      } else {
-        return undefined;
-      }
-    }
-  }
-  const printable = [...payload]
-    .filter((char) => {
-      const code = char.codePointAt(0) ?? 0;
-      return code >= 32 && code !== 127;
-    })
-    .join("");
-  return printable === "" ? undefined : printable;
 }
 
 /** Show a fuzzy-searchable SelectList overlay. Returns the chosen value. */
@@ -150,7 +99,7 @@ export async function showFuzzyPicker(
           list = new SelectList(
             filtered,
             Math.max(3, Math.min(filtered.length, options.maxVisible ?? 8)),
-            selectTheme(getTheme(), getActiveTuiConfig().colored),
+            selectListTheme(getTheme(), getActiveTuiConfig().colored),
           );
           list.onSelectionChange = (item) => {
             selected = item as FuzzyPickerItem;
@@ -178,8 +127,8 @@ export async function showFuzzyPicker(
           }
         };
 
-        const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-          getActiveTuiConfig().colored ? getTheme().fg(token, text) : text;
+        const fg = (token: ThemeColor, text: string) =>
+          safeFg(getTheme(), token, text, getActiveTuiConfig().colored);
 
         const preview = (): string[] => {
           if (!selected) {
@@ -188,7 +137,7 @@ export async function showFuzzyPicker(
           if (selected.preview && selected.preview.length > 0) {
             return selected.preview.map((line, index) =>
               index === 0
-                ? fg("accent", getTheme().bold(line))
+                ? fg("accent", safeBold(getTheme(), line))
                 : fg("muted", line),
             );
           }
@@ -253,7 +202,7 @@ export async function showFuzzyPicker(
               }
               return;
             }
-            const printable = printablePayload(data);
+            const printable = decodePrintableInput(data);
             if (printable !== undefined) {
               query += printable;
               rebuild();

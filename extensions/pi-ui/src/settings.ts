@@ -16,6 +16,7 @@ import {
   getFrameInnerWidth,
 } from "@hollowheap/ui/frame";
 import { TabbedContent } from "@hollowheap/ui/tabs";
+import { safeFg } from "@hollowheap/ui/theme";
 import { canOverlay, notify, showDialog } from "./host.js";
 
 export function settingsListTheme(
@@ -23,7 +24,7 @@ export function settingsListTheme(
   isColored: () => boolean = () => true,
 ): SettingsListTheme {
   const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-    isColored() ? theme.fg(token, text) : text;
+    safeFg(theme, token, text, isColored());
   return {
     label: (text, selected) =>
       selected ? fg("accent", text) : fg("text", text),
@@ -223,7 +224,7 @@ export async function showTabbedSettingsDialog(
             content: tabLists[index],
           })),
           (label, active) =>
-            isColored() ? theme.fg(active ? "accent" : "muted", label) : label,
+            safeFg(theme, active ? "accent" : "muted", label, isColored()),
         );
         tabs.setActiveIndex(activeIndex);
         if (selectedId !== undefined) {

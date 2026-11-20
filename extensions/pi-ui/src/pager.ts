@@ -1,18 +1,15 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  Key,
-  Markdown,
-  matchesKey,
-  truncateToWidth,
-} from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
-import { markdownTheme } from "@hollowheap/ui/markdown";
+import { StyledMarkdown } from "@hollowheap/ui/markdown";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
+import { safeFg } from "@hollowheap/ui/theme";
 import { canOverlay, hostUi, notify, showDialog } from "./host.js";
+import { handleViewportKey } from "./viewport.js";
 
 export interface MarkdownPagerOptions {
   title: string;
@@ -60,12 +57,9 @@ export async function showMarkdownPager(
           const liveTheme = (): Theme => hostUi(ctx)?.theme ?? theme;
           let activeTheme = liveTheme();
           let page = { title: options.title, markdown: options.markdown };
-          let markdown = new Markdown(
-            page.markdown,
-            0,
-            0,
-            markdownTheme(activeTheme, getActiveTuiConfig().colored),
-          );
+          let markdown = new StyledMarkdown(page.markdown, activeTheme, {
+            colored: getActiveTuiConfig().colored,
+          });
           let offset = options.fullscreen ? Number.MAX_SAFE_INTEGER : 0;
           let width = 80;
           let cachedWidth = -1;
@@ -74,12 +68,9 @@ export async function showMarkdownPager(
 
           const rebuildStyles = (): void => {
             activeTheme = liveTheme();
-            markdown = new Markdown(
-              page.markdown,
-              0,
-              0,
-              markdownTheme(activeTheme, getActiveTuiConfig().colored),
-            );
+            markdown = new StyledMarkdown(page.markdown, activeTheme, {
+              colored: getActiveTuiConfig().colored,
+            });
             cachedWidth = -1;
           };
           const unsubscribe = subscribeActiveTuiConfig(() => {
@@ -157,12 +148,12 @@ export async function showMarkdownPager(
                 .map((line) => truncateToWidth(line, innerWidth, ""));
               const first = lines.length === 0 ? 0 : offset + 1;
               const last = Math.min(lines.length, offset + size);
-              const coloredFooter = getActiveTuiConfig().colored
-                ? activeTheme.fg(
-                    "muted",
-                    `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
-                  )
-                : `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`;
+              const coloredFooter = safeFg(
+                activeTheme,
+                "muted",
+                `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
+                getActiveTuiConfig().colored,
+              );
               if (options.fullscreen) {
                 while (visible.length < size) visible.push("");
               }
@@ -194,41 +185,14 @@ export async function showMarkdownPager(
                 refreshPage();
                 return;
               }
-              if (
-                matchesKey(data, Key.escape) ||
-                matchesKey(data, Key.ctrl("c")) ||
-                data === "q"
-              ) {
-                finish();
-                return;
-              }
-              if (matchesKey(data, Key.up) || data === "k") {
-                scrollBy(-1);
-                return;
-              }
-              if (matchesKey(data, Key.down) || data === "j") {
-                scrollBy(1);
-                return;
-              }
-              if (matchesKey(data, Key.pageUp) || data === "b") {
-                scrollBy(-pageSize());
-                return;
-              }
-              if (
-                matchesKey(data, Key.pageDown) ||
-                matchesKey(data, Key.space) ||
-                data === "f"
-              ) {
-                scrollBy(pageSize());
-                return;
-              }
-              if (matchesKey(data, Key.home) || data === "g") {
-                scrollTo(0);
-                return;
-              }
-              if (matchesKey(data, Key.end) || data === "G") {
-                scrollTo(maxOffset());
-              }
+              handleViewportKey(data, {
+                onClose: finish,
+                onScrollBy: scrollBy,
+                onScrollTo: scrollTo,
+                pageSize,
+                maxOffset,
+                pagerKeys: true,
+              });
             },
             dispose(): void {
               finish();

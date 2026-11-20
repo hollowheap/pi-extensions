@@ -156,14 +156,13 @@ describe("showCodeViewer", () => {
       overlaySurface: "surface",
     });
     const doubleLines = component.render(32);
-    expect(doubleLines[0]).toContain("[customMessageBg] Script");
-    expect(doubleLines[0]).not.toContain("╔");
-    expect(doubleLines.at(-1)).not.toContain("╚");
+    expect(doubleLines[0]).toContain("[customMessageBg]╔═ Script ");
+    expect(doubleLines.at(-1)).toContain("╚═");
 
     const restore = bindHostOutputPadding(() => 1);
     try {
       const paddedLines = component.render(32);
-      expect(paddedLines[0]).toContain("[customMessageBg]  Script");
+      expect(paddedLines[1]).toContain("[customMessageBg]║ const x = 1;");
     } finally {
       restore();
     }
@@ -174,7 +173,7 @@ describe("showCodeViewer", () => {
       overlaySurface: "card",
     });
     const noneLines = component.render(32);
-    expect(noneLines[0]).toContain("[userMessageBg] Script");
+    expect(noneLines[0]).toContain("[userMessageBg]   Script");
     expect(noneLines[0]).not.toContain("╭");
     expect(noneLines.join("\n")).toContain("const x = 1;");
   });

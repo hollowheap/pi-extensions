@@ -18,6 +18,8 @@ import {
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { scopedAbortSignal, watchAbort } from "@hollowheap/runtime/abort";
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { safeFg } from "@hollowheap/ui/theme";
+import { selectListTheme } from "./picker.js";
 
 type PromptContext = Pick<ExtensionContext, "ui" | "mode" | "signal">;
 type OverlayContext = Pick<ExtensionContext, "ui" | "mode">;
@@ -214,18 +216,10 @@ function selectOverlay(
     ctx,
     title,
     (_tui, theme, finish) => {
-      const fg = (token: Parameters<Theme["fg"]>[0], text: string) =>
-        typeof theme?.fg === "function" ? theme.fg(token, text) : text;
       const list = new SelectList(
         options.map((value) => ({ value, label: sanitizeTerminalText(value) })),
         Math.max(1, Math.min(8, options.length)),
-        {
-          selectedPrefix: (text) => fg("accent", text),
-          selectedText: (text) => fg("accent", text),
-          description: (text) => fg("muted", text),
-          scrollInfo: (text) => fg("dim", text),
-          noMatch: (text) => fg("muted", text),
-        },
+        selectListTheme(theme, true, "dim"),
       );
       list.onSelect = (item) => finish(item.value);
       return list;
@@ -282,8 +276,7 @@ export function editDialog(
   if (!canOverlay(ctx)) return hostUi(ctx).editor(...args);
   const [title, prefill] = args;
   return prompt<string>(ctx, title, (tui, theme, finish) => {
-    const fg = (text: string) =>
-      typeof theme?.fg === "function" ? theme.fg("border", text) : text;
+    const fg = (text: string) => safeFg(theme, "border", text);
     const editor = new Editor(tui, {
       borderColor: fg,
       selectList: {
