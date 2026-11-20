@@ -4,6 +4,7 @@ export type BorderStyle =
   | "square"
   | "double"
   | "dashed"
+  | "dotted"
   | "none";
 
 export const BORDER_STYLES: readonly BorderStyle[] = [
@@ -12,6 +13,7 @@ export const BORDER_STYLES: readonly BorderStyle[] = [
   "square",
   "double",
   "dashed",
+  "dotted",
   "none",
 ];
 
@@ -36,6 +38,15 @@ export function getBorderChars(style: string): BorderChars {
         vertical: "║",
       };
     case "dashed":
+      return {
+        topLeft: "┌",
+        topRight: "┐",
+        bottomLeft: "└",
+        bottomRight: "┘",
+        horizontal: "┄",
+        vertical: "┆",
+      };
+    case "dotted":
       return {
         topLeft: "┌",
         topRight: "┐",

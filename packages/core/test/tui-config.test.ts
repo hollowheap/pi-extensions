@@ -62,11 +62,14 @@ describe("tui-config", () => {
       overlaySurface: "card",
       colored: true,
       loadingIndicator: "crush",
+      loadingIndicatorColor: "gradient",
+      loadingIndicatorFade: true,
       markdownRender: true,
       thinkingVerbosity: "verbose",
       toolVerbosity: "medium",
       modeIndicator: true,
       thinkingAnimate: true,
+      shimmerSpeed: "normal",
       verbPack: "playful",
       panel: {
         enabled: true,
@@ -104,6 +107,41 @@ describe("tui-config", () => {
     expect(cfg.colored).toBe(true);
     expect(cfg.verbPack).toBe("standard");
     expect(diagnostics).toHaveLength(6);
+  });
+
+  it("supports dotted borderStyle, claude preset, loading indicator color/fade, and shimmerSpeed", () => {
+    const diagnostics: string[] = [];
+    const cfg = normalizeTuiConfig(
+      {
+        borderStyle: "dotted",
+        loadingIndicator: "claude",
+        loadingIndicatorColor: "accent",
+        loadingIndicatorFade: false,
+        shimmerSpeed: "fast",
+      },
+      diagnostics,
+    );
+    expect(diagnostics).toEqual([]);
+    expect(cfg.borderStyle).toBe("dotted");
+    expect(cfg.panel.borderStyle).toBe("dotted");
+    expect(cfg.loadingIndicator).toBe("claude");
+    expect(cfg.loadingIndicatorColor).toBe("accent");
+    expect(cfg.loadingIndicatorFade).toBe(false);
+    expect(cfg.shimmerSpeed).toBe("fast");
+
+    const invalidDiagnostics: string[] = [];
+    const fallback = normalizeTuiConfig(
+      {
+        loadingIndicatorColor: "rainbow",
+        loadingIndicatorFade: "yes",
+        shimmerSpeed: "ludicrous",
+      },
+      invalidDiagnostics,
+    );
+    expect(fallback.loadingIndicatorColor).toBe("gradient");
+    expect(fallback.loadingIndicatorFade).toBe(true);
+    expect(fallback.shimmerSpeed).toBe("normal");
+    expect(invalidDiagnostics).toHaveLength(3);
   });
 
   it("maps legacy thinkingDisplay values to verbosity", () => {
@@ -208,7 +246,7 @@ describe("panel style", () => {
       borderStyle: "sharp",
       surface: "card",
     });
-    for (const style of ["surface", "card", "contrast"] as const) {
+    for (const style of ["surface", "card"] as const) {
       const cfg = normalizeTuiConfig({
         borderStyle: "rounded",
         panel: { style },
@@ -220,8 +258,23 @@ describe("panel style", () => {
         surface: style,
       });
     }
+    const diagnostics: string[] = [];
+    const legacyContrast = normalizeTuiConfig(
+      {
+        overlaySurface: "contrast",
+        panel: { style: "contrast" },
+      },
+      diagnostics,
+    );
+    expect(diagnostics).toEqual([]);
+    expect(legacyContrast.overlaySurface).toBe("surface");
+    expect(legacyContrast.panel).toMatchObject({
+      style: "surface",
+      mode: "box",
+      surface: "surface",
+    });
     const plain = normalizeTuiConfig({
-      overlaySurface: "contrast",
+      overlaySurface: "card",
       panel: { style: "dashed" },
     });
     expect(plain.panel).toMatchObject({
@@ -235,7 +288,7 @@ describe("panel style", () => {
     expect(legacy.panel).toMatchObject({
       mode: "background",
       borderStyle: "double",
-      surface: "contrast",
+      surface: "surface",
     });
   });
 });

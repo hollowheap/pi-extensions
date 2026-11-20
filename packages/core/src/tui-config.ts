@@ -7,17 +7,12 @@ import {
 } from "./config.js";
 import { isRecord } from "./records.js";
 
-export type OverlaySurfaceMode =
-  | "transparent"
-  | "surface"
-  | "card"
-  | "contrast";
+export type OverlaySurfaceMode = "transparent" | "surface" | "card";
 
 export const OVERLAY_SURFACE_MODES: readonly OverlaySurfaceMode[] = [
   "transparent",
   "surface",
   "card",
-  "contrast",
 ];
 
 export type PanelRenderMode = "box" | "background";
@@ -36,7 +31,6 @@ export const PANEL_STYLES: readonly PanelStyle[] = [
   ...BORDER_STYLES,
   "surface",
   "card",
-  "contrast",
   "background",
 ];
 
@@ -50,6 +44,7 @@ export const TOOL_VERB_PACKS: readonly ToolVerbPack[] = [
 
 export type LoadingIndicatorStyle =
   | "crush"
+  | "claude"
   | "braille"
   | "pulse"
   | "arc"
@@ -60,6 +55,7 @@ export type LoadingIndicatorStyle =
 
 export const LOADING_INDICATOR_STYLES: readonly LoadingIndicatorStyle[] = [
   "crush",
+  "claude",
   "braille",
   "pulse",
   "arc",
@@ -67,6 +63,37 @@ export const LOADING_INDICATOR_STYLES: readonly LoadingIndicatorStyle[] = [
   "dots",
   "host",
   "hidden",
+];
+
+export type LoadingIndicatorColor =
+  | "gradient"
+  | "accent"
+  | "borderAccent"
+  | "thinkingText"
+  | "success"
+  | "warning"
+  | "error"
+  | "text"
+  | "muted";
+
+export const LOADING_INDICATOR_COLORS: readonly LoadingIndicatorColor[] = [
+  "gradient",
+  "accent",
+  "borderAccent",
+  "thinkingText",
+  "success",
+  "warning",
+  "error",
+  "text",
+  "muted",
+];
+
+export type ShimmerSpeed = "slow" | "normal" | "fast";
+
+export const SHIMMER_SPEEDS: readonly ShimmerSpeed[] = [
+  "slow",
+  "normal",
+  "fast",
 ];
 
 export type ThinkingVerbosityMode =
@@ -137,7 +164,7 @@ export function applyPanelStyle(
       surface: undefined,
     };
   }
-  if (style === "surface" || style === "card" || style === "contrast") {
+  if (style === "surface" || style === "card") {
     const fallbackBorder =
       borderStyle ??
       (panel.borderStyle !== "none" ? panel.borderStyle : "rounded");
@@ -163,11 +190,14 @@ export interface TuiConfig {
   overlaySurface: OverlaySurfaceMode;
   colored: boolean;
   loadingIndicator: LoadingIndicatorStyle;
+  loadingIndicatorColor: LoadingIndicatorColor;
+  loadingIndicatorFade: boolean;
   markdownRender: boolean;
   thinkingVerbosity: ThinkingVerbosityMode;
   toolVerbosity?: ToolVerbosity;
   modeIndicator?: boolean;
   thinkingAnimate: boolean;
+  shimmerSpeed: ShimmerSpeed;
   verbPack: ToolVerbPack;
   panel: PanelConfig;
 }
@@ -177,11 +207,14 @@ export const DEFAULT_TUI_CONFIG: TuiConfig = {
   overlaySurface: "transparent",
   colored: true,
   loadingIndicator: "crush",
+  loadingIndicatorColor: "gradient",
+  loadingIndicatorFade: true,
   markdownRender: true,
   thinkingVerbosity: "verbose",
   toolVerbosity: "medium",
   modeIndicator: true,
   thinkingAnimate: true,
+  shimmerSpeed: "normal",
   verbPack: "standard",
   panel: {
     enabled: true,
@@ -288,7 +321,7 @@ export function normalizeTuiConfig(
     diagnostics,
   );
   const overlaySurface = parseEnum(
-    raw.overlaySurface,
+    raw.overlaySurface === "contrast" ? "surface" : raw.overlaySurface,
     OVERLAY_SURFACE_MODES,
     defaults.overlaySurface,
     "overlaySurface",
@@ -305,6 +338,19 @@ export function normalizeTuiConfig(
     LOADING_INDICATOR_STYLES,
     defaults.loadingIndicator,
     "loadingIndicator",
+    diagnostics,
+  );
+  const loadingIndicatorColor = parseEnum(
+    raw.loadingIndicatorColor,
+    LOADING_INDICATOR_COLORS,
+    defaults.loadingIndicatorColor,
+    "loadingIndicatorColor",
+    diagnostics,
+  );
+  const loadingIndicatorFade = parseBoolean(
+    raw.loadingIndicatorFade,
+    defaults.loadingIndicatorFade,
+    "loadingIndicatorFade",
     diagnostics,
   );
   const markdownRender = parseBoolean(
@@ -343,6 +389,13 @@ export function normalizeTuiConfig(
     raw.thinkingAnimate,
     defaults.thinkingAnimate,
     "thinkingAnimate",
+    diagnostics,
+  );
+  const shimmerSpeed = parseEnum(
+    raw.shimmerSpeed,
+    SHIMMER_SPEEDS,
+    defaults.shimmerSpeed,
+    "shimmerSpeed",
     diagnostics,
   );
 
@@ -388,7 +441,7 @@ export function normalizeTuiConfig(
       );
 
       panel.surface = parseEnum(
-        rawPanel.surface,
+        rawPanel.surface === "contrast" ? "surface" : rawPanel.surface,
         OVERLAY_SURFACE_MODES,
         DEFAULT_TUI_CONFIG.overlaySurface,
         "panel.surface",
@@ -419,7 +472,7 @@ export function normalizeTuiConfig(
       panel.customVerbs = parseCustomVerbs(rawPanel.customVerbs, diagnostics);
       if (rawPanel.style !== undefined) {
         const style = parseEnum(
-          rawPanel.style,
+          rawPanel.style === "contrast" ? "surface" : rawPanel.style,
           PANEL_STYLES,
           getPanelStyle(panel),
           "panel.style",
@@ -446,11 +499,14 @@ export function normalizeTuiConfig(
     overlaySurface,
     colored,
     loadingIndicator,
+    loadingIndicatorColor,
+    loadingIndicatorFade,
     markdownRender,
     thinkingVerbosity,
     toolVerbosity,
     modeIndicator,
     thinkingAnimate,
+    shimmerSpeed,
     verbPack,
     panel,
   };
@@ -490,11 +546,14 @@ export function updateTuiConfig(
       overlaySurface: updated.overlaySurface,
       colored: updated.colored,
       loadingIndicator: updated.loadingIndicator,
+      loadingIndicatorColor: updated.loadingIndicatorColor,
+      loadingIndicatorFade: updated.loadingIndicatorFade,
       markdownRender: updated.markdownRender,
       thinkingVerbosity: updated.thinkingVerbosity,
       toolVerbosity: updated.toolVerbosity,
       modeIndicator: updated.modeIndicator,
       thinkingAnimate: updated.thinkingAnimate,
+      shimmerSpeed: updated.shimmerSpeed,
       verbPack: updated.verbPack,
       panel: {
         enabled: updated.panel?.enabled ?? DEFAULT_TUI_CONFIG.panel.enabled,
