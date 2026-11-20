@@ -144,3 +144,51 @@ describe("saveSandboxConfig", () => {
     );
   });
 });
+
+describe("sandbox backend and image config", () => {
+  it("parses backend and image and carries them into resolved options", () => {
+    const diagnostics: string[] = [];
+    const parsed = parseSandboxConfig(
+      { backend: "podman", image: " node:22-alpine " },
+      diagnostics,
+    );
+    expect(diagnostics).toEqual([]);
+    expect(parsed).toEqual({
+      enabled: true,
+      backend: "podman",
+      image: "node:22-alpine",
+    });
+    expect(resolveSandboxOptions(parsed)).toEqual({
+      backend: "podman",
+      image: "node:22-alpine",
+    });
+  });
+
+  it("reports an unknown backend and an empty image", () => {
+    const diagnostics: string[] = [];
+    const parsed = parseSandboxConfig(
+      { enabled: true, backend: "lxc", image: "  " },
+      diagnostics,
+    );
+    expect(parsed).toEqual({ enabled: true });
+    expect(diagnostics).toEqual([
+      '"sandbox.backend" must be one of auto, bwrap, podman, docker; ignoring',
+      '"sandbox.image" must be a non-empty string; ignoring',
+    ]);
+  });
+
+  it("keeps backend and image when saving sandbox toggles", () => {
+    const dir = tempDir();
+    const path = join(dir, "settings.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ sandbox: { backend: "docker", image: "img:1" } }),
+    );
+    saveSandboxConfig(path, { sandboxEnabled: true });
+    expect(JSON.parse(readFileSync(path, "utf8")).sandbox).toEqual({
+      backend: "docker",
+      image: "img:1",
+      enabled: true,
+    });
+  });
+});

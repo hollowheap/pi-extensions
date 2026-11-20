@@ -11,6 +11,17 @@ import { updateJsonConfig } from "./config.js";
 import { errorMessage } from "./format.js";
 import { isRecord } from "./records.js";
 
+export type SandboxBackend = "auto" | "bwrap" | "podman" | "docker";
+
+export const SANDBOX_BACKENDS: readonly SandboxBackend[] = Object.freeze([
+  "auto",
+  "bwrap",
+  "podman",
+  "docker",
+]);
+
+export const DEFAULT_CONTAINER_IMAGE = "node:22-slim";
+
 export interface SandboxOptions {
   cwd?: string;
   workspace?: string;
@@ -20,6 +31,9 @@ export interface SandboxOptions {
   writablePaths?: readonly string[];
   filterExisting?: boolean;
   bwrapBinary?: string;
+  backend?: SandboxBackend;
+  image?: string;
+  forceNested?: boolean;
 }
 
 export interface WrappedSandboxCommand {
@@ -244,15 +258,169 @@ export function buildSandboxArgs(options: SandboxOptions = {}): string[] {
   return args;
 }
 
+export function isInsideSandbox(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PI_SANDBOX_ACTIVE === "1";
+}
+
+function probeBinaryOnPath(binaryName: string): BwrapProbeResult {
+  if (isAbsolute(binaryName)) {
+    try {
+      const stat = statSync(binaryName);
+      if (stat.isFile()) {
+        accessSync(binaryName, constants.X_OK);
+        return { available: true, path: binaryName };
+      }
+      return { available: false, reason: "missing", path: binaryName };
+    } catch (error) {
+      if (isOsPermissionError(error)) {
+        return {
+          available: false,
+          reason: "permission",
+          path: binaryName,
+          error,
+        };
+      }
+      return { available: false, reason: "missing", path: binaryName, error };
+    }
+  }
+  const pathEnv = process.env.PATH ?? "";
+  const dirs = pathEnv.split(delimiter);
+  let permissionIssue: { path: string; error: unknown } | undefined;
+  for (const dir of dirs) {
+    if (!dir) continue;
+    const candidate = join(dir, binaryName);
+    try {
+      const stat = statSync(candidate);
+      if (stat.isFile()) {
+        accessSync(candidate, constants.X_OK);
+        return { available: true, path: candidate };
+      }
+    } catch (error) {
+      if (isOsPermissionError(error) && !permissionIssue) {
+        permissionIssue = { path: candidate, error };
+      }
+    }
+  }
+  if (permissionIssue) {
+    return {
+      available: false,
+      reason: "permission",
+      path: permissionIssue.path,
+      error: permissionIssue.error,
+    };
+  }
+  return { available: false, reason: "missing" };
+}
+
+export function probeContainerBackend(
+  binary: "podman" | "docker",
+): BwrapProbeResult {
+  return probeBinaryOnPath(binary);
+}
+
+export function resolveSandboxBackend(
+  options: Pick<SandboxOptions, "backend" | "bwrapBinary"> = {},
+): "bwrap" | "podman" | "docker" {
+  const requested = options.backend ?? "bwrap";
+  if (
+    requested === "bwrap" ||
+    requested === "podman" ||
+    requested === "docker"
+  ) {
+    return requested;
+  }
+  if (probeBwrapAvailability(options.bwrapBinary ?? "bwrap").available) {
+    return "bwrap";
+  }
+  if (probeContainerBackend("podman").available) {
+    return "podman";
+  }
+  if (probeContainerBackend("docker").available) {
+    return "docker";
+  }
+  return "bwrap";
+}
+
+export function buildContainerSandboxArgs(
+  backend: "podman" | "docker",
+  command: string,
+  args: string[] = [],
+  options: SandboxOptions = {},
+): string[] {
+  const resolvedTarget = resolve(
+    options.workspace ?? options.cwd ?? process.cwd(),
+  );
+  const targetDir = tryRealpath(resolvedTarget) ?? resolvedTarget;
+  const isOffline = options.offline ?? options.network === false;
+  const image = options.image?.trim() || DEFAULT_CONTAINER_IMAGE;
+
+  const containerArgs: string[] = [
+    "run",
+    "--rm",
+    "-i",
+    "--read-only",
+    "--tmpfs",
+    "/tmp",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+  ];
+  if (backend === "podman") {
+    containerArgs.push("--userns=keep-id");
+  }
+  if (isOffline) {
+    containerArgs.push("--network=none");
+  }
+  containerArgs.push("-v", `${targetDir}:${targetDir}:rw`, "-w", targetDir);
+  for (const writablePath of options.writablePaths ?? []) {
+    if (writablePath) {
+      const resolved =
+        tryRealpath(resolve(writablePath)) ?? resolve(writablePath);
+      if (resolved !== targetDir) {
+        containerArgs.push("-v", `${resolved}:${resolved}:rw`);
+      }
+    }
+  }
+  containerArgs.push(
+    "-e",
+    "PI_SANDBOX_ACTIVE=1",
+    "-e",
+    `PI_SANDBOX_BACKEND=${backend}`,
+  );
+  if (isOffline) {
+    containerArgs.push("-e", "PI_SANDBOX_OFFLINE=1");
+  }
+  containerArgs.push(image, command, ...args);
+  return containerArgs;
+}
+
 export function wrapSandboxCommand(
   command: string,
   args: string[] = [],
   options: SandboxOptions = {},
 ): WrappedSandboxCommand {
-  const binary = options.bwrapBinary ?? "bwrap";
-  assertBwrapAvailable(binary);
+  const isOffline = options.offline ?? options.network === false;
+  if (
+    !options.forceNested &&
+    isInsideSandbox() &&
+    (!isOffline || process.env.PI_SANDBOX_OFFLINE === "1")
+  ) {
+    return { command, args: [...args] };
+  }
 
   const targetDir = options.workspace ?? options.cwd;
+  const backend = resolveSandboxBackend(options);
+  if (backend === "podman" || backend === "docker") {
+    const probe = probeContainerBackend(backend);
+    if (!probe.available) {
+      throw new Error(
+        `Container sandbox '${backend}' is required but was not found on PATH`,
+      );
+    }
+  } else {
+    const binary = options.bwrapBinary ?? "bwrap";
+    assertBwrapAvailable(binary);
+  }
+
   if (targetDir) {
     try {
       statSync(targetDir);
@@ -270,6 +438,14 @@ export function wrapSandboxCommand(
     }
   }
 
+  if (backend === "podman" || backend === "docker") {
+    return {
+      command: backend,
+      args: buildContainerSandboxArgs(backend, command, args, options),
+    };
+  }
+
+  const binary = options.bwrapBinary ?? "bwrap";
   const sandboxArgs = buildSandboxArgs(options);
   return {
     command: binary,
@@ -281,6 +457,8 @@ export interface SandboxConfig {
   readonly enabled: boolean;
   readonly offline?: boolean;
   readonly maskPaths?: readonly string[];
+  readonly backend?: SandboxBackend;
+  readonly image?: string;
 }
 
 export type SandboxDiagnosticFormatter = (
@@ -346,13 +524,45 @@ export function parseSandboxConfig(
     }
   }
 
+  let backend: SandboxBackend | undefined;
+  if (value.backend !== undefined) {
+    if (
+      typeof value.backend === "string" &&
+      (SANDBOX_BACKENDS as readonly string[]).includes(value.backend)
+    ) {
+      backend = value.backend as SandboxBackend;
+    } else {
+      diagnostics.push(
+        formatDiagnostic(
+          label,
+          "backend",
+          `one of ${SANDBOX_BACKENDS.join(", ")}`,
+        ),
+      );
+    }
+  }
+
+  let image: string | undefined;
+  if (value.image !== undefined) {
+    if (typeof value.image === "string" && value.image.trim() !== "") {
+      image = value.image.trim();
+    } else {
+      diagnostics.push(formatDiagnostic(label, "image", "a non-empty string"));
+    }
+  }
+
   return Object.freeze({
     enabled:
       enabled !== undefined
         ? enabled
-        : offline !== undefined || maskPaths !== undefined,
+        : offline !== undefined ||
+          maskPaths !== undefined ||
+          backend !== undefined ||
+          image !== undefined,
     ...(offline !== undefined ? { offline } : {}),
     ...(maskPaths !== undefined ? { maskPaths } : {}),
+    ...(backend !== undefined ? { backend } : {}),
+    ...(image !== undefined ? { image } : {}),
   });
 }
 
@@ -367,6 +577,8 @@ export function resolveSandboxOptions(
     ...(sandbox.maskPaths !== undefined
       ? { maskPaths: [...sandbox.maskPaths] }
       : {}),
+    ...(sandbox.backend !== undefined ? { backend: sandbox.backend } : {}),
+    ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
   };
 }
 

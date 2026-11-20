@@ -15,8 +15,10 @@ import { runBinary, runCapture } from "../src/exec.js";
 import {
   DEFAULT_MASK_PATHS,
   assertBwrapAvailable,
+  buildContainerSandboxArgs,
   buildSandboxArgs,
   isBwrapAvailable,
+  isInsideSandbox,
   probeBwrapAvailability,
   wrapSandboxCommand,
 } from "../src/sandbox.js";
@@ -348,6 +350,48 @@ describe("sandboxed command execution", () => {
       ).rejects.toThrow(/Bubblewrap sandbox OS permission error/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("container backends and nested sandbox inheritance", () => {
+  it("builds hardened podman and docker sandbox arguments", () => {
+    const podmanArgs = buildContainerSandboxArgs("podman", "pi", ["--help"], {
+      workspace: "/work",
+      offline: true,
+      image: "node:22-alpine",
+    });
+    expect(podmanArgs).toContain("--userns=keep-id");
+    expect(podmanArgs).toContain("--read-only");
+    expect(podmanArgs).toContain("--cap-drop=ALL");
+    expect(podmanArgs).toContain("--network=none");
+    expect(podmanArgs).toContain("PI_SANDBOX_ACTIVE=1");
+    expect(podmanArgs).toContain("PI_SANDBOX_BACKEND=podman");
+    expect(podmanArgs.slice(-3)).toEqual(["node:22-alpine", "pi", "--help"]);
+
+    const dockerArgs = buildContainerSandboxArgs("docker", "echo", ["ok"], {
+      workspace: "/work",
+    });
+    expect(dockerArgs).not.toContain("--userns=keep-id");
+    expect(dockerArgs).toContain("PI_SANDBOX_BACKEND=docker");
+  });
+
+  it("inherits the outer sandbox when PI_SANDBOX_ACTIVE=1 is set", () => {
+    const prev = process.env.PI_SANDBOX_ACTIVE;
+    process.env.PI_SANDBOX_ACTIVE = "1";
+    try {
+      expect(isInsideSandbox()).toBe(true);
+      const wrapped = wrapSandboxCommand("pi", ["--mode", "rpc"], {
+        cwd: tmpdir(),
+        bwrapBinary: "/nonexistent/bwrap",
+      });
+      expect(wrapped).toEqual({ command: "pi", args: ["--mode", "rpc"] });
+    } finally {
+      if (prev === undefined) {
+        Reflect.deleteProperty(process.env, "PI_SANDBOX_ACTIVE");
+      } else {
+        process.env.PI_SANDBOX_ACTIVE = prev;
+      }
     }
   });
 });
