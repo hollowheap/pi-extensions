@@ -187,9 +187,10 @@ export function registerSkillAutocomplete(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): void {
-  if (registeredUIContexts.has(hostUi(ctx))) return;
-  registeredUIContexts.add(hostUi(ctx));
-  hostUi(ctx).addAutocompleteProvider?.((base) =>
+  const ui = hostUi(ctx);
+  if (!ui || registeredUIContexts.has(ui)) return;
+  registeredUIContexts.add(ui);
+  ui.addAutocompleteProvider?.((base) =>
     createSkillAutocompleteProvider(base, pi),
   );
 }

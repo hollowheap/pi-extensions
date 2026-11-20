@@ -130,10 +130,13 @@ export function resolveToolVerb(
   toolName: string,
   config: Pick<PanelRenderConfig, "verbPack" | "customVerbs">,
 ): CustomToolVerb {
-  const custom = config.customVerbs?.[toolName];
+  const custom =
+    config.customVerbs && Object.hasOwn(config.customVerbs, toolName)
+      ? config.customVerbs[toolName]
+      : undefined;
   if (custom) return custom;
   const pack = VERB_PACKS[config.verbPack] ?? VERB_PACKS.standard;
-  const known = pack[toolName];
+  const known = Object.hasOwn(pack, toolName) ? pack[toolName] : undefined;
   if (known) return known;
   const formatted = formatUnknownToolName(toolName);
   if (config.verbPack === "terse") {
@@ -322,7 +325,11 @@ function bold(theme: Theme | undefined, value: string): string {
 
 function extractResultText(result: AgentToolResult<unknown>): string {
   if (!Array.isArray(result.content)) return "";
-  return contentText(result.content);
+  const validBlocks = result.content.filter(
+    (block): block is (typeof result.content)[number] =>
+      typeof block === "object" && block !== null,
+  );
+  return validBlocks.length > 0 ? contentText(validBlocks) : "";
 }
 
 function renderFallbackResultLines(
@@ -337,7 +344,9 @@ function renderFallbackResultLines(
   const visible = options.expanded
     ? rawLines
     : rawLines.slice(0, FALLBACK_RESULT_PREVIEW_LINES);
-  const lines = visible.map((line) => fg(theme, "toolOutput", line, colored));
+  const lines = visible.map((line) =>
+    fg(theme, "toolOutput", sanitizeTerminalText(line), colored),
+  );
   const remaining = rawLines.length - visible.length;
   if (remaining > 0) {
     lines.push(fg(theme, "muted", `... (${remaining} more lines)`, colored));
@@ -747,7 +756,7 @@ export function wrapToolRenderer(
           const settled = !options.isPartial && !context.isPartial;
           const stateToken: PanelStateToken = !settled
             ? "toolPendingBg"
-            : context.isError || result.isError
+            : context.isError || panelState.resultIsError
               ? "toolErrorBg"
               : "toolSuccessBg";
 

@@ -315,7 +315,7 @@ function keymap(
     onDiagnostic?.(`keymaps.${name} must be an object; ignoring`);
     return {};
   }
-  const result: Record<string, string | null> = {};
+  const result: Record<string, string | null> = Object.create(null);
   for (const [key, sequence] of Object.entries(value)) {
     if (key === "" || (typeof sequence !== "string" && sequence !== null)) {
       onDiagnostic?.(

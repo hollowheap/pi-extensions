@@ -288,30 +288,34 @@ export class ModalEditor extends CustomEditor {
     const lines = this.getLines();
     if (lines.length === 0) return null;
     const cursor = this.getCursor();
-    for (let step = 1; step <= lines.length; step++) {
+    const currentText = lines[cursor.line] ?? "";
+
+    // Search the remainder of the current line first.
+    if (direction > 0) {
+      const col = currentText.indexOf(query, cursor.col + 1);
+      if (col >= 0) return { line: cursor.line, col };
+    } else if (cursor.col > 0) {
+      const col = currentText.lastIndexOf(query, cursor.col - 1);
+      if (col >= 0) return { line: cursor.line, col };
+    }
+
+    // Search all other lines in the requested direction.
+    for (let step = 1; step < lines.length; step++) {
       const line =
         (((cursor.line + direction * step) % lines.length) + lines.length) %
         lines.length;
       const text = lines[line] ?? "";
-      const startCol =
-        step === lines.length
-          ? direction > 0
-            ? 0
-            : text.length - 1
-          : line === cursor.line
-            ? direction > 0
-              ? cursor.col + 1
-              : cursor.col - 1
-            : direction > 0
-              ? 0
-              : text.length - 1;
       const col =
-        direction > 0
-          ? text.indexOf(query, startCol)
-          : text.lastIndexOf(query, Math.max(0, startCol));
+        direction > 0 ? text.indexOf(query, 0) : text.lastIndexOf(query);
       if (col >= 0) return { line, col };
     }
-    return null;
+
+    // Wrap back onto the current line.
+    const wrappedCol =
+      direction > 0
+        ? currentText.indexOf(query, 0)
+        : currentText.lastIndexOf(query);
+    return wrappedCol >= 0 ? { line: cursor.line, col: wrappedCol } : null;
   }
 
   private moveToMatch(query: string, direction: 1 | -1): void {
@@ -360,7 +364,13 @@ export class ModalEditor extends CustomEditor {
     next[cursor.line] =
       line.slice(0, cursor.col) + this.yankedText + line.slice(cursor.col);
     this.setText(next.join("\n"));
-    this.moveCursorTo(cursor.line, cursor.col + this.yankedText.length);
+    const parts = this.yankedText.split("\n");
+    const targetLine = cursor.line + parts.length - 1;
+    const targetCol =
+      parts.length === 1
+        ? cursor.col + parts[0].length
+        : (parts[parts.length - 1]?.length ?? 0);
+    this.moveCursorTo(targetLine, targetCol);
   }
 
   override handleInput(data: string): void {
