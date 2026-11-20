@@ -1,3 +1,4 @@
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
   type Focusable,
@@ -9,6 +10,25 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+
+export type LabelStyler = (text: string, selected: boolean) => string;
+
+export function formatSelectedLabel(
+  label: string,
+  selected: boolean,
+  themeOrStyle?: Theme | LabelStyler,
+): string {
+  const padded = ` ${label} `;
+  let styled = padded;
+  if (typeof themeOrStyle === "function") {
+    styled = themeOrStyle(padded, selected);
+  } else if (themeOrStyle) {
+    styled = selected
+      ? themeOrStyle.bold(themeOrStyle.fg("accent", padded))
+      : themeOrStyle.fg("muted", padded);
+  }
+  return selected ? `\x1b[7m${styled}\x1b[27m` : styled;
+}
 
 export interface DialogTab {
   label: string;
@@ -99,12 +119,8 @@ export class TabbedContent implements Component, Focusable {
       const tab = this.tabs[index];
       if (!tab) continue;
       const active = index === this._activeIndex;
-      const styled = this.styleLabel(
-        active ? ` ${tab.label} ` : tab.label,
-        active,
-      );
       const rendered = truncateToWidth(
-        active ? `\x1b[7m${styled}\x1b[27m` : styled,
+        formatSelectedLabel(tab.label, active, this.styleLabel),
         safeWidth,
         "",
       );

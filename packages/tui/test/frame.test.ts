@@ -55,15 +55,17 @@ describe("boxFrame", () => {
     expect(dottedLines[2]?.endsWith("┘")).toBe(true);
   });
 
-  it("handles none border and surface styles with borderless host padding + 1", () => {
+  it("replaces border glyphs with spaces when borderStyle is none", () => {
     const lines = boxFrame(["alpha", "beta"], 16, mockTheme, "Header", {
       borderStyle: "none",
       overlaySurface: "card",
     });
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe("[bg:userMessageBg] Header         [/bg]");
-    expect(lines[1]).toBe("[bg:userMessageBg] alpha          [/bg]");
-    expect(lines[2]).toBe("[bg:userMessageBg] beta           [/bg]");
+    expect(lines).toEqual([
+      "[bg:userMessageBg]   Header       [/bg]",
+      "[bg:userMessageBg]  alpha         [/bg]",
+      "[bg:userMessageBg]  beta          [/bg]",
+      "[bg:userMessageBg]                [/bg]",
+    ]);
   });
 
   it("preserves borders and paints surface background when surface style is active", () => {

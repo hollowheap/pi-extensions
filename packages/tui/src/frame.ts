@@ -32,24 +32,20 @@ function isSurfaceActive(
 
 function framePadding(
   width: number,
-  borderStyle: BorderStyle,
+  _borderStyle: BorderStyle,
   paddingX?: number,
-  surfaceActive = false,
+  _surfaceActive = false,
 ): number {
-  if (borderStyle === "none" && surfaceActive) {
-    return paddingX ?? (getHostOutputPadding() ?? 0) + 1;
-  }
-  if (borderStyle !== "none" && width < 5) return 0;
-  return paddingX ?? getHostOutputPadding() ?? (borderStyle === "none" ? 0 : 1);
+  if (width < 5) return 0;
+  return paddingX ?? getHostOutputPadding() ?? 1;
 }
 
 function computeInnerWidth(
   safeWidth: number,
-  effectiveBorder: BorderStyle,
+  _effectiveBorder: BorderStyle,
   paddingX: number,
 ): number {
-  const edges = effectiveBorder === "none" ? 0 : 2;
-  return Math.max(1, safeWidth - edges - 2 * paddingX);
+  return Math.max(1, safeWidth - 2 - 2 * paddingX);
 }
 
 /** Return usable content width inside the selected border and padding. */
@@ -103,34 +99,17 @@ export function boxFrame(
   const bold = (value: string) =>
     typeof theme?.bold === "function" ? theme.bold(value) : value;
 
-  if (borderStyle === "none") {
-    const rows: string[] = [];
-    if (title) {
-      const titleLine = truncateToWidth(
-        fg("accent", bold(title)),
-        innerWidth,
-        "",
-      );
-      rows.push(
-        paintSurfaceLine(
-          inset + titleLine,
-          safeWidth,
-          theme,
-          overlaySurface,
-          colored,
-        ),
-      );
-    }
-    for (const line of lines) {
-      const fitted = inset + truncateToWidth(line, innerWidth, "");
-      rows.push(
-        paintSurfaceLine(fitted, safeWidth, theme, overlaySurface, colored),
-      );
-    }
-    return rows;
-  }
-
-  const chars = getBorderChars(borderStyle);
+  const chars =
+    borderStyle === "none"
+      ? {
+          topLeft: " ",
+          topRight: " ",
+          bottomLeft: " ",
+          bottomRight: " ",
+          horizontal: " ",
+          vertical: " ",
+        }
+      : getBorderChars(borderStyle);
   const rawLabel = title ? ` ${fg("accent", bold(title))} ` : "";
   const label = truncateToWidth(rawLabel, Math.max(0, safeWidth - 3), "");
   const labelWidth = visibleWidth(label);

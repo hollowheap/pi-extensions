@@ -4,7 +4,7 @@ import {
   isFocusable,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { TabbedContent } from "../src/tabs.js";
+import { TabbedContent, formatSelectedLabel } from "../src/tabs.js";
 
 function makeFocusableTab(label: string): {
   label: string;
@@ -78,7 +78,7 @@ describe("TabbedContent", () => {
     expect(initial[0]).toContain("\x1b[7m One \x1b[27m");
     expect(initial[0]).not.toContain("[One]");
 
-    // " One " is cols 0..4, sep "  " is 5..6, "Two" is cols 7..9
+    // " One " is cols 0..4, sep "  " is 5..6, " Two " is cols 7..11
     expect(
       tabbed.handleMouse({
         type: "click",
@@ -96,8 +96,25 @@ describe("TabbedContent", () => {
     const second = tabbed.render(40);
     expect(second[0]).toContain("\x1b[7m Two \x1b[27m");
 
-    // SGR mouse click on "Three" (1-based col/row): "One" (0..2), "  " (3..4), " Two " (5..9), "  " (10..11), "Three" (12..16)
-    tabbed.handleInput("\x1b[<0;14;1M");
+    // SGR mouse click on " Three " (1-based col/row): " One " (0..4), "  " (5..6), " Two " (7..11), "  " (12..13), " Three " (14..20)
+    tabbed.handleInput("\x1b[<0;16;1M");
     expect(tabbed.activeIndex).toBe(2);
+  });
+
+  it("formatSelectedLabel formats selected with inverted fg/bg and unselected with padding", () => {
+    expect(formatSelectedLabel("Confirm", true)).toBe(
+      "\x1b[7m Confirm \x1b[27m",
+    );
+    expect(formatSelectedLabel("Cancel", false)).toBe(" Cancel ");
+    const fakeTheme = {
+      fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+      bold: (text: string) => `<b>${text}</b>`,
+    };
+    expect(formatSelectedLabel("Confirm", true, fakeTheme as never)).toBe(
+      "\x1b[7m<b><accent> Confirm </accent></b>\x1b[27m",
+    );
+    expect(formatSelectedLabel("Cancel", false, fakeTheme as never)).toBe(
+      "<muted> Cancel </muted>",
+    );
   });
 });
