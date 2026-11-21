@@ -186,7 +186,7 @@ export async function showSubagentTranscript(
 ): Promise<void> {
   let index = states.findIndex(({ id }) => id === initialId);
   if (index < 0) return;
-  let leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
+  let leafId: string | undefined;
   let showBranch = false;
   const cache = new Map<string, TranscriptCacheEntry>();
   const read = () => {
@@ -206,14 +206,17 @@ export async function showSubagentTranscript(
     ...read(),
     fullscreen: true,
     read,
-    onAlternateView: () => {
+    onAlternateView: async () => {
+      if (!showBranch) {
+        leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
+      }
       showBranch = !showBranch;
     },
     navigate:
       states.length > 1
-        ? async (direction) => {
+        ? (direction) => {
             index = (index + direction + states.length) % states.length;
-            leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
+            leafId = undefined;
           }
         : undefined,
   });
