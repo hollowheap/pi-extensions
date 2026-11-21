@@ -19,6 +19,14 @@ describe("direct subagent actions", () => {
     }
   });
 
+  it("documents wait as blocking work only", () => {
+    const tool = createSubagentTool();
+    expect(tool.description).toContain("wait for blocking work only");
+    expect(JSON.stringify(tool.parameters)).toContain(
+      "Deadline for a blocking wait",
+    );
+  });
+
   it("exposes direct mode and the define/delete lifecycle actions", () => {
     const tool = createSubagentTool();
     expect(tool.exposure).toBe("direct");

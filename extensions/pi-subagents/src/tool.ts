@@ -351,7 +351,8 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       timeoutMs: Type.Optional(
         Type.Integer({
           minimum: 1,
-          description: "Deadline for a blocking wait; defaults to the configured timeout",
+          description:
+            "Deadline for a blocking wait; defaults to the configured timeout",
         }),
       ),
       isolated: Type.Optional(
