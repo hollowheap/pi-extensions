@@ -151,6 +151,28 @@ describe("content helpers", () => {
   });
 });
 
+describe("tool parameters", () => {
+  it("shares the path schema across file tools", () => {
+    const { deps } = scriptedDeps({}, ALLOW);
+    const tools = createAcpTools(deps);
+    const pathSchema = (name: string): unknown => {
+      const tool = tools.find((candidate) => candidate.name === name);
+      expect(tool).toBeDefined();
+      const parameters = tool?.parameters as
+        | { properties?: Record<string, unknown> }
+        | undefined;
+      return parameters?.properties?.path;
+    };
+
+    expect(pathSchema("acp_read")).toEqual(pathSchema("acp_write"));
+    expect(pathSchema("acp_read")).toEqual(pathSchema("acp_edit"));
+    expect(pathSchema("acp_read")).toMatchObject({
+      type: "string",
+      description: "File path, absolute or relative to the session directory",
+    });
+  });
+});
+
 describe("askPermission", () => {
   it("rejects an in-flight approval when the tool is aborted", async () => {
     let rejectSocket: (error: Error) => void = () => {};

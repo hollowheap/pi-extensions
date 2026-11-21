@@ -86,6 +86,12 @@ function resolveAbs(ctx: ExtensionContext, path: string): string {
   return resolveScopedPath(ctx.cwd, path, ctx.sessionManager);
 }
 
+function pathParameter() {
+  return Type.String({
+    description: "File path, absolute or relative to the session directory",
+  });
+}
+
 function isSearchDenied(
   ctx: ExtensionContext,
   absPath: string,
@@ -384,9 +390,7 @@ export function createAcpTools(deps: ToolDeps) {
     label: "acp_read",
     description: "Read a file. Prefers the editor buffer when available.",
     parameters: Type.Object({
-      path: Type.String({
-        description: "File path, absolute or relative to the session directory",
-      }),
+      path: pathParameter(),
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const abs = resolveAbs(ctx, params.path);
@@ -415,9 +419,7 @@ export function createAcpTools(deps: ToolDeps) {
     description:
       "Create a new file. Refuses existing paths and conflict markers.",
     parameters: Type.Object({
-      path: Type.String({
-        description: "File path, absolute or relative to the session directory",
-      }),
+      path: pathParameter(),
       content: Type.String({ description: "Full file content" }),
     }),
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
@@ -466,9 +468,7 @@ export function createAcpTools(deps: ToolDeps) {
     description:
       "Edit a file with exact oldText/newText replacements. Refuses conflict markers and mismatched editor buffers.",
     parameters: Type.Object({
-      path: Type.String({
-        description: "File path, absolute or relative to the session directory",
-      }),
+      path: pathParameter(),
       edits: Type.Array(
         Type.Object({
           oldText: Type.String(),
