@@ -550,8 +550,13 @@ export function createSubagentsExtension(
           return;
         }
         if (lowerAction === "view") {
-          const raw = parts.includes("raw");
-          await openSubagentLog(ctx, id, undefined, raw);
+          const state = await attachSubagent(agentDir, id);
+          await switchToChildSession(
+            ctx,
+            state !== undefined && isInProject(state, ctx.cwd)
+              ? state
+              : undefined,
+          );
           return;
         }
         if (lowerAction === "pause") {
@@ -621,17 +626,28 @@ export function createSubagentsExtension(
       },
     });
 
+    const switchToChildSession = async (
+      ctx: ExtensionContext,
+      state: SubagentState | undefined,
+    ): Promise<void> => {
+      const switchSession = (
+        ctx as ExtensionContext & {
+          switchSession?: (path: string) => Promise<{ cancelled: boolean }>;
+        }
+      ).switchSession;
+      if (state?.session === undefined || typeof switchSession !== "function") {
+        if (ctx.hasUI) notify(ctx, "No subagent session to open.", "info");
+        return;
+      }
+      await switchSession(state.session);
+    };
+
     pi.registerShortcut?.(Key.alt("s"), {
-      description: "Open subagent session tree",
+      description: "Open the active subagent session",
       handler: async (ctx) => {
         const states = await list(resolveAgentDir());
         const visible = states.filter((state) => isInProject(state, ctx.cwd));
-        const state = visible[0];
-        if (state === undefined) {
-          if (ctx.hasUI) notify(ctx, "No subagents found.", "info");
-          return;
-        }
-        await openSubagentLog(ctx, state.id, state, false, true);
+        await switchToChildSession(ctx, visible.at(-1));
       },
     });
 
