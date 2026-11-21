@@ -7,6 +7,8 @@ import {
 import {
   type EditorTheme,
   type TUI,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
   matchesKey,
   parseKey,
   stripTerminalSequences,
@@ -871,6 +873,24 @@ export class ModalEditor extends CustomEditor {
     return line;
   }
 
+  override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    const rendered = this as unknown as {
+      renderedAutocompleteHeight?: number;
+      renderedVisibleLineCount?: number;
+    };
+    const height = rendered.renderedAutocompleteHeight ?? 0;
+    if (
+      height > 0 &&
+      event.type === "click" &&
+      event.y >= 1 &&
+      event.y <= height
+    ) {
+      const offset = (rendered.renderedVisibleLineCount ?? 0) + 1;
+      return super.handleMouse({ ...event, y: event.y + offset });
+    }
+    return super.handleMouse(event);
+  }
+
   override render(width: number): string[] {
     const snapshot = this.getRenderSnapshot(width);
     if (!snapshot.panelEnabled) {
@@ -922,6 +942,15 @@ export class ModalEditor extends CustomEditor {
     const firstContentIdx = 1;
     const lastContentIdx = bottomIndex - 1;
     const indent = " ".repeat(promptWidth);
+
+    if (
+      this.isShowingAutocomplete() &&
+      bottomIndex >= 0 &&
+      bottomIndex + 1 < lines.length
+    ) {
+      const choices = lines.splice(bottomIndex + 1);
+      lines.unshift(...choices.map((line) => `${indent}${line}`));
+    }
 
     for (let idx = firstContentIdx; idx <= lastContentIdx; idx++) {
       const line = lines[idx] ?? "";
