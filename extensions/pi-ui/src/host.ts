@@ -195,7 +195,6 @@ function prompt<T>(
         ? {}
         : {
             overlayOptions: {
-              anchor: "bottom-center",
               width: "70%",
               maxHeight: "75%",
               margin: 1,

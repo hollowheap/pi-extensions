@@ -42,10 +42,10 @@ describe("shared prompt overlays", () => {
   it("uses the same thin frame as a panel and keeps the editor untouched", async () => {
     const { ctx, ui, component, theme } = setup();
     const choice = selectDialog(ctx as never, "Select", ["One", "Two"]);
-    expect(ui.custom).toHaveBeenCalledWith(expect.any(Function), {
-      overlay: true,
-      overlayOptions: expect.objectContaining({ anchor: "bottom-center" }),
-    });
+    expect(ui.custom).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ overlay: true }),
+    );
     const prompt = component()?.render(48);
     const panel = boxFrame(["A panel"], 48, theme as never, "Panel");
     expect(prompt?.[0].slice(0, 2)).toEqual(panel[0].slice(0, 2));
