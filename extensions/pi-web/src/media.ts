@@ -1,11 +1,7 @@
 import { Buffer } from "node:buffer";
 import { providerSignal } from "./providers/selection.js";
-import {
-  type HostResolver,
-  MAX_REDIRECTS,
-  assertSafeResolvedUrl,
-  assertSafeUrl,
-} from "./url.js";
+import { SafeRedirectError, safeFetchResponse } from "./safe-fetch.js";
+import type { HostResolver } from "./url.js";
 
 export interface MediaPreview {
   data: string;
@@ -76,47 +72,35 @@ export async function fetchMediaPreview(
   resolveHost?: HostResolver,
 ): Promise<MediaPreview | undefined> {
   const timeoutSignal = providerSignal(signal, 15_000);
-  let currentUrl = url;
-  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-    assertSafeUrl(currentUrl);
-    await assertSafeResolvedUrl(currentUrl, resolveHost);
-    const response = await fetchImpl(currentUrl, {
+  let response: Response;
+  try {
+    ({ response } = await safeFetchResponse(url, {
+      fetchImpl,
       signal: timeoutSignal,
-      redirect: "manual",
-    });
-    if (
-      response.status === 301 ||
-      response.status === 302 ||
-      response.status === 303 ||
-      response.status === 307 ||
-      response.status === 308
-    ) {
-      const location = response.headers.get("location");
-      await response.body?.cancel?.();
-      if (!location) return undefined;
-      currentUrl = new URL(location, currentUrl).href;
-      continue;
-    }
-    if (!response.ok) {
-      await response.body?.cancel?.();
-      return undefined;
-    }
-    const mimeType = (response.headers.get("content-type") ?? "")
-      .split(";")[0]
-      .trim()
-      .toLowerCase();
-    if (!IMAGE_TYPES.has(mimeType)) {
-      await response.body?.cancel?.();
-      return undefined;
-    }
-    const bytes = await readLimited(response);
-    if (bytes === undefined || bytes.byteLength === 0) return undefined;
-    const preview = {
-      data: Buffer.from(bytes).toString("base64"),
-      mimeType,
-    };
-    setMediaPreview(url, preview);
-    return preview;
+      resolveHost,
+    }));
+  } catch (error) {
+    if (error instanceof SafeRedirectError) return undefined;
+    throw error;
   }
-  return undefined;
+  if (!response.ok) {
+    await response.body?.cancel?.();
+    return undefined;
+  }
+  const mimeType = (response.headers.get("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!IMAGE_TYPES.has(mimeType)) {
+    await response.body?.cancel?.();
+    return undefined;
+  }
+  const bytes = await readLimited(response);
+  if (bytes === undefined || bytes.byteLength === 0) return undefined;
+  const preview = {
+    data: Buffer.from(bytes).toString("base64"),
+    mimeType,
+  };
+  setMediaPreview(url, preview);
+  return preview;
 }

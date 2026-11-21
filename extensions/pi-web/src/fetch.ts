@@ -11,13 +11,8 @@ import type {
   NormalizedFetchResult,
   ProviderAdapter,
 } from "./providers/types.js";
-import {
-  type HostResolver,
-  MAX_REDIRECTS,
-  assertSafeResolvedUrl,
-  assertSafeUrl,
-  isSafeUrl,
-} from "./url.js";
+import { safeFetchResponse } from "./safe-fetch.js";
+import { type HostResolver, assertSafeUrl, isSafeUrl } from "./url.js";
 
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -130,7 +125,6 @@ export async function rawFetch(
     resolveHost?: HostResolver;
   } = {},
 ): Promise<NormalizedFetchResult> {
-  assertSafeUrl(url);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const signal = options.signal;
   const acceptType = options.acceptType ?? "auto";
@@ -142,159 +136,78 @@ export async function rawFetch(
         : acceptType === "text"
           ? "text/plain"
           : "text/html,application/json,text/plain;q=0.9,*/*;q=0.8";
-  let currentUrl = url;
-  let redirects = 0;
+  const { response, url: currentUrl } = await safeFetchResponse(url, {
+    fetchImpl,
+    signal,
+    headers: { Accept: acceptHeader },
+    resolveHost: options.resolveHost,
+  });
+  const finalUrl = response.url || currentUrl;
+  const contentType = response.headers.get("content-type") ?? "";
+  const mediaType = contentType.split(";")[0].trim();
 
-  while (true) {
-    await assertSafeResolvedUrl(currentUrl, options.resolveHost);
-    const response = await fetchImpl(currentUrl, {
-      signal,
-      redirect: "manual",
-      headers: { Accept: acceptHeader },
-    });
+  if (!response.ok) {
+    await response.body?.cancel?.();
+    throw new Error(
+      `raw fetch failed: ${response.status} ${response.statusText}`,
+    );
+  }
 
-    if (
-      response.status === 301 ||
-      response.status === 302 ||
-      response.status === 303 ||
-      response.status === 307 ||
-      response.status === 308
-    ) {
-      try {
-        const location = response.headers.get("location");
-        if (!location) {
-          throw new Error("redirect missing Location header");
-        }
-        const nextUrl = new URL(location, currentUrl).href;
-        assertSafeUrl(nextUrl);
-        if (redirects >= MAX_REDIRECTS) {
-          throw new Error("too many redirects");
-        }
-        redirects += 1;
-        currentUrl = nextUrl;
-      } finally {
-        await response.body?.cancel?.();
-      }
-      continue;
-    }
-
-    const finalUrl = response.url || currentUrl;
-    const contentType = response.headers.get("content-type") ?? "";
-    const mediaType = contentType.split(";")[0].trim();
-
-    if (!response.ok) {
-      await response.body?.cancel?.();
-      throw new Error(
-        `raw fetch failed: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const lower = mediaType.toLowerCase();
-    if (lower === "application/pdf") {
-      const body = await readBoundedBytes(response, MAX_PDF_BYTES);
-      if (body.truncated) {
-        return {
-          url,
-          finalUrl,
-          provider: "raw",
-          contentType: mediaType,
-          content: "PDF exceeds the 5 MB extraction limit.",
-          links: [],
-          media: [],
-          truncated: true,
-        };
-      }
-      try {
-        const pdf = await extractPdfText(body.bytes, signal);
-        return {
-          url,
-          finalUrl,
-          provider: "raw",
-          contentType: mediaType,
-          content: pdf.text,
-          links: [],
-          media: [],
-          truncated: pdf.truncated,
-        };
-      } catch (error) {
-        return {
-          url,
-          finalUrl,
-          provider: "raw",
-          contentType: mediaType,
-          content: `PDF text extraction failed: ${errorMessage(error)}`,
-          links: [],
-          media: [],
-          truncated: false,
-        };
-      }
-    }
-
-    if (IMAGE_TYPES.has(lower)) {
-      const body = await readBoundedBytes(response, MAX_IMAGE_BYTES);
-      if (body.truncated || body.bytes.byteLength === 0) {
-        return {
-          url,
-          finalUrl,
-          provider: "raw",
-          contentType: mediaType,
-          content: "Image exceeds the 2 MB content limit or is empty.",
-          links: [],
-          media: [],
-          truncated: true,
-        };
-      }
+  const lower = mediaType.toLowerCase();
+  if (lower === "application/pdf") {
+    const body = await readBoundedBytes(response, MAX_PDF_BYTES);
+    if (body.truncated) {
       return {
         url,
         finalUrl,
         provider: "raw",
         contentType: mediaType,
-        content: "",
+        content: "PDF exceeds the 5 MB extraction limit.",
+        links: [],
+        media: [],
+        truncated: true,
+      };
+    }
+    try {
+      const pdf = await extractPdfText(body.bytes, signal);
+      return {
+        url,
+        finalUrl,
+        provider: "raw",
+        contentType: mediaType,
+        content: pdf.text,
+        links: [],
+        media: [],
+        truncated: pdf.truncated,
+      };
+    } catch (error) {
+      return {
+        url,
+        finalUrl,
+        provider: "raw",
+        contentType: mediaType,
+        content: `PDF text extraction failed: ${errorMessage(error)}`,
         links: [],
         media: [],
         truncated: false,
-        image: {
-          data: Buffer.from(body.bytes).toString("base64"),
-          mimeType: lower,
-        },
       };
     }
+  }
 
-    if (lower.includes("html")) {
-      const body = await readBoundedText(response);
-      const page = extractHtml(body.text, finalUrl);
+  if (IMAGE_TYPES.has(lower)) {
+    const body = await readBoundedBytes(response, MAX_IMAGE_BYTES);
+    if (body.truncated || body.bytes.byteLength === 0) {
       return {
         url,
         finalUrl,
         provider: "raw",
-        contentType: mediaType || "text/html",
-        content: page.content,
-        links: page.links,
-        media: page.media,
-        truncated: body.truncated,
-      };
-    }
-
-    if (
-      lower === "" ||
-      lower.startsWith("text/") ||
-      lower.includes("json") ||
-      lower.includes("xml")
-    ) {
-      const body = await readBoundedText(response);
-      return {
-        url,
-        finalUrl,
-        provider: "raw",
-        contentType: mediaType || "text/plain",
-        content: body.text,
+        contentType: mediaType,
+        content: "Image exceeds the 2 MB content limit or is empty.",
         links: [],
         media: [],
-        truncated: body.truncated,
+        truncated: true,
       };
     }
-
-    await response.body?.cancel();
     return {
       url,
       finalUrl,
@@ -304,8 +217,58 @@ export async function rawFetch(
       links: [],
       media: [],
       truncated: false,
+      image: {
+        data: Buffer.from(body.bytes).toString("base64"),
+        mimeType: lower,
+      },
     };
   }
+
+  if (lower.includes("html")) {
+    const body = await readBoundedText(response);
+    const page = extractHtml(body.text, finalUrl);
+    return {
+      url,
+      finalUrl,
+      provider: "raw",
+      contentType: mediaType || "text/html",
+      content: page.content,
+      links: page.links,
+      media: page.media,
+      truncated: body.truncated,
+    };
+  }
+
+  if (
+    lower === "" ||
+    lower.startsWith("text/") ||
+    lower.includes("json") ||
+    lower.includes("xml")
+  ) {
+    const body = await readBoundedText(response);
+    return {
+      url,
+      finalUrl,
+      provider: "raw",
+      contentType: mediaType || "text/plain",
+      content: body.text,
+      links: [],
+      media: [],
+      truncated: body.truncated,
+    };
+  }
+
+  await response.body?.cancel();
+  return {
+    url,
+    finalUrl,
+    provider: "raw",
+    contentType: mediaType,
+    content: "",
+    links: [],
+    media: [],
+    truncated: false,
+  };
 }
 
 export async function fetchUrl(
