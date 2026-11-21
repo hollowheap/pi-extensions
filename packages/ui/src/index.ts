@@ -9,3 +9,4 @@ export * from "./theme.js";
 export * from "./thinking.js";
 export * from "./autocomplete.js";
 export * from "./widget.js";
+export * from "./panel.js";

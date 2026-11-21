@@ -11,9 +11,14 @@ the active component. Compose it with a frame or use it inside an overlay.
 the whole frame. Host-aware dialogs, pickers, pagers, and progress overlays live
 in `@hollowheap/pi-ui`.
 
+`@hollowheap/ui/panel` owns the shared panel render config and verb packs used
+by prompt and tool surfaces.
+
 `@hollowheap/ui/widget` supplies named widget providers, visibility state, and
 shared row formatting. Providers register with `registerWidgetProvider`, which
 returns a disposer. `mountWidgetProviders(ctx)` mounts every registered provider
 using the configured frame and hide hint, and skips providers whose renderer
 returns no lines. `toggleWidgets(name?)` flips one provider or all of them; the
-mounted widget also toggles on left click.
+mounted widget also toggles on left click. `widgetToggleHint(name)` renders each
+provider's hide chord: Alt+W then T for todos, B for tasks, S for subagents, and
+P for all (Option+W on macOS).
