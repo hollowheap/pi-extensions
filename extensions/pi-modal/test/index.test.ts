@@ -691,10 +691,12 @@ describe("ModalEditor modal behavior", () => {
   });
 
   it("keeps the prompt decoration without side borders when borderStyle is none", () => {
-    const { editor } = createMockEditor(
-      { borderStyle: "none" },
-      { initialText: "hello" },
-    );
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "none",
+      panel: { ...DEFAULT_TUI_CONFIG.panel, borderStyle: "none" },
+    });
+    const { editor } = createMockEditor({}, { initialText: "hello" });
     const lines = editor.render(20).map(stripCursorMarkers);
     expect(lines[1]).toContain("❯ hello");
     expect(lines[1]).not.toContain("│");

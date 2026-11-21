@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import {
   type ExtensionAPI,
   type ExtensionContext,
@@ -9,7 +8,6 @@ import { Loader } from "@earendil-works/pi-tui";
 import { normalizeAgentMarkdown } from "@hollowheap/core/markdown";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
-import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { getPromptChar } from "@hollowheap/pi-ui/prompt-char";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
@@ -362,18 +360,13 @@ export default function (pi: ExtensionAPI): void {
         notify(ctx, `pi-modal: ${message}`, "warning"),
       );
       if (config.enabled !== false) {
-        const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
-        const editorConfig =
-          config.borderStyleExplicit && !hasTuiConfigFile
-            ? config
-            : { ...config, borderStyle: undefined };
         hostUi(ctx).setEditorComponent((tui, theme, kb) => {
           activeTui = tui as unknown as typeof activeTui;
           activeEditor = new ModalEditor(
             tui,
             theme,
             kb,
-            editorConfig,
+            config,
             undefined,
             hostUi(ctx).theme,
           );
@@ -422,18 +415,13 @@ export default function (pi: ExtensionAPI): void {
       notify(ctx, `pi-modal: ${message}`, "warning"),
     );
     if (config.enabled === false) return;
-    const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
-    const editorConfig =
-      config.borderStyleExplicit && !hasTuiConfigFile
-        ? config
-        : { ...config, borderStyle: undefined };
     hostUi(ctx).setEditorComponent((tui, theme, kb) => {
       activeTui = tui as unknown as typeof activeTui;
       activeEditor = new ModalEditor(
         tui,
         theme,
         kb,
-        editorConfig,
+        config,
         undefined,
         hostUi(ctx).theme,
         (rows) => {

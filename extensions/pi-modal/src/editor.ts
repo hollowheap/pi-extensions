@@ -97,7 +97,6 @@ function countGraphemes(text: string): number {
 
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
-  private explicitBorderStyle: BorderStyle | undefined;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
   private yankedText = "";
@@ -142,9 +141,6 @@ export class ModalEditor extends CustomEditor {
     this.modeTheme = modeTheme;
     this.onAutocompleteRows = onAutocompleteRows;
     this.keymaps = resolveEffectiveKeymaps(config);
-    if (config?.borderStyle) {
-      this.explicitBorderStyle = config.borderStyle;
-    }
 
     if (config?.initialMode) {
       this.mode = config.initialMode;
@@ -788,8 +784,7 @@ export class ModalEditor extends CustomEditor {
     const config = getActiveTuiConfig();
     const hostPad = getHostOutputPadding() ?? 0;
     const panel = panelRenderConfig(config);
-    const panelEnabled =
-      panel.enabled || this.explicitBorderStyle !== undefined;
+    const panelEnabled = panel.enabled;
     const surface: OverlaySurfaceMode = !panelEnabled
       ? "transparent"
       : (panel.surface ?? config.overlaySurface);
@@ -798,7 +793,7 @@ export class ModalEditor extends CustomEditor {
     const sharedBorderStyle: BorderStyle = !panelEnabled
       ? "none"
       : panel.borderStyle;
-    const borderStyle = this.explicitBorderStyle ?? sharedBorderStyle;
+    const borderStyle = sharedBorderStyle;
     const promptPrefix = `${this.getPromptChar()} `;
     const promptWidth = visibleWidth(promptPrefix);
     const borderEnabled =
@@ -819,7 +814,6 @@ export class ModalEditor extends CustomEditor {
 
   /** Clear constructor overrides so live `/ui` settings take effect immediately. */
   clearExplicitUiOverrides(): void {
-    this.explicitBorderStyle = undefined;
     this.lastBottomBorder = "";
     this.invalidate();
   }
