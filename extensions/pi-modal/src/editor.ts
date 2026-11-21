@@ -87,6 +87,8 @@ export class ModalEditor extends CustomEditor {
       }
     | undefined;
   private modeTheme: Theme | undefined;
+  private onAutocompleteRows?: (rows: readonly string[] | undefined) => void;
+  private lastAutocompleteRows?: string;
 
   constructor(
     tui: TUI,
@@ -95,9 +97,11 @@ export class ModalEditor extends CustomEditor {
     config?: ModalConfig,
     options?: CustomEditorOptions,
     modeTheme?: Theme,
+    onAutocompleteRows?: (rows: readonly string[] | undefined) => void,
   ) {
     super(tui, theme, keybindings, options);
     this.modeTheme = modeTheme;
+    this.onAutocompleteRows = onAutocompleteRows;
     this.keymaps = resolveEffectiveKeymaps(config);
     if (config?.promptChar && [...config.promptChar].length === 1) {
       this.customPromptChar = config.promptChar;
@@ -871,12 +875,32 @@ export class ModalEditor extends CustomEditor {
     return line;
   }
 
+  private moveAutocompleteToWidget(lines: string[]): string[] {
+    const bottomIndex = this.lastBottomBorder
+      ? lines.lastIndexOf(this.lastBottomBorder)
+      : -1;
+    if (bottomIndex < 0 || bottomIndex + 1 >= lines.length) {
+      if (this.lastAutocompleteRows !== undefined) {
+        this.lastAutocompleteRows = undefined;
+        this.onAutocompleteRows?.(undefined);
+      }
+      return lines;
+    }
+    const rows = lines.slice(bottomIndex + 1);
+    const signature = rows.join("\n");
+    if (signature !== this.lastAutocompleteRows) {
+      this.lastAutocompleteRows = signature;
+      this.onAutocompleteRows?.(rows);
+    }
+    return lines.slice(0, bottomIndex + 1);
+  }
+
   override render(width: number): string[] {
     const snapshot = this.getRenderSnapshot(width);
     if (!snapshot.panelEnabled) {
       this.renderSnapshot = snapshot;
       try {
-        return super.render(width);
+        return this.moveAutocompleteToWidget(super.render(width));
       } finally {
         this.renderSnapshot = undefined;
       }
@@ -915,6 +939,7 @@ export class ModalEditor extends CustomEditor {
     }
     if (lines.length === 0) return lines;
 
+    lines = this.moveAutocompleteToWidget(lines);
     const bottomIndex = this.lastBottomBorder
       ? lines.lastIndexOf(this.lastBottomBorder)
       : -1;

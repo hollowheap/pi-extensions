@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   AssistantMessageComponent,
+  CustomEditor,
   type MarkdownTransformer,
   initTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -501,6 +502,31 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("insert");
     editor.handleInput("jk");
     expect(editor.getMode()).toBe("normal");
+  });
+
+  it("publishes autocomplete rows to the above-editor widget", () => {
+    const { tui, theme, keybindings } = createMockEditor();
+    const onAutocompleteRows = vi.fn();
+    const editor = new ModalEditor(
+      tui as never,
+      theme as never,
+      keybindings as never,
+      { enabled: true },
+      undefined,
+      undefined,
+      onAutocompleteRows,
+    );
+    const render = vi
+      .spyOn(CustomEditor.prototype, "render")
+      .mockReturnValue(["top", "input", "bottom", "choice-1", "choice-2"]);
+    Reflect.set(editor, "lastBottomBorder", "bottom");
+
+    const lines = editor.render(60);
+    expect(lines.length).toBe(3);
+    expect(lines[0]).toBe("top");
+    expect(lines[2]).toBe("bottom");
+    expect(onAutocompleteRows).toHaveBeenCalledWith(["choice-1", "choice-2"]);
+    render.mockRestore();
   });
 
   it("does not switch to normal mode on escape when autocomplete is showing", () => {

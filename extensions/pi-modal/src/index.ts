@@ -12,6 +12,7 @@ import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { boxFrame } from "@hollowheap/ui/frame";
 import { createWorkingIndicator } from "@hollowheap/ui/spinner";
 import {
   bindHostOutputPadding,
@@ -437,6 +438,22 @@ export default function (pi: ExtensionAPI): void {
         editorConfig,
         undefined,
         hostUi(ctx).theme,
+        (rows) => {
+          const ui = hostUi(activeCtx ?? ctx);
+          if (typeof ui?.setWidget !== "function") return;
+          const widgetTheme = ui.theme ?? (theme as never);
+          ui.setWidget(
+            "hollowheap.autocomplete",
+            rows === undefined
+              ? undefined
+              : () => ({
+                  render: (width: number) =>
+                    boxFrame([...rows], width, widgetTheme),
+                  invalidate: () => {},
+                }),
+            { placement: "aboveEditor" },
+          );
+        },
       );
       return activeEditor;
     });
