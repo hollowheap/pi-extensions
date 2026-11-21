@@ -13,14 +13,19 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import { decodePrintableInput } from "@hollowheap/ui/input";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
 import { safeBold, safeFg } from "@hollowheap/ui/theme";
-import { canOverlay, hostUi, showDialog } from "./host.js";
+import {
+  canOverlay,
+  frameOverlay,
+  overlayTheme,
+  settledGuard,
+  showDialog,
+} from "./host.js";
 
 export interface FuzzyPickerItem extends SelectItem {
   preview?: string[];
@@ -71,17 +76,16 @@ export async function showFuzzyPicker(
     showDialog<string | undefined>(
       ctx,
       (tui, theme, _keybindings, done) => {
-        const getTheme = (): Theme => hostUi(ctx)?.theme ?? theme;
+        const getTheme = overlayTheme(ctx, theme);
         let query = "";
-        let settled = false;
+        const guard = settledGuard();
         let selected: FuzzyPickerItem | undefined;
         let list: SelectList;
         let unsubscribe = (): void => {};
         let initialApplied = false;
 
         const finish = (value: string | undefined): void => {
-          if (settled) return;
-          settled = true;
+          if (!guard.settle()) return;
           unsubscribe();
           if (value === undefined) options.onCancel?.();
           done(value);
@@ -147,7 +151,7 @@ export async function showFuzzyPicker(
         };
 
         const refreshStyles = (): void => {
-          if (settled) return;
+          if (guard.isSettled()) return;
           rebuild();
           tui.requestRender();
         };
@@ -155,7 +159,6 @@ export async function showFuzzyPicker(
         rebuild();
         return {
           render(width: number): string[] {
-            const innerWidth = getFrameInnerWidth(width);
             const header = options.header
               ? options.header(query, selected)
               : [
@@ -166,19 +169,23 @@ export async function showFuzzyPicker(
                       : `Filter: ${query}`,
                   ),
                 ];
-            const lines = [
-              ...header,
-              ...list.render(innerWidth),
-              "",
-              ...preview(),
-              "",
-              fg(
-                "dim",
-                options.hint ??
-                  "↑↓ move  Enter select  Esc clear/cancel  type to filter",
-              ),
-            ];
-            return boxFrame(lines, width, getTheme(), options.title);
+            return frameOverlay(
+              width,
+              getTheme(),
+              options.title,
+              (innerWidth) => [
+                ...header,
+                ...list.render(innerWidth),
+                "",
+                ...preview(),
+                "",
+                fg(
+                  "dim",
+                  options.hint ??
+                    "↑↓ move  Enter select  Esc clear/cancel  type to filter",
+                ),
+              ],
+            );
           },
           invalidate(): void {
             refreshStyles();

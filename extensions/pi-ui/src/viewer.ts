@@ -1,7 +1,11 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { boxFrame } from "@hollowheap/ui/frame";
-import { hostUi, showDialog } from "./host.js";
-import { handleViewportKey } from "./viewport.js";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  frameOverlay,
+  overlayTheme,
+  settledGuard,
+  showDialog,
+} from "./host.js";
+import { handleViewportKey, viewportHeight } from "./viewport.js";
 
 export async function showCodeViewer(
   ctx: ExtensionContext,
@@ -15,23 +19,21 @@ export async function showCodeViewer(
   await showDialog<void>(
     ctx,
     (tui, theme, _keybindings, done) => {
-      const getTheme = (): Theme => hostUi(ctx)?.theme ?? theme;
-      let settled = false;
+      const getTheme = overlayTheme(ctx, theme);
+      const guard = settledGuard();
       const finish = (): void => {
-        if (settled) return;
-        settled = true;
+        if (!guard.settle()) return;
         done();
       };
 
-      const viewportHeight = (): number =>
-        Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 2);
+      const visibleHeight = (): number => viewportHeight(tui.terminal.rows);
       const maxOffset = (): number =>
-        Math.max(0, codeLines.length - viewportHeight());
+        Math.max(0, codeLines.length - visibleHeight());
 
       return {
         capturesViewportInput: true,
         render(width: number): string[] {
-          const height = viewportHeight();
+          const height = visibleHeight();
           offset = Math.max(0, Math.min(offset, maxOffset()));
           const content = codeLines.slice(offset, offset + height);
           while (content.length < height) {
@@ -41,7 +43,9 @@ export async function showCodeViewer(
             codeLines.length > height
               ? `↑↓ scroll ${offset + 1}/${codeLines.length} · Esc close`
               : "Esc close";
-          return boxFrame(content, width, getTheme(), title, { bottomHint });
+          return frameOverlay(width, getTheme(), title, () => content, {
+            bottomHint,
+          });
         },
         handleInput(data: string): void {
           const handled = handleViewportKey(data, {
@@ -54,7 +58,7 @@ export async function showCodeViewer(
               offset = Math.max(0, Math.min(maxOffset(), next));
               tui.requestRender();
             },
-            pageSize: viewportHeight,
+            pageSize: visibleHeight,
             maxOffset,
             closeOnEnter: true,
           });

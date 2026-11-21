@@ -1,6 +1,12 @@
-import { boxFrame } from "@hollowheap/ui/frame";
+import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import { describe, expect, it, vi } from "vitest";
-import { confirmDialog, selectDialog } from "../src/host.js";
+import {
+  confirmDialog,
+  frameOverlay,
+  overlayTheme,
+  selectDialog,
+  settledGuard,
+} from "../src/host.js";
 
 function setup() {
   let component:
@@ -37,6 +43,51 @@ function setup() {
   const ctx = { mode: "tui", ui };
   return { ctx, ui, component: () => component, theme };
 }
+
+describe("overlay helpers", () => {
+  it("reads a live host theme and falls back when absent", () => {
+    const fallback = { fg: (_token: string, value: string) => value };
+    const first = { fg: (_token: string, value: string) => `first:${value}` };
+    const second = { fg: (_token: string, value: string) => `second:${value}` };
+    let current: typeof first | undefined = first;
+    const ctx = {
+      get ui() {
+        return current ? { theme: current } : {};
+      },
+    };
+    const getTheme = overlayTheme(ctx as never, fallback as never);
+
+    expect(getTheme()).toBe(first);
+    current = second;
+    expect(getTheme()).toBe(second);
+    current = undefined;
+    expect(getTheme()).toBe(fallback);
+  });
+
+  it("settles only once", () => {
+    const guard = settledGuard();
+    expect(guard.isSettled()).toBe(false);
+    expect(guard.settle()).toBe(true);
+    expect(guard.settle()).toBe(false);
+    expect(guard.isSettled()).toBe(true);
+  });
+
+  it("renders content at the inner frame width", () => {
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bold: (value: string) => value,
+    };
+    const content = vi.fn((width: number) => [`inner:${width}`]);
+
+    const innerWidth = getFrameInnerWidth(30);
+    const framed = frameOverlay(30, theme as never, "Overlay", content);
+
+    expect(content).toHaveBeenCalledWith(innerWidth);
+    expect(framed).toEqual(
+      boxFrame([`inner:${innerWidth}`], 30, theme as never, "Overlay"),
+    );
+  });
+});
 
 describe("shared prompt overlays", () => {
   it("uses the same thin frame as a panel and keeps the editor untouched", async () => {

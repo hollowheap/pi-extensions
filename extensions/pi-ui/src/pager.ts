@@ -1,15 +1,23 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { getFrameInnerWidth } from "@hollowheap/ui/frame";
 import { StyledMarkdown } from "@hollowheap/ui/markdown";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
 import { safeFg } from "@hollowheap/ui/theme";
-import { canOverlay, hostUi, notify, showDialog } from "./host.js";
-import { handleViewportKey } from "./viewport.js";
+import {
+  canOverlay,
+  frameOverlay,
+  hostUi,
+  notify,
+  overlayTheme,
+  settledGuard,
+  showDialog,
+} from "./host.js";
+import { handleViewportKey, viewportHeight } from "./viewport.js";
 
 export interface MarkdownPagerOptions {
   title: string;
@@ -56,7 +64,7 @@ export async function showMarkdownPager(
       showDialog<void>(
         ctx,
         (tui, theme, _keybindings, done) => {
-          const liveTheme = (): Theme => hostUi(ctx)?.theme ?? theme;
+          const liveTheme = overlayTheme(ctx, theme);
           let activeTheme = liveTheme();
           let page = { title: options.title, markdown: options.markdown };
           let markdown = new StyledMarkdown(page.markdown, activeTheme, {
@@ -66,7 +74,7 @@ export async function showMarkdownPager(
           let width = 80;
           let cachedWidth = -1;
           let content: string[] = [];
-          let settled = false;
+          const guard = settledGuard();
 
           const rebuildStyles = (): void => {
             activeTheme = liveTheme();
@@ -76,7 +84,7 @@ export async function showMarkdownPager(
             cachedWidth = -1;
           };
           const unsubscribe = subscribeActiveTuiConfig(() => {
-            if (settled) return;
+            if (guard.isSettled()) return;
             rebuildStyles();
             tui.requestRender();
           });
@@ -97,8 +105,7 @@ export async function showMarkdownPager(
           };
 
           const finish = (): void => {
-            if (settled) return;
-            settled = true;
+            if (!guard.settle()) return;
             unsubscribe();
             clearInterval(timer);
             done();
@@ -116,9 +123,12 @@ export async function showMarkdownPager(
             if (options.fullscreen) {
               const frameRows =
                 getActiveTuiConfig().borderStyle === "none" ? 1 : 2;
-              return Math.max(1, rows - frameRows - 1);
+              return viewportHeight(rows, {
+                fraction: 1,
+                frameRows: frameRows + 1,
+              });
             }
-            return Math.max(3, Math.min(rows - 4, Math.floor(rows * 0.8) - 2));
+            return viewportHeight(rows, { min: 3, max: rows - 4 });
           };
           const maxOffset = (): number =>
             Math.max(
@@ -141,42 +151,43 @@ export async function showMarkdownPager(
             capturesViewportInput: true,
             render(renderWidth: number): string[] {
               width = renderWidth;
-              const innerWidth = getFrameInnerWidth(renderWidth);
-              const lines = contentLines(innerWidth);
-              const size = pageSize();
-              offset = clamp(offset, 0, Math.max(0, lines.length - size));
-              const visible = lines
-                .slice(offset, offset + size)
-                .map((line) => truncateToWidth(line, innerWidth, ""));
-              const first = lines.length === 0 ? 0 : offset + 1;
-              const last = Math.min(lines.length, offset + size);
-              const coloredFooter = safeFg(
-                activeTheme,
-                "muted",
-                `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
-                getActiveTuiConfig().colored,
-              );
-              if (options.fullscreen) {
-                while (visible.length < size) visible.push("");
-              }
-              const navigation = options.navigate
-                ? safeFg(
-                    activeTheme,
-                    "muted",
-                    "  Alt+←/→ children · Alt+↑ tree",
-                    getActiveTuiConfig().colored,
-                  )
-                : "";
-              const footer = truncateToWidth(
-                coloredFooter + navigation,
-                innerWidth,
-                "",
-              );
-              return boxFrame(
-                [...visible, footer],
+              return frameOverlay(
                 renderWidth,
                 activeTheme,
                 page.title,
+                (innerWidth) => {
+                  const lines = contentLines(innerWidth);
+                  const size = pageSize();
+                  offset = clamp(offset, 0, Math.max(0, lines.length - size));
+                  const visible = lines
+                    .slice(offset, offset + size)
+                    .map((line) => truncateToWidth(line, innerWidth, ""));
+                  const first = lines.length === 0 ? 0 : offset + 1;
+                  const last = Math.min(lines.length, offset + size);
+                  const coloredFooter = safeFg(
+                    activeTheme,
+                    "muted",
+                    `${first}-${last}/${lines.length}  ↑↓ scroll  PgUp/PgDn page  Home/End  Esc close`,
+                    getActiveTuiConfig().colored,
+                  );
+                  if (options.fullscreen) {
+                    while (visible.length < size) visible.push("");
+                  }
+                  const navigation = options.navigate
+                    ? safeFg(
+                        activeTheme,
+                        "muted",
+                        "  Alt+←/→ children · Alt+↑ tree",
+                        getActiveTuiConfig().colored,
+                      )
+                    : "";
+                  const footer = truncateToWidth(
+                    coloredFooter + navigation,
+                    innerWidth,
+                    "",
+                  );
+                  return [...visible, footer];
+                },
               );
             },
             invalidate(): void {

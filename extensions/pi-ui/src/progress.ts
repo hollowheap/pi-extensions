@@ -10,14 +10,19 @@ import type { BorderStyle } from "@hollowheap/core/border";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import type { OverlaySurfaceMode } from "@hollowheap/core/tui-config";
 import { watchAbort } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import { createWorkingIndicator } from "@hollowheap/ui/spinner";
 import {
   getActiveTuiConfig,
   subscribeActiveTuiConfig,
 } from "@hollowheap/ui/state";
 import { safeFg } from "@hollowheap/ui/theme";
-import { canOverlay, hostUi, showDialog } from "./host.js";
+import {
+  canOverlay,
+  frameOverlay,
+  overlayTheme,
+  settledGuard,
+  showDialog,
+} from "./host.js";
 
 export type CancellableProgressResult<T> =
   | { status: "completed"; value: T }
@@ -64,12 +69,14 @@ function progressComponent(
       const active = getActiveTuiConfig();
       const borderStyle = options?.borderStyle ?? active.borderStyle;
       const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
-      const innerWidth = getFrameInnerWidth(width, borderStyle);
-      return boxFrame(
-        [...loader.render(innerWidth), ...hint.render(innerWidth)],
+      return frameOverlay(
         width,
         getTheme(),
         undefined,
+        (innerWidth) => [
+          ...loader.render(innerWidth),
+          ...hint.render(innerWidth),
+        ],
         { borderStyle, overlaySurface },
       );
     },
@@ -117,8 +124,8 @@ export async function withCancellableProgress<T>(
       ctx,
       (tui, theme, _keybindings, done) => {
         const controller = new AbortController();
-        let settled = false;
-        const getTheme = (): Theme => hostUi(ctx)?.theme ?? theme;
+        const guard = settledGuard();
+        const getTheme = overlayTheme(ctx, theme);
         const state: {
           component?: ReturnType<typeof progressComponent>;
         } = {};
@@ -126,8 +133,7 @@ export async function withCancellableProgress<T>(
 
         let stopWatching = (): void => {};
         const finish = (result: CancellableProgressResult<T>): void => {
-          if (settled) return;
-          settled = true;
+          if (!guard.settle()) return;
           state.component?.loader.stop();
           stopWatching();
           unsubscribe();
@@ -138,7 +144,7 @@ export async function withCancellableProgress<T>(
           finish({ status: "cancelled" });
         };
         const refreshStyles = (): void => {
-          if (settled) return;
+          if (guard.isSettled()) return;
           state.component?.invalidate();
           tui.requestRender();
         };
@@ -152,11 +158,11 @@ export async function withCancellableProgress<T>(
         );
         stopWatching = watchAbort(parentSignal, cancel);
 
-        if (!settled)
+        if (!guard.isSettled())
           void operation(controller.signal).then(
             (value) => finish({ status: "completed", value }),
             (error: unknown) => {
-              if (settled) return;
+              if (guard.isSettled()) return;
               failure = error;
               finish({ status: "cancelled" });
             },
@@ -167,7 +173,7 @@ export async function withCancellableProgress<T>(
           handleInput: (data: string) => state.component?.handleInput(data),
           invalidate: () => refreshStyles(),
           dispose: () => {
-            if (!settled) cancel();
+            if (!guard.isSettled()) cancel();
             stopWatching();
             unsubscribe();
             state.component?.dispose();

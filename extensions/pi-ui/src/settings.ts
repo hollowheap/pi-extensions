@@ -10,14 +10,16 @@ import {
 import { isPermissionError } from "@hollowheap/core/config";
 import { errorMessage } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
-import {
-  type FrameOptions,
-  boxFrame,
-  getFrameInnerWidth,
-} from "@hollowheap/ui/frame";
+import { type FrameOptions, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import { TabbedContent } from "@hollowheap/ui/tabs";
 import { safeFg } from "@hollowheap/ui/theme";
-import { canOverlay, notify, showDialog } from "./host.js";
+import {
+  canOverlay,
+  frameOverlay,
+  notify,
+  settledGuard,
+  showDialog,
+} from "./host.js";
 
 export function settingsListTheme(
   theme: Theme,
@@ -83,10 +85,9 @@ async function mountSettingsOverlay(options: {
     showDialog<void>(
       options.ctx,
       (tui, theme, _keybindings, done) => {
-        let settled = false;
+        const guard = settledGuard();
         const finish = () => {
-          if (settled) return;
-          settled = true;
+          if (!guard.settle()) return;
           options.onClose?.();
           done();
         };
@@ -135,11 +136,10 @@ export async function showSettingsDialog(
       return {
         render(width: number): string[] {
           offsetX = frameOffsetX(width);
-          const lines = [
+          return frameOverlay(width, theme, options.title, (innerWidth) => [
             ...(options.header?.(list, theme) ?? []),
-            ...list.render(getFrameInnerWidth(width)),
-          ];
-          return boxFrame(lines, width, theme, options.title);
+            ...list.render(innerWidth),
+          ]);
         },
         handleInput(data: string): void {
           list.handleInput(data);
@@ -250,18 +250,11 @@ export async function showTabbedSettingsDialog(
           offsetX = frameOffsetX(width, frameOpts);
           frameOffsetY =
             frameOpts?.borderStyle === "none" ? (options.title ? 1 : 0) : 1;
-          const innerWidth = getFrameInnerWidth(
-            width,
-            frameOpts?.borderStyle,
-            frameOpts?.paddingX,
-            frameOpts?.overlaySurface,
-            frameOpts?.colored,
-          );
-          return boxFrame(
-            tabs.render(innerWidth),
+          return frameOverlay(
             width,
             theme,
             options.title,
+            (innerWidth) => tabs.render(innerWidth),
             frameOpts,
           );
         },

@@ -17,7 +17,11 @@ import {
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { scopedAbortSignal, watchAbort } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import {
+  type FrameOptions,
+  boxFrame,
+  getFrameInnerWidth,
+} from "@hollowheap/ui/frame";
 import { safeFg } from "@hollowheap/ui/theme";
 import { selectListTheme } from "./picker.js";
 
@@ -41,6 +45,48 @@ export function hostUi<T>(ctx: { ui: T }): T;
 export function hostUi<T>(ctx: { ui?: T } | undefined): T | undefined;
 export function hostUi<T>(ctx: { ui?: T } | undefined): T | undefined {
   return ctx?.ui;
+}
+
+/** Track a live host theme so overlays follow theme changes. */
+export function overlayTheme(
+  ctx: { ui?: { theme?: Theme } } | undefined,
+  fallback: Theme,
+): () => Theme {
+  return () => hostUi(ctx)?.theme ?? fallback;
+}
+
+/** One-shot completion state shared by overlay components. */
+export function settledGuard(): {
+  isSettled(): boolean;
+  settle(): boolean;
+} {
+  let settled = false;
+  return {
+    isSettled: () => settled,
+    settle: () => {
+      if (settled) return false;
+      settled = true;
+      return true;
+    },
+  };
+}
+
+/** Render overlay content inside the shared host frame. */
+export function frameOverlay(
+  width: number,
+  theme: Theme,
+  title: string | undefined,
+  content: (innerWidth: number) => readonly string[],
+  options?: FrameOptions,
+): string[] {
+  const innerWidth = getFrameInnerWidth(
+    width,
+    options?.borderStyle,
+    options?.paddingX,
+    options?.overlaySurface,
+    options?.colored,
+  );
+  return boxFrame(content(innerWidth), width, theme, title, options);
 }
 
 /** Keep the host responsible for notifications, with terminal-safe text. */
@@ -92,16 +138,16 @@ export async function showInfoPopup(
           ? options.lines(theme)
           : (options.lines ?? []);
       const body = (width: number): string[] =>
-        options.render?.(getFrameInnerWidth(width)) ??
+        options.render?.(width) ??
         rawLines.map((line) => sanitizeTerminalText(line, { allowSgr: true }));
 
       return {
         render(width: number): string[] {
-          return boxFrame(
-            body(width),
+          return frameOverlay(
             width,
             theme,
             sanitizeTerminalText(options.title),
+            body,
           );
         },
         invalidate(): void {},
@@ -152,11 +198,10 @@ function prompt<T>(
     ctx,
     (tui, theme, _keys, done) => {
       const abort = scopedAbortSignal({ signal, timeoutMs: options?.timeout });
-      let settled = false;
+      const guard = settledGuard();
       let stopWatching: () => void = () => {};
       const finish = (value: T | undefined) => {
-        if (settled) return;
-        settled = true;
+        if (!guard.settle()) return;
         stopWatching();
         abort.stop();
         done(value);
@@ -171,11 +216,17 @@ function prompt<T>(
           component.focused = focused;
         },
         render(width) {
-          const inner = getFrameInnerWidth(width);
-          const body = component.render(inner);
-          if (description)
-            body.unshift(...sanitizeTerminalText(description).split("\n"));
-          return boxFrame(body, width, theme, sanitizeTerminalText(title));
+          return frameOverlay(
+            width,
+            theme,
+            sanitizeTerminalText(title),
+            (inner) => {
+              const body = component.render(inner);
+              if (description)
+                body.unshift(...sanitizeTerminalText(description).split("\n"));
+              return body;
+            },
+          );
         },
         invalidate: () => component.invalidate(),
         handleInput(data) {

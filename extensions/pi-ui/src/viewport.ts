@@ -1,5 +1,26 @@
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 
+export interface ViewportHeightOptions {
+  fraction?: number;
+  frameRows?: number;
+  min?: number;
+  max?: number;
+}
+
+/** Compute visible overlay rows from the terminal height and frame overhead. */
+export function viewportHeight(
+  rows: number,
+  options: ViewportHeightOptions = {},
+): number {
+  const {
+    fraction = 0.8,
+    frameRows = 2,
+    min = 1,
+    max = Number.MAX_SAFE_INTEGER,
+  } = options;
+  return Math.max(min, Math.min(max, Math.floor(rows * fraction) - frameRows));
+}
+
 export interface ViewportKeyHandlers {
   onClose: () => void;
   onScrollBy: (delta: number) => void;
