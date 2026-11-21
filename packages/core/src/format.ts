@@ -1,8 +1,7 @@
 import { relative, sep } from "node:path";
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from "@hollowheap/runtime/primitives";
+import { errorMessage } from "@hollowheap/runtime/primitives";
 
 const TRUNCATE_THRESHOLD = 4000;
 const HEAD_LENGTH = 3000;

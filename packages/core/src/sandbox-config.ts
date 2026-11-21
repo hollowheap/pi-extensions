@@ -7,8 +7,9 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { errorMessage } from "@hollowheap/runtime/primitives";
 import { updateJsonConfig } from "./config.js";
-import { errorMessage } from "./format.js";
+import { isPermissionError } from "./errors.js";
 import { isRecord } from "./records.js";
 
 export type SandboxBackend = "auto" | "bwrap" | "podman" | "docker";
@@ -117,14 +118,7 @@ function appendMaskArgs(
 }
 
 export function isOsPermissionError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
-    return true;
-  }
-  const message = errorMessage(error);
-  return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted)\b/i.test(
-    message,
-  );
+  return isPermissionError(error);
 }
 
 export type BwrapProbeResult =

@@ -1,13 +1,8 @@
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
-import { errorMessage } from "./format.js";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { errorMessage, writeJsonAtomic } from "@hollowheap/runtime/primitives";
+import { isPermissionError } from "./errors.js";
+export { isPermissionError } from "./errors.js";
 import { getModeLayer } from "./modes.js";
 import { getMtimeCache } from "./mtime-cache.js";
 import { isRecord } from "./records.js";
@@ -20,17 +15,6 @@ import {
 } from "./types.js";
 
 const MAX_CACHE_ENTRIES = 64;
-
-export function isPermissionError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
-    return true;
-  }
-  const message = errorMessage(error);
-  return /\b(EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system)\b/i.test(
-    message,
-  );
-}
 
 export function formatFsPermissionError(
   action: string,
@@ -699,20 +683,9 @@ export function updateJsonConfig(
 
   const mutated = mutate(root);
   const next = isRecord(mutated) ? mutated : root;
-  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    renameSync(temporary, path);
+    writeJsonAtomic(path, next, { createDir: true });
   } catch (error) {
-    try {
-      rmSync(temporary, { force: true });
-    } catch {
-      // Ignore temp cleanup failure.
-    }
     const detail = errorMessage(error);
     return {
       ok: false,

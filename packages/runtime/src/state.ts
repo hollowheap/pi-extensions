@@ -5,10 +5,10 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  renameSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { writeJsonAtomic } from "./primitives.js";
 import { isRecord } from "./utils.js";
 
 export interface ProcessState {
@@ -78,13 +78,7 @@ export class ProcessStore {
       this.dir,
       `.${sanitizeId(state.id)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
     );
-    writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-    try {
-      chmodSync(tmp, 0o600);
-    } catch {
-      // Best-effort.
-    }
-    renameSync(tmp, target);
+    writeJsonAtomic(target, state, { tmp });
   }
 
   read(id: string): ProcessState | undefined {
