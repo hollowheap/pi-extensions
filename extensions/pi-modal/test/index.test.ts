@@ -114,29 +114,7 @@ describe("keymap config loading and resolution", () => {
     const config = loadModalConfig(dir);
     expect(config.enabled).toBe(true);
     expect(config.initialMode).toBe("insert");
-    expect(config.promptChar).toBe("❯");
     expect(config.keymaps?.normal).toEqual({});
-  });
-
-  it("loads single-character promptChar from modal.json and validates length", () => {
-    const dir = createTempDir();
-    writeFileSync(
-      join(dir, "modal.json"),
-      JSON.stringify({
-        promptChar: "$",
-      }),
-    );
-    const config = loadModalConfig(dir);
-    expect(config.promptChar).toBe("$");
-
-    writeFileSync(
-      join(dir, "modal.json"),
-      JSON.stringify({
-        promptChar: ">>>",
-      }),
-    );
-    const multiConfig = loadModalConfig(dir);
-    expect(multiConfig.promptChar).toBe("❯");
   });
 
   it("loads user key overrides and initialMode from modal.json", () => {
@@ -643,15 +621,13 @@ describe("ModalEditor modal behavior", () => {
     const lines = editor.render(80);
     expect(lines.length).toBeGreaterThanOrEqual(4);
     expect(lines[0]).toContain("╭");
-    expect(lines[1]).toContain("▎ line1");
+    expect(lines[1]).toContain("❯ line1");
     expect(lines[2]).toContain("│ line2");
   });
 
-  it("respects custom single-character promptChar in render", () => {
-    const { editor } = createMockEditor(
-      { promptChar: "$" },
-      { initialText: "custom prompt" },
-    );
+  it("respects the shared promptChar from tui.json in render", () => {
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, promptChar: "$" });
+    const { editor } = createMockEditor({}, { initialText: "custom prompt" });
     expect(editor.getPromptChar()).toBe("$");
     const lines = editor.render(80);
     expect(lines[1]).toContain("$ custom prompt");
@@ -703,7 +679,7 @@ describe("ModalEditor modal behavior", () => {
 
     expect(top.startsWith(color("╭"))).toBe(true);
     expect(top.endsWith(color("╮"))).toBe(true);
-    expect(content.startsWith("▎ ")).toBe(true);
+    expect(content.startsWith("❯ ")).toBe(true);
     expect(content.endsWith(color("│"))).toBe(true);
     expect(content).toContain("hello");
     expect(bottom.startsWith(color("╰"))).toBe(true);
@@ -720,7 +696,7 @@ describe("ModalEditor modal behavior", () => {
       { initialText: "hello" },
     );
     const lines = editor.render(20).map(stripCursorMarkers);
-    expect(lines[1]).toContain("▎ hello");
+    expect(lines[1]).toContain("❯ hello");
     expect(lines[1]).not.toContain("│");
     expect(lines[0]).not.toContain("╭");
     expect(lines.at(-1)).toContain("INSERT");

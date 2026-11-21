@@ -53,7 +53,6 @@ describe("vim CustomEditor modes", () => {
     const dir = mkdtempSync(join(tmpdir(), "vim-mode-transitions-modal-"));
     const config = loadModalConfig(dir);
     expect(config.initialMode).toBe("insert");
-    expect(config.promptChar).toBe("❯");
     expect(createEditor().getMode()).toBe("insert");
   });
 

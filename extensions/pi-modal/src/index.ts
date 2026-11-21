@@ -11,7 +11,7 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
-import { getPromptChar, setPromptChar } from "@hollowheap/pi-ui/prompt-char";
+import { getPromptChar } from "@hollowheap/pi-ui/prompt-char";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { boxFrame } from "@hollowheap/ui/frame";
 import { createWorkingIndicator } from "@hollowheap/ui/spinner";
@@ -421,7 +421,6 @@ export default function (pi: ExtensionAPI): void {
     const config = loadModalConfig(getAgentDir(), (message) =>
       notify(ctx, `pi-modal: ${message}`, "warning"),
     );
-    setPromptChar(config.promptChar);
     if (config.enabled === false) return;
     const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
     const editorConfig =

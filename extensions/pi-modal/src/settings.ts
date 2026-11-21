@@ -352,7 +352,6 @@ function defaults(): ModalConfig {
   return {
     enabled: true,
     initialMode: "insert",
-    promptChar: "❯",
     borderStyle: "rounded",
     keymaps: { normal: {}, visual: {}, insert: {} },
   };
@@ -416,17 +415,6 @@ export function loadModalConfig(
       onDiagnostic?.(
         'initialMode must be "normal", "insert", or "visual"; using insert',
       );
-    }
-  }
-
-  if (parsed.promptChar !== undefined) {
-    if (
-      typeof parsed.promptChar === "string" &&
-      [...parsed.promptChar].length === 1
-    ) {
-      config.promptChar = parsed.promptChar;
-    } else {
-      onDiagnostic?.("promptChar must be one character; using ❯");
     }
   }
 

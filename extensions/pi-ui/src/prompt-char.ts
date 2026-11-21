@@ -1,14 +1,8 @@
-export const DEFAULT_PROMPT_CHAR = "❯";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { getActiveTuiConfig } from "@hollowheap/ui/state";
 
-let current = DEFAULT_PROMPT_CHAR;
-
-export function setPromptChar(value: string | undefined): void {
-  current =
-    typeof value === "string" && [...value].length === 1
-      ? value
-      : DEFAULT_PROMPT_CHAR;
-}
+export const DEFAULT_PROMPT_CHAR = DEFAULT_TUI_CONFIG.promptChar;
 
 export function getPromptChar(): string {
-  return current;
+  return getActiveTuiConfig().promptChar;
 }

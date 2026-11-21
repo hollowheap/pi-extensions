@@ -14,6 +14,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { errorMessage } from "@hollowheap/core/format";
+import { getPromptChar as sharedGetPromptChar } from "@hollowheap/pi-ui/prompt-char";
 
 import {
   type BorderChars,
@@ -96,7 +97,6 @@ function countGraphemes(text: string): number {
 
 export class ModalEditor extends CustomEditor {
   private mode: EditorMode = "insert";
-  private customPromptChar: string | undefined;
   private explicitBorderStyle: BorderStyle | undefined;
   private keymaps: ReturnType<typeof resolveEffectiveKeymaps>;
   private selectionAnchor: { line: number; col: number } | null = null;
@@ -142,9 +142,6 @@ export class ModalEditor extends CustomEditor {
     this.modeTheme = modeTheme;
     this.onAutocompleteRows = onAutocompleteRows;
     this.keymaps = resolveEffectiveKeymaps(config);
-    if (config?.promptChar && [...config.promptChar].length === 1) {
-      this.customPromptChar = config.promptChar;
-    }
     if (config?.borderStyle) {
       this.explicitBorderStyle = config.borderStyle;
     }
@@ -158,8 +155,7 @@ export class ModalEditor extends CustomEditor {
   }
 
   getPromptChar(): string {
-    if (this.customPromptChar !== undefined) return this.customPromptChar;
-    return this.mode === "insert" ? "▎" : "█";
+    return sharedGetPromptChar();
   }
 
   getMode(): EditorMode {

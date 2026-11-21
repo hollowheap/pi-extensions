@@ -9,7 +9,6 @@ describe("loadModalConfig", () => {
     const dir = mkdtempSync(join(tmpdir(), "modal-"));
     const cfg = loadModalConfig(dir);
     expect(cfg.enabled).toBe(true);
-    expect(cfg.promptChar).toBe("❯");
   });
   it("returns defaults on invalid JSON", () => {
     const dir = mkdtempSync(join(tmpdir(), "modal-"));
@@ -26,17 +25,6 @@ describe("loadModalConfig", () => {
     const cfg = loadModalConfig(dir, (m) => diag.push(m));
     expect(cfg.enabled).toBe(true);
     expect(diag.some((d) => d.includes("enabled"))).toBe(true);
-  });
-  it("rejects multi-char promptChar", () => {
-    const dir = mkdtempSync(join(tmpdir(), "modal-"));
-    writeFileSync(
-      join(dir, "modal.json"),
-      JSON.stringify({ promptChar: "ab" }),
-    );
-    const diag: string[] = [];
-    const cfg = loadModalConfig(dir, (m) => diag.push(m));
-    expect(cfg.promptChar).toBe("❯");
-    expect(diag.some((d) => d.includes("promptChar"))).toBe(true);
   });
   it("rejects invalid borderStyle", () => {
     const dir = mkdtempSync(join(tmpdir(), "modal-"));

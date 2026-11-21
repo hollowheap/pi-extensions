@@ -2,15 +2,22 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBorderChars } from "@hollowheap/core/border";
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "../src/editor.js";
 import { loadModalConfig } from "../src/settings.js";
 
+afterEach(() => {
+  resetActiveTuiConfig();
+});
+
 describe("prompt prefix and rounded corners", () => {
   it("uses a single custom prompt char and renders rounded box corners", () => {
-    const dir = mkdtempSync(join(tmpdir(), "prompt-prefix-and-corners-modal-"));
-    writeFileSync(join(dir, "modal.json"), JSON.stringify({ promptChar: "$" }));
-    const config = loadModalConfig(dir);
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, promptChar: "$" });
+    const config = loadModalConfig(
+      mkdtempSync(join(tmpdir(), "prompt-prefix-")),
+    );
     const editor = new ModalEditor(
       {
         requestRender: vi.fn(),
@@ -31,16 +38,19 @@ describe("prompt prefix and rounded corners", () => {
     });
   });
 
-  it("a multi-character promptChar is diagnosed and reset to the default", () => {
-    const dir = mkdtempSync(join(tmpdir(), "prompt-prefix-and-corners-modal-"));
-    writeFileSync(
-      join(dir, "modal.json"),
-      JSON.stringify({ promptChar: ">>" }),
+  it("renders a shared chevron in every editor mode", () => {
+    const editor = new ModalEditor(
+      {
+        requestRender: vi.fn(),
+        terminal: { rows: 24, columns: 80, write: vi.fn() },
+      } as never,
+      { borderColor: (s: string) => s, selectList: {} } as never,
+      { matches: vi.fn(() => false) } as never,
+      { initialMode: "insert" },
     );
-    const diagnostics: string[] = [];
-    const config = loadModalConfig(dir, (message) => diagnostics.push(message));
-    expect(config.promptChar).toBe("❯");
-    expect(diagnostics).toContain("promptChar must be one character; using ❯");
+    expect(editor.getPromptChar()).toBe("❯");
+    editor.setMode("normal");
+    expect(editor.getPromptChar()).toBe("❯");
   });
 
   it("an invalid borderStyle is diagnosed and falls back to rounded", () => {
@@ -78,20 +88,5 @@ describe("prompt prefix and rounded corners", () => {
     });
     expect(getBorderChars("none").topLeft).toBe("");
     expect(getBorderChars("mystery")).toEqual(getBorderChars("rounded"));
-  });
-
-  it("renders a line prompt in insert mode and a block prompt in normal mode unless promptChar is configured", () => {
-    const editor = new ModalEditor(
-      {
-        requestRender: vi.fn(),
-        terminal: { rows: 24, columns: 80, write: vi.fn() },
-      } as never,
-      { borderColor: (s: string) => s, selectList: {} } as never,
-      { matches: vi.fn(() => false) } as never,
-      { initialMode: "insert" },
-    );
-    expect(editor.getPromptChar()).toBe("▎");
-    editor.setMode("normal");
-    expect(editor.getPromptChar()).toBe("█");
   });
 });

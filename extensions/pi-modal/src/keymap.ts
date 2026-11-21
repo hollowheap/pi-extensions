@@ -13,7 +13,6 @@ export interface ModalKeymapConfig {
 export interface ModalConfig {
   enabled?: boolean;
   initialMode?: EditorMode;
-  promptChar?: string;
   borderStyle?: BorderStyle;
   borderStyleExplicit?: boolean;
   keymaps?: ModalKeymapConfig;

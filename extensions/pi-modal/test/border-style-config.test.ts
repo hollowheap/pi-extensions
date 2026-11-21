@@ -1,9 +1,15 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalEditor } from "../src/editor.js";
 import { loadModalConfig } from "../src/settings.js";
+
+afterEach(() => {
+  resetActiveTuiConfig();
+});
 
 describe("border style configuration", () => {
   it("falls back to rounded and diagnoses an unknown borderStyle", () => {
@@ -28,7 +34,6 @@ describe("border style configuration", () => {
     const config = loadModalConfig(dir, (message) => diagnostics.push(message));
     expect(diagnostics).toEqual([]);
     expect(config.borderStyle).toBe("rounded");
-    expect(config.promptChar).toBe("❯");
     expect(config.initialMode).toBe("insert");
   });
 
@@ -46,7 +51,6 @@ describe("border style configuration", () => {
     writeFileSync(
       join(dir, "modal.json"),
       JSON.stringify({
-        promptChar: "»",
         keymaps: { normal: { j: "down" } },
       }),
     );
@@ -68,6 +72,7 @@ describe("border style configuration", () => {
       { matches: vi.fn(() => false) } as never,
       config,
     );
+    setActiveTuiConfig({ ...DEFAULT_TUI_CONFIG, promptChar: "»" });
     expect(editor.getPromptChar()).toBe("»");
     expect(editor.getKeymaps().normal.j).toBe("down");
   });

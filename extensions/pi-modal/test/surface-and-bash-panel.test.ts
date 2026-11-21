@@ -85,7 +85,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       initialText: "0123456789ABCDEF",
     });
     const rows = editor.render(20).map(stripCursorMarkers);
-    expect(stripTerminalSequences(rows[1] ?? "")).toBe("▎ 0123456789ABCDEF │");
+    expect(stripTerminalSequences(rows[1] ?? "")).toBe("❯ 0123456789ABCDEF │");
     for (const row of rows) {
       expect(visibleWidth(row)).toBe(20);
     }
@@ -102,7 +102,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       const editor = createEditor({ initialText: "hello" });
       const rows = editor.render(20).map(stripCursorMarkers);
       expect(stripTerminalSequences(rows[1] ?? "")).toBe(
-        "▎ hello             ",
+        "❯ hello             ",
       );
       for (const row of rows) {
         expect(visibleWidth(row)).toBe(20);
@@ -149,7 +149,7 @@ describe("ModalEditor surface style and symmetric right padding", () => {
       const contentPlain = stripTerminalSequences(
         rows[1].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
-      expect(contentPlain).toBe("▎ hello            │");
+      expect(contentPlain).toBe("❯ hello            │");
       const bottomPlain = stripTerminalSequences(
         rows[2].replace("<bg:customMessageBg>", "").replace("</bg>", ""),
       );
@@ -461,7 +461,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .map(stripCursorMarkers)
       .map(stripTerminalSequences);
     expect(doubleRows[0]?.startsWith("╔")).toBe(true);
-    expect(doubleRows[1]?.startsWith("▎ shared style")).toBe(true);
+    expect(doubleRows[1]?.startsWith("❯ shared style")).toBe(true);
     expect(doubleRows[2]?.startsWith("╚")).toBe(true);
 
     setActiveTuiConfig({
@@ -686,7 +686,7 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       } as never,
       { borderColor: (text: string) => text, selectList: {} } as never,
       { matches: () => false } as never,
-      { enabled: true, initialMode: "normal", promptChar: "❯" },
+      { enabled: true, initialMode: "normal" },
       undefined,
       mockTheme,
     );
