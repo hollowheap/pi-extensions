@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -109,6 +110,15 @@ export class ProcessStore {
       (a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id),
     );
     return states;
+  }
+
+  remove(id: string): boolean {
+    try {
+      rmSync(this.statePath(id), { force: true });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   update(

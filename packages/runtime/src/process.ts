@@ -10,6 +10,7 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
+import { uptime } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
 import { abortableDelay } from "./abort.js";
 import { type SandboxOptions, wrapSandboxCommand } from "./sandbox.js";
@@ -65,6 +66,11 @@ export function readProcStartTime(pid: number): number | undefined {
   } catch {
     return readPsStartTime(pid);
   }
+}
+
+export function isBeforeCurrentBoot(timestamp: number): boolean {
+  const bootTime = Date.now() - uptime() * 1000;
+  return timestamp < bootTime - 1000;
 }
 
 export function isProcessAlive(

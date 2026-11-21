@@ -91,6 +91,15 @@ export class LockedProcessStore<T extends ProcessState = ProcessState> {
     }
   }
 
+  remove(id: string): boolean {
+    const release = acquireStateLock(`${this.statePath(id)}.lock`);
+    try {
+      return this.store.remove(id);
+    } finally {
+      release();
+    }
+  }
+
   update(id: string, patch: Partial<Omit<T, "id">>): T | undefined {
     return this.updateIf(id, () => true, patch);
   }

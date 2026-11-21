@@ -171,6 +171,10 @@ export class SubagentStore {
     return this.store.list();
   }
 
+  remove(id: string): boolean {
+    return this.store.remove(id);
+  }
+
   log(id: string): string {
     return this.store.log(id);
   }

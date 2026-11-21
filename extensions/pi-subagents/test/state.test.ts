@@ -188,6 +188,21 @@ describe("SubagentStore", () => {
     expect(store.list().map((state) => state.id)).toEqual(["a", "b"]);
   });
 
+  it("removes a persisted state file", () => {
+    const store = new SubagentStore(agentDir());
+    store.write({
+      id: "gone",
+      status: "running",
+      agent: "scout",
+      task: "a",
+      depth: 1,
+      attempt: 1,
+      startedAt: Date.now(),
+    });
+    expect(store.remove("gone")).toBe(true);
+    expect(store.read("gone")).toBeUndefined();
+  });
+
   it("requires trust and validates ids", () => {
     expect(() => requireTrustedProject(false)).toThrow(/trusted/);
     expect(() => requireTrustedProject(true)).not.toThrow();

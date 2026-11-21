@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { abortableDelay } from "@hollowheap/runtime/abort";
 import { spawnDetachedTask } from "@hollowheap/runtime/lifecycle";
 import {
+  isBeforeCurrentBoot,
   isProcessAlive,
   isSocketConnectable,
   readProcStartTime,
@@ -411,6 +412,24 @@ export async function reconcileSubagent(
   state: SubagentState,
 ): Promise<SubagentState> {
   if (state.status !== "running" && state.status !== "starting") return state;
+  if (isBeforeCurrentBoot(state.startedAt)) {
+    const store = new SubagentStore(agentDir);
+    const current = store.read(state.id);
+    if (
+      current !== undefined &&
+      (current.status === "running" || current.status === "starting") &&
+      current.attempt === state.attempt &&
+      current.startedAt === state.startedAt
+    ) {
+      store.remove(state.id);
+    }
+    return {
+      ...state,
+      status: "failed",
+      finishedAt: Date.now(),
+      exitCode: null,
+    };
+  }
   const childAlive =
     state.pid !== undefined && isProcessAlive(state.pid, state.startTime);
   const runnerAlive =
