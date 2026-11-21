@@ -32,6 +32,7 @@ import {
   withToolOutputDisplay,
 } from "@hollowheap/ui/tool-output";
 import { ModalEditor } from "./editor.js";
+import { installExtensionInputPanel } from "./input-panel.js";
 import { loadModalConfig } from "./settings.js";
 
 import { panelRenderConfig, wrapToolRenderer } from "./panel.js";
@@ -138,6 +139,7 @@ export default function (pi: ExtensionAPI): void {
   installBranchSummaryPanel(getTheme);
   installCompactionSummaryPanel(getTheme);
   installCustomMessagePanel(getTheme);
+  installExtensionInputPanel(getTheme);
   installUserMessagePanel(
     getTheme,
     () =>
