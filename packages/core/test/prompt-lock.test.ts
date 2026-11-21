@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { withPromptLock } from "../src/prompt-lock.js";
+import { isPromptLockHeld, withPromptLock } from "../src/prompt-lock.js";
 
 describe("prompt-lock", () => {
+  it("reports held state through the read-only accessor", async () => {
+    expect(isPromptLockHeld()).toBe(false);
+    await withPromptLock(async () => {
+      expect(isPromptLockHeld()).toBe(true);
+    });
+    expect(isPromptLockHeld()).toBe(false);
+  });
+
   it("runs operations in FIFO order", async () => {
     const order: number[] = [];
     const releases: Array<() => void> = [];

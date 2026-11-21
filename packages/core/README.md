@@ -27,7 +27,7 @@ The version moves together with the extension packages: every workspace package 
 - `state.ts` — `session`, `setMode`, `setCwd`, `effectiveCwd`, `dropSession`, `resetSession`, `readBranchEntries`, `appendSessionEntry`, `appendCustomEntry`, `readLastCustomEntry`, `createDirtyFlusher`: the per-session store keyed by the pi session owner and session entry persistence helpers.
 - `scope.ts` — `resolveScopedPath`, `isWithinWorkspace`, `isSameWorkspace`, `resolveWorkspaceTarget`, `findAncestorMatch`: shared workspace scoping, symlink-canonical containment, and ancestor discovery helpers.
 - `modes.ts` — `registerMode`, `registerModeGate`, `replaceConfigModes`, `enterMode`, `resetSession`, and `evaluate`: the mode registry, entry gates, and the five-step verdict ladder.
-- `prompt-lock.ts` — `withPromptLock`: process-wide FIFO queue for blocking UI prompts; releases on settle or throw and rejects nested acquisition.
+- `prompt-lock.ts` — `withPromptLock` and `isPromptLockHeld`: process-wide FIFO queue for blocking UI prompts; releases on settle or throw and rejects nested acquisition. The accessor reads held state without exposing the mutable lock.
 - `statusline.ts` — `registerStatuslineProvider`, `getStatuslineProvider`, `createScriptStatuslineProvider`, and `createStatuslinePublisher`: process-global named statusline component providers and disposable event-bus publisher helper.
 - `types.ts` — `Tag`, `Effect`, `Verdict`, `Rule`, `ModeLayer`, `ModeNotice`, `ModeEnter`.
 

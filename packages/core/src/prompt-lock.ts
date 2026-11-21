@@ -37,6 +37,10 @@ function getGlobal(): PromptLockGlobal {
   return created;
 }
 
+export function isPromptLockHeld(): boolean {
+  return getGlobal().state.locked;
+}
+
 function pump(state: PromptLockState): void {
   if (state.locked) return;
   const next = state.queue.shift();
