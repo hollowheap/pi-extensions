@@ -37,9 +37,9 @@ project-file state.
 - `/todos complete <id|all>`, `/todos edit <id> <text>`, `/todos delete [id]`,
   and `/todos priority <id> <high|medium|low>` manage the list. Priorities sort
   the widget and list.
-- `/widget toggle` or Alt+W then P collapses and expands the sticky widgets.
-  On macOS, use Option+W then P. Pi lists the shortcut under Extensions in
-  `/hotkeys`.
+- `/widget toggle` toggles all sticky widgets. After Alt+W, press T for todos,
+  B for tasks, S for subagents, or P for all. On macOS, press Option+W instead.
+  Pi lists the prefix under Extensions in `/hotkeys`.
 
 ## Mode behavior
 

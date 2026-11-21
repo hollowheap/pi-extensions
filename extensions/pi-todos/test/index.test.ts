@@ -1,14 +1,7 @@
-import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { isPromptLockHeld, withPromptLock } from "@hollowheap/core/prompt-lock";
 import { getSessionSnapshot } from "@hollowheap/core/snapshot";
 import { describe, expect, it, vi } from "vitest";
 import extension from "../src/index.js";
-
-function isPromptLockHeld(): boolean {
-  const lock = (
-    globalThis as Record<symbol, { state?: { locked?: boolean } } | undefined>
-  )[Symbol.for("@hollowheap/core/prompt-lock")];
-  return lock?.state?.locked === true;
-}
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -571,7 +564,9 @@ describe("pi-todos extension", () => {
     const prefix = pi.registerShortcut.mock.calls.find(
       ([key]) => key === "alt+w",
     )?.[1];
-    expect(prefix?.description).toContain("Then P to toggle sticky widgets");
+    expect(prefix?.description).toContain(
+      "Then P (all), T todos, B tasks, or S subagents",
+    );
 
     await withPromptLock(async () => {
       prefix.handler(ctx);

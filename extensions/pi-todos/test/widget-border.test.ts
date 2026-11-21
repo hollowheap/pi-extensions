@@ -14,8 +14,8 @@ const theme = {
   bg: (_token: string, value: string) => value,
   bold: (value: string) => value,
 } as never;
-const collapseHint =
-  process.platform === "darwin" ? "Option+W then P" : "Alt+W then P";
+const modifier = process.platform === "darwin" ? "Option+W" : "Alt+W";
+const collapseHint = (key: string) => `${modifier} then ${key}`;
 
 type WidgetFactory = () => { render: (width: number) => string[] };
 
@@ -114,16 +114,20 @@ afterEach(() => {
 });
 
 describe("sticky widget frames", () => {
-  it("frames todos, tasks, and subagents rows and shows the hide chord in the border", () => {
+  it("frames todos, tasks, and subagents rows and shows each hide chord in its border", () => {
     const { render } = harness();
 
-    for (const key of ["todos", "tasks", "subagents"]) {
-      const rows = render(key);
+    for (const [name, chord] of [
+      ["todos", "T"],
+      ["tasks", "B"],
+      ["subagents", "S"],
+    ] as const) {
+      const rows = render(name);
       expect(rows.length).toBeGreaterThan(2);
       expect(rows[0]?.startsWith("╭─")).toBe(true);
       expect(rows.at(-1)?.endsWith("╯")).toBe(true);
       expect(rows.some((row) => row.includes("│"))).toBe(true);
-      expect(rows[0]).toContain(collapseHint);
+      expect(rows[0]).toContain(collapseHint(chord));
       expect(rows[0]).toContain("hide");
     }
   });
@@ -134,14 +138,35 @@ describe("sticky widget frames", () => {
     const rows = render("todos");
     expect(rows[0]?.startsWith("╔═")).toBe(true);
     expect(rows.at(-1)?.endsWith("╝")).toBe(true);
-    expect(rows[0]).toContain(collapseHint);
+    expect(rows[0]).toContain(collapseHint("T"));
   });
 
-  it("keeps the collapse chord working", () => {
+  it("toggles each widget with its own chord and keeps P for all", () => {
     const { ctx, widgets, shortcut, terminal } = harness();
 
-    expect(shortcut?.description).toContain("Then P to toggle sticky widgets");
-    expect(terminal("p")).not.toMatchObject({ consume: true });
+    expect(shortcut?.description).toContain(
+      "Then P (all), T todos, B tasks, or S subagents",
+    );
+    expect(terminal("t")).not.toMatchObject({ consume: true });
+
+    for (const [key, name] of [
+      ["t", "todos"],
+      ["b", "tasks"],
+      ["s", "subagents"],
+    ] as const) {
+      shortcut.handler(ctx);
+      expect(terminal(key)).toEqual({ consume: true });
+      expect(widgets.has(name)).toBe(false);
+      expect(widgets.size).toBe(2);
+
+      shortcut.handler(ctx);
+      expect(terminal(key.toUpperCase())).toEqual({ consume: true });
+      expect(widgets.has(name)).toBe(true);
+      expect(widgets.size).toBe(3);
+    }
+
+    shortcut.handler(ctx);
+    expect(terminal("x")).not.toMatchObject({ consume: true });
     shortcut.handler(ctx);
     expect(terminal("p")).toEqual({ consume: true });
 

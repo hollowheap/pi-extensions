@@ -151,5 +151,18 @@ describe("shared widget rows", () => {
         now: 1000,
       }),
     ).toEqual(["Subagents (1 active)", "@s1 00:01 ●"]);
+    expect(
+      formatSubagentWidget(
+        [
+          {
+            id: "s1",
+            label: "@scout-1",
+            state: "running",
+            startedAt: 0,
+          },
+        ],
+        { now: 1000 },
+      ),
+    ).toEqual(["Subagents (1 active)", "@scout-1 00:01 ●"]);
   });
 });

@@ -22,6 +22,7 @@ export interface WidgetTodo {
 
 export interface WidgetSubagentStateItem {
   id: string;
+  label?: string;
   agent?: string;
   task?: string;
   state: "running" | "blocked" | "complete" | string;
@@ -94,7 +95,7 @@ export function formatSubagentWidget(
   const now = options.now ?? Date.now();
   const lines = [`Subagents (${subagents.length} active)`];
   for (const sub of subagents) {
-    const id = sanitizeTerminalText(sub.id);
+    const handle = sanitizeTerminalText(sub.label ?? `@${sub.id}`);
     if (sub.startedAt !== undefined) {
       const task = sub.task
         ? sanitizeTerminalText(sub.task).replace(/\s+/g, " ").trim()
@@ -109,11 +110,11 @@ export function formatSubagentWidget(
           }`
         : "";
       lines.push(
-        `@${id} ${formatElapsed(now - sub.startedAt)}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
+        `${handle} ${formatElapsed(now - sub.startedAt)}${taskPart} ${stateIcon(sub.state)}${toolPart}`,
       );
     } else {
       const agent = sub.agent ? ` (${sanitizeTerminalText(sub.agent)})` : "";
-      lines.push(`@${id} ${stateIcon(sub.state)}${agent}`);
+      lines.push(`${handle} ${stateIcon(sub.state)}${agent}`);
     }
   }
   return fitWidth(lines, options.width);
@@ -252,8 +253,26 @@ export function setWidgetVisible(name: string, visible: boolean): void {
   widgetState().visible.set(name, visible);
 }
 
-export function widgetToggleHint(): string {
-  return process.platform === "darwin" ? "Option+W then P" : "Alt+W then P";
+const WIDGET_CHORDS = Object.freeze({
+  todos: "t",
+  tasks: "b",
+  subagents: "s",
+});
+
+export function widgetChordTarget(key: string): string | null {
+  const entry = Object.entries(WIDGET_CHORDS).find(
+    ([, chord]) => chord === key,
+  );
+  return entry?.[0] ?? null;
+}
+
+export function widgetToggleHint(name?: string): string {
+  const chord =
+    name !== undefined && Object.hasOwn(WIDGET_CHORDS, name)
+      ? WIDGET_CHORDS[name as keyof typeof WIDGET_CHORDS]
+      : "p";
+  const prefix = process.platform === "darwin" ? "Option+W" : "Alt+W";
+  return `${prefix} then ${chord.toUpperCase()}`;
 }
 
 /** Toggle one widget or every registered widget. Returns true when collapsed. */
@@ -300,7 +319,7 @@ function createWidget(
       render(width: number) {
         const lines = provider.render(width, theme);
         if (lines === undefined || lines.length === 0) return [];
-        const hint = provider.hint ?? widgetToggleHint();
+        const hint = provider.hint ?? widgetToggleHint(provider.name);
         return boxFrame(
           lines,
           width,

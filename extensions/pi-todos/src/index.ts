@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText, toolTextResult } from "@hollowheap/core/format";
-import { withPromptLock } from "@hollowheap/core/prompt-lock";
+import { isPromptLockHeld, withPromptLock } from "@hollowheap/core/prompt-lock";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
 import { createStatuslinePublisher } from "@hollowheap/core/statusline";
@@ -19,9 +19,11 @@ import {
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import {
   formatTodoWidget,
+  listWidgetProviders,
   mountWidgetProviders,
   registerWidgetProvider,
   toggleWidgets as toggleRegisteredWidgets,
+  widgetChordTarget,
 } from "@hollowheap/ui/widget";
 import { Type } from "typebox";
 import {
@@ -36,14 +38,12 @@ import {
 const TODOS_TYPE = "hollowheap.todos";
 const WIDGET_PREFIX = Key.alt("w");
 const WIDGET_TARGETS = ["todos", "tasks", "subagents", "all"] as const;
-
-// The lock has no exported state accessor; the process-global is the only signal that another prompt owns input.
-function isPromptLockHeld(): boolean {
-  const lock = (
-    globalThis as Record<symbol, { state?: { locked?: boolean } } | undefined>
-  )[Symbol.for("@hollowheap/core/prompt-lock")];
-  return lock?.state?.locked === true;
-}
+const CHORD_KEYS = {
+  b: ["b", Key.shift("b")],
+  p: ["p", Key.shift("p")],
+  s: ["s", Key.shift("s")],
+  t: ["t", Key.shift("t")],
+} as const;
 
 function readTodos(value: unknown): Todo[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -388,7 +388,8 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerShortcut?.(WIDGET_PREFIX, {
-    description: "Then P to toggle sticky widgets",
+    description:
+      "Then P (all), T todos, B tasks, or S subagents to toggle sticky widgets",
     handler: () => {
       resetChord();
       if (!disposeTerminalInput || isPromptLockHeld()) return;
@@ -408,12 +409,26 @@ export default function (pi: ExtensionAPI) {
       }
       if (chordTimer !== undefined) {
         resetChord();
-        if (matchesKey(data, "p") || matchesKey(data, Key.shift("p"))) {
-          toggleRegisteredWidgets();
-          if (lastCtx?.hasUI) updateUI(lastCtx);
-          return { consume: true };
+        const key = data.toLowerCase();
+        const ids = Object.hasOwn(CHORD_KEYS, key)
+          ? CHORD_KEYS[key as keyof typeof CHORD_KEYS]
+          : undefined;
+        if (
+          ids === undefined ||
+          (!matchesKey(data, ids[0]) && !matchesKey(data, ids[1]))
+        ) {
+          return { consume: false };
         }
-        return { consume: false };
+        const target = key === "p" ? undefined : widgetChordTarget(key);
+        if (
+          target === null ||
+          (target !== undefined && !listWidgetProviders().includes(target))
+        ) {
+          return { consume: false };
+        }
+        toggleRegisteredWidgets(target);
+        if (lastCtx?.hasUI) updateUI(lastCtx);
+        return { consume: true };
       }
       return { consume: false };
     });
