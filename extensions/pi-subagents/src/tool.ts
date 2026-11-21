@@ -6,6 +6,7 @@ import {
   defineTool,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
   type RosterAgent,
@@ -780,11 +781,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               ? { ...agent, model: resolvedModel }
               : agent;
           const id = generateSubagentId();
-          const sessionPath = join(
-            agentDir,
-            "subagents",
-            `${id}.session.jsonl`,
-          );
+          const sessionPath =
+            SessionManager.create(ctx.cwd).getSessionFile() ??
+            join(agentDir, "subagents", `${id}.session.jsonl`);
           const rosterSection = resolveChildAgentRoster(
             effectiveAgent,
             discovery,

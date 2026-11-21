@@ -79,12 +79,15 @@ describe("overlay helpers", () => {
     };
     const content = vi.fn((width: number) => [`inner:${width}`]);
 
-    const innerWidth = getFrameInnerWidth(30);
+    const innerWidth = getFrameInnerWidth(30, undefined, 1);
     const framed = frameOverlay(30, theme as never, "Overlay", content);
 
     expect(content).toHaveBeenCalledWith(innerWidth);
     expect(framed).toEqual(
-      boxFrame([`inner:${innerWidth}`], 30, theme as never, "Overlay"),
+      boxFrame([`inner:${innerWidth}`], 30, theme as never, "Overlay", {
+        paddingX: 1,
+        marginX: 0,
+      }),
     );
   });
 });

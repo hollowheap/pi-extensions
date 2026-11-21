@@ -162,7 +162,7 @@ describe("showCodeViewer", () => {
     const restore = bindHostOutputPadding(() => 1);
     try {
       const paddedLines = component.render(32);
-      expect(paddedLines[1]).toContain("[customMessageBg] ║const x = 1;");
+      expect(paddedLines[1]).toContain("[customMessageBg]║ const x = 1;");
     } finally {
       restore();
     }

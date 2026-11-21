@@ -79,14 +79,20 @@ export function frameOverlay(
   content: (innerWidth: number) => readonly string[],
   options?: FrameOptions,
 ): string[] {
+  const frameOptions: FrameOptions = {
+    paddingX: 1,
+    marginX: 0,
+    ...options,
+  };
   const innerWidth = getFrameInnerWidth(
     width,
-    options?.borderStyle,
-    options?.paddingX,
-    options?.overlaySurface,
-    options?.colored,
+    frameOptions.borderStyle,
+    frameOptions.paddingX,
+    frameOptions.overlaySurface,
+    frameOptions.colored,
+    frameOptions.marginX,
   );
-  return boxFrame(content(innerWidth), width, theme, title, options);
+  return boxFrame(content(innerWidth), width, theme, title, frameOptions);
 }
 
 /** Keep the host responsible for notifications, with terminal-safe text. */

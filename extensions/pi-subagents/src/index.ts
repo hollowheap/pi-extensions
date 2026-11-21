@@ -665,7 +665,7 @@ export function createSubagentsExtension(
       }
       transcriptCursor = (transcriptCursor + step + all.length) % all.length;
       const state = all[transcriptCursor];
-      if (state !== undefined) await openSubagentLog(ctx, state.id, state);
+      await switchToChildSession(ctx, state);
     };
 
     pi.registerShortcut?.(Key.alt("left"), {

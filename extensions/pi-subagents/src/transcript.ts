@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 import {
   type ExtensionContext,
   type SessionEntry,
@@ -82,11 +82,14 @@ function readSessionTranscript(
   leafId?: string,
 ): string | undefined {
   const directory = resolve(agentDir, "subagents");
+  const sessionsDirectory = resolve(agentDir, "sessions");
   const file = resolve(
     state.session ?? resolve(directory, `${state.id}.session.jsonl`),
   );
-  if (dirname(file) !== directory || !basename(file).endsWith(".session.jsonl"))
-    return undefined;
+  const inAgentTree = [directory, sessionsDirectory].some((root) =>
+    file.startsWith(`${root}${sep}`),
+  );
+  if (!inAgentTree || !basename(file).endsWith(".jsonl")) return undefined;
   try {
     const stat = statSync(file);
     if (!stat.isFile()) return undefined;
