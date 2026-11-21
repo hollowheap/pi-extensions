@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSubagentTool } from "../src/tool.js";
 
 describe("direct subagent actions", () => {
-  it("exposes start/list/status/send/wait/cancel/resume as the tool actions", () => {
+  it("exposes start/list/status/send/wait/terminate/resume as the tool actions", () => {
     const tool = createSubagentTool();
     expect(tool.name).toBe("subagent");
     const schema = JSON.stringify(tool.parameters);
@@ -12,11 +12,12 @@ describe("direct subagent actions", () => {
       "status",
       "send",
       "wait",
-      "cancel",
+      "terminate",
       "resume",
     ]) {
       expect(schema).toContain(`"${action}"`);
     }
+    expect(schema).not.toContain('"cancel"');
   });
 
   it("exposes direct mode and the define/delete lifecycle actions", () => {

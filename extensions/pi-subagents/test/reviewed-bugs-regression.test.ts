@@ -164,10 +164,10 @@ describe("pi-subagents reviewed bug regressions", () => {
       registerTool: vi.fn(),
       registerCommand: vi.fn(
         (
-          _name: string,
+          name: string,
           spec: { handler: (args: string, ctx: unknown) => Promise<void> },
         ) => {
-          commandHandler = spec.handler;
+          if (name === "subagent") commandHandler = spec.handler;
         },
       ),
       events: {

@@ -3,6 +3,7 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { appendSessionEntry, readBranchEntries } from "@hollowheap/core/state";
@@ -48,6 +49,7 @@ import { subagentWorkspaceTracker } from "./workspace.js";
 
 export interface SubagentStateEventItem {
   id: string;
+  label: string;
   agent: string;
   task: string;
   state: string;
@@ -272,6 +274,7 @@ export function createSubagentsExtension(
 
         const items: SubagentStateEventItem[] = active.map((s) => ({
           id: s.id,
+          label: subagentDisplayName(s),
           agent: s.agent,
           task: s.task,
           state: s.status,
@@ -606,6 +609,20 @@ export function createSubagentsExtension(
             "info",
           );
         }
+      },
+    });
+
+    pi.registerShortcut?.(Key.alt("s"), {
+      description: "Browse subagent work",
+      handler: async (ctx) => {
+        await pickSubagent(ctx);
+      },
+    });
+
+    pi.registerCommand("subagents", {
+      description: "Browse subagent work",
+      handler: async (_args, ctx) => {
+        await pickSubagent(ctx);
       },
     });
 

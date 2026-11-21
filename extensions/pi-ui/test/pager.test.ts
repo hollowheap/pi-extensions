@@ -90,6 +90,19 @@ describe("showMarkdownPager", () => {
     expect(env.done).toHaveBeenCalledTimes(1);
   });
 
+  it("switches to an alternate view on Alt+Up", async () => {
+    const env = pagerContext();
+    const onAlternateView = vi.fn();
+    await showMarkdownPager(env.ctx as never, {
+      title: "Subagent scout",
+      markdown: "child work",
+      onAlternateView,
+    });
+    expect(env.component()?.render(60).join("\n")).toContain("child work");
+    env.component()?.handleInput("\x1bk");
+    expect(onAlternateView).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to a notification without a TUI overlay", async () => {
     const notify = vi.fn();
     const ctx = {

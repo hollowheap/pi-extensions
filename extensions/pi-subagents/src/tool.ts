@@ -200,8 +200,39 @@ function loadToolSubagentsConfig(
   });
 }
 
+function compactStateText(details: Record<string, unknown>): string {
+  const name = sanitizeTerminalText(
+    subagentDisplayName({
+      model: typeof details.model === "string" ? details.model : undefined,
+      agent: typeof details.agent === "string" ? details.agent : "",
+      task: typeof details.task === "string" ? details.task : "",
+    }),
+  );
+  const parts = [`${name} [${sanitizeTerminalText(String(details.status))}]`];
+  if (typeof details.workspace === "string") {
+    parts.push(sanitizeTerminalText(details.workspace));
+  }
+  if (details.exitCode !== undefined) parts.push(`exit ${details.exitCode}`);
+  if (details.waitCancelled === true) parts.push("wait interrupted");
+  const log = typeof details.log === "string" ? details.log.trim() : "";
+  const last = log
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (last !== undefined) {
+    const safe = sanitizeTerminalText(last);
+    parts.push(`· ${safe.length > 120 ? `${safe.slice(0, 117)}...` : safe}`);
+  }
+  return parts.join(" ");
+}
+
 function textResult(details: Record<string, unknown>) {
-  return toolTextResult(JSON.stringify(details), details);
+  const text =
+    typeof details.status === "string" && details.id !== undefined
+      ? compactStateText(details)
+      : JSON.stringify(details);
+  return toolTextResult(text, details);
 }
 
 function summary(state: SubagentState): Record<string, unknown> {
@@ -255,7 +286,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
     name: "subagent",
     label: "subagent",
     description:
-      "Start and manage one durable child agent (define, delete, start, list, status, send, wait, cancel).",
+      "Start and manage one durable child agent (define, delete, start, list, status, send, wait, terminate).",
     exposure: "direct",
     parameters: Type.Object({
       action: Type.Union([
@@ -266,7 +297,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         Type.Literal("status"),
         Type.Literal("send"),
         Type.Literal("wait"),
-        Type.Literal("cancel"),
+        Type.Literal("terminate"),
         Type.Literal("resume"),
       ]),
       name: Type.Optional(
@@ -305,7 +336,9 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
         Type.String({ description: "Task prompt for start" }),
       ),
       id: Type.Optional(
-        Type.String({ description: "Subagent id for status/send/wait/cancel" }),
+        Type.String({
+          description: "Subagent id for status/send/wait/terminate",
+        }),
       ),
       message: Type.Optional(Type.String({ description: "Message for send" })),
       mode: Type.Optional(
@@ -895,7 +928,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           }
           return textResult(stateWithLog(agentDir, state));
         }
-        if (action === "cancel") {
+        if (action === "terminate") {
           const current = await attachSubagent(agentDir, id);
           if (current === undefined || !isInProject(current, ctx.cwd)) {
             return errorResult(`unknown id: ${id}`);

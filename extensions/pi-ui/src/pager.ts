@@ -19,6 +19,8 @@ export interface MarkdownPagerOptions {
   fullscreen?: boolean;
   read?: () => { title: string; markdown: string };
   navigate?: (direction: -1 | 1) => void;
+  /** Alt+Up or Alt+K switches to an alternate view owned by the caller. */
+  onAlternateView?: () => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -177,6 +179,15 @@ export async function showMarkdownPager(
               tui.requestRender();
             },
             handleInput(data: string): void {
+              if (
+                options.onAlternateView &&
+                (matchesKey(data, Key.alt("up")) ||
+                  matchesKey(data, Key.alt("k")))
+              ) {
+                options.onAlternateView();
+                refreshPage();
+                return;
+              }
               const direction = options.navigate
                 ? pagerSessionDirection(data)
                 : undefined;

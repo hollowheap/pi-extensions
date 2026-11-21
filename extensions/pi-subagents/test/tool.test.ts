@@ -169,7 +169,7 @@ describe("subagent tool", () => {
     const result = await pending;
 
     expect(uiCtx.ui.custom).not.toHaveBeenCalled();
-    expect(textOf(result)).toContain('"waitCancelled":true');
+    expect(textOf(result)).toContain("wait interrupted");
     expect(detailsOf(result).status).toBe("running");
   });
 
@@ -201,9 +201,9 @@ describe("subagent tool", () => {
     expect(
       textOf(await exec({ action: "send", id: "sub-other", message: "hi" })),
     ).toContain("unknown id");
-    expect(textOf(await exec({ action: "cancel", id: "sub-other" }))).toContain(
-      "unknown id",
-    );
+    expect(
+      textOf(await exec({ action: "terminate", id: "sub-other" })),
+    ).toContain("unknown id");
     expect(mocks.abortSubagent).not.toHaveBeenCalled();
 
     mocks.attachSubagent.mockResolvedValue(legacy);
@@ -239,6 +239,20 @@ describe("subagent tool", () => {
       "sub-1",
       expect.objectContaining({ type: "prompt", message: "find" }),
     );
+    expect(detailsOf(result).status).toBe("running");
+  });
+
+  it("returns a compact text summary instead of a JSON state dump", async () => {
+    const tool = createTool();
+    const result = await tool.execute(
+      "1",
+      { action: "status", id: "sub-1" },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    expect(textOf(result)).toContain("@scout-1 [running]");
+    expect(textOf(result)).not.toContain('"status"');
     expect(detailsOf(result).status).toBe("running");
   });
 
@@ -932,7 +946,7 @@ describe("subagent tool", () => {
         .status,
     ).toBe("completed");
     expect(
-      detailsOf(await exec({ action: "cancel", id: "sub-1" })).status,
+      detailsOf(await exec({ action: "terminate", id: "sub-1" })).status,
     ).toBe("completed");
     expect(mocks.abortSubagent).toHaveBeenCalled();
   });

@@ -508,4 +508,18 @@ describe("pi-subagents extension", () => {
     );
     expect(notify).not.toHaveBeenCalledWith("Subagent settings saved", "info");
   });
+
+  it("registers a direct shortcut and command for browsing child work", () => {
+    const pi = createMockPi();
+    extension(pi as never);
+    expect(pi.registerCommand.mock.calls.map(([name]) => name)).toContain(
+      "subagents",
+    );
+    expect(pi.registerShortcut).toHaveBeenCalledWith(
+      "alt+s",
+      expect.objectContaining({
+        description: expect.stringContaining("Browse subagent work"),
+      }),
+    );
+  });
 });

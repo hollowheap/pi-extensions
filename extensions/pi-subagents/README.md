@@ -1,6 +1,6 @@
 # pi-subagents
 
-Durable child Pi agents for the Pi coding agent. The `subagent` tool starts one child per call, keeps it alive across parent restarts, and lets a later session reattach, send, wait, cancel, or resume it. Agents can come from Markdown files or session-only definitions.
+Durable child Pi agents for the Pi coding agent. The `subagent` tool starts one child per call, keeps it alive across parent restarts, and lets a later session reattach, send, wait, terminate, or resume it. Agents can come from Markdown files or session-only definitions.
 
 ## Try it
 
@@ -126,7 +126,7 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 - The system prompt and task are sent together as plain text.
 - `input: "stdin"` writes the prompt to stdin; `input: "arg"` adds it to the command arguments.
 - Steering writes raw text to stdin. It is best-effort because external CLIs may not accept input while running.
-- Output, wait, cancel, and resume still use the task/state lifecycle.
+- Output, wait, terminate, and resume still use the task/state lifecycle.
 - Generic harnesses do not load the headless policy, the write lock, or the Pi session; resume re-runs the saved task without continuing Pi session context.
 - `message` steering is normalized to text for these harnesses.
 
@@ -143,14 +143,17 @@ The default `pi` harness speaks JSONL RPC, so steering, session continuation, wr
 | `status` | `id`                                                                                                           | State plus bounded log output.                                                                                                                                                                              |
 | `send`   | `id`, `message`, optional `mode` (`steer`, `prompt`, `follow_up`)                                              | Writes an RPC message to the live child.                                                                                                                                                                    |
 | `wait`   | `id`, optional `timeoutMs` (defaults to `defaultTimeoutMs`; `0` waits without a deadline)                      | Waits for a terminal state without taking over the screen: the editor stays usable, so a steering message can be queued while the child runs. Aborting the turn stops waiting without cancelling the child. |
-| `cancel` | `id`                                                                                                           | Aborts the child and waits briefly.                                                                                                                                                                         |
+| `terminate` | `id`                                                                                                        | Terminates the child process groups and waits briefly; the reported state is `cancelled`.                                                                                                                 |
 | `resume` | `id`                                                                                                           | Restarts a failed child from its session, same id, next attempt.                                                                                                                                            |
+
+State-returning actions give the model a one-line summary with the agent handle, status, and latest log line; the full structured state stays in tool details for the UI. Errors remain plain diagnostics.
 
 `start` and `resume` require a trusted project. The global `maxConcurrent` cap applies per parent session: children from other sessions do not consume the current session's slots. Recursive starts are bounded by `maxDepth`.
 
 ## Commands
 
-- `/subagent` opens a fuzzy subagent picker, then the selected child log in a keyboard-scrollable Markdown overlay in TUI mode.
+- `/subagents` or Alt+S opens a fuzzy subagent picker, then the selected child log in a keyboard-scrollable Markdown overlay in TUI mode. Arrow keys or Alt+H/J/K/L move between children inside the overlay.
+- `/subagent` with no arguments does the same.
 - `/subagent view <id>` opens the child log directly.
 - `/subagent pause <id>` aborts the live child.
 - `/subagent resume <id>` restarts a failed child.
@@ -173,7 +176,7 @@ The directory is `0700`; files and sockets are `0600`. The parent can exit and a
 
 Subagent state carries the project folder that started the child. Lists, the picker, statusline counts, todo widgets, completion alerts, and id actions only see children whose recorded folder matches the current working directory. Children from other folders and legacy states without a recorded folder stay hidden.
 
-Lists and the picker label a child by agent, model, and task summary instead of its full id, and show the recorded workspace path. Ids remain the input for `status`, `send`, `wait`, `cancel`, `resume`, and `/subagent view`.
+Lists and the picker label a child by agent, model, and task summary instead of its full id, and show the recorded workspace path. The widget uses the same agent-derived handle. Ids remain the input for `status`, `send`, `wait`, `terminate`, `resume`, and `/subagent view`.
 
 ## Write serialization
 
