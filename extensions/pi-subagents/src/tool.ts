@@ -337,7 +337,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       ),
       id: Type.Optional(
         Type.String({
-          description: "Subagent id for status/send/wait (blocking work only)/terminate",
+          description: "Subagent id for status/send/wait/terminate",
         }),
       ),
       message: Type.Optional(Type.String({ description: "Message for send" })),
