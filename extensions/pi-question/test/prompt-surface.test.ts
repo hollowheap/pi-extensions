@@ -64,9 +64,56 @@ describe("question prompt surface", () => {
       { prompt: "Pick", mode: "single", options: ["A"] } as never,
       c as never,
     );
-    expect(c.ui.custom).toHaveBeenCalledWith(expect.any(Function), {
-      overlay: false,
-    });
+    expect(c.ui.custom).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ overlay: false }),
+    );
+  });
+
+  it("toggles focus with Shift+Left", async () => {
+    const focus = vi.fn();
+    const unfocus = vi.fn();
+    let component: { handleInput(data: string): void } | undefined;
+    let onHandle: ((handle: unknown) => void) | undefined;
+    const custom = vi.fn(
+      async (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keys: unknown,
+          done: (value: unknown) => void,
+        ) => { handleInput(data: string): void },
+        options: { onHandle?: (handle: unknown) => void },
+      ) => {
+        onHandle = options.onHandle;
+        component = factory(
+          { requestRender: vi.fn() },
+          {
+            fg: (_token: string, text: string) => text,
+            bold: (t: string) => t,
+          },
+          {},
+          () => {},
+        );
+        return undefined;
+      },
+    );
+    const c = {
+      mode: "tui",
+      hasUI: true,
+      sessionManager: { getBranch: vi.fn(() => []) },
+      ui: { custom, select: vi.fn(), input: vi.fn(), notify: vi.fn() },
+    };
+    await askQuestion(
+      { prompt: "Free", mode: "free" } as never,
+      c as never,
+      undefined,
+    );
+    onHandle?.({ focus, unfocus });
+    component?.handleInput("\x1b[1;2D");
+    expect(unfocus).toHaveBeenCalledTimes(1);
+    component?.handleInput("\x1b[1;2D");
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 
   it("reuses ctx.ui.editor for free-text prompts in TUI when available", async () => {
@@ -96,17 +143,19 @@ describe("question prompt surface", () => {
       { prompt: "Pick many", mode: "multi", options: ["A"] } as never,
       c as never,
     );
-    expect(custom).toHaveBeenCalledWith(expect.any(Function), {
-      overlay: false,
-    });
+    expect(custom).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ overlay: false }),
+    );
     custom.mockClear();
     await askQuestion(
       { prompt: "Free", mode: "free", options: [] } as never,
       c as never,
     );
-    expect(custom).toHaveBeenCalledWith(expect.any(Function), {
-      overlay: false,
-    });
+    expect(custom).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ overlay: false }),
+    );
   });
 
   it("falls back to ui.input in RPC mode even if editor is present", async () => {

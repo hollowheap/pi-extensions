@@ -72,6 +72,8 @@ async function showLockedDialog<T>(
   }) => LockedDialogComponent,
   onCancelValue: () => T,
 ): Promise<T | undefined> {
+  let overlayHandle: { focus(): void; unfocus(): void } | undefined;
+  let mainPromptFocused = false;
   try {
     return await withPromptLock(
       () =>
@@ -92,9 +94,29 @@ async function showLockedDialog<T>(
             stopWatching = watchAbort(dialogAbort.signal, cancel);
             const component = create({ tui, theme, finish, cancel });
             const wrapper: LockedDialogComponent = {
-              render: (width) => component.render(width),
+              render: (width) => {
+                const dialogWidth = Math.min(
+                  width,
+                  Math.max(20, Math.floor(width * 0.7)),
+                );
+                const padding = Math.max(
+                  0,
+                  Math.floor((width - dialogWidth) / 2),
+                );
+                return component
+                  .render(dialogWidth)
+                  .map((line) => `${" ".repeat(padding)}${line}`);
+              },
               invalidate: () => component.invalidate(),
-              handleInput: (data) => component.handleInput?.(data),
+              handleInput: (data) => {
+                if (matchesKey(data, Key.shift("left"))) {
+                  mainPromptFocused = !mainPromptFocused;
+                  if (mainPromptFocused) overlayHandle?.unfocus();
+                  else overlayHandle?.focus();
+                  return;
+                }
+                return component.handleInput?.(data);
+              },
               dispose: () => {
                 component.dispose?.();
                 cancel();
@@ -111,7 +133,12 @@ async function showLockedDialog<T>(
             }
             return wrapper;
           },
-          { overlay: false },
+          {
+            overlay: false,
+            onHandle: (handle) => {
+              overlayHandle = handle;
+            },
+          },
         ),
       lockOptions,
     );
