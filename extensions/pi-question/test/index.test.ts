@@ -108,7 +108,7 @@ function customDialog() {
 function customContext(custom: ReturnType<typeof vi.fn>) {
   return context(vi.fn(), vi.fn(), {
     mode: "tui",
-    ui: { select: vi.fn(), input: vi.fn(), custom },
+    ui: { select: vi.fn(), custom },
   });
 }
 

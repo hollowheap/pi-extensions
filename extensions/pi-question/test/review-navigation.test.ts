@@ -40,7 +40,7 @@ function createFlow(
     mode: "tui",
     hasUI: true,
     sessionManager: {},
-    ui: { select: vi.fn(), input: vi.fn(), custom },
+    ui: { select: vi.fn(), custom },
   };
   const pending = askQuestions(questions as never, ctx as never);
   return { pending, components, custom };
@@ -377,7 +377,7 @@ describe("question navigation", () => {
       mode: "tui",
       hasUI: true,
       sessionManager: {},
-      ui: { select: vi.fn(), input: vi.fn(), custom },
+      ui: { select: vi.fn(), custom },
     };
     const pending = askQuestions(
       [{ prompt: "One", mode: "free" }] as never,

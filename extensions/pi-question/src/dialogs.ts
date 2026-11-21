@@ -433,15 +433,14 @@ async function askWriteIn(
     signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
     timeoutMs: options?.timeoutMs,
   };
-  if (
-    !lockOptions.signal &&
-    lockOptions.timeoutMs === undefined &&
-    ctx.mode === "tui" &&
-    typeof hostUi(ctx)?.editor === "function"
-  ) {
+  if (ctx.mode === "tui" && typeof hostUi(ctx)?.input === "function") {
     try {
       return await withPromptLock(
-        () => hostUi(ctx).editor(title, prefill),
+        () =>
+          hostUi(ctx).input(title, placeholder, {
+            signal: lockOptions.signal,
+            timeout: lockOptions.timeoutMs,
+          }),
         lockOptions,
       );
     } catch (error) {

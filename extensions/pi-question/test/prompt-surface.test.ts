@@ -119,7 +119,7 @@ describe("question prompt surface", () => {
       mode: "tui",
       hasUI: true,
       sessionManager: { getBranch: vi.fn(() => []) },
-      ui: { custom, select: vi.fn(), input: vi.fn(), notify: vi.fn() },
+      ui: { custom, select: vi.fn(), notify: vi.fn() },
     };
     await askQuestion(
       { prompt: "Free", mode: "free" } as never,
@@ -133,24 +133,20 @@ describe("question prompt surface", () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
-  it("reuses ctx.ui.editor for free-text prompts in TUI when available", async () => {
-    const editor = vi.fn().mockResolvedValue("typed via host editor");
+  it("reuses ctx.ui.input for free-text prompts in TUI when available", async () => {
+    const input = vi.fn().mockResolvedValue("typed via host input");
     const custom = vi.fn();
-    const getEditorText = vi.fn(() => "unsent draft");
-    const setEditorText = vi.fn();
-    const c = {
-      mode: "tui",
-      hasUI: true,
-      ui: { editor, custom, getEditorText, setEditorText },
-    };
+    const c = { mode: "tui", hasUI: true, ui: { input, custom } };
     const answer = await askQuestion(
       { prompt: "Describe", mode: "free", options: [] } as never,
       c as never,
     );
-    expect(answer).toEqual({ mode: "free", value: "typed via host editor" });
-    expect(editor).toHaveBeenCalledWith("Describe", undefined);
+    expect(answer).toEqual({ mode: "free", value: "typed via host input" });
+    expect(input).toHaveBeenCalledWith("Describe", undefined, {
+      signal: undefined,
+      timeout: undefined,
+    });
     expect(custom).not.toHaveBeenCalled();
-    expect(setEditorText).not.toHaveBeenCalled();
   });
 
   it("uses centered popups for multi-select and free-text Editor fallback in TUI", async () => {
