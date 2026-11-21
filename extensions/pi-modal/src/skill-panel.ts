@@ -20,6 +20,7 @@ import {
   Spacer,
   Text,
 } from "@earendil-works/pi-tui";
+import { getPromptChar as sharedGetPromptChar } from "@hollowheap/pi-ui/prompt-char";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
 import { safeFg } from "@hollowheap/ui/theme";
 import {
@@ -660,7 +661,7 @@ function applyUserMarkdownTransformers(
 /** Frame UserMessageComponent like the prompt window with firstLinePrefix cutout and verb-pack bottom-right label. */
 export function installUserMessagePanel(
   getTheme: () => Theme | undefined,
-  getPromptChar: () => string = () => "❯",
+  getPromptChar: () => string = sharedGetPromptChar,
 ): void {
   const prototype = UserMessageComponent.prototype;
   const installed = Reflect.get(prototype, USER_MESSAGE_PANEL) as
@@ -770,8 +771,7 @@ export function installUserMessagePanel(
           includeBottom: true,
           colored: liveConfig.colored,
           surface: livePanel.surface,
-          firstLinePrefix: `${promptChar} `,
-          bottomRightLabel: ` ${verb.settled} `,
+          firstLinePrefix: `${promptChar} ${verb.settled} `,
         });
       },
     });
@@ -966,6 +966,7 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
                 includeBottom: true,
                 colored: liveConfig.colored,
                 surface: livePanel.surface,
+                firstLinePrefix: `${sharedGetPromptChar()} ${resolveToolVerb("bash", livePanel).settled} `,
               });
             },
           },

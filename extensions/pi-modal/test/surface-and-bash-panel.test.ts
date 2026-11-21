@@ -392,7 +392,7 @@ describe("installBashPanel", () => {
       );
       expect(cmdLine).toBeDefined();
       expect(loaderLine).toBeDefined();
-      expect(cmdLine?.startsWith("│▎ $ sleep 1")).toBe(true);
+      expect(cmdLine?.startsWith("❯ Ran $ sleep 1")).toBe(true);
       expect(loaderLine?.startsWith("│▎ ")).toBe(true);
       expect(loaderLine?.startsWith("│▎  ")).toBe(false);
 
@@ -436,7 +436,7 @@ describe("installBashPanel", () => {
       line.includes("$ seq 1 10"),
     );
     const outLine = collapsedLines.find((line) => line.includes("line-10"));
-    expect(seqCmdLine?.startsWith("│▎ $ seq 1 10")).toBe(true);
+    expect(seqCmdLine?.startsWith("❯ Ran $ seq 1 10")).toBe(true);
     expect(outLine?.startsWith("│▎ line-10")).toBe(true);
     expect(outLine?.startsWith("│▎  line-10")).toBe(false);
   });
@@ -532,10 +532,10 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     );
     const plainLines = rawLines.map(stripTerminalSequences);
     expect(plainLines[0]).toBe(`╭${"─".repeat(32)}╮`);
-    expect(plainLines[1]?.startsWith("❯ Hello world")).toBe(true);
+    expect(plainLines[1]?.startsWith("❯ Prompted Hello world")).toBe(true);
     expect(plainLines[1]?.endsWith(" │")).toBe(true);
     expect(plainLines[2]?.startsWith("│ Second line")).toBe(true);
-    expect(plainLines.at(-1)).toContain(" Prompted ─╯");
+    expect(plainLines.at(-1)?.endsWith("─╯")).toBe(true);
 
     // Steered via markSteeredUserMessage + playful verb pack
     setActiveTuiConfig({
@@ -553,8 +553,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     const steeredMsg = new UserMessageComponent("Steer me now", undefined, 1);
     const steeredPlain = steeredMsg.render(34).map(stripTerminalSequences);
     expect(steeredPlain[0]?.startsWith("┌")).toBe(true);
-    expect(steeredPlain[1]?.startsWith("» Steer me now")).toBe(true);
-    expect(steeredPlain.at(-1)).toContain(" Nudged ─┘");
+    expect(steeredPlain[1]?.startsWith("» Nudged Steer me now")).toBe(true);
+    expect(steeredPlain.at(-1)?.endsWith("─┘")).toBe(true);
 
     // Terse verb pack for both prompt and steered property
     setActiveTuiConfig({
@@ -568,9 +568,9 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       },
     });
     const tersePromptPlain = userMsg.render(34).map(stripTerminalSequences);
-    expect(tersePromptPlain.at(-1)).toContain(" prompt ─╯");
+    expect(tersePromptPlain[1]?.startsWith("» prompt Hello world")).toBe(true);
     const terseSteerPlain = steeredMsg.render(34).map(stripTerminalSequences);
-    expect(terseSteerPlain.at(-1)).toContain(" steer ─╯");
+    expect(terseSteerPlain[1]?.startsWith("» steer Steer me now")).toBe(true);
 
     // Restores original host UserMessageComponent rendering when !panel.enabled
     setActiveTuiConfig({

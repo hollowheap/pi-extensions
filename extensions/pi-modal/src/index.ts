@@ -11,6 +11,7 @@ import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import { getTuiConfigPath } from "@hollowheap/core/tui-config";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
+import { getPromptChar, setPromptChar } from "@hollowheap/pi-ui/prompt-char";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { boxFrame } from "@hollowheap/ui/frame";
 import { createWorkingIndicator } from "@hollowheap/ui/spinner";
@@ -143,10 +144,7 @@ export default function (pi: ExtensionAPI): void {
   installExtensionInputPanel(getTheme);
   installUserMessagePanel(
     getTheme,
-    () =>
-      activeEditor?.getPromptChar() ??
-      loadModalConfig(getAgentDir()).promptChar ??
-      "❯",
+    () => activeEditor?.getPromptChar() ?? getPromptChar(),
   );
   installHotkeysPanel(getTheme, () => loadModalConfig(getAgentDir()));
   let activeTui:
@@ -423,6 +421,7 @@ export default function (pi: ExtensionAPI): void {
     const config = loadModalConfig(getAgentDir(), (message) =>
       notify(ctx, `pi-modal: ${message}`, "warning"),
     );
+    setPromptChar(config.promptChar);
     if (config.enabled === false) return;
     const hasTuiConfigFile = existsSync(getTuiConfigPath(getAgentDir()));
     const editorConfig =
@@ -448,7 +447,10 @@ export default function (pi: ExtensionAPI): void {
               ? undefined
               : () => ({
                   render: (width: number) =>
-                    boxFrame([...rows], width, widgetTheme),
+                    boxFrame([...rows], width, widgetTheme, undefined, {
+                      paddingX: 1,
+                      marginX: 0,
+                    }),
                   invalidate: () => {},
                 }),
             { placement: "aboveEditor" },
