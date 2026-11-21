@@ -114,6 +114,59 @@ function syncPanelEnabledOnRender<
   });
 }
 
+interface HostPanelStyleTarget {
+  setPaddingX(paddingX: number): void;
+  setBgFn(bgFn: never): void;
+}
+
+export function createHostPanelStyleState<T extends HostPanelStyleTarget>() {
+  const outputPadMap = new WeakMap<T, number>();
+  const hostPaddingYMap = new WeakMap<T, number>();
+  const hostBgFnMap = new WeakMap<T, unknown>();
+  return {
+    setOutputPad(instance: T, outputPad: number): void {
+      outputPadMap.set(instance, outputPad);
+    },
+    capture(instance: T): void {
+      if (!outputPadMap.has(instance)) {
+        const boxPad = Reflect.get(instance, "paddingX");
+        outputPadMap.set(instance, typeof boxPad === "number" ? boxPad : 1);
+      }
+      if (!hostPaddingYMap.has(instance)) {
+        const boxPadY = Reflect.get(instance, "paddingY");
+        hostPaddingYMap.set(
+          instance,
+          typeof boxPadY === "number" ? boxPadY : 1,
+        );
+      }
+      if (!hostBgFnMap.has(instance)) {
+        hostBgFnMap.set(instance, Reflect.get(instance, "bgFn"));
+      }
+    },
+    getOutputPad(instance: T): number {
+      return outputPadMap.get(instance) ?? 1;
+    },
+    restore(instance: T): void {
+      instance.setPaddingX(outputPadMap.get(instance) ?? 1);
+      Reflect.set(instance, "paddingY", hostPaddingYMap.get(instance) ?? 1);
+      instance.setBgFn(hostBgFnMap.get(instance) as never);
+    },
+  };
+}
+
+export function formatBoldCustomMessageLabel(
+  theme: Theme | undefined,
+  label: string,
+  colored: boolean,
+): string {
+  return safeFg(
+    theme,
+    "customMessageLabel",
+    `\x1b[1m${label}\x1b[22m`,
+    colored,
+  );
+}
+
 export function renderPanelOrFallback(
   lines: readonly string[],
   width: number,
@@ -193,18 +246,14 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
   if (typeof original !== "function") return;
   const patch = { getTheme };
   const groups = new WeakMap<ParsedSkillBlock, ParsedSkillBlock[]>();
-  const outputPadMap = new WeakMap<SkillInvocationMessageComponent, number>();
-  const hostPaddingYMap = new WeakMap<
-    SkillInvocationMessageComponent,
-    number
-  >();
-  const hostBgFnMap = new WeakMap<SkillInvocationMessageComponent, unknown>();
+  const hostStyle =
+    createHostPanelStyleState<SkillInvocationMessageComponent>();
   Reflect.set(prototype, SKILL_PANEL, patch);
   Reflect.set(
     prototype,
     "setOutputPad",
     function (this: SkillInvocationMessageComponent, outputPad: number) {
-      outputPadMap.set(this, outputPad);
+      hostStyle.setOutputPad(this, outputPad);
       if (panelRenderConfig(getActiveTuiConfig()).enabled) {
         this.setPaddingX(0);
         Reflect.set(this, "paddingY", 0);
@@ -229,22 +278,10 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
         return;
       }
 
-      if (!outputPadMap.has(this)) {
-        const boxPad = Reflect.get(this, "paddingX");
-        outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
-      }
-      if (!hostPaddingYMap.has(this)) {
-        const boxPadY = Reflect.get(this, "paddingY");
-        hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
-      }
-      if (!hostBgFnMap.has(this)) {
-        hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
-      }
+      hostStyle.capture(this);
 
       if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
-        this.setPaddingX(outputPadMap.get(this) ?? 1);
-        Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
-        this.setBgFn(hostBgFnMap.get(this) as never);
+        hostStyle.restore(this);
         original.call(this);
         return;
       }
@@ -281,7 +318,7 @@ export function installSkillPanel(getTheme: () => Theme | undefined): void {
             render: (width) => {
               const config = getActiveTuiConfig();
               const theme = patch.getTheme();
-              const pad = outputPadMap.get(this) ?? 1;
+              const pad = hostStyle.getOutputPad(this);
               const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
               const hintText = safeFg(theme, "dim", hint, config.colored);
               header.setText(`${names} (${hintText})`);
@@ -343,12 +380,10 @@ function installSummaryPanel<
   const original = Reflect.get(prototype, "updateDisplay");
   if (typeof original !== "function") return;
   const patch = { getTheme };
-  const outputPadMap = new WeakMap<T, number>();
-  const hostPaddingYMap = new WeakMap<T, number>();
-  const hostBgFnMap = new WeakMap<T, unknown>();
+  const hostStyle = createHostPanelStyleState<T>();
   Reflect.set(prototype, spec.symbol, patch);
   Reflect.set(prototype, "setOutputPad", function (this: T, outputPad: number) {
-    outputPadMap.set(this, outputPad);
+    hostStyle.setOutputPad(this, outputPad);
     if (panelRenderConfig(getActiveTuiConfig()).enabled) {
       this.setPaddingX(0);
       Reflect.set(this, "paddingY", 0);
@@ -371,21 +406,9 @@ function installSummaryPanel<
       original.call(this);
       return;
     }
-    if (!outputPadMap.has(this)) {
-      const boxPad = Reflect.get(this, "paddingX");
-      outputPadMap.set(this, typeof boxPad === "number" ? boxPad : 1);
-    }
-    if (!hostPaddingYMap.has(this)) {
-      const boxPadY = Reflect.get(this, "paddingY");
-      hostPaddingYMap.set(this, typeof boxPadY === "number" ? boxPadY : 1);
-    }
-    if (!hostBgFnMap.has(this)) {
-      hostBgFnMap.set(this, Reflect.get(this, "bgFn"));
-    }
+    hostStyle.capture(this);
     if (!panelRenderConfig(getActiveTuiConfig()).enabled) {
-      this.setPaddingX(outputPadMap.get(this) ?? 1);
-      Reflect.set(this, "paddingY", hostPaddingYMap.get(this) ?? 1);
-      this.setBgFn(hostBgFnMap.get(this) as never);
+      hostStyle.restore(this);
       original.call(this);
       return;
     }
@@ -418,15 +441,10 @@ function installSummaryPanel<
           render: (width) => {
             const config = getActiveTuiConfig();
             const theme = patch.getTheme();
-            const pad = outputPadMap.get(this) ?? 1;
+            const pad = hostStyle.getOutputPad(this);
             const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
             header.setText(
-              safeFg(
-                theme,
-                "customMessageLabel",
-                `\x1b[1m${spec.badge}\x1b[22m`,
-                config.colored,
-              ),
+              formatBoldCustomMessageLabel(theme, spec.badge, config.colored),
             );
             const lines = [...header.render(innerWidth), ""];
             if (body) {
@@ -596,13 +614,9 @@ export function installCustomMessagePanel(
         const pad = typeof currentPad === "number" ? currentPad : 1;
         const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
         const labelText = `[${message.customType ?? "custom"}]`;
-        const styledLabel = safeFg(
-          theme,
-          "customMessageLabel",
-          `\x1b[1m${labelText}\x1b[22m`,
-          liveConfig.colored,
+        header.setText(
+          formatBoldCustomMessageLabel(theme, labelText, liveConfig.colored),
         );
-        header.setText(styledLabel);
         const lines = [
           ...header.render(innerWidth),
           ...(text ? ["", ...body.render(innerWidth)] : []),

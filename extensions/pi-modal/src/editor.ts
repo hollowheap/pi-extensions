@@ -15,7 +15,11 @@ import {
 } from "@earendil-works/pi-tui";
 import { errorMessage } from "@hollowheap/core/format";
 
-import { type BorderStyle, getBorderChars } from "@hollowheap/core/border";
+import {
+  type BorderChars,
+  type BorderStyle,
+  getBorderChars,
+} from "@hollowheap/core/border";
 import type {
   OverlaySurfaceMode,
   TuiConfig,
@@ -34,6 +38,41 @@ import { panelRenderConfig } from "./panel.js";
 function formatEditorModeBadge(mode: EditorMode, isBash: boolean): string {
   if (isBash) return "BASH";
   return mode.toUpperCase();
+}
+
+export function paintBorderRow(options: {
+  width: number;
+  borderChars: BorderChars;
+  paint: (text: string) => string;
+  leftCorner: string;
+  rightCorner: string;
+  renderInner: (innerWidth: number) => string;
+  label?: string;
+}): string {
+  const {
+    width,
+    borderChars,
+    paint,
+    leftCorner,
+    rightCorner,
+    renderInner,
+    label,
+  } = options;
+  const innerWidth = width - 2;
+  const inner =
+    innerWidth > 0
+      ? paint(
+          stripTerminalSequences(renderInner(innerWidth)).replaceAll(
+            "─",
+            borderChars.horizontal,
+          ),
+        )
+      : "";
+  return (
+    paint(leftCorner) +
+    (label ? fitRightLabel(inner, innerWidth, label) : inner) +
+    paint(rightCorner)
+  );
 }
 
 function getGraphemeEnd(text: string, col: number): number {
@@ -808,16 +847,15 @@ export class ModalEditor extends CustomEditor {
     }
     const paint = this.borderPaint(config.colored, surfaceActive);
     const borderChars = getBorderChars(borderStyle);
-    const innerWidth = targetWidth - 2;
-    const inner =
-      innerWidth > 0
-        ? paint(
-            stripTerminalSequences(
-              super.renderTopBorder(innerWidth, hiddenLineCount),
-            ).replaceAll("─", borderChars.horizontal),
-          )
-        : "";
-    return paint(borderChars.topLeft) + inner + paint(borderChars.topRight);
+    return paintBorderRow({
+      width: targetWidth,
+      borderChars,
+      paint,
+      leftCorner: borderChars.topLeft,
+      rightCorner: borderChars.topRight,
+      renderInner: (innerWidth) =>
+        super.renderTopBorder(innerWidth, hiddenLineCount),
+    });
   }
 
   protected override renderBottomBorder(
@@ -858,19 +896,16 @@ export class ModalEditor extends CustomEditor {
     }
     const paint = this.borderPaint(config.colored, surfaceActive);
     const borderChars = getBorderChars(borderStyle);
-    const innerWidth = targetWidth - 2;
-    const inner =
-      innerWidth > 0
-        ? paint(
-            stripTerminalSequences(
-              super.renderBottomBorder(innerWidth, hiddenLineCount),
-            ).replaceAll("─", borderChars.horizontal),
-          )
-        : "";
-    const line =
-      paint(borderChars.bottomLeft) +
-      (showModeIndicator ? fitRightLabel(inner, innerWidth, label) : inner) +
-      paint(borderChars.bottomRight);
+    const line = paintBorderRow({
+      width: targetWidth,
+      borderChars,
+      paint,
+      leftCorner: borderChars.bottomLeft,
+      rightCorner: borderChars.bottomRight,
+      renderInner: (innerWidth) =>
+        super.renderBottomBorder(innerWidth, hiddenLineCount),
+      label: showModeIndicator ? label : undefined,
+    });
     this.lastBottomBorder = line;
     return line;
   }
