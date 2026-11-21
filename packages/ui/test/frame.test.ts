@@ -19,6 +19,17 @@ afterEach(() => {
 });
 
 describe("boxFrame", () => {
+  it("honors the shared panel border override", () => {
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      borderStyle: "rounded",
+      panel: { ...DEFAULT_TUI_CONFIG.panel, borderStyle: "double" },
+    });
+    const lines = boxFrame(["hello"], 20, mockTheme);
+    expect(lines[0]?.startsWith("╔═")).toBe(true);
+    expect(getFrameInnerWidth(20)).toBe(16);
+  });
+
   it("supports rounded, sharp, square, double, and dashed border styles", () => {
     const doubleLines = boxFrame(["hello"], 20, mockTheme, "Title", {
       borderStyle: "double",

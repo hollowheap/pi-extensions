@@ -13,6 +13,7 @@ import type {
   OverlaySurfaceMode,
   PanelRenderMode,
 } from "@hollowheap/core/tui-config";
+import { panelRenderConfig } from "./panel.js";
 import { getActiveTuiConfig, getHostOutputPadding } from "./state.js";
 import { paintSurfaceLine, stripBackgroundSgr } from "./surface.js";
 import { safeBold, safeFg } from "./theme.js";
@@ -53,17 +54,24 @@ function computeInnerWidth(
 /** Return usable content width inside the selected border and padding. */
 export function getFrameInnerWidth(
   width: number,
-  borderStyle: BorderStyle = getActiveTuiConfig().borderStyle,
+  borderStyle?: BorderStyle,
   paddingX?: number,
-  overlaySurface: OverlaySurfaceMode = getActiveTuiConfig().overlaySurface,
-  colored: boolean = getActiveTuiConfig().colored,
+  overlaySurface?: OverlaySurfaceMode,
+  colored?: boolean,
 ): number {
+  const active = getActiveTuiConfig();
+  const panel = panelRenderConfig(active);
+  const effectiveBorder =
+    borderStyle ?? panel.borderStyle ?? active.borderStyle;
+  const effectiveSurface =
+    overlaySurface ?? panel.surface ?? active.overlaySurface;
+  const effectiveColored = colored ?? active.colored;
   const safeWidth = Math.max(4, width);
-  const surfaceActive = isSurfaceActive(overlaySurface, colored);
+  const surfaceActive = isSurfaceActive(effectiveSurface, effectiveColored);
   return computeInnerWidth(
     safeWidth,
-    borderStyle,
-    framePadding(width, borderStyle, paddingX, surfaceActive),
+    effectiveBorder,
+    framePadding(width, effectiveBorder, paddingX, surfaceActive),
   );
 }
 
@@ -77,10 +85,13 @@ export function boxFrame(
 ): string[] {
   const safeWidth = Math.max(4, width);
   const active = getActiveTuiConfig();
-  const overlaySurface = options?.overlaySurface ?? active.overlaySurface;
+  const panel = panelRenderConfig(active);
+  const overlaySurface =
+    options?.overlaySurface ?? panel.surface ?? active.overlaySurface;
   const colored = options?.colored ?? active.colored;
   const surfaceActive = isSurfaceActive(overlaySurface, colored);
-  const borderStyle = options?.borderStyle ?? active.borderStyle;
+  const borderStyle =
+    options?.borderStyle ?? panel.borderStyle ?? active.borderStyle;
   const paddingX = framePadding(
     safeWidth,
     borderStyle,
