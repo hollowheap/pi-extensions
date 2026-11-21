@@ -325,6 +325,7 @@ function createWidget(
           width,
           theme,
           `${provider.label} · ${hint} to hide`,
+          { paddingX: 1, marginX: 0 },
         );
       },
       invalidate() {},
