@@ -101,7 +101,9 @@ describe("command registration and handler seams", () => {
 
     await commands.hooks.handler("status", ctx);
 
-    const summary = notify.mock.calls[0][0] as string;
+    const summary = notify.mock.calls
+      .map(([message]) => String(message))
+      .find((message) => message.includes("Hooks:"));
     expect(summary).toContain("Hooks:");
     expect(summary).toContain("Sandbox:");
     expect(summary).toContain("Bubblewrap");

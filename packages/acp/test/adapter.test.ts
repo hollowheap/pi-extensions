@@ -416,13 +416,21 @@ describe("adapter sessions", () => {
   });
 
   it("auto-selects opencode-go model when initial model is unknown", async () => {
-    const { adapter, aborted } = setup(
-      async () => ({}),
-      { model: { provider: "unknown", id: "" } },
-      { models: FAKE_MODELS },
-    );
-    await adapter.handle("session/new", { cwd: "/repo" });
-    expect(aborted[0]).toContain("set_model:opencode-go/deepseek-v4.1-flash");
+    const agentHome = mkdtempSync(join(tmpdir(), "pi-acp-model-"));
+    const previousAgentDir = process.env.PI_AGENT_DIR;
+    process.env.PI_AGENT_DIR = agentHome;
+    try {
+      const { adapter, aborted } = setup(
+        async () => ({}),
+        { model: { provider: "unknown", id: "" } },
+        { models: FAKE_MODELS },
+      );
+      await adapter.handle("session/new", { cwd: "/repo" });
+      expect(aborted[0]).toContain("set_model:opencode-go/deepseek-v4.1-flash");
+    } finally {
+      restoreEnv("PI_AGENT_DIR", previousAgentDir);
+      rmSync(agentHome, { recursive: true, force: true });
+    }
   });
 
   it("auto-selects configured defaultModel if provided", async () => {

@@ -193,7 +193,9 @@ describe("pi-guard extension", () => {
   it("registers lifecycle hooks and the mode command", () => {
     const pi = createMockPi();
     extension(pi as never);
-    expect(pi.registerTool).not.toHaveBeenCalled();
+    expect(pi.registerTool).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "bash" }),
+    );
     const events = pi.on.mock.calls.map(([event]) => event).sort();
     expect(events).toEqual([
       "session_compact",
@@ -202,6 +204,7 @@ describe("pi-guard extension", () => {
       "session_tree",
       "tool_call",
       "tool_result",
+      "user_bash",
     ]);
     const commands = pi.registerCommand.mock.calls.map(([name]) => name);
     expect(commands).toEqual(["grant", "context", "guard", "mode"]);
@@ -625,7 +628,7 @@ describe("pi-guard extension", () => {
     });
   });
 
-  it("treats subagent definition and inspection actions as passthrough and gates delete/cancel/start", async () => {
+  it("treats subagent definition and inspection actions as passthrough and gates delete/terminate/start", async () => {
     const { ctx, call } = setupProject(EXAMPLE_RULES);
     await expect(
       call("subagent", {
@@ -646,7 +649,7 @@ describe("pi-guard extension", () => {
       reason: expect.stringContaining("pi-guard"),
     });
     await expect(
-      call("subagent", { action: "cancel", id: "sub-1" }),
+      call("subagent", { action: "terminate", id: "sub-1" }),
     ).resolves.toBeUndefined();
 
     await expect(

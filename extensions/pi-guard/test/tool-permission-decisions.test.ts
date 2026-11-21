@@ -89,7 +89,9 @@ describe("pi-guard ask and deny decisions at the tool seam", () => {
       reason: expect.stringContaining("denied"),
     });
 
-    expect(pi.registerTool).not.toHaveBeenCalled();
+    expect(pi.registerTool).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "bash" }),
+    );
     expect(pi.registerShortcut).toHaveBeenCalledWith(
       "alt+m",
       expect.any(Object),
