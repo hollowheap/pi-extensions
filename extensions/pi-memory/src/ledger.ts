@@ -1,12 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
+import {
+  MEMORY_CLEAR_TYPE,
+  MEMORY_CONSUMED_TYPE,
+  MEMORY_OBSERVATION_TYPE,
+  MEMORY_REFLECTION_TYPE,
+  MEMORY_WORKSPACE_TYPE,
+} from "@hollowheap/core/custom-types";
 import { isRecord } from "@hollowheap/core/records";
 
-export const MEMORY_OBSERVATION_TYPE = "hollowheap.memory.observation";
-export const MEMORY_REFLECTION_TYPE = "hollowheap.memory.reflection";
-export const MEMORY_CONSUMED_TYPE = "hollowheap.memory.consumed";
-export const MEMORY_CLEAR_TYPE = "hollowheap.memory.clear";
-export const MEMORY_WORKSPACE_TYPE = "hollowheap.memory.workspace";
+export {
+  MEMORY_CLEAR_TYPE,
+  MEMORY_CONSUMED_TYPE,
+  MEMORY_OBSERVATION_TYPE,
+  MEMORY_REFLECTION_TYPE,
+  MEMORY_WORKSPACE_TYPE,
+};
 
 export function observationId(): string {
   return randomUUID().replaceAll("-", "").slice(0, 12);

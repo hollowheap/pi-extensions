@@ -4,6 +4,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { isPermissionError, loadPermissions } from "@hollowheap/core/config";
+import { TASK_RUN_TYPE } from "@hollowheap/core/custom-types";
 import {
   displayTarget,
   errorMessage,
@@ -34,7 +35,7 @@ import {
   taskWorkspaceTracker,
 } from "./workspace.js";
 
-export const TASK_RUN_TYPE = "hollowheap.tasks.run";
+export { TASK_RUN_TYPE };
 
 export type TaskAction = "start" | "list" | "status" | "wait" | "cancel";
 

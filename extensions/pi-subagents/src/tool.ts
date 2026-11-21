@@ -12,6 +12,7 @@ import {
   formatAgentRosterSection,
 } from "@hollowheap/core/agents";
 import { isPermissionError } from "@hollowheap/core/config";
+import { SUBAGENT_RUN_TYPE } from "@hollowheap/core/custom-types";
 import {
   errorMessage,
   sanitizeTerminalText,
@@ -54,7 +55,7 @@ import {
   subagentWorkspaceTracker,
 } from "./workspace.js";
 
-export const SUBAGENT_RUN_TYPE = "hollowheap.subagents.run";
+export { SUBAGENT_RUN_TYPE };
 
 export interface SubagentToolOptions {
   onSubagentsChange?: () => void;

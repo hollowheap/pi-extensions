@@ -4,6 +4,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { TODOS_TYPE } from "@hollowheap/core/custom-types";
 import { sanitizeTerminalText, toolTextResult } from "@hollowheap/core/format";
 import { isPromptLockHeld, withPromptLock } from "@hollowheap/core/prompt-lock";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
@@ -35,7 +36,6 @@ import {
   formatTodoList,
 } from "./todos.js";
 
-const TODOS_TYPE = "hollowheap.todos";
 const WIDGET_PREFIX = Key.alt("w");
 const WIDGET_TARGETS = ["todos", "tasks", "subagents", "all"] as const;
 const CHORD_KEYS = {

@@ -12,6 +12,7 @@ import {
   getCapabilities,
   hyperlink,
 } from "@earendil-works/pi-tui";
+import { WEB_HISTORY_TYPE } from "@hollowheap/core/custom-types";
 import {
   errorMessage,
   sanitizeTerminalText,
@@ -56,7 +57,7 @@ export const FETCH_MAX_MEDIA = 20;
 const FETCH_CACHE_TTL_MS = 5 * 60_000;
 const FETCH_RATE_LIMIT_MS = 1_000;
 
-export const WEB_HISTORY_TYPE = "hollowheap.web.history";
+export { WEB_HISTORY_TYPE };
 
 export interface WebSessionState {
   urls: string[];

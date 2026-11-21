@@ -12,6 +12,7 @@ import {
   defineTool,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { DECIDE_STATS_TYPE } from "@hollowheap/core/custom-types";
 import {
   errorMessage,
   sanitizeTerminalText,
@@ -123,7 +124,7 @@ interface Inflight {
   invalidated?: boolean;
 }
 
-export const DECIDE_STATS_TYPE = "hollowheap.decide";
+export { DECIDE_STATS_TYPE };
 
 interface DecideStats {
   totalCount: number;

@@ -1,9 +1,10 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { ANSWERS_TYPE } from "@hollowheap/core/custom-types";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import { readBranchEntries } from "@hollowheap/core/state";
 import { type QuestionAnswer, capAnswer } from "./questions.js";
 
-export const ANSWERS_TYPE = "hollowheap.question.answers";
+export { ANSWERS_TYPE };
 
 export interface QuestionSessionState {
   askedCount: number;

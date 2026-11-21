@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { renderAgentRoster } from "@hollowheap/core/agents";
 import { errorMessage, sanitizeTerminalText } from "@hollowheap/core/format";
+import { formatModelId } from "@hollowheap/core/model-ref";
 import { enterMode, registerMode } from "@hollowheap/core/modes";
 import { updateSessionSnapshot } from "@hollowheap/core/snapshot";
 import {
@@ -87,22 +88,6 @@ function toAgentEntryData(agent: AgentConfig): {
   if (thinking !== undefined) data.thinking = thinking;
   if (agent.mode !== undefined) data.mode = agent.mode;
   return data;
-}
-
-function formatModelId(model: unknown): string {
-  if (typeof model === "string") return model.trim();
-  if (typeof model === "object" && model !== null) {
-    const raw = model as { provider?: unknown; id?: unknown };
-    const id = typeof raw.id === "string" ? raw.id.trim() : "";
-    const provider =
-      typeof raw.provider === "string" ? raw.provider.trim() : "";
-
-    if (!id) return "";
-    if (!provider) return id;
-    if (id.startsWith(`${provider}/`)) return id;
-    return `${provider}/${id}`;
-  }
-  return "";
 }
 
 interface OverrideState {
