@@ -208,6 +208,7 @@ export interface WidgetMountContext {
 interface WidgetState {
   providers: Map<string, WidgetProvider>;
   visible: Map<string, boolean>;
+  lineCounts: Map<string, number>;
 }
 
 const WIDGET_STATE_KEY = Symbol.for("@hollowheap/ui/widgets");
@@ -219,6 +220,7 @@ function widgetState(): WidgetState {
   const created: WidgetState = {
     providers: new Map(),
     visible: new Map(),
+    lineCounts: new Map(),
   };
   store[WIDGET_STATE_KEY] = created;
   return created;
@@ -229,10 +231,12 @@ export function registerWidgetProvider(provider: WidgetProvider): () => void {
   const state = widgetState();
   state.providers.set(provider.name, provider);
   state.visible.delete(provider.name);
+  state.lineCounts.delete(provider.name);
   return () => {
     if (state.providers.get(provider.name) === provider) {
       state.providers.delete(provider.name);
       state.visible.delete(provider.name);
+      state.lineCounts.delete(provider.name);
     }
   };
 }
@@ -251,6 +255,18 @@ export function isWidgetVisible(name: string): boolean {
 
 export function setWidgetVisible(name: string, visible: boolean): void {
   widgetState().visible.set(name, visible);
+}
+
+/** Sum of the last rendered heights of visible widgets, in terminal rows. */
+export function getVisibleWidgetHeight(): number {
+  const state = widgetState();
+  let height = 0;
+  for (const name of state.providers.keys()) {
+    if (state.visible.get(name) !== false) {
+      height += state.lineCounts.get(name) ?? 0;
+    }
+  }
+  return height;
 }
 
 const WIDGET_CHORDS = Object.freeze({
@@ -320,13 +336,15 @@ function createWidget(
         const lines = provider.render(width, theme);
         if (lines === undefined || lines.length === 0) return [];
         const hint = provider.hint ?? widgetToggleHint(provider.name);
-        return boxFrame(
+        const framed = boxFrame(
           lines,
           width,
           theme,
           `${provider.label} · ${hint} to hide`,
           { paddingX: 1, marginX: 0 },
         );
+        widgetState().lineCounts.set(provider.name, framed.length);
+        return framed;
       },
       invalidate() {},
     };

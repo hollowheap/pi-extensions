@@ -4,13 +4,33 @@ import { join } from "node:path";
 import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
-let capturedRead: (() => { title: string; markdown: string }) | undefined;
-vi.mock("@hollowheap/pi-ui/pager", () => ({
-  showMarkdownPager: (_ctx: unknown, options: { read?: () => never }) => {
-    capturedRead = options.read;
-    return Promise.resolve();
-  },
-}));
+let capturedComponent:
+  | { render(width: number): string[]; handleInput(data: string): void }
+  | undefined;
+
+vi.mock("@hollowheap/pi-ui/host", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    showDialog: (
+      _ctx: unknown,
+      factory: (
+        tui: unknown,
+        theme: unknown,
+        keys: unknown,
+        done: (value: undefined) => void,
+      ) => { render(width: number): string[]; handleInput(data: string): void },
+    ) => {
+      capturedComponent = factory(
+        { terminal: { rows: 20 }, requestRender: vi.fn() },
+        {},
+        {},
+        () => {},
+      );
+      return Promise.resolve();
+    },
+  };
+});
 
 import { showSubagentTranscript } from "../src/transcript.js";
 
@@ -35,7 +55,7 @@ function sessionJsonl(text: string): string {
 }
 
 describe("subagent transcript cache", () => {
-  it("reuses unchanged transcripts and refreshes after a file change", async () => {
+  it("refreshes rendered transcript after a file change", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "transcript-cache-"));
     mkdirSync(join(agentDir, "subagents"));
     const file = join(agentDir, "subagents", "child.session.jsonl");
@@ -49,10 +69,12 @@ describe("subagent transcript cache", () => {
       "child",
       () => "fallback",
     );
-    if (!capturedRead) throw new Error("read not captured");
-    expect(capturedRead().markdown).toContain("first");
+    if (!capturedComponent) throw new Error("component not captured");
+    expect(capturedComponent.render(80).join("\n")).toContain("first");
 
     writeFileSync(file, sessionJsonl("second and longer"));
-    expect(capturedRead().markdown).toContain("second and longer");
+    expect(capturedComponent.render(80).join("\n")).toContain(
+      "second and longer",
+    );
   });
 });

@@ -9,9 +9,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { hostUi } from "@hollowheap/pi-ui/host";
-import { showMarkdownPager } from "@hollowheap/pi-ui/pager";
+import { hostUi, showDialog } from "@hollowheap/pi-ui/host";
+import { pagerSessionDirection } from "@hollowheap/pi-ui/pager";
+import { handleViewportKey } from "@hollowheap/pi-ui/viewport";
 import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
+import { getVisibleWidgetHeight } from "@hollowheap/ui/widget";
 import { type SubagentState, subagentDisplayName } from "./state.js";
 
 type MessageEntry = Extract<SessionEntry, { type: "message" }>;
@@ -209,15 +211,69 @@ export async function showSubagentTranscript(
         "(Waiting for transcript)",
     };
   };
-  await showMarkdownPager(ctx, {
-    ...read(),
-    fullscreen: true,
-    read,
-    navigate:
-      states.length > 1
-        ? (direction) => {
+  const terminalRows =
+    (hostUi(ctx) as unknown as { terminal?: { rows: number } }).terminal
+      ?.rows ?? 24;
+  const maxHeight = Math.max(6, terminalRows - getVisibleWidgetHeight() - 4);
+  await showDialog<void>(
+    ctx,
+    (tui, _theme, _keys, done) => {
+      let offset = Number.MAX_SAFE_INTEGER;
+      let lastLineCount = 0;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        done();
+      };
+      const pageSize = () => Math.max(1, maxHeight - 1);
+      const maxOffset = () => Math.max(0, lastLineCount - pageSize());
+      return {
+        capturesViewportInput: true,
+        invalidate: () => {},
+        render(width: number): string[] {
+          const lines = read()
+            .markdown.split("\n")
+            .flatMap((line) => new Text(line, 0, 0).render(Math.max(1, width)));
+          lastLineCount = lines.length;
+          offset = Math.min(Math.max(0, offset), maxOffset());
+          return lines.slice(offset, offset + pageSize());
+        },
+        handleInput(data: string): void {
+          const direction = pagerSessionDirection(data);
+          if (direction !== undefined && states.length > 1) {
             index = (index + direction + states.length) % states.length;
+            offset = Number.MAX_SAFE_INTEGER;
+            tui.requestRender();
+            return;
           }
-        : undefined,
-  });
+          handleViewportKey(data, {
+            onClose: finish,
+            onScrollBy: (delta) => {
+              offset += delta;
+              tui.requestRender();
+            },
+            onScrollTo: (next) => {
+              offset = next;
+              tui.requestRender();
+            },
+            pageSize,
+            maxOffset,
+            pagerKeys: true,
+          });
+        },
+        dispose: finish,
+      };
+    },
+    {
+      overlay: true,
+      overlayOptions: {
+        width: "100%",
+        row: 0,
+        col: 0,
+        margin: 0,
+        maxHeight,
+      },
+    },
+  );
 }
