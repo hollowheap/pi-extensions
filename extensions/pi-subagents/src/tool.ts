@@ -286,7 +286,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
     name: "subagent",
     label: "subagent",
     description:
-      "Start and manage one durable child agent (define, delete, start, list, status, send, wait, terminate).",
+      "Start and manage one durable child agent (define, delete, start, list, status, send, wait for blocking work only, terminate).",
     exposure: "direct",
     parameters: Type.Object({
       action: Type.Union([
@@ -337,7 +337,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
       ),
       id: Type.Optional(
         Type.String({
-          description: "Subagent id for status/send/wait/terminate",
+          description: "Subagent id for status/send/wait (blocking work only)/terminate",
         }),
       ),
       message: Type.Optional(Type.String({ description: "Message for send" })),
@@ -348,7 +348,12 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           Type.Literal("follow_up"),
         ]),
       ),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      timeoutMs: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description: "Deadline for a blocking wait; defaults to the configured timeout",
+        }),
+      ),
       isolated: Type.Optional(
         Type.Boolean({
           description: "Run in a dedicated isolated workspace",
@@ -435,6 +440,7 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
           task?: string;
           model?: string;
           workspace?: string;
+          startedAt?: number;
         }>;
         if (agents.length === 0) {
           text.setText(theme.fg("muted", "No active subagents."));
@@ -449,11 +455,16 @@ export function createSubagentTool(options: SubagentToolOptions = {}) {
               ? theme.fg("warning", "●")
               : theme.fg("success", "✓");
           const name = sanitizeTerminalText(
-            subagentDisplayName({
-              model: a.model,
-              agent: a.agent,
-              task: a.task ?? "",
-            }),
+            subagentDisplayName(
+              {
+                model: a.model,
+                agent: a.agent,
+                task: a.task ?? "",
+                id: a.id,
+                startedAt: a.startedAt,
+              },
+              agents,
+            ),
           );
           const model = a.model
             ? ` ${theme.fg("dim", `(${sanitizeTerminalText(a.model)})`)}`

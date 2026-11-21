@@ -241,7 +241,7 @@ describe("pi-subagents extension", () => {
     ).toEqual(["view"]);
     expect(
       command.getArgumentCompletions("view ").map((item) => item.value),
-    ).toContain("sub-1");
+    ).toContain("view sub-1");
     expect(
       command.getArgumentCompletions("view sub")[0]?.description,
     ).toContain("running");

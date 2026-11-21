@@ -274,7 +274,7 @@ export function createSubagentsExtension(
 
         const items: SubagentStateEventItem[] = active.map((s) => ({
           id: s.id,
-          label: subagentDisplayName(s),
+          label: subagentDisplayName(s, visible),
           agent: s.agent,
           task: s.task,
           state: s.status,
@@ -330,7 +330,7 @@ export function createSubagentsExtension(
       }
       const log = readSubagentLog(resolveAgentDir(), id);
       const text = sanitizeTerminalText(formatSubagentLog(log, raw));
-      const name = sanitizeTerminalText(subagentDisplayName(state));
+      const name = sanitizeTerminalText(subagentDisplayName(state, lastStates));
       const workspace = sanitizeTerminalText(state.workspace ?? state.agent);
       const { showMarkdownPager } = await import("@hollowheap/pi-ui/pager");
       await showMarkdownPager(ctx, {
@@ -355,7 +355,7 @@ export function createSubagentsExtension(
           title: "Select a subagent",
           items: all.map((state) => ({
             value: state.id,
-            label: subagentDisplayName(state),
+            label: subagentDisplayName(state, all),
             description: `${state.status} — @${sanitizeTerminalText(state.agent)}`,
             preview: [
               `${state.status} — @${sanitizeTerminalText(state.agent)}`,
@@ -478,11 +478,17 @@ export function createSubagentsExtension(
         if (parts.length > 3) {
           return null;
         }
-        return prefixCompletions(parts[1] ?? "", lastStates, (state) => ({
-          value: state.id,
-          label: state.id,
-          description: `${state.status} @${sanitizeTerminalText(state.agent)}: ${sanitizeTerminalText(state.task)}`,
-        }));
+        return prefixCompletions(
+          parts[1] ?? "",
+          lastStates.map((state) => state.id),
+        ).map(({ value }) => {
+          const state = lastStates.find((item) => item.id === value);
+          return {
+            value: `${first} ${value}`,
+            label: value,
+            description: `${state?.status ?? ""} @${sanitizeTerminalText(state?.agent ?? "")}: ${sanitizeTerminalText(state?.task ?? "")}`,
+          };
+        });
       },
       handler: async (args, ctx) => {
         lastCtx = ctx;

@@ -55,9 +55,21 @@ export function requireTrustedProject(trusted: boolean): void {
 
 /** Stable per-role handle used as the subagent's row label. */
 export function subagentDisplayName(
-  state: Pick<SubagentState, "model" | "agent" | "task">,
+  state: Pick<SubagentState, "model" | "agent" | "task"> & {
+    id?: string;
+    startedAt?: number;
+  },
+  roster?: readonly { id: string; agent: string; startedAt?: number }[],
 ): string {
-  return `@${state.agent}-1`;
+  const peers = (roster ?? [])
+    .filter((peer) => peer.agent === state.agent)
+    .sort(
+      (left, right) =>
+        (left.startedAt ?? 0) - (right.startedAt ?? 0) ||
+        left.id.localeCompare(right.id),
+    );
+  const index = peers.findIndex((peer) => peer.id === state.id);
+  return `@${state.agent}-${index < 0 ? 1 : index + 1}`;
 }
 
 function sanitize(state: SubagentState): ProcessState {

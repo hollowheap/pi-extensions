@@ -3,33 +3,47 @@ import { formatSubagentWidget } from "../../pi-todos/src/todos.js";
 import { subagentDisplayName } from "../src/state.js";
 
 describe("subagent row identity", () => {
-  it("labels rows with a stable role-index handle", () => {
-    const first = subagentDisplayName({
-      agent: "engineer",
-      task: "Fix auth",
-    });
-    const second = subagentDisplayName({
-      agent: "engineer",
-      task: "Refactor cache",
-    });
+  it("numbers rows by role in start order", () => {
+    const roster = [
+      { id: "sub-a", agent: "engineer", startedAt: 2 },
+      { id: "sub-b", agent: "engineer", startedAt: 1 },
+    ];
+    const first = subagentDisplayName(
+      { id: "sub-b", agent: "engineer", task: "Fix auth", startedAt: 1 },
+      roster,
+    );
+    const second = subagentDisplayName(
+      {
+        id: "sub-a",
+        agent: "engineer",
+        task: "Refactor cache",
+        startedAt: 2,
+      },
+      roster,
+    );
 
-    expect(first).toMatch(/^@engineer-\d+$/);
-    expect(second).toMatch(/^@engineer-\d+$/);
-    expect(first).toBe(second);
+    expect(first).toBe("@engineer-1");
+    expect(second).toBe("@engineer-2");
   });
 
   it("keeps the label stable across model changes", () => {
-    const label = subagentDisplayName({
-      agent: "reviewer",
-      task: "Review patch",
-    });
+    const roster = [{ id: "sub-r", agent: "reviewer", startedAt: 1 }];
+    const label = subagentDisplayName(
+      { id: "sub-r", agent: "reviewer", task: "Review patch", startedAt: 1 },
+      roster,
+    );
 
     expect(
-      subagentDisplayName({
-        agent: "reviewer",
-        model: "claude-sonnet-4",
-        task: "Review patch",
-      }),
+      subagentDisplayName(
+        {
+          id: "sub-r",
+          agent: "reviewer",
+          model: "claude-sonnet-4",
+          task: "Review patch",
+          startedAt: 1,
+        },
+        roster,
+      ),
     ).toBe(label);
   });
 

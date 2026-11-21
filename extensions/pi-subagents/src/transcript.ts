@@ -149,7 +149,7 @@ export async function showSubagentTranscript(
     }
     const state = states[index];
     return {
-      title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state))} · Read-only`,
+      title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state, states))} · Read-only`,
       markdown:
         readSessionTranscript(agentDir, state, cache) ||
         sanitizeTerminalText(readLog(state.id)) ||
