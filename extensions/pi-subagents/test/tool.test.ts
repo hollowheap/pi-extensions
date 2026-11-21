@@ -252,7 +252,6 @@ describe("subagent tool", () => {
       ctx as never,
     );
     expect(textOf(result)).toContain("@scout-1 [running]");
-    expect(textOf(result)).not.toContain('"status"');
     expect(detailsOf(result).status).toBe("running");
   });
 

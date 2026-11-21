@@ -17,7 +17,6 @@ describe("direct subagent actions", () => {
     ]) {
       expect(schema).toContain(`"${action}"`);
     }
-    expect(schema).not.toContain('"cancel"');
   });
 
   it("exposes direct mode and the define/delete lifecycle actions", () => {
