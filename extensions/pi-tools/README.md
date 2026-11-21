@@ -47,8 +47,11 @@ return results;
 
 For different tools, use `{ calls: [{ tool, args }, ...] }`. Each call uses
 Pi's normal tool validation, permissions, and hooks. Results follow input
-order with an `ok`, `error`, or `cancelled` status. A batch accepts up to 32
-calls and defaults to four at a time. Set `concurrency: 1` for serial execution.
+order with an `ok`, `error`, or `cancelled` status. The result content starts
+with `Batch finished (N calls)` followed by one text block per leaf call, so
+each `edit`, `read`, or other result stays visible instead of being hidden in
+the batch wrapper. A batch accepts up to 32 calls and defaults to four at a
+time. Set `concurrency: 1` for serial execution.
 
 `await tools.compact_context({ instructions: "Keep the verification results" })`
 queues Pi's session compaction after the current run settles. Repeated

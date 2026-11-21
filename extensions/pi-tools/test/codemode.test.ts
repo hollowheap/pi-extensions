@@ -79,13 +79,20 @@ describe("codemode utilities", () => {
       ["read", { path: "b" }],
     ]);
     finishFirst(outcome("read", "hello"));
-    expect((await result).structuredContent).toEqual({
+    const finished = await result;
+    expect(finished.structuredContent).toEqual({
       results: [
         { tool: "read", status: "ok", value: "hello" },
         { tool: "read", status: "error", error: "Permission denied" },
         { tool: "read", status: "ok", value: { size: 10 } },
       ],
     });
+    expect(finished.content).toEqual([
+      { type: "text", text: "Batch finished (3 calls)" },
+      { type: "text", text: "read: ok hello" },
+      { type: "text", text: "read: error Permission denied" },
+      { type: "text", text: 'read: ok {"size":10}' },
+    ]);
   });
 
   it("reports recursion as an error and stops scheduling calls after abort", async () => {

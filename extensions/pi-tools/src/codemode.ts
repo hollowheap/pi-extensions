@@ -56,6 +56,18 @@ type BatchResult =
   | { tool: string; status: "error"; error: string }
   | { tool: string; status: "cancelled" };
 
+function formatBatchResult(result: BatchResult): string {
+  if (result.status === "error") {
+    return `${result.tool}: error ${result.error}`;
+  }
+  if (result.status === "cancelled") return `${result.tool}: cancelled`;
+  const value =
+    typeof result.value === "string"
+      ? result.value
+      : JSON.stringify(result.value);
+  return `${result.tool}: ok ${value ?? ""}`.trimEnd();
+}
+
 async function callBatchTool(
   { tool, args }: { tool: string; args: Record<string, unknown> },
   ctx: ExtensionToolContext,
@@ -143,6 +155,10 @@ const batch = defineTool({
     return {
       content: [
         { type: "text", text: `Batch finished (${calls.length} calls)` },
+        ...results.map((result) => ({
+          type: "text" as const,
+          text: formatBatchResult(result),
+        })),
       ],
       details: {},
       structuredContent: { results },
