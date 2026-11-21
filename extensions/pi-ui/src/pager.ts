@@ -160,7 +160,12 @@ export async function showMarkdownPager(
                 while (visible.length < size) visible.push("");
               }
               const navigation = options.navigate
-                ? "  Alt+arrows/HJKL sessions"
+                ? safeFg(
+                    activeTheme,
+                    "muted",
+                    "  Alt+←/→ children · Alt+↑ tree",
+                    getActiveTuiConfig().colored,
+                  )
                 : "";
               const footer = truncateToWidth(
                 coloredFooter + navigation,
