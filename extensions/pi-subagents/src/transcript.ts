@@ -1,17 +1,20 @@
 import { readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve, sep } from "node:path";
+import { basename, resolve, sep } from "node:path";
 import {
+  AssistantMessageComponent,
   type ExtensionContext,
   type SessionEntry,
-  SessionManager,
-  TreeSelectorComponent,
+  UserMessageComponent,
   parseSessionEntries,
 } from "@earendil-works/pi-coding-agent";
+import { Text, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
-import { showDialog } from "@hollowheap/pi-ui/host";
+import { hostUi } from "@hollowheap/pi-ui/host";
 import { showMarkdownPager } from "@hollowheap/pi-ui/pager";
 import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import { type SubagentState, subagentDisplayName } from "./state.js";
+
+type MessageEntry = Extract<SessionEntry, { type: "message" }>;
 
 export function formatChildTranscript(jsonl: string, leafId?: string): string {
   const entries = parseSessionEntries(jsonl);
@@ -75,11 +78,9 @@ interface TranscriptCacheEntry {
   markdown: string;
 }
 
-function readSessionTranscript(
+function sessionFile(
   agentDir: string,
   state: SubagentState,
-  cache?: Map<string, TranscriptCacheEntry>,
-  leafId?: string,
 ): string | undefined {
   const directory = resolve(agentDir, "subagents");
   const sessionsDirectory = resolve(agentDir, "sessions");
@@ -89,14 +90,23 @@ function readSessionTranscript(
   const inAgentTree = [directory, sessionsDirectory].some((root) =>
     file.startsWith(`${root}${sep}`),
   );
-  if (!inAgentTree || !basename(file).endsWith(".jsonl")) return undefined;
+  return inAgentTree && basename(file).endsWith(".jsonl") ? file : undefined;
+}
+
+function readSessionTranscript(
+  agentDir: string,
+  state: SubagentState,
+  cache?: Map<string, TranscriptCacheEntry>,
+): string | undefined {
+  const file = sessionFile(agentDir, state);
+  if (file === undefined) return undefined;
   try {
     const stat = statSync(file);
     if (!stat.isFile()) return undefined;
-    const signature = `${stat.mtimeMs}:${stat.size}:${leafId ?? ""}`;
+    const signature = `${stat.mtimeMs}:${stat.size}`;
     const cached = cache?.get(file);
     if (cached?.signature === signature) return cached.markdown;
-    const markdown = formatChildTranscript(readFileSync(file, "utf8"), leafId);
+    const markdown = formatChildTranscript(readFileSync(file, "utf8"));
     cache?.set(file, { signature, markdown });
     return markdown;
   } catch {
@@ -105,41 +115,73 @@ function readSessionTranscript(
   return undefined;
 }
 
-async function selectTranscriptEntry(
+interface ChatMessage {
+  role: string;
+  content?: unknown;
+  toolName?: string;
+}
+
+function messageText(message: ChatMessage): string {
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((part: { type?: unknown; text?: unknown; name?: unknown }) => {
+      if (part.type === "text" && typeof part.text === "string") {
+        return [part.text];
+      }
+      if (part.type === "image") return ["[Image]"];
+      if (part.type === "toolCall" && typeof part.name === "string") {
+        return [`Tool call: ${part.name}`];
+      }
+      return [];
+    })
+    .join("\n\n");
+}
+
+function transcriptComponents(
   ctx: ExtensionContext,
   agentDir: string,
   state: SubagentState,
-): Promise<string | undefined> {
-  const directory = resolve(agentDir, "subagents");
-  const file = resolve(
-    state.session ?? resolve(directory, `${state.id}.session.jsonl`),
-  );
-  if (
-    dirname(file) !== directory ||
-    !basename(file).endsWith(".session.jsonl")
-  ) {
-    return undefined;
-  }
+): Array<{ render(width: number): string[] }> {
+  const file = sessionFile(agentDir, state);
+  if (file === undefined) return [];
   try {
-    const tree = SessionManager.open(file).getTree();
-    if (tree.length === 0) return undefined;
-    return await showDialog<string | undefined>(
-      ctx,
-      (_tui, _theme, _keys, done) =>
-        new TreeSelectorComponent(
-          tree,
-          null,
-          20,
-          (entryId) => done(entryId),
-          () => done(undefined),
-        ),
-      {
-        overlay: true,
-        overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
-      },
-    );
+    const theme = hostUi(ctx)?.theme;
+    const entries = parseSessionEntries(readFileSync(file, "utf8"));
+    return entries
+      .filter((entry): entry is MessageEntry => entry.type === "message")
+      .filter(
+        (entry) =>
+          entry.message.role === "user" ||
+          entry.message.role === "assistant" ||
+          entry.message.role === "toolResult",
+      )
+      .map((entry) => {
+        const message = entry.message as unknown as ChatMessage;
+        if (message.role === "user") {
+          return new UserMessageComponent(
+            sanitizeTerminalText(messageText(message)),
+            theme as never,
+          );
+        }
+        if (message.role === "assistant") {
+          return new AssistantMessageComponent(
+            message as never,
+            false,
+            theme as never,
+          );
+        }
+        return new Text(
+          sanitizeTerminalText(
+            `${message.toolName ?? "Tool"}: ${messageText(message)}`,
+          ),
+          0,
+          0,
+        );
+      });
   } catch {
-    return undefined;
+    return [];
   }
 }
 
@@ -149,20 +191,20 @@ export async function showSubagentTranscript(
   states: readonly SubagentState[],
   initialId: string,
   readLog: (id: string) => string,
-  options: { openTree?: boolean } = {},
 ): Promise<void> {
   let index = states.findIndex(({ id }) => id === initialId);
   if (index < 0) return;
-  let leafId = options.openTree
-    ? await selectTranscriptEntry(ctx, agentDir, states[index])
-    : undefined;
   const cache = new Map<string, TranscriptCacheEntry>();
   const read = () => {
     const state = states[index];
+    const hostLines = transcriptComponents(ctx, agentDir, state).flatMap(
+      (component) => component.render(100).map(stripTerminalSequences),
+    );
     return {
       title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state, states))} · Read-only`,
       markdown:
-        readSessionTranscript(agentDir, state, cache, leafId) ||
+        hostLines.join("\n") ||
+        readSessionTranscript(agentDir, state, cache) ||
         sanitizeTerminalText(readLog(state.id)) ||
         "(Waiting for transcript)",
     };
@@ -175,7 +217,6 @@ export async function showSubagentTranscript(
       states.length > 1
         ? (direction) => {
             index = (index + direction + states.length) % states.length;
-            leafId = undefined;
           }
         : undefined,
   });
