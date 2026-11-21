@@ -21,11 +21,7 @@ import {
   showDialog,
 } from "@hollowheap/pi-ui/host";
 import { selectListTheme } from "@hollowheap/pi-ui/picker";
-import {
-  isAbortOrTimeout,
-  scopedAbortSignal,
-  watchAbort,
-} from "@hollowheap/runtime/abort";
+import { scopedAbortSignal, watchAbort } from "@hollowheap/runtime/abort";
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   type DialogTab,
@@ -33,6 +29,10 @@ import {
   formatSelectedLabel,
 } from "@hollowheap/ui/tabs";
 import { safeFg } from "@hollowheap/ui/theme";
+import {
+  type QuestionLockScope,
+  createQuestionLockScope,
+} from "./lock-scope.js";
 import {
   DONE_LABEL,
   type Question,
@@ -63,7 +63,7 @@ type LockedDialogComponent = Component & {
 
 async function showLockedDialog<T>(
   ctx: ExtensionContext,
-  lockOptions: QuestionDialogOptions,
+  scope: QuestionLockScope,
   create: (helpers: {
     tui: TUI;
     theme: Theme;
@@ -81,7 +81,7 @@ async function showLockedDialog<T>(
           ctx,
           (tui, theme, _keybindings, done) => {
             let settled = false;
-            const dialogAbort = scopedAbortSignal(lockOptions);
+            const dialogAbort = scopedAbortSignal(scope.lockOptions);
             let stopWatching: () => void = () => {};
             const finish = (value: T): void => {
               if (settled) return;
@@ -145,10 +145,10 @@ async function showLockedDialog<T>(
             },
           },
         ),
-      lockOptions,
+      scope.lockOptions,
     );
   } catch (error) {
-    if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+    if (scope.isCancellation(error)) return undefined;
     throw error;
   }
 }
@@ -346,14 +346,12 @@ async function askMulti(
   ctx: ExtensionContext,
   options?: QuestionDialogOptions,
 ): Promise<MultiResult | undefined> {
-  const lockOptions = {
-    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
-    timeoutMs: options?.timeoutMs,
-  };
+  const scope = createQuestionLockScope(ctx, options);
+  const { lockOptions } = scope;
   if (canOverlay(ctx)) {
     return showLockedDialog<MultiResult>(
       ctx,
-      lockOptions,
+      scope,
       ({ tui, theme, finish, cancel }) =>
         createMultiSelectComponent(question, theme, () => tui.requestRender(), {
           onSubmit: finish,
@@ -390,7 +388,7 @@ async function askMulti(
         lockOptions,
       );
     } catch (error) {
-      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      if (scope.isCancellation(error)) return undefined;
       throw error;
     }
     if (picked === undefined) return undefined;
@@ -429,10 +427,8 @@ async function askWriteIn(
   options?: QuestionDialogOptions,
   prefill?: string,
 ): Promise<string | undefined> {
-  const lockOptions = {
-    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
-    timeoutMs: options?.timeoutMs,
-  };
+  const scope = createQuestionLockScope(ctx, options);
+  const { lockOptions } = scope;
   if (ctx.mode === "tui" && typeof hostUi(ctx)?.input === "function") {
     try {
       return await withPromptLock(
@@ -444,14 +440,14 @@ async function askWriteIn(
         lockOptions,
       );
     } catch (error) {
-      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      if (scope.isCancellation(error)) return undefined;
       throw error;
     }
   }
   if (canOverlay(ctx)) {
     return showLockedDialog<string | undefined>(
       ctx,
-      lockOptions,
+      scope,
       ({ tui, theme, finish, cancel }) => {
         const editor = createEditor(tui, theme, prefill, finish);
 
@@ -516,7 +512,7 @@ async function askWriteIn(
       lockOptions,
     );
   } catch (error) {
-    if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+    if (scope.isCancellation(error)) return undefined;
     throw error;
   }
 }
@@ -526,10 +522,8 @@ export async function askQuestion(
   ctx: ExtensionContext,
   options?: QuestionDialogOptions,
 ): Promise<QuestionAnswer | undefined> {
-  const lockOptions = {
-    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
-    timeoutMs: options?.timeoutMs,
-  };
+  const scope = createQuestionLockScope(ctx, options);
+  const { lockOptions } = scope;
   if (question.mode === "free") {
     const answer = await askWriteIn(ctx, question.prompt, undefined, options);
     return answer === undefined
@@ -565,7 +559,7 @@ export async function askQuestion(
         lockOptions,
       );
     } catch (error) {
-      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      if (scope.isCancellation(error)) return undefined;
       throw error;
     }
     if (picked === undefined) return undefined;
@@ -802,7 +796,7 @@ function createSingleQuestionTab(
 async function askTabbedQuestions(
   questions: readonly Question[],
   ctx: ExtensionContext,
-  lockOptions: QuestionDialogOptions,
+  scope: QuestionLockScope,
 ): Promise<AskQuestionsResult> {
   const answers: AskQuestionsResult = [];
   const ordered = questions
@@ -811,7 +805,7 @@ async function askTabbedQuestions(
 
   const result = await showLockedDialog<AskQuestionsResult>(
     ctx,
-    lockOptions,
+    scope,
     ({ tui, theme, finish, cancel }) => {
       const reviewIndex = ordered.length;
       const tabCount = ordered.length + 1;
@@ -969,13 +963,11 @@ export async function askQuestions(
   options?: QuestionDialogOptions,
 ): Promise<AskQuestionsResult | undefined> {
   if (questions.length === 0) return [];
-  const lockOptions = {
-    signal: options?.signal ?? (ctx as { signal?: AbortSignal }).signal,
-    timeoutMs: options?.timeoutMs,
-  };
+  const scope = createQuestionLockScope(ctx, options);
+  const { lockOptions } = scope;
 
   if (canOverlay(ctx) && questions.length > 1) {
-    return askTabbedQuestions(questions, ctx, lockOptions);
+    return askTabbedQuestions(questions, ctx, scope);
   }
 
   const answers: AskQuestionsResult = [];
@@ -1019,7 +1011,7 @@ export async function askQuestions(
         lockOptions,
       );
     } catch (error) {
-      if (isAbortOrTimeout(error, lockOptions.signal)) {
+      if (scope.isCancellation(error)) {
         answers.cancelled = true;
         return answers;
       }
@@ -1052,7 +1044,7 @@ export async function askQuestions(
         AskQuestionsResult | ReviewEditAction
       >(
         ctx,
-        lockOptions,
+        scope,
         ({ tui, finish, cancel }) =>
           createReviewComponent(
             answers.length,

@@ -441,6 +441,19 @@ describe("pi-question extension", () => {
     expect(result).toBeUndefined();
   });
 
+  it("rethrows unexpected dialog errors", async () => {
+    const error = new Error("dialog exploded");
+    const select = vi.fn().mockRejectedValue(error);
+    const ctx = context(select);
+
+    await expect(
+      askSingleQuestion(
+        { prompt: "Pick", mode: "single", options: ["A"], page: 1 },
+        ctx as never,
+      ),
+    ).rejects.toBe(error);
+  });
+
   it("dismisses a custom multi-select dialog on timeout", async () => {
     const env = customDialog();
     const ctx = customContext(env.custom);
