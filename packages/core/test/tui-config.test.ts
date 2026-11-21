@@ -30,6 +30,20 @@ afterEach(() => {
 });
 
 describe("tui-config", () => {
+  it("loads a single-character promptChar from tui.json", () => {
+    const dir = makeTempDir();
+    writeFileSync(join(dir, "tui.json"), JSON.stringify({ promptChar: "$" }));
+    expect(loadTuiConfig(dir).promptChar).toBe("$");
+
+    const diagnostics: string[] = [];
+    writeFileSync(join(dir, "tui.json"), JSON.stringify({ promptChar: ">>" }));
+    const fallback = loadTuiConfig(dir, (message) => diagnostics.push(message));
+    expect(fallback.promptChar).toBe(DEFAULT_TUI_CONFIG.promptChar);
+    expect(diagnostics.some((message) => message.includes("promptChar"))).toBe(
+      true,
+    );
+  });
+
   it("returns defaults silently when tui.json is missing", () => {
     const dir = makeTempDir();
     const diagnostics: string[] = [];
@@ -58,6 +72,7 @@ describe("tui-config", () => {
 
     expect(diagnostics).toEqual([]);
     expect(cfg).toEqual({
+      promptChar: DEFAULT_TUI_CONFIG.promptChar,
       borderStyle: "square",
       overlaySurface: "card",
       colored: true,

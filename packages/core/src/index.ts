@@ -5,6 +5,7 @@ export * from "./alerts.js";
 export * from "./blocks.js";
 export * from "./border.js";
 export * from "./config.js";
+export * from "./custom-types.js";
 export * from "./errors.js";
 export * from "./format.js";
 export * from "./markdown.js";

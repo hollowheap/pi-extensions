@@ -1,3 +1,13 @@
+import {
+  ANSWERS_TYPE,
+  DECIDE_STATS_TYPE,
+  MEMORY_CLEAR_TYPE,
+  MEMORY_OBSERVATION_TYPE,
+  SUBAGENT_RUN_TYPE,
+  TASK_RUN_TYPE,
+  TODOS_TYPE,
+  WEB_HISTORY_TYPE,
+} from "./custom-types.js";
 import { isRecord } from "./records.js";
 export interface ModeSnapshot {
   name: string;
@@ -352,7 +362,7 @@ export function extractSessionSummaryFromEntries(
           Reflect.deleteProperty(summary, "budgetCap");
         }
       }
-    } else if (customType === "hollowheap.todos" && Array.isArray(data.todos)) {
+    } else if (customType === TODOS_TYPE && Array.isArray(data.todos)) {
       let open = 0;
       let total = 0;
       for (const item of data.todos) {
@@ -363,28 +373,25 @@ export function extractSessionSummaryFromEntries(
       summary.todosOpen = open;
       summary.todosTotal = total;
     } else if (
-      customType === "hollowheap.memory.observation" &&
+      customType === MEMORY_OBSERVATION_TYPE &&
       typeof data.id === "string"
     ) {
       observationIds.add(data.id);
-    } else if (customType === "hollowheap.memory.clear") {
+    } else if (customType === MEMORY_CLEAR_TYPE) {
       observationIds.clear();
-    } else if (customType === "hollowheap.question.answers") {
+    } else if (customType === ANSWERS_TYPE) {
       questionsAsked += 1;
-    } else if (customType === "hollowheap.web.history") {
+    } else if (customType === WEB_HISTORY_TYPE) {
       if (Array.isArray(data.urls)) webLinks = data.urls.length;
-    } else if (
-      customType === "hollowheap.tasks.run" &&
-      typeof data.id === "string"
-    ) {
+    } else if (customType === TASK_RUN_TYPE && typeof data.id === "string") {
       taskIds.add(data.id);
     } else if (
-      customType === "hollowheap.subagents.run" &&
+      customType === SUBAGENT_RUN_TYPE &&
       typeof data.id === "string"
     ) {
       subagentIds.add(data.id);
     } else if (
-      customType === "hollowheap.decide" &&
+      customType === DECIDE_STATS_TYPE &&
       typeof data.totalCount === "number"
     ) {
       summary.decideCalls = data.totalCount;

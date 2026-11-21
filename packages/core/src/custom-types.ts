@@ -1,0 +1,15 @@
+export const TODOS_TYPE = "hollowheap.todos";
+export const HOOK_STATS_TYPE = "hollowheap.hooks";
+export const ACTIVE_AGENT_TYPE = "hollowheap.agent";
+export const AUDIT_TYPE = "hollowheap.guard.audit";
+export const MEMORY_OBSERVATION_TYPE = "hollowheap.memory.observation";
+export const MEMORY_REFLECTION_TYPE = "hollowheap.memory.reflection";
+export const MEMORY_CONSUMED_TYPE = "hollowheap.memory.consumed";
+export const MEMORY_CLEAR_TYPE = "hollowheap.memory.clear";
+export const MEMORY_WORKSPACE_TYPE = "hollowheap.memory.workspace";
+export const ANSWERS_TYPE = "hollowheap.question.answers";
+export const WEB_HISTORY_TYPE = "hollowheap.web.history";
+export const TASK_RUN_TYPE = "hollowheap.tasks.run";
+export const SUBAGENT_RUN_TYPE = "hollowheap.subagents.run";
+export const SUBAGENT_DEFINITION_TYPE = "hollowheap.subagent.definition";
+export const DECIDE_STATS_TYPE = "hollowheap.decide";

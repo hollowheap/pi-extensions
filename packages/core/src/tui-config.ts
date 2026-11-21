@@ -186,6 +186,7 @@ export function applyPanelStyle(
 }
 
 export interface TuiConfig {
+  promptChar: string;
   borderStyle: BorderStyle;
   overlaySurface: OverlaySurfaceMode;
   colored: boolean;
@@ -203,6 +204,7 @@ export interface TuiConfig {
 }
 
 export const DEFAULT_TUI_CONFIG: TuiConfig = {
+  promptChar: "❯",
   borderStyle: "rounded",
   overlaySurface: "transparent",
   colored: true,
@@ -494,7 +496,16 @@ export function normalizeTuiConfig(
     panel.borderStyle = borderStyle;
   }
 
+  const promptChar =
+    typeof raw.promptChar === "string" && [...raw.promptChar].length === 1
+      ? raw.promptChar
+      : defaults.promptChar;
+  if (raw.promptChar !== undefined && raw.promptChar !== promptChar) {
+    diagnostics?.push("tui.json: promptChar must be one character; using ❯");
+  }
+
   return {
+    promptChar,
     borderStyle,
     overlaySurface,
     colored,
