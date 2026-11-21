@@ -134,9 +134,12 @@ export function boxFrame(
   }
 
   const body = lines.map((line) => {
-    const text = truncateToWidth(line, innerWidth, "");
-    const padding = Math.max(0, innerWidth - visibleWidth(text));
-    return `${border(chars.vertical)}${inset}${text}${" ".repeat(padding)}${inset}${border(chars.vertical)}`;
+    const safeLine =
+      line.includes("\x1b[") && !line.endsWith("\x1b[0m")
+        ? `${line}\x1b[0m`
+        : line;
+    const text = truncateToWidth(safeLine, innerWidth, "", true);
+    return `${border(chars.vertical)}${inset}${text}${inset}${border(chars.vertical)}`;
   });
 
   const framed = [top, ...body, bottom];
@@ -328,12 +331,7 @@ export function framePanelLines(
       line.includes("\x1b[") && !line.endsWith("\x1b[0m")
         ? `${line}\x1b[0m`
         : line;
-    return truncateToWidth(
-      safeLine,
-      Math.max(1, targetWidth),
-      "",
-      hasBorderSpace,
-    );
+    return truncateToWidth(safeLine, Math.max(1, targetWidth), "", true);
   };
 
   if (!hasBorderSpace) {
