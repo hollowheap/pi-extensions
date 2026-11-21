@@ -3,14 +3,17 @@ import { basename, dirname, resolve } from "node:path";
 import {
   type ExtensionContext,
   type SessionEntry,
+  SessionManager,
+  TreeSelectorComponent,
   parseSessionEntries,
 } from "@earendil-works/pi-coding-agent";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
+import { showDialog } from "@hollowheap/pi-ui/host";
 import { showMarkdownPager } from "@hollowheap/pi-ui/pager";
 import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import { type SubagentState, subagentDisplayName } from "./state.js";
 
-export function formatChildTranscript(jsonl: string): string {
+export function formatChildTranscript(jsonl: string, leafId?: string): string {
   const entries = parseSessionEntries(jsonl);
   if (entries[0]?.type !== "session") return "";
   const records = entries.filter(
@@ -18,7 +21,10 @@ export function formatChildTranscript(jsonl: string): string {
   );
   const byId = new Map(records.map((entry) => [entry.id, entry]));
   const branch: SessionEntry[] = [];
-  let cursor = records.at(-1);
+  let cursor =
+    leafId === undefined
+      ? records.at(-1)
+      : (byId.get(leafId) ?? records.at(-1));
   while (cursor && byId.delete(cursor.id)) {
     branch.push(cursor);
     cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId);
@@ -73,6 +79,7 @@ function readSessionTranscript(
   agentDir: string,
   state: SubagentState,
   cache?: Map<string, TranscriptCacheEntry>,
+  leafId?: string,
 ): string | undefined {
   const directory = resolve(agentDir, "subagents");
   const file = resolve(
@@ -83,10 +90,10 @@ function readSessionTranscript(
   try {
     const stat = statSync(file);
     if (!stat.isFile()) return undefined;
-    const signature = `${stat.mtimeMs}:${stat.size}`;
+    const signature = `${stat.mtimeMs}:${stat.size}:${leafId ?? ""}`;
     const cached = cache?.get(file);
     if (cached?.signature === signature) return cached.markdown;
-    const markdown = formatChildTranscript(readFileSync(file, "utf8"));
+    const markdown = formatChildTranscript(readFileSync(file, "utf8"), leafId);
     cache?.set(file, { signature, markdown });
     return markdown;
   } catch {
@@ -132,6 +139,44 @@ function formatSessionBranch(ctx: ExtensionContext): string {
   return lines.join("\n");
 }
 
+async function selectTranscriptEntry(
+  ctx: ExtensionContext,
+  agentDir: string,
+  state: SubagentState,
+): Promise<string | undefined> {
+  const directory = resolve(agentDir, "subagents");
+  const file = resolve(
+    state.session ?? resolve(directory, `${state.id}.session.jsonl`),
+  );
+  if (
+    dirname(file) !== directory ||
+    !basename(file).endsWith(".session.jsonl")
+  ) {
+    return undefined;
+  }
+  try {
+    const tree = SessionManager.open(file).getTree();
+    if (tree.length === 0) return undefined;
+    return await showDialog<string | undefined>(
+      ctx,
+      (_tui, _theme, _keys, done) =>
+        new TreeSelectorComponent(
+          tree,
+          null,
+          20,
+          (entryId) => done(entryId),
+          () => done(undefined),
+        ),
+      {
+        overlay: true,
+        overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 },
+      },
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 export async function showSubagentTranscript(
   ctx: ExtensionContext,
   agentDir: string,
@@ -141,6 +186,7 @@ export async function showSubagentTranscript(
 ): Promise<void> {
   let index = states.findIndex(({ id }) => id === initialId);
   if (index < 0) return;
+  let leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
   let showBranch = false;
   const cache = new Map<string, TranscriptCacheEntry>();
   const read = () => {
@@ -151,7 +197,7 @@ export async function showSubagentTranscript(
     return {
       title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state, states))} · Read-only`,
       markdown:
-        readSessionTranscript(agentDir, state, cache) ||
+        readSessionTranscript(agentDir, state, cache, leafId) ||
         sanitizeTerminalText(readLog(state.id)) ||
         "(Waiting for transcript)",
     };
@@ -165,8 +211,9 @@ export async function showSubagentTranscript(
     },
     navigate:
       states.length > 1
-        ? (direction) => {
+        ? async (direction) => {
             index = (index + direction + states.length) % states.length;
+            leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
           }
         : undefined,
   });
