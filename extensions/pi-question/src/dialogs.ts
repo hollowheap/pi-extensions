@@ -330,7 +330,10 @@ function createMultiSelectComponent(
     lines.push("Space toggles • Enter selects • Esc cancels");
     const body = new Text(lines.join("\n"), 0, 0).render(innerWidth);
     return handlers.showFrame
-      ? boxFrame(body, width, theme as Theme, question.prompt)
+      ? boxFrame(body, width, theme as Theme, question.prompt, {
+          paddingX: 1,
+          marginX: 0,
+        })
       : body;
   };
 
@@ -459,7 +462,7 @@ async function askWriteIn(
             editor.focused = focused;
           },
           render(width: number): string[] {
-            const innerWidth = getFrameInnerWidth(width);
+            const innerWidth = getFrameInnerWidth(width, undefined, 1);
             const hint = safeFg(
               theme,
               "muted",
@@ -470,6 +473,7 @@ async function askWriteIn(
               width,
               theme,
               sanitizeTerminalText(title),
+              { paddingX: 1, marginX: 0 },
             );
           },
           invalidate(): void {
@@ -926,8 +930,11 @@ async function askTabbedQuestions(
           tabbed.focused = value;
         },
         render(width: number): string[] {
-          const body = tabbed.render(getFrameInnerWidth(width));
-          return boxFrame(body, width, theme, "Questions");
+          const body = tabbed.render(getFrameInnerWidth(width, undefined, 1));
+          return boxFrame(body, width, theme, "Questions", {
+            paddingX: 1,
+            marginX: 0,
+          });
         },
         invalidate: () => tabbed.invalidate(),
         handleInput(data: string): void {

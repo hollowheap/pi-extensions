@@ -210,6 +210,7 @@ describe("pi-question E2E", () => {
       );
       const flowMount = await waitMount();
       expect(customCalls.at(-1)?.overlay).toBe(true);
+      expect(flowMount.component.render(80)[0]).toContain("╭");
       assertRenderAcrossResizes(tui, terminal, flowMount.component);
       flowMount.component.handleInput?.("\t");
       assertRenderAcrossResizes(tui, terminal, flowMount.component);
