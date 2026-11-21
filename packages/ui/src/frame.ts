@@ -23,6 +23,7 @@ export interface FrameOptions {
   overlaySurface?: OverlaySurfaceMode;
   colored?: boolean;
   paddingX?: number;
+  marginX?: number;
   bottomHint?: string;
 }
 
@@ -33,22 +34,20 @@ function isSurfaceActive(
   return colored && overlaySurface !== "transparent";
 }
 
-function framePadding(
-  width: number,
-  _borderStyle: BorderStyle,
-  paddingX?: number,
-  _surfaceActive = false,
-): number {
-  if (width < 5) return 0;
-  return paddingX ?? getHostOutputPadding() ?? 1;
+function framePadding(paddingX?: number): number {
+  return Math.max(0, paddingX ?? 0);
+}
+
+function frameMargin(marginX?: number): number {
+  return Math.max(0, marginX ?? getHostOutputPadding() ?? 0);
 }
 
 function computeInnerWidth(
   safeWidth: number,
-  _effectiveBorder: BorderStyle,
   paddingX: number,
+  marginX: number,
 ): number {
-  return Math.max(1, safeWidth - 2 - 2 * paddingX);
+  return Math.max(1, safeWidth - 2 - 2 * paddingX - 2 * marginX);
 }
 
 /** Return usable content width inside the selected border and padding. */
@@ -58,20 +57,16 @@ export function getFrameInnerWidth(
   paddingX?: number,
   overlaySurface?: OverlaySurfaceMode,
   colored?: boolean,
+  marginX?: number,
 ): number {
-  const active = getActiveTuiConfig();
-  const panel = panelRenderConfig(active);
-  const effectiveBorder =
-    borderStyle ?? panel.borderStyle ?? active.borderStyle;
-  const effectiveSurface =
-    overlaySurface ?? panel.surface ?? active.overlaySurface;
-  const effectiveColored = colored ?? active.colored;
+  void borderStyle;
+  void overlaySurface;
+  void colored;
   const safeWidth = Math.max(4, width);
-  const surfaceActive = isSurfaceActive(effectiveSurface, effectiveColored);
   return computeInnerWidth(
     safeWidth,
-    effectiveBorder,
-    framePadding(width, effectiveBorder, paddingX, surfaceActive),
+    framePadding(paddingX),
+    frameMargin(marginX),
   );
 }
 
@@ -92,14 +87,16 @@ export function boxFrame(
   const surfaceActive = isSurfaceActive(overlaySurface, colored);
   const borderStyle =
     options?.borderStyle ?? panel.borderStyle ?? active.borderStyle;
-  const paddingX = framePadding(
-    safeWidth,
-    borderStyle,
-    options?.paddingX,
-    surfaceActive,
+  const paddingX = framePadding(options?.paddingX);
+  const marginX = Math.min(
+    frameMargin(options?.marginX),
+    Math.floor(Math.max(0, safeWidth - 4) / 2),
   );
-  const innerWidth = computeInnerWidth(safeWidth, borderStyle, paddingX);
+  const frameWidth = Math.max(4, safeWidth - 2 * marginX);
+  const innerWidth = computeInnerWidth(frameWidth, paddingX, 0);
   const inset = " ".repeat(paddingX);
+  const margin = " ".repeat(marginX);
+  const wrap = (line: string) => `${margin}${line}${margin}`;
 
   const border = (value: string) =>
     safeFg(theme, surfaceActive ? "borderAccent" : "border", value, colored);
@@ -118,9 +115,9 @@ export function boxFrame(
   const rawLabel = title
     ? ` ${safeFg(theme, "accent", safeBold(theme, title), colored)} `
     : "";
-  const label = truncateToWidth(rawLabel, Math.max(0, safeWidth - 3), "");
+  const label = truncateToWidth(rawLabel, Math.max(0, frameWidth - 3), "");
   const labelWidth = visibleWidth(label);
-  const topFill = Math.max(0, safeWidth - 3 - labelWidth);
+  const topFill = Math.max(0, frameWidth - 3 - labelWidth);
   const top =
     border(`${chars.topLeft}${chars.horizontal}`) +
     label +
@@ -130,17 +127,20 @@ export function boxFrame(
     const rawHint = ` ${safeFg(theme, "dim", options.bottomHint, colored)} `;
     const truncatedHint = truncateToWidth(
       rawHint,
-      Math.max(0, safeWidth - 3),
+      Math.max(0, frameWidth - 3),
       "",
     );
-    const bottomFill = Math.max(0, safeWidth - 3 - visibleWidth(truncatedHint));
+    const bottomFill = Math.max(
+      0,
+      frameWidth - 3 - visibleWidth(truncatedHint),
+    );
     bottom =
       border(`${chars.bottomLeft}${chars.horizontal}`) +
       truncatedHint +
       border(`${chars.horizontal.repeat(bottomFill)}${chars.bottomRight}`);
   } else {
     bottom = border(
-      `${chars.bottomLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.bottomRight}`,
+      `${chars.bottomLeft}${chars.horizontal.repeat(frameWidth - 2)}${chars.bottomRight}`,
     );
   }
 
@@ -153,7 +153,7 @@ export function boxFrame(
     return `${border(chars.vertical)}${inset}${text}${inset}${border(chars.vertical)}`;
   });
 
-  const framed = [top, ...body, bottom];
+  const framed = [top, ...body, bottom].map(wrap);
   if (overlaySurface === "transparent" || !colored) {
     return framed;
   }

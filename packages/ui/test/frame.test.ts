@@ -27,7 +27,7 @@ describe("boxFrame", () => {
     });
     const lines = boxFrame(["hello"], 20, mockTheme);
     expect(lines[0]?.startsWith("╔═")).toBe(true);
-    expect(getFrameInnerWidth(20)).toBe(16);
+    expect(getFrameInnerWidth(20)).toBe(18);
   });
 
   it("supports rounded, sharp, square, double, and dashed border styles", () => {
@@ -36,7 +36,7 @@ describe("boxFrame", () => {
     });
     expect(doubleLines[0]?.startsWith("╔═")).toBe(true);
     expect(doubleLines[0]?.endsWith("╗")).toBe(true);
-    expect(doubleLines[1]?.startsWith("║ ")).toBe(true);
+    expect(doubleLines[1]?.startsWith("║h")).toBe(true);
     expect(doubleLines[2]?.startsWith("╚")).toBe(true);
     expect(doubleLines[2]?.endsWith("╝")).toBe(true);
     for (const line of doubleLines) expect(visibleWidth(line)).toBe(20);
@@ -73,8 +73,8 @@ describe("boxFrame", () => {
     });
     expect(lines).toEqual([
       "[bg:userMessageBg]   Header       [/bg]",
-      "[bg:userMessageBg]  alpha         [/bg]",
-      "[bg:userMessageBg]  beta          [/bg]",
+      "[bg:userMessageBg] alpha          [/bg]",
+      "[bg:userMessageBg] beta           [/bg]",
       "[bg:userMessageBg]                [/bg]",
     ]);
   });
@@ -88,18 +88,18 @@ describe("boxFrame", () => {
     const lines = boxFrame(["row"], 12, mockTheme);
     expect(lines).toEqual([
       "[bg:customMessageBg]╭──────────╮[/bg]",
-      "[bg:customMessageBg]│ row      │[/bg]",
+      "[bg:customMessageBg]│row       │[/bg]",
       "[bg:customMessageBg]╰──────────╯[/bg]",
     ]);
-    expect(getFrameInnerWidth(12)).toBe(8);
+    expect(getFrameInnerWidth(12)).toBe(10);
 
     const restore = bindHostOutputPadding(() => 1);
     try {
       expect(getFrameInnerWidth(12)).toBe(8);
       expect(boxFrame(["row"], 12, mockTheme)).toEqual([
-        "[bg:customMessageBg]╭──────────╮[/bg]",
-        "[bg:customMessageBg]│ row      │[/bg]",
-        "[bg:customMessageBg]╰──────────╯[/bg]",
+        "[bg:customMessageBg] ╭────────╮ [/bg]",
+        "[bg:customMessageBg] │row     │ [/bg]",
+        "[bg:customMessageBg] ╰────────╯ [/bg]",
       ]);
     } finally {
       restore();
@@ -113,7 +113,7 @@ describe("boxFrame", () => {
     });
     const uncolored = boxFrame(["row"], 12, mockTheme);
     expect(uncolored[0]).toBe("┌──────────┐");
-    expect(uncolored[1]).toBe("│ row      │");
+    expect(uncolored[1]).toBe("│row       │");
     expect(uncolored[2]).toBe("└──────────┘");
   });
 });
@@ -124,7 +124,7 @@ it("uses Pi's output padding for the box and its content width", () => {
   try {
     expect(boxFrame(["word"], 12, mockTheme)[1]).toBe("│word      │");
     padding = 1;
-    expect(boxFrame(["word"], 12, mockTheme)[1]).toBe("│ word     │");
+    expect(boxFrame(["word"], 12, mockTheme)[1]).toBe(" │word    │ ");
     expect(
       boxFrame(["a"], 4, mockTheme).every((line) => visibleWidth(line) === 4),
     ).toBe(true);
