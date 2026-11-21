@@ -374,7 +374,7 @@ describe("pi-subagents extension", () => {
 
     expect(
       (command.getArgumentCompletions?.("") ?? []).map((item) => item.value),
-    ).toEqual(["view", "pause", "resume", "steer", "settings"]);
+    ).toEqual(["view", "pause", "resume", "steer", "settings", "list"]);
     expect(
       (command.getArgumentCompletions?.("se") ?? []).map((item) => item.value),
     ).toEqual(["settings"]);
@@ -509,17 +509,16 @@ describe("pi-subagents extension", () => {
     expect(notify).not.toHaveBeenCalledWith("Subagent settings saved", "info");
   });
 
-  it("registers a direct shortcut and command for browsing child work", () => {
+  it("registers list and arrow shortcuts on the subagent command", () => {
     const pi = createMockPi();
     extension(pi as never);
-    expect(pi.registerCommand.mock.calls.map(([name]) => name)).toContain(
-      "subagents",
-    );
-    expect(pi.registerShortcut).toHaveBeenCalledWith(
+    expect(pi.registerCommand.mock.calls.map(([name]) => name)).toEqual([
+      "subagent",
+    ]);
+    expect(pi.registerShortcut.mock.calls.map(([key]) => key)).toEqual([
       "alt+s",
-      expect.objectContaining({
-        description: expect.stringContaining("Browse subagent work"),
-      }),
-    );
+      "alt+left",
+      "alt+right",
+    ]);
   });
 });

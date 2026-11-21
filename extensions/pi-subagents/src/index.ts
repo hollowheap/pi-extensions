@@ -458,11 +458,11 @@ export function createSubagentsExtension(
 
     pi.registerCommand("subagent", {
       description:
-        "Manage subagents: /subagent [view] [id] | pause|resume|steer <id> [message] | settings",
+        "Manage subagents: /subagent [view] [id] | list | pause|resume|steer <id> [message] | settings",
       getArgumentCompletions: (prefix: string) => {
         const parts = prefix.trimStart().split(/\s+/);
         const idActions = ["view", "pause", "resume", "steer"];
-        const actions = [...idActions, "settings"];
+        const actions = [...idActions, "settings", "list"];
         if (parts.length === 1) {
           return prefixCompletions(parts[0] ?? "", actions);
         }
@@ -496,6 +496,10 @@ export function createSubagentsExtension(
         const lowerAction = parts[0]?.toLowerCase();
         const id = parts[1];
         const agentDir = resolveAgentDir();
+        if (lowerAction === "list") {
+          await pickSubagent(ctx);
+          return;
+        }
         if (lowerAction === "settings") {
           const config = loadSubagentsConfig(agentDir);
           await runSettingsCommand(ctx, {
@@ -625,10 +629,34 @@ export function createSubagentsExtension(
       },
     });
 
-    pi.registerCommand("subagents", {
-      description: "Browse subagent work",
-      handler: async (_args, ctx) => {
-        await pickSubagent(ctx);
+    let transcriptCursor = 0;
+    const showAdjacentTranscript = async (
+      ctx: ExtensionContext,
+      step: -1 | 1,
+    ): Promise<void> => {
+      const all = (await list(resolveAgentDir())).filter((state) =>
+        isInProject(state, ctx.cwd),
+      );
+      if (all.length === 0) {
+        if (ctx.hasUI) notify(ctx, "No subagents found.", "info");
+        return;
+      }
+      transcriptCursor = (transcriptCursor + step + all.length) % all.length;
+      const state = all[transcriptCursor];
+      if (state !== undefined) await openSubagentLog(ctx, state.id, state);
+    };
+
+    pi.registerShortcut?.(Key.alt("left"), {
+      description: "Previous subagent transcript",
+      handler: async (ctx) => {
+        await showAdjacentTranscript(ctx, -1);
+      },
+    });
+
+    pi.registerShortcut?.(Key.alt("right"), {
+      description: "Next subagent transcript",
+      handler: async (ctx) => {
+        await showAdjacentTranscript(ctx, 1);
       },
     });
 
