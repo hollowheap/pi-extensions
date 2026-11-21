@@ -102,43 +102,6 @@ function readSessionTranscript(
   return undefined;
 }
 
-function formatSessionBranch(ctx: ExtensionContext): string {
-  const entries = ctx.sessionManager?.getBranch?.() ?? [];
-  const lines = ["# Session tree", ""];
-  for (const entry of entries) {
-    const record = entry as {
-      type?: unknown;
-      id?: unknown;
-      timestamp?: unknown;
-      message?: unknown;
-    };
-    const type = sanitizeTerminalText(String(record.type ?? "entry"));
-    const id = sanitizeTerminalText(String(record.id ?? ""));
-    const message = record.message as { role?: unknown; content?: unknown };
-    let detail = "";
-    if (message && typeof message === "object") {
-      const role = sanitizeTerminalText(String(message.role ?? ""));
-      const blocks = Array.isArray(message.content) ? message.content : [];
-      const text = blocks
-        .map((block) =>
-          block && typeof block === "object"
-            ? String((block as { text?: unknown }).text ?? "")
-            : "",
-        )
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .slice(0, 80);
-      detail = `${role} ${text}`.trim();
-    }
-    lines.push(
-      `- **${escapeMarkdownInline(type)}** \`${escapeMarkdownInline(id)}\`${detail ? ` — ${escapeMarkdownInline(sanitizeTerminalText(detail))}` : ""}`,
-    );
-  }
-  if (entries.length === 0) lines.push("(empty branch)");
-  return lines.join("\n");
-}
-
 async function selectTranscriptEntry(
   ctx: ExtensionContext,
   agentDir: string,
@@ -183,16 +146,15 @@ export async function showSubagentTranscript(
   states: readonly SubagentState[],
   initialId: string,
   readLog: (id: string) => string,
+  options: { openTree?: boolean } = {},
 ): Promise<void> {
   let index = states.findIndex(({ id }) => id === initialId);
   if (index < 0) return;
-  let leafId: string | undefined;
-  let showBranch = false;
+  let leafId = options.openTree
+    ? await selectTranscriptEntry(ctx, agentDir, states[index])
+    : undefined;
   const cache = new Map<string, TranscriptCacheEntry>();
   const read = () => {
-    if (showBranch) {
-      return { title: "Session tree", markdown: formatSessionBranch(ctx) };
-    }
     const state = states[index];
     return {
       title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state, states))} · Read-only`,
@@ -206,12 +168,6 @@ export async function showSubagentTranscript(
     ...read(),
     fullscreen: true,
     read,
-    onAlternateView: async () => {
-      if (!showBranch) {
-        leafId = await selectTranscriptEntry(ctx, agentDir, states[index]);
-      }
-      showBranch = !showBranch;
-    },
     navigate:
       states.length > 1
         ? (direction) => {

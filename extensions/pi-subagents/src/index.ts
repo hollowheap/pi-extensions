@@ -11,7 +11,6 @@ import { createStatuslinePublisher } from "@hollowheap/core/statusline";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { runSettingsCommand } from "@hollowheap/pi-ui/settings";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
-import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import {
   formatSubagentWidget,
   mountWidgetProviders,
@@ -45,6 +44,7 @@ import {
   subagentDisplayName,
 } from "./state.js";
 import { createSubagentTool } from "./tool.js";
+import { showSubagentTranscript } from "./transcript.js";
 import { subagentWorkspaceTracker } from "./workspace.js";
 
 export interface SubagentStateEventItem {
@@ -322,23 +322,22 @@ export function createSubagentsExtension(
       id: string,
       known?: SubagentState,
       raw = false,
+      openTree = false,
     ): Promise<void> => {
       const state = known ?? (await attachSubagent(resolveAgentDir(), id));
       if (state === undefined || !isInProject(state, ctx.cwd)) {
         if (ctx.hasUI) notify(ctx, `Unknown subagent ${id}`, "error");
         return;
       }
-      const log = readSubagentLog(resolveAgentDir(), id);
-      const text = sanitizeTerminalText(formatSubagentLog(log, raw));
-      const name = sanitizeTerminalText(subagentDisplayName(state, lastStates));
-      const workspace = sanitizeTerminalText(state.workspace ?? state.agent);
-      const { showMarkdownPager } = await import("@hollowheap/pi-ui/pager");
-      await showMarkdownPager(ctx, {
-        title: `Subagent ${name}`,
-
-        markdown: `**${escapeMarkdownInline(name)}**\n\n${escapeMarkdownInline(workspace)}\n\n${text}`,
-        plainText: text,
-      });
+      await showSubagentTranscript(
+        ctx,
+        resolveAgentDir(),
+        [state],
+        id,
+        (childId) =>
+          formatSubagentLog(readSubagentLog(resolveAgentDir(), childId), raw),
+        { openTree },
+      );
     };
 
     const pickSubagent = async (ctx: ExtensionContext): Promise<void> => {
@@ -623,9 +622,16 @@ export function createSubagentsExtension(
     });
 
     pi.registerShortcut?.(Key.alt("s"), {
-      description: "Browse subagent work",
+      description: "Open subagent session tree",
       handler: async (ctx) => {
-        await pickSubagent(ctx);
+        const states = await list(resolveAgentDir());
+        const visible = states.filter((state) => isInProject(state, ctx.cwd));
+        const state = visible[0];
+        if (state === undefined) {
+          if (ctx.hasUI) notify(ctx, "No subagents found.", "info");
+          return;
+        }
+        await openSubagentLog(ctx, state.id, state, false, true);
       },
     });
 
