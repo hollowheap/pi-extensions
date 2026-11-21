@@ -27,6 +27,9 @@ earlier answer matches. The UI always appends a `Write-in answer` row.
 - **Cancellation:** dismissing any dialog cancels the whole set and sends no follow-up.
 - **Pages and branching:** pages are answered in ascending order with Next/Back navigation; conditions evaluate against prior answers by source question number.
 - **One call per set:** all questions from one tool call are answered sequentially, then the formatted answers are returned.
-In the terminal, Shift+Left switches focus between an open question and the
-main prompt. Both drafts stay in place. The question frame uses the shared
-panel style and is horizontally centered in the prompt slot.
+Choice and review dialogs render as bottom-center popups with the shared panel
+style. Free-text input uses the host prompt, which the UI extension restyles;
+selecting a write-in option opens that prompt immediately, and Esc returns to
+the option dialog. A question with no options is an open free-text question.
+Shift+Left switches focus between a popup and the main prompt without losing
+either draft.

@@ -134,7 +134,12 @@ async function showLockedDialog<T>(
             return wrapper;
           },
           {
-            overlay: false,
+            overlay: true,
+            overlayOptions: {
+              width: "70%",
+              maxHeight: "75%",
+              margin: 1,
+            },
             onHandle: (handle) => {
               overlayHandle = handle;
             },
@@ -546,36 +551,41 @@ export async function askQuestion(
   if (!canOverlay(ctx) && typeof hostUi(ctx)?.select !== "function") {
     return undefined;
   }
-  let picked: string | undefined;
-  try {
-    picked = await withPromptLock(
-      () =>
-        selectDialog(
-          ctx,
-          question.prompt,
-          [...question.options, WRITE_IN_LABEL],
-          dialogOptions(ctx, lockOptions),
-        ),
-      lockOptions,
-    );
-  } catch (error) {
-    if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
-    throw error;
-  }
-  if (picked === undefined) return undefined;
-  if (picked !== WRITE_IN_LABEL) {
-    return { mode: "single", value: picked };
-  }
+  let writeInRetries = 0;
+  for (;;) {
+    let picked: string | undefined;
+    try {
+      picked = await withPromptLock(
+        () =>
+          selectDialog(
+            ctx,
+            question.prompt,
+            [...question.options, WRITE_IN_LABEL],
+            dialogOptions(ctx, lockOptions),
+          ),
+        lockOptions,
+      );
+    } catch (error) {
+      if (isAbortOrTimeout(error, lockOptions.signal)) return undefined;
+      throw error;
+    }
+    if (picked === undefined) return undefined;
+    if (picked !== WRITE_IN_LABEL) {
+      return { mode: "single", value: picked };
+    }
 
-  const answer = await askWriteIn(
-    ctx,
-    question.prompt,
-    "Custom answer",
-    options,
-  );
-  return answer === undefined
-    ? undefined
-    : { mode: "single", value: capAnswer(answer) };
+    const answer = await askWriteIn(
+      ctx,
+      question.prompt,
+      "Custom answer",
+      options,
+    );
+    if (answer !== undefined) {
+      return { mode: "single", value: capAnswer(answer) };
+    }
+    if (lockOptions.signal?.aborted || writeInRetries >= 1) return undefined;
+    writeInRetries++;
+  }
 }
 
 export const askSingleQuestion = askQuestion;

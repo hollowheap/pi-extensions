@@ -2,7 +2,6 @@ import type {
   ExtensionContext,
   ExtensionUIDialogOptions,
 } from "@earendil-works/pi-coding-agent";
-import { canOverlay } from "@hollowheap/pi-ui/host";
 import { decodePrintableInput } from "@hollowheap/ui/input";
 
 export interface QuestionDialogOptions {
@@ -38,12 +37,11 @@ export function deleteBeforeCaret(
 }
 
 export function dialogOptions(
-  ctx: ExtensionContext,
+  _ctx: ExtensionContext,
   lockOptions: QuestionDialogOptions,
-): ExtensionUIDialogOptions & { overlay?: boolean } {
+): ExtensionUIDialogOptions {
   return {
     signal: lockOptions.signal,
     timeout: lockOptions.timeoutMs,
-    ...(canOverlay(ctx) ? { overlay: false } : {}),
   };
 }

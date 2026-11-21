@@ -172,7 +172,7 @@ describe("pi-question E2E", () => {
         ctx,
       );
       const singleMount = await waitMount();
-      expect(customCalls.at(-1)?.overlay).toBe(false);
+      expect(customCalls.at(-1)?.overlay).toBe(true);
       assertRenderAcrossResizes(tui, terminal, singleMount.component);
       singleMount.done(undefined);
       tui.removeChild(singleMount.component);
@@ -187,7 +187,7 @@ describe("pi-question E2E", () => {
         ctx,
       );
       const multiMount = await waitMount();
-      expect(customCalls.at(-1)?.overlay).toBe(false);
+      expect(customCalls.at(-1)?.overlay).toBe(true);
       assertRenderAcrossResizes(tui, terminal, multiMount.component);
       multiMount.done(undefined);
       tui.removeChild(multiMount.component);
@@ -209,7 +209,7 @@ describe("pi-question E2E", () => {
         ctx,
       );
       const flowMount = await waitMount();
-      expect(customCalls.at(-1)?.overlay).toBe(false);
+      expect(customCalls.at(-1)?.overlay).toBe(true);
       assertRenderAcrossResizes(tui, terminal, flowMount.component);
       flowMount.component.handleInput?.("\t");
       assertRenderAcrossResizes(tui, terminal, flowMount.component);

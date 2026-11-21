@@ -66,8 +66,25 @@ describe("question prompt surface", () => {
     );
     expect(c.ui.custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: false }),
+      expect.objectContaining({ overlay: true }),
     );
+  });
+
+  it("returns to the option dialog after a dismissed write-in", async () => {
+    const c = ctx();
+    c.mode = "rpc";
+    c.ui.select = vi
+      .fn()
+      .mockResolvedValueOnce("Write-in answer")
+      .mockResolvedValueOnce("A");
+    c.ui.input = vi.fn().mockResolvedValue(undefined);
+    const answer = await askQuestion(
+      { prompt: "Pick", mode: "single", options: ["A"] } as never,
+      c as never,
+      undefined,
+    );
+    expect(c.ui.select).toHaveBeenCalledTimes(2);
+    expect(answer).toEqual({ mode: "single", value: "A" });
   });
 
   it("toggles focus with Shift+Left", async () => {
@@ -136,7 +153,7 @@ describe("question prompt surface", () => {
     expect(setEditorText).not.toHaveBeenCalled();
   });
 
-  it("uses overlay: false for multi-select and free-text Editor fallback in TUI", async () => {
+  it("uses centered popups for multi-select and free-text Editor fallback in TUI", async () => {
     const custom = vi.fn().mockResolvedValue(undefined);
     const c = { mode: "tui", hasUI: true, ui: { custom } };
     await askQuestion(
@@ -145,7 +162,7 @@ describe("question prompt surface", () => {
     );
     expect(custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: false }),
+      expect.objectContaining({ overlay: true }),
     );
     custom.mockClear();
     await askQuestion(
@@ -154,7 +171,7 @@ describe("question prompt surface", () => {
     );
     expect(custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: false }),
+      expect.objectContaining({ overlay: true }),
     );
   });
 
