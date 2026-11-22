@@ -62,35 +62,95 @@ function hasPositiveUsage(usage: {
   );
 }
 
+type ClassifierRegistry = {
+  getModelOfType?: (...args: unknown[]) => unknown;
+  findOfType?: (...args: unknown[]) => unknown;
+  getModelsOfType?: (...args: unknown[]) => unknown;
+  classify?: (...args: unknown[]) => Promise<unknown>;
+};
+
+type ResolvedClassifierModel =
+  | { model: unknown; modelId: string }
+  | { error: string };
+
+function resolveClassifierModel(
+  ctx: ExtensionContext,
+  agentDir?: string,
+): ResolvedClassifierModel | undefined {
+  const registry = (ctx as { modelRegistry?: unknown }).modelRegistry as
+    | ClassifierRegistry
+    | undefined;
+  if (typeof registry?.classify !== "function") return undefined;
+  const configured = readConfiguredClassifierModel(agentDir);
+  if (configured === undefined) return undefined;
+
+  const candidates: Array<{ provider: string; id: string }> = [];
+  const slash = configured.indexOf("/");
+  if (slash > 0 && slash < configured.length - 1) {
+    candidates.push({
+      provider: configured.slice(0, slash),
+      id: configured.slice(slash + 1),
+    });
+  }
+  try {
+    const all =
+      typeof registry.getModelsOfType === "function"
+        ? registry.getModelsOfType("classifier")
+        : [];
+    if (Array.isArray(all)) {
+      for (const item of all) {
+        if (!isRecord(item)) continue;
+        const id = typeof item.id === "string" ? item.id : "";
+        const provider = typeof item.provider === "string" ? item.provider : "";
+        if (
+          id === configured ||
+          (provider !== "" && `${provider}/${id}` === configured)
+        ) {
+          candidates.push({ provider, id });
+        }
+      }
+    }
+  } catch {
+    // Registry probing is best effort.
+  }
+
+  let lastError: string | undefined;
+  for (const { provider, id } of candidates) {
+    try {
+      const model =
+        typeof registry.getModelOfType === "function"
+          ? registry.getModelOfType("classifier", provider, id)
+          : typeof registry.findOfType === "function"
+            ? registry.findOfType("classifier", provider, id)
+            : undefined;
+      if (model === undefined || model === null) continue;
+      let modelId = configured;
+      if (
+        isRecord(model) &&
+        typeof model.id === "string" &&
+        model.id.trim() !== ""
+      ) {
+        modelId =
+          typeof model.provider === "string" &&
+          model.provider.trim() !== "" &&
+          !model.id.includes("/")
+            ? `${model.provider.trim()}/${model.id.trim()}`
+            : model.id.trim();
+      }
+      return { model, modelId };
+    } catch (error) {
+      lastError = errorMessage(error);
+    }
+  }
+  return lastError === undefined ? undefined : { error: lastError };
+}
+
 export function hasAvailableClassifierModel(
   ctx: ExtensionContext,
   agentDir?: string,
 ): boolean {
-  const registry = (ctx as { modelRegistry?: unknown }).modelRegistry as
-    | {
-        getModelOfType?: (...args: unknown[]) => unknown;
-        findOfType?: (...args: unknown[]) => unknown;
-        classify?: (...args: unknown[]) => Promise<unknown>;
-      }
-    | undefined;
-  if (typeof registry?.classify !== "function") return false;
-  const configured = readConfiguredClassifierModel(agentDir);
-  if (configured === undefined) return false;
-  const slash = configured.indexOf("/");
-  if (slash <= 0 || slash >= configured.length - 1) return false;
-  const provider = configured.slice(0, slash);
-  const id = configured.slice(slash + 1);
-  try {
-    const model =
-      typeof registry.getModelOfType === "function"
-        ? registry.getModelOfType("classifier", provider, id)
-        : typeof registry.findOfType === "function"
-          ? registry.findOfType("classifier", provider, id)
-          : undefined;
-    return model !== undefined && model !== null;
-  } catch {
-    return false;
-  }
+  const resolved = resolveClassifierModel(ctx, agentDir);
+  return resolved !== undefined && "model" in resolved;
 }
 
 export async function classifyToolCall(
@@ -100,56 +160,14 @@ export async function classifyToolCall(
   options: ClassifyToolCallOptions = {},
 ): Promise<ClassifierVerdict | undefined> {
   const registry = (ctx as { modelRegistry?: unknown }).modelRegistry as
-    | {
-        getModelOfType?: (...args: unknown[]) => unknown;
-        findOfType?: (...args: unknown[]) => unknown;
-        classify?: (...args: unknown[]) => Promise<unknown>;
-      }
+    | ClassifierRegistry
     | undefined;
-  if (
-    typeof registry?.classify !== "function" ||
-    (typeof registry.getModelOfType !== "function" &&
-      typeof registry.findOfType !== "function")
-  ) {
-    return undefined;
-  }
+  if (typeof registry?.classify !== "function") return undefined;
 
-  const configured = readConfiguredClassifierModel(options.agentDir);
-  if (configured === undefined) return undefined;
-
-  const slash = configured.indexOf("/");
-  if (slash <= 0 || slash >= configured.length - 1) return undefined;
-  const provider = configured.slice(0, slash);
-  const id = configured.slice(slash + 1);
-
-  let model: unknown;
-  let modelId = configured;
-  try {
-    if (typeof registry.getModelOfType === "function") {
-      model = registry.getModelOfType("classifier", provider, id);
-    } else if (typeof registry.findOfType === "function") {
-      model = registry.findOfType("classifier", provider, id);
-    }
-  } catch (error) {
-    return {
-      kind: "error",
-      detail: errorMessage(error),
-    };
-  }
-  if (model === undefined || model === null) return undefined;
-
-  if (
-    isRecord(model) &&
-    typeof model.id === "string" &&
-    model.id.trim() !== ""
-  ) {
-    modelId =
-      typeof model.provider === "string" &&
-      model.provider.trim() !== "" &&
-      !model.id.includes("/")
-        ? `${model.provider.trim()}/${model.id.trim()}`
-        : model.id.trim();
-  }
+  const resolved = resolveClassifierModel(ctx, options.agentDir);
+  if (resolved === undefined) return undefined;
+  if ("error" in resolved) return { kind: "error", detail: resolved.error };
+  const { model, modelId } = resolved;
 
   const rawTarget =
     tag === "shell"

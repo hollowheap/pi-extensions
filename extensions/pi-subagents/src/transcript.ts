@@ -215,8 +215,8 @@ export async function showSubagentTranscript(
   let terminalRows = 24;
   const overlayOptions = () => {
     const available = Math.max(
-      6,
-      terminalRows - getVisibleWidgetHeight() - getStatuslineHeight() - 1,
+      1,
+      terminalRows - getVisibleWidgetHeight() - getStatuslineHeight(),
     );
     const contentRows = read().markdown.split("\n").length;
     return {
@@ -224,7 +224,7 @@ export async function showSubagentTranscript(
       row: 0,
       col: 0,
       margin: 0,
-      maxHeight: Math.min(available, Math.max(6, contentRows)),
+      maxHeight: Math.min(available, Math.max(1, contentRows)),
     };
   };
   await showDialog<void>(

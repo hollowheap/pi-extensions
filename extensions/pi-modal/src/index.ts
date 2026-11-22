@@ -31,6 +31,7 @@ import {
   codemodePreview,
   withToolOutputDisplay,
 } from "@hollowheap/ui/tool-output";
+import { setAutocompleteWidget } from "@hollowheap/ui/widget";
 import { ModalEditor } from "./editor.js";
 import { installExtensionInputPanel } from "./input-panel.js";
 import { loadModalConfig } from "./settings.js";
@@ -428,9 +429,8 @@ export default function (pi: ExtensionAPI): void {
           const ui = hostUi(activeCtx ?? ctx);
           if (typeof ui?.setWidget !== "function") return;
           const widgetTheme = ui.theme ?? (theme as never);
-          ui.setWidget("hollowheap.autocomplete", undefined);
-          ui.setWidget(
-            "hollowheap.autocomplete",
+          setAutocompleteWidget(
+            ui,
             rows === undefined
               ? undefined
               : () => ({
@@ -441,7 +441,7 @@ export default function (pi: ExtensionAPI): void {
                     }),
                   invalidate: () => {},
                 }),
-            { placement: "aboveEditor" },
+            "aboveEditor",
           );
         },
       );

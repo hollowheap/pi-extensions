@@ -107,7 +107,7 @@ describe("read-only subagent transcript", () => {
     expect(bounds.width).toBe("100%");
     expect(bounds.row).toBe(0);
     expect(bounds.col).toBe(0);
-    expect(bounds.maxHeight).toBe(6);
+    expect(bounds.maxHeight).toBe(1);
     const rendered = component?.render(100) ?? [];
     expect(rendered.length).toBeGreaterThan(0);
     expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯│┌┐└┘]/);
@@ -159,7 +159,7 @@ describe("read-only subagent transcript", () => {
         () =>
           `Transcript for one\n${Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n")}`,
       );
-      expect(options?.overlayOptions().maxHeight).toBe(9);
+      expect(options?.overlayOptions().maxHeight).toBe(10);
     } finally {
       setStatuslineHeight(0);
     }

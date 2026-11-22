@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { USAGE_ENTRY_TYPE, getSessionUsage } from "@hollowheap/core/usage";
 import { describe, expect, it, vi } from "vitest";
-import { classifyToolCall } from "../src/classifier.js";
+import {
+  classifyToolCall,
+  hasAvailableClassifierModel,
+} from "../src/classifier.js";
 import {
   TOOL_TAGS,
   isPassthroughTaskCall,
@@ -62,6 +65,30 @@ describe("policy targets", () => {
     expect(isPassthroughTaskCall("task", { action: "cancel" })).toBe(false);
     expect(isPassthroughTaskCall("task", { action: "start" })).toBe(false);
     expect(isPassthroughTaskCall("bash", { action: "list" })).toBe(false);
+  });
+
+  it("resolves a classifier id that already includes its provider prefix", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "policy-classifier-prefix-"));
+    const model = "alias/classifier-v2";
+    writeFileSync(join(dir, "decide.json"), JSON.stringify({ model }));
+    const getModelsOfType = vi.fn(() => [
+      { id: model, provider: "host-provider" },
+    ]);
+    const getModelOfType = vi.fn((_type: unknown, provider: string) =>
+      provider === "host-provider"
+        ? { id: model, provider: "host-provider" }
+        : undefined,
+    );
+    const ctx = {
+      modelRegistry: { getModelsOfType, getModelOfType, classify: vi.fn() },
+    } as never;
+
+    expect(hasAvailableClassifierModel(ctx, dir)).toBe(true);
+    expect(getModelOfType).toHaveBeenCalledWith(
+      "classifier",
+      "host-provider",
+      model,
+    );
   });
 
   it("honors decide.json classifier model via getModelOfType and records usage", async () => {

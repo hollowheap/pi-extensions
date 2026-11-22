@@ -304,6 +304,27 @@ export function toggleWidgets(target?: string | readonly string[]): boolean {
   return collapse;
 }
 
+export const AUTOCOMPLETE_WIDGET_KEY = "hollowheap.autocomplete";
+
+let autocompleteMount:
+  | {
+      content: string[] | WidgetFactory | undefined;
+      placement?: WidgetPlacement;
+    }
+  | undefined;
+
+export function setAutocompleteWidget(
+  ui: WidgetMountContext["ui"],
+  content: string[] | WidgetFactory | undefined,
+  placement?: WidgetPlacement,
+): void {
+  autocompleteMount =
+    content === undefined ? undefined : { content, placement };
+  ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, undefined);
+  if (placement === undefined) ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, content);
+  else ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, content, { placement });
+}
+
 function setHostWidget(
   ui: WidgetMountContext["ui"],
   name: string,
@@ -312,6 +333,17 @@ function setHostWidget(
 ): void {
   if (placement === undefined) ui.setWidget(name, content);
   else ui.setWidget(name, content, { placement });
+  if (autocompleteMount !== undefined && name !== AUTOCOMPLETE_WIDGET_KEY) {
+    const mount = autocompleteMount;
+    ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, undefined);
+    if (mount.placement === undefined) {
+      ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, mount.content);
+    } else {
+      ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, mount.content, {
+        placement: mount.placement,
+      });
+    }
+  }
 }
 
 function clickWidget(
