@@ -314,19 +314,25 @@ let autocompleteMount:
   | undefined;
 let autocompleteKeyIndex = 0;
 let activeAutocompleteKey: string | undefined;
+let autocompleteSignature: string | undefined;
 
 function mountAutocomplete(
   ui: WidgetMountContext["ui"],
   content: string[] | WidgetFactory,
   placement?: WidgetPlacement,
 ): void {
-  const key = `${AUTOCOMPLETE_WIDGET_KEY}-${autocompleteKeyIndex++ % 2}`;
-  if (activeAutocompleteKey !== undefined && activeAutocompleteKey !== key) {
-    ui.setWidget(activeAutocompleteKey, []);
+  const signature = `${listWidgetProviders().join(",")}|${placement ?? ""}`;
+  if (signature !== autocompleteSignature) {
+    const key = `${AUTOCOMPLETE_WIDGET_KEY}-${autocompleteKeyIndex++ % 2}`;
+    if (activeAutocompleteKey !== undefined && activeAutocompleteKey !== key) {
+      ui.setWidget(activeAutocompleteKey, []);
+    }
+    activeAutocompleteKey = key;
+    autocompleteSignature = signature;
   }
-  activeAutocompleteKey = key;
-  if (placement === undefined) ui.setWidget(key, content);
-  else ui.setWidget(key, content, { placement });
+  if (activeAutocompleteKey === undefined) return;
+  if (placement === undefined) ui.setWidget(activeAutocompleteKey, content);
+  else ui.setWidget(activeAutocompleteKey, content, { placement });
 }
 
 export function setAutocompleteWidget(
@@ -339,6 +345,7 @@ export function setAutocompleteWidget(
       ui.setWidget(activeAutocompleteKey, []);
       activeAutocompleteKey = undefined;
     }
+    autocompleteSignature = undefined;
     autocompleteMount = undefined;
     return;
   }

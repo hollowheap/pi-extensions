@@ -52,6 +52,13 @@ describe("autocomplete widget ordering", () => {
     dispose();
 
     expect(calls.at(-1)?.startsWith(AUTOCOMPLETE_WIDGET_KEY)).toBe(true);
+    const before = calls.filter((name) =>
+      name.startsWith(AUTOCOMPLETE_WIDGET_KEY),
+    ).length;
+    mountWidgetProviders({ hasUI: true, ui } as never);
+    expect(
+      calls.filter((name) => name.startsWith(AUTOCOMPLETE_WIDGET_KEY)),
+    ).toHaveLength(before);
     setAutocompleteWidget(ui, undefined);
   });
 });
