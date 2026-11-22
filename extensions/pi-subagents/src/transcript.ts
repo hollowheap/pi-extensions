@@ -12,6 +12,7 @@ import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { hostUi, showDialog } from "@hollowheap/pi-ui/host";
 import { pagerSessionDirection } from "@hollowheap/pi-ui/pager";
 import { handleViewportKey } from "@hollowheap/pi-ui/viewport";
+import { getStatuslineHeight } from "@hollowheap/ui/state";
 import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
 import { getVisibleWidgetHeight } from "@hollowheap/ui/widget";
 import { type SubagentState, subagentDisplayName } from "./state.js";
@@ -211,13 +212,25 @@ export async function showSubagentTranscript(
         "(Waiting for transcript)",
     };
   };
-  const terminalRows =
-    (hostUi(ctx) as unknown as { terminal?: { rows: number } }).terminal
-      ?.rows ?? 24;
-  const maxHeight = Math.max(6, terminalRows - getVisibleWidgetHeight() - 4);
+  let terminalRows = 24;
+  const overlayOptions = () => {
+    const available = Math.max(
+      6,
+      terminalRows - getVisibleWidgetHeight() - getStatuslineHeight() - 1,
+    );
+    const contentRows = read().markdown.split("\n").length;
+    return {
+      width: "100%" as const,
+      row: 0,
+      col: 0,
+      margin: 0,
+      maxHeight: Math.min(available, Math.max(6, contentRows)),
+    };
+  };
   await showDialog<void>(
     ctx,
     (tui, _theme, _keys, done) => {
+      terminalRows = tui.terminal.rows;
       let offset = Number.MAX_SAFE_INTEGER;
       let lastLineCount = 0;
       let settled = false;
@@ -226,7 +239,7 @@ export async function showSubagentTranscript(
         settled = true;
         done();
       };
-      const pageSize = () => Math.max(1, maxHeight - 1);
+      const pageSize = () => Math.max(1, overlayOptions().maxHeight - 1);
       const maxOffset = () => Math.max(0, lastLineCount - pageSize());
       return {
         capturesViewportInput: true,
@@ -267,13 +280,7 @@ export async function showSubagentTranscript(
     },
     {
       overlay: true,
-      overlayOptions: {
-        width: "100%",
-        row: 0,
-        col: 0,
-        margin: 0,
-        maxHeight,
-      },
+      overlayOptions,
     },
   );
 }

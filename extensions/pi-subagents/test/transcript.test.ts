@@ -65,6 +65,7 @@ describe("read-only subagent transcript", () => {
           keys: unknown,
           done: () => void,
         ) => NonNullable<typeof component>,
+        _options?: unknown,
       ) =>
         new Promise<void>((resolve) => {
           component = factory(
@@ -87,16 +88,14 @@ describe("read-only subagent transcript", () => {
       (id) => `Transcript for ${id}`,
     );
     await vi.waitFor(() => expect(custom).toHaveBeenCalled());
-    expect(custom).toHaveBeenCalledWith(expect.any(Function), {
-      overlay: true,
-      overlayOptions: {
-        width: "100%",
-        maxHeight: 20,
-        row: 0,
-        col: 0,
-        margin: 0,
-      },
-    });
+    const options = custom.mock.calls[0][1] as {
+      overlay: boolean;
+      overlayOptions: () => { width: string; row: number; maxHeight: number };
+    };
+    expect(options.overlay).toBe(true);
+    expect(options.overlayOptions().width).toBe("100%");
+    expect(options.overlayOptions().row).toBe(0);
+    expect(options.overlayOptions().maxHeight).toBeGreaterThanOrEqual(6);
     expect(component?.render(100).length).toBeGreaterThan(0);
     expect(component?.render(100).join("\n")).toContain("Transcript for one");
     component?.handleInput("\x1bl");

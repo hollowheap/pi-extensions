@@ -428,6 +428,7 @@ export default function (pi: ExtensionAPI): void {
           const ui = hostUi(activeCtx ?? ctx);
           if (typeof ui?.setWidget !== "function") return;
           const widgetTheme = ui.theme ?? (theme as never);
+          ui.setWidget("hollowheap.autocomplete", undefined);
           ui.setWidget(
             "hollowheap.autocomplete",
             rows === undefined

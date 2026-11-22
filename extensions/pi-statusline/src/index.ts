@@ -24,6 +24,7 @@ import { extractLatestUsage } from "@hollowheap/core/usage";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
 import { SPINNER_PRESETS } from "@hollowheap/ui/spinner";
+import { setStatuslineHeight } from "@hollowheap/ui/state";
 import {
   type GitDiffState,
   type TokenTotals,
@@ -312,7 +313,9 @@ export default function (pi: ExtensionAPI) {
               notify(ctx, `pi-statusline: ${message}`, "warning");
             },
           );
-          return line === "" ? [] : [line];
+          const rows = line === "" ? [] : [line];
+          setStatuslineHeight(rows.length);
+          return rows;
         },
       };
     });

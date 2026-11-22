@@ -101,3 +101,13 @@ export function bindHostOutputPadding(
 export function getHostOutputPadding(): 0 | 1 | undefined {
   return getStore().outputPadding?.();
 }
+
+let statuslineHeight = 0;
+
+export function setStatuslineHeight(rows: number): void {
+  statuslineHeight = Math.max(0, rows);
+}
+
+export function getStatuslineHeight(): number {
+  return statuslineHeight;
+}
