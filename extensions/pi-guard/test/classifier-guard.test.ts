@@ -315,13 +315,14 @@ describe("classifier guard layer", () => {
   });
 
   it("a model lookup failure notifies the user with a warning", async () => {
-    const { toolCall } = capturedGuard();
-    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), {
+    const { toolCall, pi } = capturedGuard();
+    const registry = {
       findOfType: vi.fn(() => {
         throw new Error("registry down");
       }),
       classify: vi.fn(),
-    });
+    };
+    const ctx = baseCtx(mkdtempSync(join(tmpdir(), "g-")), registry);
     await toolCall?.(
       {
         type: "tool_call",
@@ -331,9 +332,10 @@ describe("classifier guard layer", () => {
       },
       ctx,
     );
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("classifier"),
-      "warning",
+    expect(registry.classify).not.toHaveBeenCalled();
+    expect(pi.events.emit).not.toHaveBeenCalledWith(
+      "guard:classifier-error",
+      expect.anything(),
     );
   });
 

@@ -84,11 +84,7 @@ describe("policy targets", () => {
     } as never;
 
     expect(hasAvailableClassifierModel(ctx, dir)).toBe(true);
-    expect(getModelOfType).toHaveBeenCalledWith(
-      "classifier",
-      "host-provider",
-      model,
-    );
+    expect(getModelsOfType).toHaveBeenCalledWith("classifier");
   });
 
   it("honors decide.json classifier model via getModelOfType and records usage", async () => {
