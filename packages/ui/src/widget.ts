@@ -312,17 +312,38 @@ let autocompleteMount:
       placement?: WidgetPlacement;
     }
   | undefined;
+let autocompleteKeyIndex = 0;
+let activeAutocompleteKey: string | undefined;
+
+function mountAutocomplete(
+  ui: WidgetMountContext["ui"],
+  content: string[] | WidgetFactory,
+  placement?: WidgetPlacement,
+): void {
+  const key = `${AUTOCOMPLETE_WIDGET_KEY}-${autocompleteKeyIndex++ % 2}`;
+  if (activeAutocompleteKey !== undefined && activeAutocompleteKey !== key) {
+    ui.setWidget(activeAutocompleteKey, []);
+  }
+  activeAutocompleteKey = key;
+  if (placement === undefined) ui.setWidget(key, content);
+  else ui.setWidget(key, content, { placement });
+}
 
 export function setAutocompleteWidget(
   ui: WidgetMountContext["ui"],
   content: string[] | WidgetFactory | undefined,
   placement?: WidgetPlacement,
 ): void {
-  autocompleteMount =
-    content === undefined ? undefined : { content, placement };
-  ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, undefined);
-  if (placement === undefined) ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, content);
-  else ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, content, { placement });
+  if (content === undefined) {
+    if (activeAutocompleteKey !== undefined) {
+      ui.setWidget(activeAutocompleteKey, []);
+      activeAutocompleteKey = undefined;
+    }
+    autocompleteMount = undefined;
+    return;
+  }
+  autocompleteMount = { content, placement };
+  mountAutocomplete(ui, content, placement);
 }
 
 function setHostWidget(
@@ -333,16 +354,12 @@ function setHostWidget(
 ): void {
   if (placement === undefined) ui.setWidget(name, content);
   else ui.setWidget(name, content, { placement });
-  if (autocompleteMount !== undefined && name !== AUTOCOMPLETE_WIDGET_KEY) {
-    const mount = autocompleteMount;
-    ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, undefined);
-    if (mount.placement === undefined) {
-      ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, mount.content);
-    } else {
-      ui.setWidget(AUTOCOMPLETE_WIDGET_KEY, mount.content, {
-        placement: mount.placement,
-      });
-    }
+  if (autocompleteMount !== undefined && name !== activeAutocompleteKey) {
+    mountAutocomplete(
+      ui,
+      autocompleteMount.content as string[] | WidgetFactory,
+      autocompleteMount.placement,
+    );
   }
 }
 

@@ -51,7 +51,7 @@ describe("autocomplete widget ordering", () => {
     mountWidgetProviders({ hasUI: true, ui } as never);
     dispose();
 
-    expect(calls.at(-1)).toBe(AUTOCOMPLETE_WIDGET_KEY);
+    expect(calls.at(-1)?.startsWith(AUTOCOMPLETE_WIDGET_KEY)).toBe(true);
     setAutocompleteWidget(ui, undefined);
   });
 });
