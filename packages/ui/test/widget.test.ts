@@ -5,6 +5,7 @@ import {
   formatSubagentWidget,
   formatTaskWidget,
   formatTodoWidget,
+  getVisibleWidgetHeight,
   getWidgetProvider,
   isWidgetVisible,
   listWidgetProviders,
@@ -102,6 +103,9 @@ describe("widget mounting", () => {
     )().render(20);
     expect(rows[0]).toContain("Mount");
     expect(rows.at(-1)).toContain("╯");
+    expect(getVisibleWidgetHeight()).toBe(rows.length);
+    setWidgetVisible("tui-test-mount", false);
+    expect(getVisibleWidgetHeight()).toBe(0);
   });
 
   it("clicking a mounted widget hides it", () => {

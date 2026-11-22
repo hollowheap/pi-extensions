@@ -8,9 +8,11 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
   getActiveTuiConfig,
+  getStatuslineHeight,
   loadAndActivateTuiConfig,
   resetActiveTuiConfig,
   setActiveTuiConfig,
+  setStatuslineHeight,
   subscribeActiveTuiConfig,
 } from "../src/state.js";
 
@@ -32,6 +34,13 @@ afterEach(() => {
     }
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+it("tracks the rendered statusline height", () => {
+  setStatuslineHeight(3);
+  expect(getStatuslineHeight()).toBe(3);
+  setStatuslineHeight(0);
+  expect(getStatuslineHeight()).toBe(0);
 });
 
 describe("tui state", () => {

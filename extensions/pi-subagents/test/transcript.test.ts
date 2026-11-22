@@ -1,4 +1,6 @@
 import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
+import { getStatuslineHeight, setStatuslineHeight } from "@hollowheap/ui/state";
+import { getVisibleWidgetHeight } from "@hollowheap/ui/widget";
 import { describe, expect, it, vi } from "vitest";
 import {
   formatChildTranscript,
@@ -90,13 +92,25 @@ describe("read-only subagent transcript", () => {
     await vi.waitFor(() => expect(custom).toHaveBeenCalled());
     const options = custom.mock.calls[0][1] as {
       overlay: boolean;
-      overlayOptions: () => { width: string; row: number; maxHeight: number };
+      overlayOptions: () => {
+        width: string;
+        row: number;
+        col: number;
+        maxHeight: number;
+      };
     };
     expect(options.overlay).toBe(true);
-    expect(options.overlayOptions().width).toBe("100%");
-    expect(options.overlayOptions().row).toBe(0);
-    expect(options.overlayOptions().maxHeight).toBeGreaterThanOrEqual(6);
-    expect(component?.render(100).length).toBeGreaterThan(0);
+    setStatuslineHeight(2);
+    expect(getStatuslineHeight()).toBe(2);
+    expect(getVisibleWidgetHeight()).toBe(0);
+    const bounds = options.overlayOptions();
+    expect(bounds.width).toBe("100%");
+    expect(bounds.row).toBe(0);
+    expect(bounds.col).toBe(0);
+    expect(bounds.maxHeight).toBe(6);
+    const rendered = component?.render(100) ?? [];
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯│┌┐└┘]/);
     expect(component?.render(100).join("\n")).toContain("Transcript for one");
     component?.handleInput("\x1bl");
     expect(component?.render(100).join("\n")).toContain("Transcript for two");
@@ -105,6 +119,49 @@ describe("read-only subagent transcript", () => {
     component?.handleInput("arbitrary typed text");
     expect(setEditorText).not.toHaveBeenCalled();
     component?.handleInput("\x1b");
+    setStatuslineHeight(0);
     await result;
+  });
+
+  it("deducts statusline height from a tall transcript overlay", async () => {
+    let options: { overlayOptions: () => { maxHeight: number } } | undefined;
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keys: unknown,
+          done: (value: undefined) => void,
+        ) => unknown,
+        opts: { overlayOptions: () => { maxHeight: number } },
+      ) => {
+        options = opts;
+        factory(
+          { terminal: { rows: 12 }, requestRender: vi.fn() },
+          {},
+          {},
+          () => {},
+        );
+        return Promise.resolve();
+      },
+    );
+    setStatuslineHeight(2);
+    try {
+      await showSubagentTranscript(
+        {
+          mode: "tui",
+          hasUI: true,
+          ui: { custom, setEditorText: vi.fn() },
+        } as never,
+        "/no-child-session",
+        [{ id: "one", agent: "scout" }] as never,
+        "one",
+        () =>
+          `Transcript for one\n${Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n")}`,
+      );
+      expect(options?.overlayOptions().maxHeight).toBe(9);
+    } finally {
+      setStatuslineHeight(0);
+    }
   });
 });
