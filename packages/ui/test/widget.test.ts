@@ -2,7 +2,6 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  AUTOCOMPLETE_WIDGET_KEY,
   formatSubagentWidget,
   formatTaskWidget,
   formatTodoWidget,
@@ -12,7 +11,6 @@ import {
   listWidgetProviders,
   mountWidgetProviders,
   registerWidgetProvider,
-  setAutocompleteWidget,
   setWidgetVisible,
   toggleWidgets,
 } from "../src/widget.js";
@@ -32,36 +30,6 @@ function register(name: string) {
   disposers.push(dispose);
   return dispose;
 }
-
-describe("autocomplete widget ordering", () => {
-  it("stays last after widget polling re-registers a provider", () => {
-    const calls: string[] = [];
-    const ui = {
-      setWidget: (name: string, _content: unknown, _options?: unknown) => {
-        calls.push(name);
-      },
-      theme: { fg: (_t: string, value: string) => value },
-    } as never;
-    setAutocompleteWidget(ui, ["suggestion"], "aboveEditor");
-    const dispose = registerWidgetProvider({
-      name: "tui-test-poll",
-      label: "Poll",
-      render: () => ["poll"],
-    });
-    mountWidgetProviders({ hasUI: true, ui } as never);
-    dispose();
-
-    expect(calls.at(-1)?.startsWith(AUTOCOMPLETE_WIDGET_KEY)).toBe(true);
-    const before = calls.filter((name) =>
-      name.startsWith(AUTOCOMPLETE_WIDGET_KEY),
-    ).length;
-    mountWidgetProviders({ hasUI: true, ui } as never);
-    expect(
-      calls.filter((name) => name.startsWith(AUTOCOMPLETE_WIDGET_KEY)),
-    ).toHaveLength(before);
-    setAutocompleteWidget(ui, undefined);
-  });
-});
 
 describe("widget provider registry", () => {
   it("registers, replaces, and disposes providers by name", () => {

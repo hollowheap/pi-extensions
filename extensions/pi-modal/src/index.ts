@@ -11,7 +11,6 @@ import { readBranchEntries } from "@hollowheap/core/state";
 import { canOverlay, hostUi, notify } from "@hollowheap/pi-ui/host";
 import { getPromptChar } from "@hollowheap/pi-ui/prompt-char";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
-import { boxFrame } from "@hollowheap/ui/frame";
 import { createWorkingIndicator } from "@hollowheap/ui/spinner";
 import {
   bindHostOutputPadding,
@@ -31,7 +30,6 @@ import {
   codemodePreview,
   withToolOutputDisplay,
 } from "@hollowheap/ui/tool-output";
-import { setAutocompleteWidget } from "@hollowheap/ui/widget";
 import { ModalEditor } from "./editor.js";
 import { installExtensionInputPanel } from "./input-panel.js";
 import { loadModalConfig } from "./settings.js";
@@ -425,25 +423,6 @@ export default function (pi: ExtensionAPI): void {
         config,
         undefined,
         hostUi(ctx).theme,
-        (rows) => {
-          const ui = hostUi(activeCtx ?? ctx);
-          if (typeof ui?.setWidget !== "function") return;
-          const widgetTheme = ui.theme ?? (theme as never);
-          setAutocompleteWidget(
-            ui,
-            rows === undefined
-              ? undefined
-              : () => ({
-                  render: (width: number) =>
-                    boxFrame([...rows], width, widgetTheme, undefined, {
-                      paddingX: 1,
-                      marginX: 0,
-                    }),
-                  invalidate: () => {},
-                }),
-            "aboveEditor",
-          );
-        },
       );
       return activeEditor;
     });

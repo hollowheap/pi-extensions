@@ -482,9 +482,8 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("normal");
   });
 
-  it("publishes autocomplete rows to the above-editor widget", () => {
+  it("renders autocomplete rows inside the prompt panel", () => {
     const { tui, theme, keybindings } = createMockEditor();
-    const onAutocompleteRows = vi.fn();
     const editor = new ModalEditor(
       tui as never,
       theme as never,
@@ -492,7 +491,6 @@ describe("ModalEditor modal behavior", () => {
       { enabled: true },
       undefined,
       undefined,
-      onAutocompleteRows,
     );
     const render = vi
       .spyOn(CustomEditor.prototype, "render")
@@ -500,10 +498,10 @@ describe("ModalEditor modal behavior", () => {
     Reflect.set(editor, "lastBottomBorder", "bottom");
 
     const lines = editor.render(60);
-    expect(lines.length).toBe(3);
     expect(lines[0]).toBe("top");
-    expect(lines[2]).toBe("bottom");
-    expect(onAutocompleteRows).toHaveBeenCalledWith(["choice-1", "choice-2"]);
+    expect(lines.join("\n")).toContain("choice-1");
+    expect(lines.join("\n")).toContain("choice-2");
+    expect(lines.at(-1)).toBe("bottom");
     render.mockRestore();
   });
 

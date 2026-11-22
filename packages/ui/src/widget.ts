@@ -304,55 +304,6 @@ export function toggleWidgets(target?: string | readonly string[]): boolean {
   return collapse;
 }
 
-export const AUTOCOMPLETE_WIDGET_KEY = "hollowheap.autocomplete";
-
-let autocompleteMount:
-  | {
-      content: string[] | WidgetFactory | undefined;
-      placement?: WidgetPlacement;
-    }
-  | undefined;
-let autocompleteKeyIndex = 0;
-let activeAutocompleteKey: string | undefined;
-let autocompleteSignature: string | undefined;
-
-function mountAutocomplete(
-  ui: WidgetMountContext["ui"],
-  content: string[] | WidgetFactory,
-  placement?: WidgetPlacement,
-): void {
-  const signature = `${listWidgetProviders().join(",")}|${placement ?? ""}`;
-  if (signature !== autocompleteSignature) {
-    const key = `${AUTOCOMPLETE_WIDGET_KEY}-${autocompleteKeyIndex++ % 2}`;
-    if (activeAutocompleteKey !== undefined && activeAutocompleteKey !== key) {
-      ui.setWidget(activeAutocompleteKey, []);
-    }
-    activeAutocompleteKey = key;
-    autocompleteSignature = signature;
-  }
-  if (activeAutocompleteKey === undefined) return;
-  if (placement === undefined) ui.setWidget(activeAutocompleteKey, content);
-  else ui.setWidget(activeAutocompleteKey, content, { placement });
-}
-
-export function setAutocompleteWidget(
-  ui: WidgetMountContext["ui"],
-  content: string[] | WidgetFactory | undefined,
-  placement?: WidgetPlacement,
-): void {
-  if (content === undefined) {
-    if (activeAutocompleteKey !== undefined) {
-      ui.setWidget(activeAutocompleteKey, []);
-      activeAutocompleteKey = undefined;
-    }
-    autocompleteSignature = undefined;
-    autocompleteMount = undefined;
-    return;
-  }
-  autocompleteMount = { content, placement };
-  mountAutocomplete(ui, content, placement);
-}
-
 function setHostWidget(
   ui: WidgetMountContext["ui"],
   name: string,
@@ -361,13 +312,6 @@ function setHostWidget(
 ): void {
   if (placement === undefined) ui.setWidget(name, content);
   else ui.setWidget(name, content, { placement });
-  if (autocompleteMount !== undefined && name !== activeAutocompleteKey) {
-    mountAutocomplete(
-      ui,
-      autocompleteMount.content as string[] | WidgetFactory,
-      autocompleteMount.placement,
-    );
-  }
 }
 
 function clickWidget(
