@@ -482,7 +482,7 @@ describe("ModalEditor modal behavior", () => {
     expect(editor.getMode()).toBe("normal");
   });
 
-  it("renders autocomplete rows inside the prompt panel", () => {
+  it("leaves host autocomplete rows in host order", () => {
     const { tui, theme, keybindings } = createMockEditor();
     const editor = new ModalEditor(
       tui as never,
@@ -501,7 +501,8 @@ describe("ModalEditor modal behavior", () => {
     expect(lines[0]).toBe("top");
     expect(lines.join("\n")).toContain("choice-1");
     expect(lines.join("\n")).toContain("choice-2");
-    expect(lines.at(-1)).toBe("bottom");
+    expect(lines[2]).toBe("bottom");
+    expect(lines.at(-1)).toBe("choice-2");
     render.mockRestore();
   });
 

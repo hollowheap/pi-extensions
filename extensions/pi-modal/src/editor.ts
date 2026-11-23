@@ -896,23 +896,12 @@ export class ModalEditor extends CustomEditor {
     return line;
   }
 
-  private inlineAutocomplete(lines: string[]): string[] {
-    const bottomIndex = this.lastBottomBorder
-      ? lines.lastIndexOf(this.lastBottomBorder)
-      : -1;
-    if (bottomIndex < 0 || bottomIndex + 1 >= lines.length) return lines;
-    const rows = lines.slice(bottomIndex + 1);
-    lines.splice(bottomIndex, 0, ...rows);
-    lines.length -= rows.length;
-    return lines;
-  }
-
   override render(width: number): string[] {
     const snapshot = this.getRenderSnapshot(width);
     if (!snapshot.panelEnabled) {
       this.renderSnapshot = snapshot;
       try {
-        return this.inlineAutocomplete(super.render(width));
+        return super.render(width);
       } finally {
         this.renderSnapshot = undefined;
       }
@@ -951,7 +940,6 @@ export class ModalEditor extends CustomEditor {
     }
     if (lines.length === 0) return lines;
 
-    lines = this.inlineAutocomplete(lines);
     const bottomIndex = this.lastBottomBorder
       ? lines.lastIndexOf(this.lastBottomBorder)
       : -1;
