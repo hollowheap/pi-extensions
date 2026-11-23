@@ -64,7 +64,7 @@ describe("question navigation", () => {
     await vi.waitFor(() => expect(flow.components.length).toBeGreaterThan(0));
     expect(flow.custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: true }),
+      expect.objectContaining({ overlay: false }),
     );
     const dialog = flow.components[0];
     if (dialog === undefined) throw new Error("missing dialog component");

@@ -247,16 +247,10 @@ function prompt<T>(
       };
     },
     {
-      overlay: options?.overlay ?? true,
-      ...(options?.overlay === false
-        ? {}
-        : {
-            overlayOptions: {
-              width: "70%",
-              maxHeight: "75%",
-              margin: 1,
-            },
-          }),
+      overlay: options?.overlay ?? false,
+      ...(options?.overlay === true
+        ? { overlayOptions: { width: "70%", maxHeight: "75%", margin: 1 } }
+        : {}),
     },
   );
 }

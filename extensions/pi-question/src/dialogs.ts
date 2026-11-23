@@ -134,12 +134,7 @@ async function showLockedDialog<T>(
             return wrapper;
           },
           {
-            overlay: true,
-            overlayOptions: {
-              width: "70%",
-              maxHeight: "75%",
-              margin: 1,
-            },
+            overlay: false,
             onHandle: (handle) => {
               overlayHandle = handle;
             },

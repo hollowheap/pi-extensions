@@ -66,7 +66,7 @@ describe("question prompt surface", () => {
     );
     expect(c.ui.custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: true }),
+      expect.objectContaining({ overlay: false }),
     );
   });
 
@@ -158,7 +158,7 @@ describe("question prompt surface", () => {
     );
     expect(custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: true }),
+      expect.objectContaining({ overlay: false }),
     );
     custom.mockClear();
     await askQuestion(
@@ -167,7 +167,7 @@ describe("question prompt surface", () => {
     );
     expect(custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: true }),
+      expect.objectContaining({ overlay: false }),
     );
   });
 

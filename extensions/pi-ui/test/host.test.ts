@@ -98,7 +98,7 @@ describe("shared prompt overlays", () => {
     const choice = selectDialog(ctx as never, "Select", ["One", "Two"]);
     expect(ui.custom).toHaveBeenCalledWith(
       expect.any(Function),
-      expect.objectContaining({ overlay: true }),
+      expect.objectContaining({ overlay: false }),
     );
     const prompt = component()?.render(48);
     const panel = boxFrame(["A panel"], 48, theme as never, "Panel");
