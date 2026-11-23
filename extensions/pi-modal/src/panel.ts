@@ -37,7 +37,7 @@ import {
   createWorkingIndicator,
 } from "@hollowheap/ui/spinner";
 import { getActiveTuiConfig } from "@hollowheap/ui/state";
-import { safeBold, safeFg } from "@hollowheap/ui/theme";
+import { safeFg } from "@hollowheap/ui/theme";
 export {
   type PanelFrameLayout,
   type PanelStateToken,
@@ -511,10 +511,6 @@ export function wrapToolRenderer(
             }
           }
 
-          headerParts.push(
-            safeBold(theme, safeFg(theme, "toolTitle", verbLabel, ui.colored)),
-          );
-
           const summary = formatToolCallSummary(toolName, args);
           if (summary !== undefined) {
             headerParts.push(
@@ -568,6 +564,7 @@ export function wrapToolRenderer(
               includeBottom: !hasResultLines,
               colored: ui.colored,
               surface: cfg.surface,
+              topLeftLabel: verbLabel,
             },
           );
           panelState.cachedCallRender = { key: cacheKey, lines: framed };

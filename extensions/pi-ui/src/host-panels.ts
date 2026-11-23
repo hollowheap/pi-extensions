@@ -173,6 +173,7 @@ export function renderPanelOrFallback(
   stateToken: PanelStateToken = "toolSuccessBg",
   extraOptions?: {
     firstLinePrefix?: string;
+    topLeftLabel?: string;
     bottomRightLabel?: string;
   },
 ): string[] {
@@ -425,7 +426,6 @@ function installSummaryPanel<
             ),
         })
       : undefined;
-    const header = new Text("", 0, 0);
     const collapsedLine = new Text("", 0, 0);
 
     this.clear();
@@ -441,10 +441,7 @@ function installSummaryPanel<
             const theme = patch.getTheme();
             const pad = hostStyle.getOutputPad(this);
             const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
-            header.setText(
-              formatBoldCustomMessageLabel(theme, spec.badge, config.colored),
-            );
-            const lines = [...header.render(innerWidth), ""];
+            const lines: string[] = [];
             if (body) {
               lines.push(...body.render(innerWidth));
             } else {
@@ -453,7 +450,9 @@ function installSummaryPanel<
               );
               lines.push(...collapsedLine.render(innerWidth));
             }
-            return renderPanelOrFallback(lines, width, pad, theme);
+            return renderPanelOrFallback(lines, width, pad, theme, undefined, {
+              topLeftLabel: spec.badge,
+            });
           },
         },
         (event) => {
@@ -582,7 +581,6 @@ export function installCustomMessagePanel(
               .join("\n")
           : "";
 
-    const header = new Text("", 0, 0);
     const body = new Markdown(text, 0, 0, markdownTheme, {
       color: (val) =>
         safeFg(
@@ -595,7 +593,6 @@ export function installCustomMessagePanel(
 
     const panelChild: Component = {
       invalidate: () => {
-        header.invalidate();
         body.invalidate();
       },
       render: (width: number) => {
@@ -612,14 +609,10 @@ export function installCustomMessagePanel(
         const pad = typeof currentPad === "number" ? currentPad : 1;
         const innerWidth = getPanelOrFallbackInnerWidth(width, pad);
         const labelText = `[${message.customType ?? "custom"}]`;
-        header.setText(
-          formatBoldCustomMessageLabel(theme, labelText, liveConfig.colored),
-        );
-        const lines = [
-          ...header.render(innerWidth),
-          ...(text ? ["", ...body.render(innerWidth)] : []),
-        ];
-        return renderPanelOrFallback(lines, width, pad, theme);
+        const lines = text ? ["", ...body.render(innerWidth)] : [];
+        return renderPanelOrFallback(lines, width, pad, theme, undefined, {
+          topLeftLabel: labelText,
+        });
       },
     };
 

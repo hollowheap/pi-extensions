@@ -413,7 +413,7 @@ export function framePanelLines(
         Math.max(0, safeWidth - 3),
         "",
       );
-      const fill = Math.max(0, safeWidth - 3 - visibleWidth(label));
+      const fill = Math.max(0, safeWidth - 2 - visibleWidth(label));
       out.push(
         borderPaint(chars.topLeft) +
           label +

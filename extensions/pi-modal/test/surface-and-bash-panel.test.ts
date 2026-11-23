@@ -615,8 +615,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       1,
     );
     const branchCollapsed = branch.render(44).map(stripTerminalSequences);
-    expect(branchCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(branchCollapsed[1]?.startsWith("│ [branch]")).toBe(true);
+    expect(branchCollapsed[0]?.startsWith("┌ [branch] ")).toBe(true);
+    expect(branchCollapsed[0]?.includes("┐")).toBe(true);
     expect(branchCollapsed.some((l) => l.includes("│ Branch summary ("))).toBe(
       true,
     );
@@ -636,8 +636,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     const compactionCollapsed = compaction
       .render(44)
       .map(stripTerminalSequences);
-    expect(compactionCollapsed[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(compactionCollapsed[1]?.startsWith("│ [compaction]")).toBe(true);
+    expect(compactionCollapsed[0]?.startsWith("┌ [compaction] ")).toBe(true);
+    expect(compactionCollapsed[0]?.includes("┐")).toBe(true);
     expect(compactionCollapsed.some((l) => l.includes("Compacted from"))).toBe(
       true,
     );
@@ -666,8 +666,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       .render(44)
       .map(stripTerminalSequences)
       .filter((l) => l.trim().length > 0);
-    expect(customLines[0]).toBe(`┌${"─".repeat(42)}┐`);
-    expect(customLines[1]?.startsWith("│ [notice]")).toBe(true);
+    expect(customLines[0]?.startsWith("┌ [notice] ")).toBe(true);
+    expect(customLines[0]?.includes("┐")).toBe(true);
     expect(
       customLines.some((l) => l.startsWith("│ Custom extension body")),
     ).toBe(true);

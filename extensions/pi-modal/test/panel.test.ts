@@ -191,7 +191,7 @@ describe("wrapToolRenderer", () => {
     expect(frame0[0]?.startsWith("╔")).toBe(true);
     expect(frame0[0]?.endsWith("╗")).toBe(true);
     expect(frame0[1]).toContain("▎");
-    expect(frame0[1]).toContain("Sculpting...");
+    expect(frame0[0]).toContain("Sculpting...");
     expect(frame0[1]).toContain("src/app.ts");
     expect(frame0.at(-1)?.startsWith("╚")).toBe(true);
     for (const line of frame0) {
@@ -382,7 +382,7 @@ describe("wrapToolRenderer", () => {
     ];
 
     expect(lines[0]?.startsWith("╭")).toBe(true);
-    expect(lines[1]).toContain("Ran");
+    expect(lines[0]).toContain("Ran");
     expect(lines[1]).toContain("✓");
     expect(lines[1]).toContain("1.4s");
     expect(lines[2]).toContain("ok");
@@ -420,7 +420,7 @@ describe("wrapToolRenderer", () => {
     });
     const lines = comp?.render(50) ?? [];
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toContain("Read");
+    expect(lines[0]).toContain("Read");
     expect(lines[1]).toContain("✗");
     expect(lines[1]).toContain("25ms");
     expect(lines[1]).not.toContain("╭");
@@ -564,7 +564,7 @@ describe("wrapToolRenderer", () => {
     expect(combined.filter((l) => l.startsWith("╰"))).toHaveLength(1);
     const plain = combined.map((l) => stripTerminalSequences(l));
     // Header uses verb badge, redundant inner "codemode" line is omitted
-    expect(plain[1]).toContain("Executed");
+    expect(plain[0]).toContain("Executed");
     expect(plain[1]).toContain("✓");
     expect(plain[1]).toContain("120ms");
     expect(plain.some((l) => /^│▎\s*codemode\s*│$/.test(l))).toBe(false);
@@ -884,7 +884,7 @@ describe("wrapToolRenderer", () => {
     currentCfg = makeConfig({ borderStyle: "none", verbPack: "playful" });
     const out2 = call1?.render(50) ?? [];
     expect(out2[0]?.startsWith("╭")).toBe(false);
-    expect(stripTerminalSequences(out2[1] ?? "")).toContain("Conjuring...");
+    expect(stripTerminalSequences(out2[0] ?? "")).toContain("Conjuring...");
   });
 });
 
