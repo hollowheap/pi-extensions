@@ -132,7 +132,14 @@ export default function (pi: ExtensionAPI): void {
   let activeCtx: ExtensionContext | undefined;
   let releasePadding: (() => void) | undefined;
   let activeEditor: ModalEditor | undefined;
-  const getTheme = () => activeCtx && hostUi(activeCtx)?.theme;
+  const getTheme = () => {
+    if (activeCtx === undefined) return undefined;
+    try {
+      return hostUi(activeCtx)?.theme;
+    } catch {
+      return undefined;
+    }
+  };
   installSkillPanel(getTheme);
   installBashPanel(getTheme);
   installBranchSummaryPanel(getTheme);
@@ -238,18 +245,14 @@ export default function (pi: ExtensionAPI): void {
             },
             { speed: cfg.shimmerSpeed },
           );
-          return shimmerAnimator.frame(
-            stripped,
-            hostUi(activeCtx)?.theme,
-            true,
-          );
+          return shimmerAnimator.frame(stripped, getTheme(), true);
         }
         shimmerAnimator?.dispose();
         shimmerAnimator = undefined;
         return renderThinkingShimmerFrame(
           stripped,
           Math.floor(Date.now() / getShimmerIntervalMs(cfg.shimmerSpeed)),
-          hostUi(activeCtx)?.theme,
+          getTheme(),
           true,
         );
       }
