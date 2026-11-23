@@ -392,7 +392,7 @@ describe("installBashPanel", () => {
       );
       expect(cmdLine).toBeDefined();
       expect(loaderLine).toBeDefined();
-      expect(cmdLine?.startsWith("❯ Ran $ sleep 1")).toBe(true);
+      expect(cmdLine?.startsWith("❯ $ sleep 1")).toBe(true);
       expect(loaderLine?.startsWith("│▎ ")).toBe(true);
       expect(loaderLine?.startsWith("│▎  ")).toBe(false);
 
@@ -436,7 +436,7 @@ describe("installBashPanel", () => {
       line.includes("$ seq 1 10"),
     );
     const outLine = collapsedLines.find((line) => line.includes("line-10"));
-    expect(seqCmdLine?.startsWith("❯ Ran $ seq 1 10")).toBe(true);
+    expect(seqCmdLine?.startsWith("❯ $ seq 1 10")).toBe(true);
     expect(outLine?.startsWith("│▎ line-10")).toBe(true);
     expect(outLine?.startsWith("│▎  line-10")).toBe(false);
   });

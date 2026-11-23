@@ -964,7 +964,8 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
                 includeBottom: true,
                 colored: liveConfig.colored,
                 surface: livePanel.surface,
-                firstLinePrefix: `${sharedGetPromptChar()} ${resolveToolVerb("bash", livePanel).settled} `,
+                firstLinePrefix: `${sharedGetPromptChar()} `,
+                topLeftLabel: resolveToolVerb("bash", livePanel).settled,
               });
             },
           },
