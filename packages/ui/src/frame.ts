@@ -313,6 +313,7 @@ export function framePanelLines(
     surface?: OverlaySurfaceMode;
     borderToken?: "border" | "borderAccent";
     firstLinePrefix?: string;
+    topLeftLabel?: string;
     bottomRightLabel?: string;
   },
 ): string[] {
@@ -400,11 +401,25 @@ export function framePanelLines(
   const out: string[] = [];
 
   if (options.includeTop) {
-    out.push(
-      borderPaint(
-        `${chars.topLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.topRight}`,
-      ),
-    );
+    if (options.topLeftLabel === undefined) {
+      out.push(
+        borderPaint(
+          `${chars.topLeft}${chars.horizontal.repeat(safeWidth - 2)}${chars.topRight}`,
+        ),
+      );
+    } else {
+      const label = truncateToWidth(
+        labelPaint(` ${options.topLeftLabel} `),
+        Math.max(0, safeWidth - 3),
+        "",
+      );
+      const fill = Math.max(0, safeWidth - 3 - visibleWidth(label));
+      out.push(
+        borderPaint(chars.topLeft) +
+          label +
+          borderPaint(`${chars.horizontal.repeat(fill)}${chars.topRight}`),
+      );
+    }
   }
 
   const leftEdge = borderPaint(chars.vertical) + stripe + inset;

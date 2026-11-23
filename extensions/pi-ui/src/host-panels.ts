@@ -768,7 +768,8 @@ export function installUserMessagePanel(
           includeBottom: true,
           colored: liveConfig.colored,
           surface: livePanel.surface,
-          firstLinePrefix: `${promptChar} ${verb.settled} `,
+          firstLinePrefix: `${promptChar} `,
+          topLeftLabel: verb.settled,
         });
       },
     });

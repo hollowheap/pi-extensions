@@ -531,8 +531,9 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       true,
     );
     const plainLines = rawLines.map(stripTerminalSequences);
-    expect(plainLines[0]).toBe(`╭${"─".repeat(32)}╮`);
-    expect(plainLines[1]?.startsWith("❯ Prompted Hello world")).toBe(true);
+    expect(plainLines[0]?.startsWith("╭ Prompted ")).toBe(true);
+    expect(plainLines[0]?.endsWith("╮")).toBe(true);
+    expect(plainLines[1]?.startsWith("❯ Hello world")).toBe(true);
     expect(plainLines[1]?.endsWith(" │")).toBe(true);
     expect(plainLines[2]?.startsWith("│ Second line")).toBe(true);
     expect(plainLines.at(-1)?.endsWith("─╯")).toBe(true);
@@ -552,8 +553,8 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     markSteeredUserMessage("Steer me now");
     const steeredMsg = new UserMessageComponent("Steer me now", undefined, 1);
     const steeredPlain = steeredMsg.render(34).map(stripTerminalSequences);
-    expect(steeredPlain[0]?.startsWith("┌")).toBe(true);
-    expect(steeredPlain[1]?.startsWith("» Nudged Steer me now")).toBe(true);
+    expect(steeredPlain[0]?.startsWith("┌ Nudged ")).toBe(true);
+    expect(steeredPlain[1]?.startsWith("» Steer me now")).toBe(true);
     expect(steeredPlain.at(-1)?.endsWith("─┘")).toBe(true);
 
     // Terse verb pack for both prompt and steered property
@@ -568,9 +569,10 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
       },
     });
     const tersePromptPlain = userMsg.render(34).map(stripTerminalSequences);
-    expect(tersePromptPlain[1]?.startsWith("» prompt Hello world")).toBe(true);
+    expect(tersePromptPlain[0]?.startsWith("╭ prompt ")).toBe(true);
+    expect(tersePromptPlain[1]?.startsWith("» Hello world")).toBe(true);
     const terseSteerPlain = steeredMsg.render(34).map(stripTerminalSequences);
-    expect(terseSteerPlain[1]?.startsWith("» steer Steer me now")).toBe(true);
+    expect(terseSteerPlain[1]?.startsWith("» Steer me now")).toBe(true);
 
     // Restores original host UserMessageComponent rendering when !panel.enabled
     setActiveTuiConfig({
