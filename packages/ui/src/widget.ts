@@ -336,11 +336,12 @@ function createWidget(
         const lines = provider.render(width, theme);
         if (lines === undefined || lines.length === 0) return [];
         const hint = provider.hint ?? widgetToggleHint(provider.name);
+        const [summary, ...body] = lines;
         const framed = boxFrame(
-          lines,
+          body,
           width,
           theme,
-          `${provider.label} · ${hint} to hide`,
+          `${summary} · ${hint} to hide`,
           { paddingX: 1, marginX: 0 },
         );
         widgetState().lineCounts.set(provider.name, framed.length);

@@ -101,7 +101,7 @@ describe("widget mounting", () => {
     const rows = (
       factory as () => { render(width: number): string[] }
     )().render(20);
-    expect(rows[0]).toContain("Mount");
+    expect(rows[0]).toContain("one");
     expect(rows.at(-1)).toContain("╯");
     expect(getVisibleWidgetHeight()).toBe(rows.length);
     setWidgetVisible("tui-test-mount", false);
