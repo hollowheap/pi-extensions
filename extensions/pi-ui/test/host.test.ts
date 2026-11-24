@@ -85,7 +85,7 @@ describe("overlay helpers", () => {
       const innerWidth = getFrameInnerWidth(
         30,
         undefined,
-        2,
+        1,
         undefined,
         true,
         0,
@@ -93,7 +93,7 @@ describe("overlay helpers", () => {
       expect(content).toHaveBeenCalledWith(innerWidth);
       expect(framed).toEqual(
         boxFrame([`inner:${innerWidth}`], 30, theme as never, "Overlay", {
-          paddingX: 2,
+          paddingX: 1,
           marginX: 0,
         }),
       );

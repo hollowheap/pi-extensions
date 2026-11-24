@@ -97,9 +97,9 @@ describe("boxFrame", () => {
     try {
       expect(getFrameInnerWidth(12)).toBe(8);
       expect(boxFrame(["row"], 12, mockTheme)).toEqual([
-        "[bg:customMessageBg] ╭────────╮ [/bg]",
-        "[bg:customMessageBg] │row     │ [/bg]",
-        "[bg:customMessageBg] ╰────────╯ [/bg]",
+        "[bg:customMessageBg]╭──────────╮[/bg]",
+        "[bg:customMessageBg]│ row      │[/bg]",
+        "[bg:customMessageBg]╰──────────╯[/bg]",
       ]);
     } finally {
       restore();
@@ -124,7 +124,7 @@ it("uses Pi's output padding for the box and its content width", () => {
   try {
     expect(boxFrame(["word"], 12, mockTheme)[1]).toBe("│word      │");
     padding = 1;
-    expect(boxFrame(["word"], 12, mockTheme)[1]).toBe(" │word    │ ");
+    expect(boxFrame(["word"], 12, mockTheme)[1]).toBe("│ word     │");
     expect(
       boxFrame(["a"], 4, mockTheme).every((line) => visibleWidth(line) === 4),
     ).toBe(true);

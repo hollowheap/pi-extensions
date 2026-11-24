@@ -34,12 +34,16 @@ function isSurfaceActive(
   return colored && overlaySurface !== "transparent";
 }
 
+function hostPadding(): number {
+  return Math.max(0, getHostOutputPadding() ?? 0);
+}
+
 function framePadding(paddingX?: number): number {
-  return Math.max(0, paddingX ?? 0);
+  return Math.max(0, paddingX ?? 0) + hostPadding();
 }
 
 function frameMargin(marginX?: number): number {
-  return Math.max(0, marginX ?? getHostOutputPadding() ?? 0);
+  return Math.max(0, marginX ?? 0);
 }
 
 function computeInnerWidth(
@@ -48,6 +52,11 @@ function computeInnerWidth(
   marginX: number,
 ): number {
   return Math.max(1, safeWidth - 2 - 2 * paddingX - 2 * marginX);
+}
+
+function effectivePadding(safeWidth: number, paddingX: number): number {
+  const maxPadding = Math.floor(Math.max(0, safeWidth - 3) / 2);
+  return Math.min(paddingX, maxPadding);
 }
 
 /** Return usable content width inside the selected border and padding. */
@@ -65,7 +74,7 @@ export function getFrameInnerWidth(
   const safeWidth = Math.max(4, width);
   return computeInnerWidth(
     safeWidth,
-    framePadding(paddingX),
+    effectivePadding(safeWidth, framePadding(paddingX)),
     frameMargin(marginX),
   );
 }
@@ -87,12 +96,15 @@ export function boxFrame(
   const surfaceActive = isSurfaceActive(overlaySurface, colored);
   const borderStyle =
     options?.borderStyle ?? panel.borderStyle ?? active.borderStyle;
-  const paddingX = framePadding(options?.paddingX);
   const marginX = Math.min(
     frameMargin(options?.marginX),
     Math.floor(Math.max(0, safeWidth - 4) / 2),
   );
   const frameWidth = Math.max(4, safeWidth - 2 * marginX);
+  const paddingX = effectivePadding(
+    frameWidth,
+    framePadding(options?.paddingX),
+  );
   const innerWidth = computeInnerWidth(frameWidth, paddingX, 0);
   const inset = " ".repeat(paddingX);
   const margin = " ".repeat(marginX);

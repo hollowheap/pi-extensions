@@ -22,7 +22,6 @@ import {
   boxFrame,
   getFrameInnerWidth,
 } from "@hollowheap/ui/frame";
-import { getHostOutputPadding } from "@hollowheap/ui/state";
 import { safeFg } from "@hollowheap/ui/theme";
 import { selectListTheme } from "./picker.js";
 
@@ -73,9 +72,8 @@ export function settledGuard(): {
 }
 
 function resolveOverlayFrameOptions(options?: FrameOptions): FrameOptions {
-  const hostPadding = getHostOutputPadding() ?? 0;
   return {
-    paddingX: 1 + hostPadding,
+    paddingX: 1,
     marginX: 0,
     ...options,
   };
