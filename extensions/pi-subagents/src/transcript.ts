@@ -3,30 +3,40 @@ import { basename, resolve, sep } from "node:path";
 import {
   AssistantMessageComponent,
   type ExtensionContext,
-  type SessionEntry,
+  type FileEntry,
+  type Theme,
   UserMessageComponent,
   parseSessionEntries,
 } from "@earendil-works/pi-coding-agent";
-import { Text, stripTerminalSequences } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  Key,
+  ScrollView,
+  Text,
+  matchesKey,
+  truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { hostUi, showDialog } from "@hollowheap/pi-ui/host";
 import { pagerSessionDirection } from "@hollowheap/pi-ui/pager";
 import { handleViewportKey } from "@hollowheap/pi-ui/viewport";
-import { getStatuslineHeight } from "@hollowheap/ui/state";
+import { getSharedHeader } from "@hollowheap/ui/header";
 import { escapeMarkdownInline } from "@hollowheap/ui/thinking";
-import { getVisibleWidgetHeight } from "@hollowheap/ui/widget";
-import { type SubagentState, subagentDisplayName } from "./state.js";
+import type { SubagentState } from "./state.js";
 
-type MessageEntry = Extract<SessionEntry, { type: "message" }>;
+type MessageEntry = Extract<FileEntry, { type: "message" }>;
+type BranchEntry = Exclude<FileEntry, { type: "session" }>;
 
-export function formatChildTranscript(jsonl: string, leafId?: string): string {
-  const entries = parseSessionEntries(jsonl);
-  if (entries[0]?.type !== "session") return "";
+function activeBranch(
+  entries: readonly FileEntry[],
+  leafId?: string,
+): BranchEntry[] {
+  if (entries[0]?.type !== "session") return [];
   const records = entries.filter(
-    (entry): entry is SessionEntry => entry.type !== "session",
+    (entry): entry is BranchEntry => entry.type !== "session",
   );
   const byId = new Map(records.map((entry) => [entry.id, entry]));
-  const branch: SessionEntry[] = [];
+  const branch: BranchEntry[] = [];
   let cursor =
     leafId === undefined
       ? records.at(-1)
@@ -35,8 +45,14 @@ export function formatChildTranscript(jsonl: string, leafId?: string): string {
     branch.push(cursor);
     cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId);
   }
+  return branch.reverse();
+}
+
+export function formatChildTranscript(jsonl: string, leafId?: string): string {
+  const entries = parseSessionEntries(jsonl);
+  const branch = activeBranch(entries, leafId);
   const rendered: string[] = [];
-  for (const entry of branch.reverse()) {
+  for (const entry of branch) {
     if (entry.type !== "message") continue;
     const message = entry.message;
     if (
@@ -142,50 +158,80 @@ function messageText(message: ChatMessage): string {
     .join("\n\n");
 }
 
-function transcriptComponents(
+function transcriptDocument(
   ctx: ExtensionContext,
   agentDir: string,
   state: SubagentState,
-): Array<{ render(width: number): string[] }> {
+  theme: Theme,
+  fallback: string,
+): Component {
+  const fallbackComponent: Component = {
+    render: (width) =>
+      fallback
+        .split("\n")
+        .flatMap((line) => new Text(line, 0, 0).render(Math.max(1, width))),
+    invalidate() {},
+  };
   const file = sessionFile(agentDir, state);
-  if (file === undefined) return [];
-  try {
-    const theme = hostUi(ctx)?.theme;
-    const entries = parseSessionEntries(readFileSync(file, "utf8"));
-    return entries
-      .filter((entry): entry is MessageEntry => entry.type === "message")
-      .filter(
-        (entry) =>
-          entry.message.role === "user" ||
-          entry.message.role === "assistant" ||
-          entry.message.role === "toolResult",
-      )
-      .map((entry) => {
-        const message = entry.message as unknown as ChatMessage;
-        if (message.role === "user") {
-          return new UserMessageComponent(
-            sanitizeTerminalText(messageText(message)),
-            theme as never,
+  if (file === undefined) return fallbackComponent;
+  let signature: string | undefined;
+  let components: Component[] = [];
+  const refresh = (): boolean => {
+    try {
+      const stat = statSync(file);
+      if (!stat.isFile()) return false;
+      const nextSignature = `${stat.mtimeMs}:${stat.size}`;
+      if (nextSignature === signature) return components.length > 0;
+      const hostTheme = hostUi(ctx)?.theme ?? theme;
+      const entries = parseSessionEntries(readFileSync(file, "utf8"));
+      components = activeBranch(entries)
+        .filter((entry): entry is MessageEntry => entry.type === "message")
+        .filter(
+          (entry) =>
+            entry.message.role === "user" ||
+            entry.message.role === "assistant" ||
+            entry.message.role === "toolResult",
+        )
+        .map((entry) => {
+          const message = entry.message as unknown as ChatMessage;
+          if (message.role === "user") {
+            return new UserMessageComponent(
+              sanitizeTerminalText(messageText(message)),
+              hostTheme as never,
+            );
+          }
+          if (message.role === "assistant") {
+            return new AssistantMessageComponent(
+              message as never,
+              false,
+              hostTheme as never,
+            );
+          }
+          return new Text(
+            sanitizeTerminalText(
+              `${message.toolName ?? "Tool"}: ${messageText(message)}`,
+            ),
+            0,
+            0,
           );
-        }
-        if (message.role === "assistant") {
-          return new AssistantMessageComponent(
-            message as never,
-            false,
-            theme as never,
-          );
-        }
-        return new Text(
-          sanitizeTerminalText(
-            `${message.toolName ?? "Tool"}: ${messageText(message)}`,
-          ),
-          0,
-          0,
-        );
-      });
-  } catch {
-    return [];
-  }
+        });
+      signature = nextSignature;
+      return components.length > 0;
+    } catch {
+      return false;
+    }
+  };
+  return {
+    render: (width) => {
+      if (!refresh()) return fallbackComponent.render(width);
+      return components.flatMap((component) =>
+        component.render(Math.max(1, width)),
+      );
+    },
+    invalidate() {
+      for (const component of components) component.invalidate?.();
+    },
+  };
 }
 
 export async function showSubagentTranscript(
@@ -198,76 +244,102 @@ export async function showSubagentTranscript(
   let index = states.findIndex(({ id }) => id === initialId);
   if (index < 0) return;
   const cache = new Map<string, TranscriptCacheEntry>();
-  const read = () => {
+  const fallback = () => {
     const state = states[index];
-    const hostLines = transcriptComponents(ctx, agentDir, state).flatMap(
-      (component) => component.render(100).map(stripTerminalSequences),
+    return (
+      readSessionTranscript(agentDir, state, cache) ||
+      sanitizeTerminalText(readLog(state.id)) ||
+      "(Waiting for transcript)"
     );
-    return {
-      title: `Subagent ${sanitizeTerminalText(subagentDisplayName(state, states))} · Read-only`,
-      markdown:
-        hostLines.join("\n") ||
-        readSessionTranscript(agentDir, state, cache) ||
-        sanitizeTerminalText(readLog(state.id)) ||
-        "(Waiting for transcript)",
-    };
   };
   let terminalRows = 24;
-  const overlayOptions = () => {
-    const available = Math.max(
-      1,
-      terminalRows - getVisibleWidgetHeight() - getStatuslineHeight(),
-    );
-    const contentRows = read().markdown.split("\n").length;
-    return {
-      width: "100%" as const,
-      row: 0,
-      col: 0,
-      margin: 0,
-      maxHeight: Math.min(available, Math.max(1, contentRows)),
-    };
-  };
+  const overlayOptions = () => ({
+    width: "100%" as const,
+    row: 0,
+    col: 0,
+    margin: 0,
+    maxHeight: "100%" as const,
+  });
   await showDialog<void>(
     ctx,
-    (tui, _theme, _keys, done) => {
+    (tui, theme, _keys, done) => {
       terminalRows = tui.terminal.rows;
-      let offset = Number.MAX_SAFE_INTEGER;
-      let lastLineCount = 0;
       let settled = false;
+      let contentHeight = 0;
       const finish = () => {
         if (settled) return;
         settled = true;
         done();
       };
-      const pageSize = () => Math.max(1, overlayOptions().maxHeight - 1);
-      const maxOffset = () => Math.max(0, lastLineCount - pageSize());
+      const pageSize = () => Math.max(1, terminalRows);
+      let bodyRows = 1;
+      const maxOffset = () => Math.max(0, contentHeight - bodyRows);
+      const createViewer = () =>
+        new ScrollView(
+          transcriptDocument(ctx, agentDir, states[index], theme, fallback()),
+          {
+            follow: "end",
+            primary: true,
+            overscroll: "chain",
+            scrollbar: "hidden",
+          },
+        );
+      let viewer = createViewer();
       return {
         capturesViewportInput: true,
-        invalidate: () => {},
+        invalidate: () => {
+          viewer.invalidate?.();
+          tui.requestRender();
+        },
         render(width: number): string[] {
-          const lines = read()
-            .markdown.split("\n")
-            .flatMap((line) => new Text(line, 0, 0).render(Math.max(1, width)));
-          lastLineCount = lines.length;
-          offset = Math.min(Math.max(0, offset), maxOffset());
-          return lines.slice(offset, offset + pageSize());
+          const headerLines = (
+            getSharedHeader()?.render(width, theme) ?? []
+          ).slice(0, Math.max(0, pageSize() - 1));
+          bodyRows = Math.max(1, pageSize() - headerLines.length);
+          const lines = viewer.render(width);
+          contentHeight = lines.length;
+          viewer.updateLayout(contentHeight, bodyRows, () =>
+            tui.requestRender(),
+          );
+          const visible = lines
+            .slice(viewer.scrollTop, viewer.scrollTop + bodyRows)
+            .map((line) => truncateToWidth(line, Math.max(1, width), "", true));
+          while (visible.length < bodyRows) visible.push("");
+          return [...headerLines, ...visible];
         },
         handleInput(data: string): void {
           const direction = pagerSessionDirection(data);
+          if (
+            direction !== undefined &&
+            (matchesKey(data, Key.alt("left")) ||
+              matchesKey(data, Key.alt("right")))
+          ) {
+            const next = index + direction;
+            if (next < 0 || next >= states.length) {
+              finish();
+              return;
+            }
+            index = next;
+            viewer = createViewer();
+            tui.requestRender();
+            return;
+          }
           if (direction !== undefined && states.length > 1) {
-            index = (index + direction + states.length) % states.length;
-            offset = Number.MAX_SAFE_INTEGER;
+            const next = (index + direction + states.length) % states.length;
+            if (next === index) return;
+            index = next;
+            viewer = createViewer();
             tui.requestRender();
             return;
           }
           handleViewportKey(data, {
             onClose: finish,
             onScrollBy: (delta) => {
-              offset += delta;
+              viewer.scrollBy(delta);
               tui.requestRender();
             },
             onScrollTo: (next) => {
-              offset = next;
+              viewer.scrollTo(next, { disableFollow: true });
               tui.requestRender();
             },
             pageSize,

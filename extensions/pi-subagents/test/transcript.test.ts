@@ -1,6 +1,11 @@
-import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
-import { getStatuslineHeight, setStatuslineHeight } from "@hollowheap/ui/state";
-import { getVisibleWidgetHeight } from "@hollowheap/ui/widget";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  CURRENT_SESSION_VERSION,
+  initTheme,
+} from "@earendil-works/pi-coding-agent";
+import { registerSharedHeader } from "@hollowheap/ui/header";
 import { describe, expect, it, vi } from "vitest";
 import {
   formatChildTranscript,
@@ -96,18 +101,15 @@ describe("read-only subagent transcript", () => {
         width: string;
         row: number;
         col: number;
-        maxHeight: number;
+        maxHeight: string;
       };
     };
     expect(options.overlay).toBe(true);
-    setStatuslineHeight(2);
-    expect(getStatuslineHeight()).toBe(2);
-    expect(getVisibleWidgetHeight()).toBe(0);
     const bounds = options.overlayOptions();
     expect(bounds.width).toBe("100%");
     expect(bounds.row).toBe(0);
     expect(bounds.col).toBe(0);
-    expect(bounds.maxHeight).toBe(1);
+    expect(bounds.maxHeight).toBe("100%");
     const rendered = component?.render(100) ?? [];
     expect(rendered.length).toBeGreaterThan(0);
     expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯│┌┐└┘]/);
@@ -119,12 +121,100 @@ describe("read-only subagent transcript", () => {
     component?.handleInput("arbitrary typed text");
     expect(setEditorText).not.toHaveBeenCalled();
     component?.handleInput("\x1b");
-    setStatuslineHeight(0);
     await result;
   });
 
-  it("deducts statusline height from a tall transcript overlay", async () => {
-    let options: { overlayOptions: () => { maxHeight: number } } | undefined;
+  it("uses the host message components with theme colors and returns to the main agent at the left edge", async () => {
+    initTheme();
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-subagent-transcript-"));
+    const sessionsDir = join(agentDir, "sessions");
+    mkdirSync(sessionsDir);
+    const session = join(sessionsDir, "child.jsonl");
+    const records = [
+      {
+        type: "session",
+        version: CURRENT_SESSION_VERSION,
+        id: "child",
+        cwd: "/work",
+        timestamp: new Date().toISOString(),
+      },
+      {
+        type: "message",
+        id: "1",
+        parentId: null,
+        message: { role: "user", content: "Theme question" },
+      },
+      {
+        type: "message",
+        id: "2",
+        parentId: "1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Theme answer" }],
+        },
+      },
+    ];
+    writeFileSync(
+      session,
+      records.map((entry) => JSON.stringify(entry)).join("\n"),
+    );
+
+    const theme = {
+      fg: (token: string, value: string) => `[${token}:${value}]`,
+      bg: (token: string, value: string) => `[bg:${token}:${value}]`,
+      bold: (value: string) => value,
+    };
+    let component:
+      | { render(width: number): string[]; handleInput(data: string): void }
+      | undefined;
+    const done = vi.fn();
+    const custom = vi.fn(
+      (
+        factory: (
+          tui: unknown,
+          theme: unknown,
+          keys: unknown,
+          finish: () => void,
+        ) => NonNullable<typeof component>,
+      ) => {
+        component = factory(
+          { terminal: { rows: 24 }, requestRender: vi.fn() },
+          theme,
+          {},
+          done,
+        );
+        return Promise.resolve();
+      },
+    );
+    try {
+      await showSubagentTranscript(
+        { mode: "tui", hasUI: true, ui: { custom } } as never,
+        agentDir,
+        [{ id: "child", agent: "scout", session }] as never,
+        "child",
+        () => "fallback",
+      );
+      const rendered = component?.render(120).join("\n") ?? "";
+      expect(rendered).toContain("Theme question");
+      expect(rendered).toContain("Theme answer");
+      expect(rendered).toContain("\u001b[");
+      expect(done).not.toHaveBeenCalled();
+
+      component?.handleInput("\x1b[1;3D");
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the full terminal height and reuses the dashboard header renderer", async () => {
+    const release = registerSharedHeader({
+      render: (width) => ["Shared dashboard", `width:${width}`],
+    });
+    let options: { overlayOptions: () => { maxHeight: string } } | undefined;
+    let component:
+      | { render(width: number): string[]; handleInput(data: string): void }
+      | undefined;
     const custom = vi.fn(
       (
         factory: (
@@ -132,11 +222,11 @@ describe("read-only subagent transcript", () => {
           theme: unknown,
           keys: unknown,
           done: (value: undefined) => void,
-        ) => unknown,
-        opts: { overlayOptions: () => { maxHeight: number } },
+        ) => NonNullable<typeof component>,
+        opts: { overlayOptions: () => { maxHeight: string } },
       ) => {
         options = opts;
-        factory(
+        component = factory(
           { terminal: { rows: 12 }, requestRender: vi.fn() },
           {},
           {},
@@ -145,7 +235,6 @@ describe("read-only subagent transcript", () => {
         return Promise.resolve();
       },
     );
-    setStatuslineHeight(2);
     try {
       await showSubagentTranscript(
         {
@@ -159,9 +248,13 @@ describe("read-only subagent transcript", () => {
         () =>
           `Transcript for one\n${Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n")}`,
       );
-      expect(options?.overlayOptions().maxHeight).toBe(10);
+      expect(options?.overlayOptions().maxHeight).toBe("100%");
+      const lines = component?.render(80) ?? [];
+      expect(lines).toHaveLength(12);
+      expect(lines[0]).toBe("Shared dashboard");
+      expect(lines[1]).toBe("width:80");
     } finally {
-      setStatuslineHeight(0);
+      release();
     }
   });
 });

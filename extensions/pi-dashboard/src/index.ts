@@ -14,6 +14,7 @@ import {
 import { effectiveCwd } from "@hollowheap/core/state";
 import { hostUi, notify } from "@hollowheap/pi-ui/host";
 import { prefixCompletions } from "@hollowheap/ui/autocomplete";
+import { registerSharedHeader } from "@hollowheap/ui/header";
 import { runCommand } from "./exec.js";
 import { fitLines, splitOutput } from "./render.js";
 import {
@@ -415,6 +416,7 @@ export default function (pi: ExtensionAPI) {
   let currentConfig: DashboardConfig | undefined;
   let activeCtx: ExtensionContext | undefined;
   let unsubscribeConfigChanged: (() => void) | undefined;
+  let releaseSharedHeader: (() => void) | undefined;
   let hidden = false;
 
   const makeStateInput = (
@@ -447,6 +449,8 @@ export default function (pi: ExtensionAPI) {
 
   const hideHeader = (ctx: ExtensionContext) => {
     hidden = true;
+    releaseSharedHeader?.();
+    releaseSharedHeader = undefined;
     active?.stop();
     active = undefined;
     // Empty component suppresses builtInHeader without leaving startup lines in chat.
@@ -459,6 +463,8 @@ export default function (pi: ExtensionAPI) {
 
   const install = (ctx: ExtensionContext, config: DashboardConfig) => {
     active?.stop();
+    releaseSharedHeader?.();
+    releaseSharedHeader = undefined;
     currentConfig = config;
     if ((config.autoHide ?? true) && hasConversationStarted(ctx)) {
       hideHeader(ctx);
@@ -479,6 +485,9 @@ export default function (pi: ExtensionAPI) {
       loadSessions: (scope, maxItems) => loadForCtx(ctx, scope, maxItems),
     });
     active = controller;
+    releaseSharedHeader = registerSharedHeader({
+      render: (width, theme) => controller.lines(width, theme),
+    });
     hostUi(ctx).setHeader((tui, theme) => {
       controller.start(() => tui.requestRender());
       void controller.refresh();
@@ -622,6 +631,8 @@ export default function (pi: ExtensionAPI) {
     }
     unsubscribeConfigChanged = undefined;
     activeCtx = undefined;
+    releaseSharedHeader?.();
+    releaseSharedHeader = undefined;
     active?.stop();
     active = undefined;
     hidden = false;
