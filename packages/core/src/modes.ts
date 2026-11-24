@@ -19,8 +19,10 @@ import {
 import {
   dropSession,
   effectiveCwd,
+  readPersistedCwd,
   readPersistedMode,
   session,
+  setCwd,
   setMode,
 } from "./state.js";
 import type { TrustedRoot } from "./trust.js";
@@ -190,6 +192,10 @@ export function enterMode(
 
 export function resetSession(owner: unknown): ModeEnterResult {
   dropSession(owner);
+  const storedCwd = readPersistedCwd(owner);
+  if (typeof storedCwd === "string") {
+    setCwd(owner, storedCwd, { persist: false });
+  }
   const stored = readPersistedMode(owner);
   const resolved = stored === undefined ? undefined : resolveModeName(stored);
   if (resolved === undefined || resolved === DEFAULT_MODE) {
