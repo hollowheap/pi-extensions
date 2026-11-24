@@ -1,5 +1,47 @@
+import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
+import {
+  bindHostOutputPadding,
+  resetActiveTuiConfig,
+  setActiveTuiConfig,
+} from "@hollowheap/ui/state";
 import { describe, expect, it, vi } from "vitest";
 import { askQuestion } from "../src/index.js";
+
+function captureDialog() {
+  let component: { render(width: number): string[] } | undefined;
+  type Factory = (
+    tui: unknown,
+    theme: unknown,
+    keys: unknown,
+    done: unknown,
+  ) => unknown;
+  const custom = vi.fn(async (factory: Factory) => {
+    component = factory(
+      { requestRender: vi.fn(), terminal: { rows: 24, columns: 80 } },
+      { fg: (_token: string, value: string) => value, bold: (v: string) => v },
+      {},
+      vi.fn(),
+    ) as { render(width: number): string[] };
+    return undefined;
+  });
+  return { custom, getComponent: () => component };
+}
+
+async function withHostPadding(render: () => Promise<void>) {
+  const release = bindHostOutputPadding(() => 1);
+  setActiveTuiConfig({
+    ...DEFAULT_TUI_CONFIG,
+    borderStyle: "rounded",
+    colored: false,
+    overlaySurface: "transparent",
+  });
+  try {
+    await render();
+  } finally {
+    release();
+    resetActiveTuiConfig();
+  }
+}
 
 function ctx() {
   return {
@@ -55,6 +97,37 @@ describe("question prompt surface", () => {
         c as never,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("multi-select dialog applies host output padding as frame padding", async () => {
+    await withHostPadding(async () => {
+      const { custom, getComponent } = captureDialog();
+      const c = ctx();
+      c.ui.custom = custom;
+
+      await askQuestion(
+        { prompt: "Pick", mode: "multi", options: ["A"] } as never,
+        c as never,
+      );
+      const lines = getComponent()?.render(40) ?? [];
+      expect(lines[1]).toContain("│  > [ ] A");
+    });
+  });
+
+  it("free-text dialog applies host output padding as frame padding", async () => {
+    await withHostPadding(async () => {
+      const { custom, getComponent } = captureDialog();
+      const c = ctx();
+      Reflect.deleteProperty(c.ui as object, "input");
+      c.ui.custom = custom;
+
+      await askQuestion(
+        { prompt: "Describe", mode: "free", options: [] } as never,
+        c as never,
+      );
+      const lines = getComponent()?.render(40) ?? [];
+      expect(lines[1]).toContain("│  ");
+    });
   });
 
   it("choosing the write-in row opens the free-text dialog", async () => {
