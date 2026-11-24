@@ -5,6 +5,7 @@ import type {
   ToolRenderResultOptions,
   ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
+import { formatDuration as formatToolDuration } from "@hollowheap/ui/duration";
 import { toolOutputDisplay } from "@hollowheap/ui/tool-output";
 
 type ToolRenderContext = Parameters<
@@ -80,22 +81,7 @@ function applyCodemodeVerbPack(
   );
 }
 
-/** Format execution duration cleanly for outcome badges. */
-export function formatToolDuration(
-  durationMs: number | undefined,
-): string | undefined {
-  if (
-    typeof durationMs !== "number" ||
-    !Number.isFinite(durationMs) ||
-    durationMs < 0
-  ) {
-    return undefined;
-  }
-  if (durationMs < 1000) {
-    return `${Math.round(durationMs)}ms`;
-  }
-  return `${(durationMs / 1000).toFixed(1)}s`;
-}
+export { formatToolDuration };
 
 /** Extract a concise single-line target summary from tool call arguments. */
 export function formatToolCallSummary(

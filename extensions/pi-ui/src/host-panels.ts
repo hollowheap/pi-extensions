@@ -20,6 +20,7 @@ import {
   Spacer,
   Text,
 } from "@earendil-works/pi-tui";
+import { formatDuration } from "@hollowheap/ui/duration";
 import {
   type PanelStateToken,
   framePanelLines,
@@ -49,6 +50,42 @@ const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
 const steeredMessageCounts = new Map<string, number>();
+const promptDurations = new Map<string, number[]>();
+
+function takeDuration(text: string): number | undefined {
+  const durations = promptDurations.get(text);
+  if (!durations || durations.length === 0) return undefined;
+  const value = durations.shift();
+  if (durations.length === 0) promptDurations.delete(text);
+  return value;
+}
+
+/** Attach the elapsed time since the last agent turn to the matching prompt. */
+export function markUserPromptDuration(text: string, durationMs: number): void {
+  if (formatDuration(durationMs) === undefined) return;
+  const trimmed = text.trim();
+  if (trimmed === "") return;
+  for (const key of new Set([text, trimmed])) {
+    const durations = promptDurations.get(key) ?? [];
+    durations.push(durationMs);
+    promptDurations.set(key, durations);
+  }
+}
+
+function consumeUserPromptDuration(text: string): number | undefined {
+  const duration = takeDuration(text);
+  const trimmed = text.trim();
+  if (duration !== undefined) {
+    if (trimmed !== text) takeDuration(trimmed);
+    return duration;
+  }
+  return takeDuration(trimmed);
+}
+
+/** Clear pending prompt timings when a session is replaced. */
+export function clearUserPromptDurations(): void {
+  promptDurations.clear();
+}
 
 export function markSteeredUserMessage(text: string): void {
   const trimmed = text.trim();
@@ -669,6 +706,7 @@ export function installUserMessagePanel(
   if (typeof originalRebuild !== "function") return;
   const patch = { getTheme, getPromptChar };
   const steeredMap = new WeakMap<UserMessageComponent, boolean>();
+  const durationMap = new WeakMap<UserMessageComponent, number | null>();
   Reflect.set(prototype, USER_MESSAGE_PANEL, patch);
   Reflect.set(prototype, "rebuild", function (this: UserMessageComponent) {
     const text = Reflect.get(this, "text");
@@ -683,6 +721,9 @@ export function installUserMessagePanel(
       const directSteer = Reflect.get(this, "steered") === true;
       const queuedSteer = consumeSteeredUserMessage(text);
       steeredMap.set(this, directSteer || queuedSteer);
+    }
+    if (!durationMap.has(this)) {
+      durationMap.set(this, consumeUserPromptDuration(text) ?? null);
     }
 
     const config = getActiveTuiConfig();
@@ -741,6 +782,9 @@ export function installUserMessagePanel(
           steeredMap.get(this) === true;
         const promptChar = patch.getPromptChar() || "❯";
         const verb = resolveToolVerb(isSteer ? "steer" : "prompt", livePanel);
+        const duration = formatDuration(durationMap.get(this) ?? undefined);
+        const verbLabel =
+          duration === undefined ? verb.settled : `${verb.settled} ${duration}`;
         const { innerWidth } = resolvePanelFrameLayout(width, {
           mode: livePanel.mode,
           borderStyle: livePanel.borderStyle,
@@ -762,7 +806,7 @@ export function installUserMessagePanel(
           colored: liveConfig.colored,
           surface: livePanel.surface,
           firstLinePrefix: `${promptChar} `,
-          topLeftLabel: verb.settled,
+          topLeftLabel: verbLabel,
         });
       },
     });
@@ -841,6 +885,8 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
   const patch = { getTheme };
   const hostChildrenMap = new WeakMap<BashExecutionComponent, Component[]>();
   const panelChildrenMap = new WeakMap<BashExecutionComponent, Component[]>();
+  const startedAtMap = new WeakMap<BashExecutionComponent, number>();
+  const durationMap = new WeakMap<BashExecutionComponent, number>();
   Reflect.set(prototype, BASH_PANEL, patch);
   Reflect.set(
     prototype,
@@ -852,6 +898,17 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
       if (!contentContainer) {
         original.call(this);
         return;
+      }
+
+      const status = Reflect.get(this, "status");
+      if (status === "running" && !startedAtMap.has(this)) {
+        startedAtMap.set(this, Date.now());
+      }
+      if (status !== "running" && !durationMap.has(this)) {
+        const startedAt = startedAtMap.get(this);
+        if (startedAt !== undefined) {
+          durationMap.set(this, Date.now() - startedAt);
+        }
       }
 
       let hostChildren = hostChildrenMap.get(this);
@@ -913,6 +970,12 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
               const theme = patch.getTheme();
               const status = Reflect.get(this, "status");
               const exitCode = Reflect.get(this, "exitCode");
+              const verb = resolveToolVerb("bash", livePanel);
+              const duration = formatDuration(durationMap.get(this));
+              const verbLabel =
+                duration === undefined
+                  ? verb.settled
+                  : `${verb.settled} ${duration}`;
               const stateToken =
                 status === "running"
                   ? "toolPendingBg"
@@ -958,7 +1021,7 @@ export function installBashPanel(getTheme: () => Theme | undefined): void {
                 colored: liveConfig.colored,
                 surface: livePanel.surface,
                 firstLinePrefix: `${sharedGetPromptChar()} `,
-                topLeftLabel: resolveToolVerb("bash", livePanel).settled,
+                topLeftLabel: verbLabel,
               });
             },
           },

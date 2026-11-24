@@ -37,6 +37,7 @@ import { loadModalConfig } from "./settings.js";
 import { panelRenderConfig, wrapToolRenderer } from "./panel.js";
 import { formatTuiStatus, showTuiSettings } from "./settings.js";
 import {
+  clearUserPromptDurations,
   installBashPanel,
   installBranchSummaryPanel,
   installCompactionSummaryPanel,
@@ -44,6 +45,7 @@ import {
   installSkillPanel,
   installUserMessagePanel,
   markSteeredUserMessage,
+  markUserPromptDuration,
 } from "./skill-panel.js";
 import { handleSkillInput, registerSkillAutocomplete } from "./skills.js";
 import {
@@ -336,18 +338,31 @@ export default function (pi: ExtensionAPI): void {
   const syncFromBranch = (ctx: ExtensionContext) => {
     lastCodemodeCode = undefined;
     lastToolCall = undefined;
+    lastAgentTurnEndAt = undefined;
+    clearUserPromptDurations();
     publishModalSnapshot(ctx);
   };
 
+  let lastAgentTurnEndAt: number | undefined;
+  pi.on("turn_end", () => {
+    lastAgentTurnEndAt = Date.now();
+  });
+
   pi.on("input", (event, _ctx) => {
     const res = handleSkillInput(event, pi);
-    if (
-      (event as { streamingBehavior?: unknown }).streamingBehavior === "steer"
-    ) {
-      const targetText =
-        res && res.action === "transform" ? res.text : event.text;
-      const skillBlock = parseSkillBlock(targetText);
-      markSteeredUserMessage(skillBlock?.userMessage ?? targetText);
+    const targetText =
+      res && res.action === "transform" ? res.text : event.text;
+    const skillBlock = parseSkillBlock(targetText);
+    const promptText = skillBlock?.userMessage ?? targetText;
+    if (event.streamingBehavior === "steer") {
+      markSteeredUserMessage(promptText);
+    }
+    if (event.source !== "extension") {
+      const startedAt = lastAgentTurnEndAt;
+      lastAgentTurnEndAt = undefined;
+      if (startedAt !== undefined && event.streamingBehavior === undefined) {
+        markUserPromptDuration(promptText, Date.now() - startedAt);
+      }
     }
     return res;
   });

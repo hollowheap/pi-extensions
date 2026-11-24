@@ -22,6 +22,7 @@ import {
   installCustomMessagePanel,
   installUserMessagePanel,
   markSteeredUserMessage,
+  markUserPromptDuration,
 } from "../src/skill-panel.js";
 
 function stripCursorMarkers(line: string): string {
@@ -362,6 +363,43 @@ describe("installBashPanel", () => {
     ).toBe(true);
   });
 
+  it("appends user bash duration after the settled verb", () => {
+    initTheme();
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bg: (_token: string, value: string) => value,
+      bold: (value: string) => value,
+    } as never;
+    installBashPanel(() => theme);
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      colored: true,
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
+        enabled: true,
+        borderStyle: "rounded",
+      },
+    });
+
+    let now = 1000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const bash = new BashExecutionComponent(
+        "echo hi",
+        { requestRender: vi.fn() } as never,
+        false,
+        1,
+      );
+      now = 2500;
+      bash.setComplete(0, false);
+      const lines = bash.render(40).map(stripTerminalSequences);
+      const top = lines.find((line) => line.includes("╭"));
+      expect(top).toMatch(/^╭ Ran 1\.5s /);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("aligns running loader without double-padding and avoids double-padding in collapsed !expanded state", () => {
     initTheme();
     const theme = {
@@ -585,6 +623,51 @@ describe("ModalEditor shared panel.borderStyle and unified chat panels", () => {
     const disabledPlain = userMsg.render(34).map(stripTerminalSequences);
     expect(disabledPlain.some((l) => l.includes("╭"))).toBe(false);
     expect(disabledPlain.some((l) => l.includes("Hello world"))).toBe(true);
+  });
+
+  it("appends user prompt duration after the verb", () => {
+    initTheme();
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bg: (_token: string, value: string) => `<bg:${_token}>${value}</bg>`,
+      bold: (value: string) => value,
+    } as never;
+    installUserMessagePanel(
+      () => theme,
+      () => "❯",
+    );
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      verbPack: "standard",
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
+        enabled: true,
+        borderStyle: "rounded",
+        accentStripe: false,
+      },
+    });
+
+    markUserPromptDuration("How long?", 1400);
+    const plain = new UserMessageComponent("How long?", undefined, 1)
+      .render(34)
+      .map(stripTerminalSequences);
+    expect(plain[0]).toMatch(/^╭ Prompted 1\.4s /);
+
+    setActiveTuiConfig({
+      ...DEFAULT_TUI_CONFIG,
+      verbPack: "terse",
+      panel: {
+        ...DEFAULT_TUI_CONFIG.panel,
+        enabled: true,
+        borderStyle: "rounded",
+        accentStripe: false,
+      },
+    });
+    markUserPromptDuration("terse prompt", 250);
+    const tersePlain = new UserMessageComponent("terse prompt", undefined, 1)
+      .render(34)
+      .map(stripTerminalSequences);
+    expect(tersePlain[0]).toMatch(/^╭ prompt 250ms /);
   });
 
   it("frames BranchSummaryMessageComponent, CompactionSummaryMessageComponent, and CustomMessageComponent with outputPad inside the border", () => {
