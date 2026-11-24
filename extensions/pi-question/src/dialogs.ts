@@ -94,19 +94,7 @@ async function showLockedDialog<T>(
             stopWatching = watchAbort(dialogAbort.signal, cancel);
             const component = create({ tui, theme, finish, cancel });
             const wrapper: LockedDialogComponent = {
-              render: (width) => {
-                const dialogWidth = Math.min(
-                  width,
-                  Math.max(20, Math.floor(width * 0.7)),
-                );
-                const padding = Math.max(
-                  0,
-                  Math.floor((width - dialogWidth) / 2),
-                );
-                return component
-                  .render(dialogWidth)
-                  .map((line) => `${" ".repeat(padding)}${line}`);
-              },
+              render: (width) => component.render(width),
               invalidate: () => component.invalidate(),
               handleInput: (data) => {
                 if (matchesKey(data, Key.shift("left"))) {
@@ -1042,8 +1030,8 @@ export async function askQuestions(
       >(
         ctx,
         scope,
-        ({ tui, finish, cancel }) =>
-          createReviewComponent(
+        ({ tui, theme, finish, cancel }) => {
+          const review = createReviewComponent(
             answers.length,
             (index) => answers[index],
             () => tui.requestRender(),
@@ -1052,7 +1040,15 @@ export async function askQuestions(
               onConfirm: () => finish(answers),
               onCancel: cancel,
             },
-          ),
+          );
+          return {
+            ...review,
+            render: (width: number) =>
+              frameOverlay(width, theme, "Review", (innerWidth) =>
+                review.render(innerWidth),
+              ),
+          };
+        },
         () => {
           const cancelled = [...answers] as AskQuestionsResult;
           cancelled.cancelled = true;
