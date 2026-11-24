@@ -1,4 +1,6 @@
+export * from "./duration.js";
 export * from "./frame.js";
+export * from "./header.js";
 export * from "./input.js";
 export * from "./markdown.js";
 export * from "./spinner.js";
