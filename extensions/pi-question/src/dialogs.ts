@@ -15,6 +15,7 @@ import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { withPromptLock } from "@hollowheap/core/prompt-lock";
 import {
   canOverlay,
+  frameOverlay,
   hostUi,
   inputDialog,
   selectDialog,
@@ -22,7 +23,6 @@ import {
 } from "@hollowheap/pi-ui/host";
 import { selectListTheme } from "@hollowheap/pi-ui/picker";
 import { scopedAbortSignal, watchAbort } from "@hollowheap/runtime/abort";
-import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
 import {
   type DialogTab,
   TabbedContent,
@@ -300,9 +300,6 @@ function createMultiSelectComponent(
   };
 
   const render = (width: number): string[] => {
-    const innerWidth = handlers.showFrame
-      ? getFrameInnerWidth(width)
-      : Math.max(1, width);
     const lines: string[] = [];
     if (!handlers.showFrame) {
       lines.push(sanitizeTerminalText(question.prompt), "");
@@ -323,13 +320,15 @@ function createMultiSelectComponent(
     }
     lines.push(`${cursor === doneRow ? ">" : " "} Done`);
     lines.push("Space toggles • Enter selects • Esc cancels");
-    const body = new Text(lines.join("\n"), 0, 0).render(innerWidth);
-    return handlers.showFrame
-      ? boxFrame(body, width, theme as Theme, question.prompt, {
-          paddingX: 1,
-          marginX: 0,
-        })
-      : body;
+    if (handlers.showFrame) {
+      return frameOverlay(
+        width,
+        theme as Theme,
+        question.prompt,
+        (innerWidth) => new Text(lines.join("\n"), 0, 0).render(innerWidth),
+      );
+    }
+    return new Text(lines.join("\n"), 0, 0).render(Math.max(1, width));
   };
 
   return {
@@ -457,18 +456,16 @@ async function askWriteIn(
             editor.focused = focused;
           },
           render(width: number): string[] {
-            const innerWidth = getFrameInnerWidth(width, undefined, 1);
             const hint = safeFg(
               theme,
               "muted",
               "Enter submits • Esc clears • Esc again cancels",
             );
-            return boxFrame(
-              [...editor.render(innerWidth), hint],
+            return frameOverlay(
               width,
               theme,
               sanitizeTerminalText(title),
-              { paddingX: 1, marginX: 0 },
+              (innerWidth) => [...editor.render(innerWidth), hint],
             );
           },
           invalidate(): void {
@@ -925,11 +922,9 @@ async function askTabbedQuestions(
           tabbed.focused = value;
         },
         render(width: number): string[] {
-          const body = tabbed.render(getFrameInnerWidth(width, undefined, 1));
-          return boxFrame(body, width, theme, "Questions", {
-            paddingX: 1,
-            marginX: 0,
-          });
+          return frameOverlay(width, theme, "Questions", (innerWidth) =>
+            tabbed.render(innerWidth),
+          );
         },
         invalidate: () => tabbed.invalidate(),
         handleInput(data: string): void {

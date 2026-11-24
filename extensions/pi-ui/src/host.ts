@@ -22,6 +22,7 @@ import {
   boxFrame,
   getFrameInnerWidth,
 } from "@hollowheap/ui/frame";
+import { getHostOutputPadding } from "@hollowheap/ui/state";
 import { safeFg } from "@hollowheap/ui/theme";
 import { selectListTheme } from "./picker.js";
 
@@ -71,6 +72,34 @@ export function settledGuard(): {
   };
 }
 
+function resolveOverlayFrameOptions(options?: FrameOptions): FrameOptions {
+  const hostPadding = getHostOutputPadding() ?? 0;
+  return {
+    paddingX: 1 + hostPadding,
+    marginX: 0,
+    ...options,
+  };
+}
+
+function overlayInnerWidth(width: number, options: FrameOptions): number {
+  return getFrameInnerWidth(
+    width,
+    options.borderStyle,
+    options.paddingX,
+    options.overlaySurface,
+    options.colored,
+    options.marginX,
+  );
+}
+
+/** Inner content width for the shared host frame. */
+export function frameOverlayInnerWidth(
+  width: number,
+  options?: FrameOptions,
+): number {
+  return overlayInnerWidth(width, resolveOverlayFrameOptions(options));
+}
+
 /** Render overlay content inside the shared host frame. */
 export function frameOverlay(
   width: number,
@@ -79,20 +108,14 @@ export function frameOverlay(
   content: (innerWidth: number) => readonly string[],
   options?: FrameOptions,
 ): string[] {
-  const frameOptions: FrameOptions = {
-    paddingX: 1,
-    marginX: 0,
-    ...options,
-  };
-  const innerWidth = getFrameInnerWidth(
+  const frameOptions = resolveOverlayFrameOptions(options);
+  return boxFrame(
+    content(overlayInnerWidth(width, frameOptions)),
     width,
-    frameOptions.borderStyle,
-    frameOptions.paddingX,
-    frameOptions.overlaySurface,
-    frameOptions.colored,
-    frameOptions.marginX,
+    theme,
+    title,
+    frameOptions,
   );
-  return boxFrame(content(innerWidth), width, theme, title, frameOptions);
 }
 
 /** Keep the host responsible for notifications, with terminal-safe text. */

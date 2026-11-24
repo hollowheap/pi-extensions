@@ -1,4 +1,5 @@
 import { boxFrame, getFrameInnerWidth } from "@hollowheap/ui/frame";
+import { bindHostOutputPadding } from "@hollowheap/ui/state";
 import { describe, expect, it, vi } from "vitest";
 import {
   confirmDialog,
@@ -70,6 +71,35 @@ describe("overlay helpers", () => {
     expect(guard.settle()).toBe(true);
     expect(guard.settle()).toBe(false);
     expect(guard.isSettled()).toBe(true);
+  });
+
+  it("applies host output padding as inner frame padding", () => {
+    const theme = {
+      fg: (_token: string, value: string) => value,
+      bold: (value: string) => value,
+    };
+    const release = bindHostOutputPadding(() => 1);
+    try {
+      const content = vi.fn((width: number) => [`inner:${width}`]);
+      const framed = frameOverlay(30, theme as never, "Overlay", content);
+      const innerWidth = getFrameInnerWidth(
+        30,
+        undefined,
+        2,
+        undefined,
+        true,
+        0,
+      );
+      expect(content).toHaveBeenCalledWith(innerWidth);
+      expect(framed).toEqual(
+        boxFrame([`inner:${innerWidth}`], 30, theme as never, "Overlay", {
+          paddingX: 2,
+          marginX: 0,
+        }),
+      );
+    } finally {
+      release();
+    }
   });
 
   it("renders content at the inner frame width", () => {
