@@ -60,6 +60,12 @@ describe("native tool result display", () => {
     expect(renderNative("custom_tool", "high", false)).toContain("result-14");
   });
 
+  it("shows batch tool outputs at High verbosity", () => {
+    const lines = renderNative("batch", "high", true);
+    expect(lines).toContain("result-0");
+    expect(lines).toContain("result-14");
+  });
+
   it("keeps codemode results collapsed in High and removes their expansion hint", () => {
     expect(renderNative("codemode", "high", true)).not.toContain("result-14");
     const renderer = codemodePreview({

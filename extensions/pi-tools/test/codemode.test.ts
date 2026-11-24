@@ -193,6 +193,11 @@ describe("codemode utilities", () => {
         { tool: "grep", status: "ok", value: "beta" },
       ],
     });
+    expect(batchRes.content).toEqual([
+      { type: "text", text: "Batch finished (2 calls)" },
+      { type: "text", text: "read: ok alpha" },
+      { type: "text", text: "grep: ok beta" },
+    ]);
 
     const compactRes = await execute("compact_context", "Keep auth decisions");
     expect(compactRes.structuredContent).toEqual({ status: "queued" });
