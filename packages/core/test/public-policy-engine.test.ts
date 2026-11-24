@@ -16,10 +16,6 @@ import type { Rule } from "../src/types.js";
 for (const layer of BUILTIN_MODE_LAYERS) registerMode(layer);
 
 describe("core is the single public policy engine", () => {
-  /*
-  # C10: package barrel exposes the policy entrypoints
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C10"
-  */
   it("exports evaluate, loadPermissions, checkPath and checkShell", () => {
     expect(typeof evaluate).toBe("function");
     expect(typeof loadPermissions).toBe("function");
@@ -27,10 +23,6 @@ describe("core is the single public policy engine", () => {
     expect(typeof checkShell).toBe("function");
   });
 
-  /*
-  # C11: checkPath from the barrel applies an allow rule
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C11"
-  */
   it("applies an allow rule from the barrel", () => {
     expect(
       checkPath(
@@ -42,18 +34,10 @@ describe("core is the single public policy engine", () => {
     ).toBe("allow");
   });
 
-  /*
-  # C12: checkShell from the barrel denies command substitution
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C12"
-  */
   it("denies command substitution from the barrel", () => {
     expect(checkShell("echo $(date)", []).decision).toBe("deny");
   });
 
-  /*
-  # C13: evaluate from the barrel returns the mode verdict
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C13"
-  */
   it("returns the mode verdict from the barrel", () => {
     const owner = {};
     setMode(owner, "edit");
@@ -71,10 +55,6 @@ describe("core is the single public policy engine", () => {
 });
 
 describe("policy engine boundary, refusal and consumer cases", () => {
-  /*
-  # C14: empty rule sets and commands fall back to safe verdicts
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C14"
-  */
   it("empty rule sets and empty commands fall back to safe verdicts", () => {
     expect(checkPath([], "src/a.ts", "edit", "/work")).toBe("ask");
     expect(checkShell("", [])).toEqual({
@@ -83,10 +63,6 @@ describe("policy engine boundary, refusal and consumer cases", () => {
     });
   });
 
-  /*
-  # C15: explicit shell and path denials are refused
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C15"
-  */
   it("an explicit shell deny and an explicit path deny are refused", () => {
     const denyShell: Rule[] = [{ tag: "shell", pattern: "rm", effect: "deny" }];
     expect(checkShell("rm -rf /", denyShell)).toEqual({
@@ -99,10 +75,6 @@ describe("policy engine boundary, refusal and consumer cases", () => {
     expect(checkPath(denyEdit, "src/a.ts", "edit", "/work")).toBe("deny");
   });
 
-  /*
-  # C16: rules loaded from permissions.json drive path and shell checks
-  # Red: npx vitest run packages/core/test/public-policy-engine.test.ts -t "C16"
-  */
   it("rules loaded from permissions.json drive the path and shell checkers", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-core-draw-s01-"));
     const agentDir = join(root, "agent");

@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_MODE_LAYERS } from "../../policy/src/modes.js";
 import {
+  dropSession as barrelDropSession,
+  effectiveCwd as barrelEffectiveCwd,
+  resetSession as barrelResetSession,
+  setCwd as barrelSetCwd,
+  setMode as barrelSetMode,
+} from "../src/index.js";
+import {
   enterMode,
   registerMode,
   registerModeGate,
@@ -275,5 +282,25 @@ describe("branch entry helpers", () => {
     expect(appendSessionEntry(undefined, undefined, "custom.type", {})).toBe(
       false,
     );
+  });
+});
+
+describe("session state public seam", () => {
+  it("resetSession restores the persisted cwd with the persisted mode", () => {
+    const entries: { customType: string; data?: unknown }[] = [];
+    const owner = {
+      appendCustomEntry: (customType: string, data?: unknown) => {
+        entries.push({ customType, data });
+        return "entry";
+      },
+      getBranch: () => entries,
+    };
+
+    barrelSetMode(owner, "plan");
+    barrelSetCwd(owner, "/work/sub", { persist: true });
+    barrelResetSession(owner);
+
+    expect(barrelEffectiveCwd("/work", owner)).toBe("/work/sub");
+    barrelDropSession(owner);
   });
 });
