@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  COLLAPSED_WIDGET_KEY,
   formatSubagentWidget,
   formatTaskWidget,
   formatTodoWidget,
@@ -139,6 +140,53 @@ describe("widget mounting", () => {
     expect(component.handleMouse?.(event)).toEqual({ handled: true });
     expect(isWidgetVisible("tui-test-click")).toBe(false);
     expect(setWidget).toHaveBeenLastCalledWith("tui-test-click", undefined);
+  });
+
+  it("shows a clickable summary line that restores collapsed widgets", () => {
+    register("tui-test-hidden-one");
+    register("tui-test-hidden-two");
+    const setWidget = vi.fn();
+    const ctx = {
+      hasUI: true,
+      ui: { setWidget, theme: {} as Theme },
+    };
+    mountWidgetProviders(ctx);
+    toggleWidgets();
+    mountWidgetProviders(ctx);
+
+    const factory = setWidget.mock.calls
+      .filter(([name]) => name === COLLAPSED_WIDGET_KEY)
+      .at(-1)?.[1] as
+      | (() => {
+          render(width: number): string[];
+          handleMouse?(event: TuiMouseEvent): { handled?: boolean } | undefined;
+        })
+      | undefined;
+    expect(typeof factory).toBe("function");
+    const component = factory?.();
+    const rows = component?.render(60) ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain(
+      "Widgets hidden (tui-test-hidden-one, tui-test-hidden-two)",
+    );
+
+    const event = {
+      type: "click",
+      button: "left",
+      x: 1,
+      y: 1,
+      screenX: 1,
+      screenY: 1,
+      width: 60,
+      height: 1,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    } as TuiMouseEvent;
+    expect(component?.handleMouse?.(event)).toEqual({ handled: true });
+    expect(isWidgetVisible("tui-test-hidden-one")).toBe(true);
+    expect(isWidgetVisible("tui-test-hidden-two")).toBe(true);
+    expect(setWidget).toHaveBeenLastCalledWith(COLLAPSED_WIDGET_KEY, undefined);
   });
 });
 

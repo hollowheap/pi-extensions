@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "@hollowheap/core/format";
 import { boxFrame } from "./frame.js";
+import { safeFg } from "./theme.js";
 
 export type WidgetTodoPriority = "high" | "medium" | "low";
 
@@ -212,6 +213,7 @@ interface WidgetState {
 }
 
 const WIDGET_STATE_KEY = Symbol.for("@hollowheap/ui/widgets");
+export const COLLAPSED_WIDGET_KEY = "hollowheap.widgets.collapsed";
 
 function widgetState(): WidgetState {
   const store = globalThis as Record<symbol, WidgetState | undefined>;
@@ -257,10 +259,17 @@ export function setWidgetVisible(name: string, visible: boolean): void {
   widgetState().visible.set(name, visible);
 }
 
+function collapsedWidgetProviders(): WidgetProvider[] {
+  const state = widgetState();
+  return [...state.providers.values()].filter(
+    (provider) => state.visible.get(provider.name) === false,
+  );
+}
+
 /** Sum of the last rendered heights of visible widgets, in terminal rows. */
 export function getVisibleWidgetHeight(): number {
   const state = widgetState();
-  let height = 0;
+  let height = state.lineCounts.get(COLLAPSED_WIDGET_KEY) ?? 0;
   for (const name of state.providers.keys()) {
     if (state.visible.get(name) !== false) {
       height += state.lineCounts.get(name) ?? 0;
@@ -359,6 +368,50 @@ function createWidget(
   };
 }
 
+function createCollapsedSummary(
+  ctx: WidgetMountContext,
+  theme: Theme | undefined,
+): WidgetFactory {
+  return () => {
+    const names = collapsedWidgetProviders()
+      .map((provider) => provider.label)
+      .join(", ");
+    const label = safeFg(
+      theme,
+      "muted",
+      `Widgets hidden (${names}) · click to show`,
+    );
+    const component: Component = {
+      render(width: number) {
+        widgetState().lineCounts.set(COLLAPSED_WIDGET_KEY, 1);
+        return [truncateToWidth(label, Math.max(1, width), "", true)];
+      },
+      invalidate() {},
+    };
+    return new MouseRegion(component, (event) => {
+      if (event.type !== "click" || event.button !== "left") return undefined;
+      for (const provider of collapsedWidgetProviders()) {
+        setWidgetVisible(provider.name, true);
+      }
+      mountWidgetProviders(ctx);
+      return { handled: true };
+    });
+  };
+}
+
+function mountCollapsedSummary(ctx: WidgetMountContext): void {
+  if (collapsedWidgetProviders().length === 0) {
+    widgetState().lineCounts.delete(COLLAPSED_WIDGET_KEY);
+    setHostWidget(ctx.ui, COLLAPSED_WIDGET_KEY, undefined);
+    return;
+  }
+  setHostWidget(
+    ctx.ui,
+    COLLAPSED_WIDGET_KEY,
+    createCollapsedSummary(ctx, ctx.ui.theme),
+  );
+}
+
 function mountWidget(ctx: WidgetMountContext, provider: WidgetProvider): void {
   const theme = ctx.ui.theme;
   if (!isWidgetVisible(provider.name)) {
@@ -384,4 +437,5 @@ export function mountWidgetProviders(ctx: WidgetMountContext): void {
   for (const provider of widgetState().providers.values()) {
     mountWidget(ctx, provider);
   }
+  mountCollapsedSummary(ctx);
 }

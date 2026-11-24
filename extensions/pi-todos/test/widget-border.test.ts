@@ -1,6 +1,7 @@
 import { DEFAULT_TUI_CONFIG } from "@hollowheap/core/tui-config";
 import { resetActiveTuiConfig, setActiveTuiConfig } from "@hollowheap/ui/state";
 import {
+  COLLAPSED_WIDGET_KEY,
   formatSubagentWidget,
   formatTaskWidget,
   mountWidgetProviders,
@@ -143,6 +144,8 @@ describe("sticky widget frames", () => {
 
   it("toggles each widget with its own chord and keeps P for all", () => {
     const { ctx, widgets, shortcut, terminal } = harness();
+    const activeCount = () =>
+      [...widgets.keys()].filter((key) => key !== COLLAPSED_WIDGET_KEY).length;
 
     expect(shortcut?.description).toContain(
       "Then P (all), T todos, B tasks, or S subagents",
@@ -157,12 +160,13 @@ describe("sticky widget frames", () => {
       shortcut.handler(ctx);
       expect(terminal(key)).toEqual({ consume: true });
       expect(widgets.has(name)).toBe(false);
-      expect(widgets.size).toBe(2);
+      expect(activeCount()).toBe(2);
+      expect(widgets.has(COLLAPSED_WIDGET_KEY)).toBe(true);
 
       shortcut.handler(ctx);
       expect(terminal(key.toUpperCase())).toEqual({ consume: true });
       expect(widgets.has(name)).toBe(true);
-      expect(widgets.size).toBe(3);
+      expect(activeCount()).toBe(3);
     }
 
     shortcut.handler(ctx);
@@ -170,13 +174,15 @@ describe("sticky widget frames", () => {
     shortcut.handler(ctx);
     expect(terminal("p")).toEqual({ consume: true });
 
-    expect(widgets.size).toBe(0);
+    expect(activeCount()).toBe(0);
+    expect(widgets.has(COLLAPSED_WIDGET_KEY)).toBe(true);
     expect(ctx.ui.setWidget).toHaveBeenCalledWith("todos", undefined);
     expect(ctx.ui.setWidget).toHaveBeenCalledWith("tasks", undefined);
     expect(ctx.ui.setWidget).toHaveBeenCalledWith("subagents", undefined);
 
     shortcut.handler(ctx);
     expect(terminal("P")).toEqual({ consume: true });
-    expect(widgets.size).toBe(3);
+    expect(activeCount()).toBe(3);
+    expect(widgets.has(COLLAPSED_WIDGET_KEY)).toBe(false);
   });
 });
